@@ -1,8 +1,20 @@
+import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
-import 'device_calendar_plus_ios_platform_interface.dart';
+/// The iOS implementation of [DeviceCalendarPlusPlatform].
+class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
+  /// The method channel used to interact with the native platform.
+  @visibleForTesting
+  final methodChannel = const MethodChannel('device_calendar_plus_ios');
 
-class DeviceCalendarPlusIos {
+  /// Registers this class as the default instance of [DeviceCalendarPlusPlatform].
+  static void registerWith() {
+    DeviceCalendarPlusPlatform.instance = DeviceCalendarPlusIos();
+  }
+
+  @override
   Future<String?> getPlatformVersion() {
-    return DeviceCalendarPlusIosPlatform.instance.getPlatformVersion();
+    return methodChannel.invokeMethod<String>('getPlatformVersion');
   }
 }

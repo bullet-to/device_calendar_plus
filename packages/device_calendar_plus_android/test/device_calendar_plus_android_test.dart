@@ -1,29 +1,45 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:device_calendar_plus_android/device_calendar_plus_android.dart';
-import 'package:device_calendar_plus_android/device_calendar_plus_android_platform_interface.dart';
-import 'package:device_calendar_plus_android/device_calendar_plus_android_method_channel.dart';
-import 'package:plugin_platform_interface/plugin_platform_interface.dart';
-
-class MockDeviceCalendarPlusAndroidPlatform
-    with MockPlatformInterfaceMixin
-    implements DeviceCalendarPlusAndroidPlatform {
-
-  @override
-  Future<String?> getPlatformVersion() => Future.value('42');
-}
+import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final DeviceCalendarPlusAndroidPlatform initialPlatform = DeviceCalendarPlusAndroidPlatform.instance;
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('$MethodChannelDeviceCalendarPlusAndroid is the default instance', () {
-    expect(initialPlatform, isInstanceOf<MethodChannelDeviceCalendarPlusAndroid>());
-  });
+  group('DeviceCalendarPlusAndroid', () {
+    const kPlatformVersion = 'Android 13';
+    late DeviceCalendarPlusAndroid plugin;
+    late List<MethodCall> log;
 
-  test('getPlatformVersion', () async {
-    DeviceCalendarPlusAndroid deviceCalendarPlusAndroidPlugin = DeviceCalendarPlusAndroid();
-    MockDeviceCalendarPlusAndroidPlatform fakePlatform = MockDeviceCalendarPlusAndroidPlatform();
-    DeviceCalendarPlusAndroidPlatform.instance = fakePlatform;
+    setUp(() async {
+      plugin = DeviceCalendarPlusAndroid();
 
-    expect(await deviceCalendarPlusAndroidPlugin.getPlatformVersion(), '42');
+      log = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(plugin.methodChannel, (methodCall) async {
+        log.add(methodCall);
+        switch (methodCall.method) {
+          case 'getPlatformVersion':
+            return kPlatformVersion;
+          default:
+            return null;
+        }
+      });
+    });
+
+    test('can be registered', () {
+      DeviceCalendarPlusAndroid.registerWith();
+      expect(DeviceCalendarPlusPlatform.instance,
+          isA<DeviceCalendarPlusAndroid>());
+    });
+
+    test('getPlatformVersion returns correct version', () async {
+      final version = await plugin.getPlatformVersion();
+      expect(
+        log,
+        <Matcher>[isMethodCall('getPlatformVersion', arguments: null)],
+      );
+      expect(version, equals(kPlatformVersion));
+    });
   });
 }

@@ -3,19 +3,21 @@ description: A modern, maintained Flutter plugin for reading and writing device 
 version: 0.1.0
 repository: https://github.com/bullet-to/device_calendar_plus
 
+resolution: workspace
+
 environment:
-  sdk: ">=3.0.0 <4.0.0"
+  sdk: ">=3.5.0 <4.0.0"
   flutter: ">=3.3.0"
 
 dependencies:
   flutter:
     sdk: flutter
   device_calendar_plus_platform_interface:
-    path: ../device_calendar_plus_platform_interface
+    workspace: ^0.1.0
   device_calendar_plus_android:
-    path: ../device_calendar_plus_android
+    workspace: ^0.1.0
   device_calendar_plus_ios:
-    path: ../device_calendar_plus_ios
+    workspace: ^0.1.0
 
 dev_dependencies:
   flutter_test:

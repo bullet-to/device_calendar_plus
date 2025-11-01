@@ -1,3 +1,4 @@
+import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter/material.dart';
 
 void main() {
@@ -30,7 +31,7 @@ class MyApp extends StatelessWidget {
         // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(title: 'Device Calendar Plus Example'),
     );
   }
 }
@@ -54,16 +55,18 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+  String _platformVersion = 'Unknown';
 
-  void _incrementCounter() {
+  @override
+  void initState() {
+    super.initState();
+    _getPlatformVersion();
+  }
+
+  Future<void> _getPlatformVersion() async {
+    final version = await DeviceCalendar.getPlatformVersion();
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _platformVersion = version ?? 'Unknown';
     });
   }
 
@@ -104,19 +107,20 @@ class _MyHomePageState extends State<MyHomePage> {
           // wireframe for each widget.
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            const Text('You have pushed the button this many times:'),
+            const Text('Running on:'),
             Text(
-              '$_counter',
+              _platformVersion,
               style: Theme.of(context).textTheme.headlineMedium,
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton(
+              onPressed: _getPlatformVersion,
+              child: const Text('Refresh Platform Version'),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }

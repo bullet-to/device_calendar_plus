@@ -1,29 +1,44 @@
-import 'package:flutter_test/flutter_test.dart';
 import 'package:device_calendar_plus_ios/device_calendar_plus_ios.dart';
-import 'package:device_calendar_plus_ios/device_calendar_plus_ios_platform_interface.dart';
-import 'package:device_calendar_plus_ios/device_calendar_plus_ios_method_channel.dart';
-import 'package:plugin_platform_interface/plugin_platform_interface.dart';
-
-class MockDeviceCalendarPlusIosPlatform
-    with MockPlatformInterfaceMixin
-    implements DeviceCalendarPlusIosPlatform {
-
-  @override
-  Future<String?> getPlatformVersion() => Future.value('42');
-}
+import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final DeviceCalendarPlusIosPlatform initialPlatform = DeviceCalendarPlusIosPlatform.instance;
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('$MethodChannelDeviceCalendarPlusIos is the default instance', () {
-    expect(initialPlatform, isInstanceOf<MethodChannelDeviceCalendarPlusIos>());
-  });
+  group('DeviceCalendarPlusIos', () {
+    const kPlatformVersion = 'iOS 17.0';
+    late DeviceCalendarPlusIos plugin;
+    late List<MethodCall> log;
 
-  test('getPlatformVersion', () async {
-    DeviceCalendarPlusIos deviceCalendarPlusIosPlugin = DeviceCalendarPlusIos();
-    MockDeviceCalendarPlusIosPlatform fakePlatform = MockDeviceCalendarPlusIosPlatform();
-    DeviceCalendarPlusIosPlatform.instance = fakePlatform;
+    setUp(() async {
+      plugin = DeviceCalendarPlusIos();
 
-    expect(await deviceCalendarPlusIosPlugin.getPlatformVersion(), '42');
+      log = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(plugin.methodChannel, (methodCall) async {
+        log.add(methodCall);
+        switch (methodCall.method) {
+          case 'getPlatformVersion':
+            return kPlatformVersion;
+          default:
+            return null;
+        }
+      });
+    });
+
+    test('can be registered', () {
+      DeviceCalendarPlusIos.registerWith();
+      expect(DeviceCalendarPlusPlatform.instance, isA<DeviceCalendarPlusIos>());
+    });
+
+    test('getPlatformVersion returns correct version', () async {
+      final version = await plugin.getPlatformVersion();
+      expect(
+        log,
+        <Matcher>[isMethodCall('getPlatformVersion', arguments: null)],
+      );
+      expect(version, equals(kPlatformVersion));
+    });
   });
 }

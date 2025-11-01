@@ -1,0 +1,17 @@
+name: device_calendar_plus_workspace
+description: A monorepo for device_calendar_plus Flutter plugin packages
+publish_to: none
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+workspace:
+  - packages/device_calendar_plus
+  - packages/device_calendar_plus_platform_interface
+  - packages/device_calendar_plus_android
+  - packages/device_calendar_plus_ios
+  - example
+
+dev_dependencies:
+  melos: ^6.0.0
+

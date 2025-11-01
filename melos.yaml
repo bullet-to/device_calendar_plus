@@ -4,14 +4,6 @@ packages:
   - packages/**
   - example
 
-command:
-  bootstrap:
-    runPubGetInParallel: true
-    
-  version:
-    branch: main
-    message: "chore(release): publish packages"
-
 scripts:
   analyze:
     run: melos exec -- flutter analyze
@@ -28,4 +20,3 @@ scripts:
   clean:
     run: melos exec -- flutter clean
     description: Clean all packages
-

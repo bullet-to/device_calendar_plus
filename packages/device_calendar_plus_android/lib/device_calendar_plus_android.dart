@@ -1,8 +1,20 @@
+import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
-import 'device_calendar_plus_android_platform_interface.dart';
+/// The Android implementation of [DeviceCalendarPlusPlatform].
+class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
+  /// The method channel used to interact with the native platform.
+  @visibleForTesting
+  final methodChannel = const MethodChannel('device_calendar_plus_android');
 
-class DeviceCalendarPlusAndroid {
+  /// Registers this class as the default instance of [DeviceCalendarPlusPlatform].
+  static void registerWith() {
+    DeviceCalendarPlusPlatform.instance = DeviceCalendarPlusAndroid();
+  }
+
+  @override
   Future<String?> getPlatformVersion() {
-    return DeviceCalendarPlusAndroidPlatform.instance.getPlatformVersion();
+    return methodChannel.invokeMethod<String>('getPlatformVersion');
   }
 }
