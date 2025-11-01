@@ -1,0 +1,31 @@
+name: device_calendar_plus
+
+packages:
+  - packages/**
+  - example
+
+command:
+  bootstrap:
+    runPubGetInParallel: true
+    
+  version:
+    branch: main
+    message: "chore(release): publish packages"
+
+scripts:
+  analyze:
+    run: melos exec -- flutter analyze
+    description: Run Flutter analyzer in all packages
+
+  format:
+    run: melos exec -- dart format .
+    description: Format code in all packages
+
+  test:
+    run: melos exec --dir-exists="test" -- flutter test
+    description: Run tests in all packages
+
+  clean:
+    run: melos exec -- flutter clean
+    description: Clean all packages
+
