@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'src/calendar.dart';
 import 'src/calendar_permission_status.dart';
-import 'src/device_calendar_error.dart';
+import 'src/platform_exception_converter.dart';
 
 export 'src/calendar.dart';
 export 'src/calendar_permission_status.dart';
@@ -12,10 +12,6 @@ export 'src/device_calendar_error.dart';
 /// Main API for accessing device calendar functionality.
 class DeviceCalendarPlugin {
   DeviceCalendarPlugin._(); // Prevent instantiation
-
-  // Platform exception codes
-  static const String _permissionsNotDeclared = 'PERMISSIONS_NOT_DECLARED';
-  static const String _permissionDenied = 'PERMISSION_DENIED';
 
   /// Returns the platform version (e.g., "Android 13", "iOS 17.0").
   static Future<String?> getPlatformVersion() {
@@ -51,13 +47,11 @@ class DeviceCalendarPlugin {
         return CalendarPermissionStatus.denied;
       }
       return CalendarPermissionStatus.values[statusCode];
-    } on PlatformException catch (e) {
-      if (e.code == _permissionsNotDeclared) {
-        throw DeviceCalendarException(
-          errorCode: DeviceCalendarError.permissionsNotDeclared,
-          message: e.message ?? 'Calendar permissions not declared in manifest',
-          details: e.details,
-        );
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
       }
       rethrow;
     }
@@ -82,13 +76,11 @@ class DeviceCalendarPlugin {
       final List<Map<String, dynamic>> rawCalendars =
           await DeviceCalendarPlusPlatform.instance.listCalendars();
       return rawCalendars.map((map) => Calendar.fromMap(map)).toList();
-    } on PlatformException catch (e) {
-      if (e.code == _permissionDenied) {
-        throw DeviceCalendarException(
-          errorCode: DeviceCalendarError.permissionDenied,
-          message: e.message ?? 'Calendar permission denied',
-          details: e.details,
-        );
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
       }
       rethrow;
     }

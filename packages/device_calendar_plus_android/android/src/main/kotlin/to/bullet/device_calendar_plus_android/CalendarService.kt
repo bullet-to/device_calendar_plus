@@ -80,7 +80,7 @@ class CalendarService(private val activity: Activity) {
         } catch (e: Exception) {
             return Result.failure(
                 CalendarException(
-                    "UNKNOWN_ERROR",
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
                     "Failed to query calendars: ${e.message}"
                 )
             )

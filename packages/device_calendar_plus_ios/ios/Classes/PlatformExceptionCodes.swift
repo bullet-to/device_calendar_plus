@@ -12,5 +12,10 @@ enum PlatformExceptionCodes {
   ///
   /// Corresponds to DeviceCalendarError.permissionDenied in Dart.
   static let permissionDenied = "PERMISSION_DENIED"
+  
+  /// An unknown error occurred.
+  ///
+  /// Corresponds to DeviceCalendarError.unknown in Dart.
+  static let unknownError = "UNKNOWN_ERROR"
 }
 

@@ -20,5 +20,12 @@ object PlatformExceptionCodes {
      * Corresponds to DeviceCalendarError.permissionDenied in Dart.
      */
     const val PERMISSION_DENIED = "PERMISSION_DENIED"
+    
+    /**
+     * An unknown error occurred.
+     * 
+     * Corresponds to DeviceCalendarError.unknown in Dart.
+     */
+    const val UNKNOWN_ERROR = "UNKNOWN_ERROR"
 }
 

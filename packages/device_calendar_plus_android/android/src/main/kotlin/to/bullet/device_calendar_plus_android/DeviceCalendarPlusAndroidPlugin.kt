@@ -50,7 +50,7 @@ class DeviceCalendarPlusAndroidPlugin :
                     if (error is PermissionException) {
                         result.error(error.code, error.message, null)
                     } else {
-                        result.error("UNKNOWN_ERROR", error.message, null)
+                        result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
                     }
                 }
             )
@@ -67,7 +67,7 @@ class DeviceCalendarPlusAndroidPlugin :
                 if (error is CalendarException) {
                     result.error(error.code, error.message, null)
                 } else {
-                    result.error("UNKNOWN_ERROR", error.message, null)
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
                 }
             }
         )
