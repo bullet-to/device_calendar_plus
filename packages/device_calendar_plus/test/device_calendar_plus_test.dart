@@ -97,11 +97,11 @@ void main() {
     DeviceCalendarPlusPlatform.instance = mockPlatform;
   });
 
-  group('DeviceCalendarPlugin', () {
+  group('DeviceCalendar', () {
     group('getPlatformVersion', () {
       test('returns platform version from platform interface', () async {
         mockPlatform.setPlatformVersion('Test Platform 1.0');
-        final result = await DeviceCalendarPlugin.getPlatformVersion();
+        final result = await DeviceCalendar.instance.getPlatformVersion();
         expect(result, 'Test Platform 1.0');
       });
     });
@@ -110,7 +110,7 @@ void main() {
       group('status conversion', () {
         test('converts status code to CalendarPermissionStatus', () async {
           mockPlatform.setPermissionStatus(CalendarPermissionStatus.granted);
-          final result = await DeviceCalendarPlugin.requestPermissions();
+          final result = await DeviceCalendar.instance.requestPermissions();
           expect(result, CalendarPermissionStatus.granted);
         });
       });
@@ -118,19 +118,19 @@ void main() {
       group('edge case handling', () {
         test('defaults to denied when status is null', () async {
           mockPlatform._permissionStatusCode = null;
-          final result = await DeviceCalendarPlugin.requestPermissions();
+          final result = await DeviceCalendar.instance.requestPermissions();
           expect(result, CalendarPermissionStatus.denied);
         });
 
         test('defaults to denied when status is negative', () async {
           mockPlatform._permissionStatusCode = -1;
-          final result = await DeviceCalendarPlugin.requestPermissions();
+          final result = await DeviceCalendar.instance.requestPermissions();
           expect(result, CalendarPermissionStatus.denied);
         });
 
         test('defaults to denied when status is out of range', () async {
           mockPlatform._permissionStatusCode = 999;
-          final result = await DeviceCalendarPlugin.requestPermissions();
+          final result = await DeviceCalendar.instance.requestPermissions();
           expect(result, CalendarPermissionStatus.denied);
         });
       });
@@ -146,7 +146,7 @@ void main() {
           );
 
           expect(
-            () => DeviceCalendarPlugin.requestPermissions(),
+            () => DeviceCalendar.instance.requestPermissions(),
             throwsA(
               isA<DeviceCalendarException>().having(
                 (e) => e.errorCode,
@@ -166,7 +166,7 @@ void main() {
           );
 
           expect(
-            () => DeviceCalendarPlugin.requestPermissions(),
+            () => DeviceCalendar.instance.requestPermissions(),
             throwsA(
               isA<PlatformException>().having(
                 (e) => e.code,
@@ -201,7 +201,7 @@ void main() {
           },
         ]);
 
-        final calendars = await DeviceCalendarPlugin.listCalendars();
+        final calendars = await DeviceCalendar.instance.listCalendars();
 
         expect(calendars, hasLength(2));
         expect(calendars[0].id, '1');
@@ -226,7 +226,7 @@ void main() {
         );
 
         expect(
-          () => DeviceCalendarPlugin.listCalendars(),
+          () => DeviceCalendar.instance.listCalendars(),
           throwsA(
             isA<DeviceCalendarException>().having(
               (e) => e.errorCode,
@@ -239,7 +239,7 @@ void main() {
 
       test('returns empty list when no calendars', () async {
         mockPlatform.setCalendars([]);
-        final calendars = await DeviceCalendarPlugin.listCalendars();
+        final calendars = await DeviceCalendar.instance.listCalendars();
         expect(calendars, isEmpty);
       });
     });
@@ -278,7 +278,7 @@ void main() {
           },
         ]);
 
-        final events = await DeviceCalendarPlugin.retrieveEvents(
+        final events = await DeviceCalendar.instance.retrieveEvents(
           now,
           now.add(Duration(days: 7)),
         );
@@ -317,7 +317,7 @@ void main() {
           },
         ]);
 
-        final events = await DeviceCalendarPlugin.retrieveEvents(
+        final events = await DeviceCalendar.instance.retrieveEvents(
           now,
           now.add(Duration(days: 1)),
         );
@@ -329,7 +329,7 @@ void main() {
 
       test('returns empty list when no events', () async {
         mockPlatform.setEvents([]);
-        final events = await DeviceCalendarPlugin.retrieveEvents(
+        final events = await DeviceCalendar.instance.retrieveEvents(
           DateTime.now(),
           DateTime.now().add(Duration(days: 7)),
         );
@@ -345,7 +345,7 @@ void main() {
         );
 
         expect(
-          () => DeviceCalendarPlugin.retrieveEvents(
+          () => DeviceCalendar.instance.retrieveEvents(
             DateTime.now(),
             DateTime.now().add(Duration(days: 7)),
           ),
@@ -378,7 +378,7 @@ void main() {
           'isRecurring': false,
         });
 
-        final event = await DeviceCalendarPlugin.getEvent('event1');
+        final event = await DeviceCalendar.instance.getEvent('event1');
 
         expect(event, isNotNull);
         expect(event!.eventId, 'event1');
@@ -406,7 +406,7 @@ void main() {
           'isRecurring': true,
         });
 
-        final event = await DeviceCalendarPlugin.getEvent(instanceId);
+        final event = await DeviceCalendar.instance.getEvent(instanceId);
 
         expect(event, isNotNull);
         expect(event!.eventId, 'recurring1');
@@ -418,7 +418,7 @@ void main() {
       test('returns null when event not found', () async {
         mockPlatform.setEvent(null);
 
-        final event = await DeviceCalendarPlugin.getEvent('nonexistent');
+        final event = await DeviceCalendar.instance.getEvent('nonexistent');
 
         expect(event, isNull);
       });
@@ -440,7 +440,7 @@ void main() {
           'isRecurring': true,
         });
 
-        final event = await DeviceCalendarPlugin.getEvent(instanceId);
+        final event = await DeviceCalendar.instance.getEvent(instanceId);
 
         expect(event, isNotNull);
         expect(event!.eventId, 'event123');
@@ -456,7 +456,7 @@ void main() {
         );
 
         expect(
-          () => DeviceCalendarPlugin.getEvent('event1'),
+          () => DeviceCalendar.instance.getEvent('event1'),
           throwsA(
             isA<DeviceCalendarException>().having(
               (e) => e.errorCode,

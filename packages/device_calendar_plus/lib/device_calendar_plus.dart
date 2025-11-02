@@ -14,11 +14,15 @@ export 'src/event_availability.dart';
 export 'src/event_status.dart';
 
 /// Main API for accessing device calendar functionality.
-class DeviceCalendarPlugin {
-  DeviceCalendarPlugin._(); // Prevent instantiation
+class DeviceCalendar {
+  DeviceCalendar._internal();
+
+  static final DeviceCalendar instance = DeviceCalendar._internal();
+
+  factory DeviceCalendar() => instance;
 
   /// Returns the platform version (e.g., "Android 13", "iOS 17.0").
-  static Future<String?> getPlatformVersion() {
+  Future<String?> getPlatformVersion() {
     return DeviceCalendarPlusPlatform.instance.getPlatformVersion();
   }
 
@@ -31,7 +35,8 @@ class DeviceCalendarPlugin {
   ///
   /// Example:
   /// ```dart
-  /// final status = await DeviceCalendar.requestPermissions();
+  /// final plugin = DeviceCalendar.instance;
+  /// final status = await plugin.requestPermissions();
   /// if (status == CalendarPermissionStatus.granted) {
   ///   // Access calendars
   /// } else if (status == CalendarPermissionStatus.denied) {
@@ -40,7 +45,7 @@ class DeviceCalendarPlugin {
   ///   // Show "Contact administrator" message
   /// }
   /// ```
-  static Future<CalendarPermissionStatus> requestPermissions() async {
+  Future<CalendarPermissionStatus> requestPermissions() async {
     try {
       final int? statusCode =
           await DeviceCalendarPlusPlatform.instance.requestPermissions();
@@ -67,7 +72,8 @@ class DeviceCalendarPlugin {
   ///
   /// Example:
   /// ```dart
-  /// final calendars = await DeviceCalendarPlugin.listCalendars();
+  /// final plugin = DeviceCalendar.instance;
+  /// final calendars = await plugin.listCalendars();
   /// for (final calendar in calendars) {
   ///   print('${calendar.name} (${calendar.id})');
   ///   print('  Read-only: ${calendar.readOnly}');
@@ -75,7 +81,7 @@ class DeviceCalendarPlugin {
   ///   print('  Color: ${calendar.colorHex}');
   /// }
   /// ```
-  static Future<List<Calendar>> listCalendars() async {
+  Future<List<Calendar>> listCalendars() async {
     try {
       final List<Map<String, dynamic>> rawCalendars =
           await DeviceCalendarPlusPlatform.instance.listCalendars();
@@ -113,17 +119,18 @@ class DeviceCalendarPlugin {
   ///
   /// Example:
   /// ```dart
+  /// final plugin = DeviceCalendar.instance;
   /// final now = DateTime.now();
   /// final nextMonth = now.add(Duration(days: 30));
   ///
   /// // Get all events in the next month
-  /// final events = await DeviceCalendarPlugin.retrieveEvents(
+  /// final events = await plugin.retrieveEvents(
   ///   now,
   ///   nextMonth,
   /// );
   ///
   /// // Get events from specific calendars only
-  /// final workEvents = await DeviceCalendarPlugin.retrieveEvents(
+  /// final workEvents = await plugin.retrieveEvents(
   ///   now,
   ///   nextMonth,
   ///   calendarIds: ['work-calendar-id', 'project-calendar-id'],
@@ -133,7 +140,7 @@ class DeviceCalendarPlugin {
   ///   print('${event.title} at ${event.startDate}');
   /// }
   /// ```
-  static Future<List<Event>> retrieveEvents(
+  Future<List<Event>> retrieveEvents(
     DateTime startDate,
     DateTime endDate, {
     List<String>? calendarIds,
@@ -169,13 +176,14 @@ class DeviceCalendarPlugin {
   ///
   /// Example:
   /// ```dart
+  /// final plugin = DeviceCalendar.instance;
   /// // Get specific instance of a recurring event
-  /// final instance = await DeviceCalendarPlugin.getEvent(event.instanceId);
+  /// final instance = await plugin.getEvent(event.instanceId);
   ///
   /// // Get master event definition for a recurring event
-  /// final masterEvent = await DeviceCalendarPlugin.getEvent(event.eventId);
+  /// final masterEvent = await plugin.getEvent(event.eventId);
   /// ```
-  static Future<Event?> getEvent(String instanceId) async {
+  Future<Event?> getEvent(String instanceId) async {
     try {
       final Map<String, dynamic>? rawEvent =
           await DeviceCalendarPlusPlatform.instance.getEvent(instanceId);
@@ -213,13 +221,14 @@ class DeviceCalendarPlugin {
   ///
   /// Example:
   /// ```dart
+  /// final plugin = DeviceCalendar.instance;
   /// // Show specific instance of a recurring event
-  /// await DeviceCalendarPlugin.showEvent(event.instanceId);
+  /// await plugin.showEvent(event.instanceId);
   ///
   /// // Show master event definition
-  /// await DeviceCalendarPlugin.showEvent(event.eventId);
+  /// await plugin.showEvent(event.eventId);
   /// ```
-  static Future<void> showEvent(String instanceId) async {
+  Future<void> showEvent(String instanceId) async {
     try {
       await DeviceCalendarPlusPlatform.instance.showEvent(instanceId);
     } on PlatformException catch (e, stackTrace) {

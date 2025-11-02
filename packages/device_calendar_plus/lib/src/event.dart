@@ -9,7 +9,7 @@ class Event {
 
   /// Instance identifier that uniquely identifies this specific event instance.
   ///
-  /// Use this with [DeviceCalendarPlugin.getEvent] and [DeviceCalendarPlugin.showEvent]
+  /// Use this with [DeviceCalendar.instance.getEvent] and [DeviceCalendar.instance.showEvent]
   /// to fetch or display this specific event occurrence.
   ///
   /// For non-recurring events, this is the same as [eventId].

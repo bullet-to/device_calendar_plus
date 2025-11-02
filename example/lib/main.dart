@@ -69,7 +69,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _getPlatformVersion() async {
-    final version = await DeviceCalendarPlugin.getPlatformVersion();
+    final version = await DeviceCalendar.instance.getPlatformVersion();
     setState(() {
       _platformVersion = version ?? 'Unknown';
     });
@@ -77,7 +77,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _requestPermissions() async {
     try {
-      final status = await DeviceCalendarPlugin.requestPermissions();
+      final status = await DeviceCalendar.instance.requestPermissions();
 
       if (!mounted) return;
 
@@ -168,7 +168,7 @@ class _MyHomePageState extends State<MyHomePage> {
     });
 
     try {
-      final calendars = await DeviceCalendarPlugin.listCalendars();
+      final calendars = await DeviceCalendar.instance.listCalendars();
 
       print('Calendars: $calendars');
 
@@ -241,7 +241,7 @@ class _MyHomePageState extends State<MyHomePage> {
       final startDate = DateTime(now.year, now.month - 3, now.day);
       final endDate = DateTime(now.year, now.month + 3, now.day);
 
-      final events = await DeviceCalendarPlugin.retrieveEvents(
+      final events = await DeviceCalendar.instance.retrieveEvents(
         startDate,
         endDate,
         calendarIds:
@@ -302,7 +302,7 @@ class _MyHomePageState extends State<MyHomePage> {
     try {
       // Fetch the specific event instance using instanceId
       // For recurring events, instanceId includes the timestamp
-      final fetchedEvent = await DeviceCalendarPlugin.getEvent(
+      final fetchedEvent = await DeviceCalendar.instance.getEvent(
         event.instanceId,
       );
 
@@ -398,7 +398,8 @@ class _MyHomePageState extends State<MyHomePage> {
             TextButton(
               onPressed: () async {
                 try {
-                  await DeviceCalendarPlugin.showEvent(fetchedEvent.instanceId);
+                  await DeviceCalendar.instance
+                      .showEvent(fetchedEvent.instanceId);
                 } on DeviceCalendarException catch (e) {
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(

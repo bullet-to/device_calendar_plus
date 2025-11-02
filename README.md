@@ -78,8 +78,11 @@ Add calendar permissions to `android/app/src/main/AndroidManifest.xml`:
 ```dart
 import 'package:device_calendar_plus/device_calendar_plus.dart';
 
+// Get the singleton instance
+final plugin = DeviceCalendar.instance;
+
 // Request calendar permissions
-final status = await DeviceCalendarPlugin.requestPermissions();
+final status = await plugin.requestPermissions();
 if (status != CalendarPermissionStatus.granted) {
   // Handle permission denied
   return;
@@ -89,8 +92,10 @@ if (status != CalendarPermissionStatus.granted) {
 ### List Calendars
 
 ```dart
+final plugin = DeviceCalendar.instance;
+
 // List all calendars
-final calendars = await DeviceCalendarPlugin.listCalendars();
+final calendars = await plugin.listCalendars();
 for (final calendar in calendars) {
   print('${calendar.name} (${calendar.readOnly ? "read-only" : "writable"})');
   if (calendar.isPrimary) {
@@ -111,13 +116,15 @@ final writableCalendar = calendars.firstWhere(
 ### Retrieve Events
 
 ```dart
+final plugin = DeviceCalendar.instance;
+
 // Get events for the next 30 days
 final now = DateTime.now();
 final startDate = now;
 final endDate = now.add(const Duration(days: 30));
 
 // Get events from all calendars
-final allEvents = await DeviceCalendarPlugin.retrieveEvents(
+final allEvents = await plugin.retrieveEvents(
   startDate,
   endDate,
 );
@@ -125,7 +132,7 @@ print('Found ${allEvents.length} events');
 
 // Get events from specific calendars only
 final calendarIds = ['calendar-id-1', 'calendar-id-2'];
-final filteredEvents = await DeviceCalendarPlugin.retrieveEvents(
+final filteredEvents = await plugin.retrieveEvents(
   startDate,
   endDate,
   calendarIds: calendarIds,
@@ -136,30 +143,34 @@ final filteredEvents = await DeviceCalendarPlugin.retrieveEvents(
 ### Get Single Event
 
 ```dart
+final plugin = DeviceCalendar.instance;
+
 // Get a specific event by instanceId
-final event = await DeviceCalendarPlugin.getEvent(event.instanceId);
+final event = await plugin.getEvent(event.instanceId);
 if (event != null) {
   print('Event: ${event.title}');
 }
 
 // For recurring events, get a specific occurrence
-final instance = await DeviceCalendarPlugin.getEvent(event.instanceId);
+final instance = await plugin.getEvent(event.instanceId);
 
 // For recurring events, get the master event definition
-final masterEvent = await DeviceCalendarPlugin.getEvent(event.eventId);
+final masterEvent = await plugin.getEvent(event.eventId);
 ```
 
 ### Show Event in Modal
 
 ```dart
+final plugin = DeviceCalendar.instance;
+
 // Show a specific event in a modal dialog
-await DeviceCalendarPlugin.showEvent(event.instanceId);
+await plugin.showEvent(event.instanceId);
 
 // For recurring events, show a specific occurrence
-await DeviceCalendarPlugin.showEvent(event.instanceId);
+await plugin.showEvent(event.instanceId);
 
 // For recurring events, show the master event
-await DeviceCalendarPlugin.showEvent(event.eventId);
+await plugin.showEvent(event.eventId);
 ```
 
 ## 🧱 Exception model
