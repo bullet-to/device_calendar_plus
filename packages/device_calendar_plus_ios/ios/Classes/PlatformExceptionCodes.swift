@@ -7,5 +7,10 @@ enum PlatformExceptionCodes {
   ///
   /// Corresponds to DeviceCalendarError.permissionsNotDeclared in Dart.
   static let permissionsNotDeclared = "PERMISSIONS_NOT_DECLARED"
+  
+  /// Calendar permission denied by user.
+  ///
+  /// Corresponds to DeviceCalendarError.permissionDenied in Dart.
+  static let permissionDenied = "PERMISSION_DENIED"
 }
 

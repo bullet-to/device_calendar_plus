@@ -74,23 +74,33 @@ Add calendar permissions to `android/app/src/main/AndroidManifest.xml`:
 ## 🛠️ Example
 
 ```dart
-final calendar = DeviceCalendar.instance;
+import 'package:device_calendar_plus/device_calendar_plus.dart';
 
-// Ask for permission
-final granted = await calendar.requestPermissions();
-if (!granted) return;
+// Request calendar permissions
+final status = await DeviceCalendarPlugin.requestPermissions();
+if (status != CalendarPermissionStatus.granted) {
+  // Handle permission denied
+  return;
+}
 
-// List calendars
-final calendars = await calendar.listCalendars();
+// List all calendars
+final calendars = await DeviceCalendarPlugin.listCalendars();
+for (final calendar in calendars) {
+  print('${calendar.name} (${calendar.readOnly ? "read-only" : "writable"})');
+  if (calendar.isPrimary) {
+    print('  ⭐ Primary calendar');
+  }
+  if (calendar.colorHex != null) {
+    print('  Color: ${calendar.colorHex}');
+  }
+}
 
-// Query events
-final events = await calendar.getEvents(
-  calendarId: calendars.first.id,
-  start: DateTime.now().subtract(const Duration(days: 7)),
-  end: DateTime.now().add(const Duration(days: 7)),
+// Find a writable calendar
+final writableCalendar = calendars.firstWhere(
+  (cal) => !cal.readOnly,
+  orElse: () => calendars.first,
 );
-
-await calendar.showEventModal(events.first.eventId);
+print('Using calendar: ${writableCalendar.name}');
 ```
 
 ## 🧱 Exception model

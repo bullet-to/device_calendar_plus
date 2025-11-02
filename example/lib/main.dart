@@ -56,6 +56,8 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   String _platformVersion = 'Unknown';
+  List<Calendar> _calendars = [];
+  bool _isLoadingCalendars = false;
 
   @override
   void initState() {
@@ -64,7 +66,7 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _getPlatformVersion() async {
-    final version = await DeviceCalendar.getPlatformVersion();
+    final version = await DeviceCalendarPlugin.getPlatformVersion();
     setState(() {
       _platformVersion = version ?? 'Unknown';
     });
@@ -72,7 +74,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _requestPermissions() async {
     try {
-      final status = await DeviceCalendar.requestPermissions();
+      final status = await DeviceCalendarPlugin.requestPermissions();
 
       if (!mounted) return;
 
@@ -157,6 +159,75 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<void> _loadCalendars() async {
+    setState(() {
+      _isLoadingCalendars = true;
+    });
+
+    try {
+      final calendars = await DeviceCalendarPlugin.listCalendars();
+
+      print('Calendars: $calendars');
+
+      setState(() {
+        _calendars = calendars;
+        _isLoadingCalendars = false;
+      });
+    } on DeviceCalendarException catch (e) {
+      setState(() {
+        _isLoadingCalendars = false;
+      });
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Calendar Error'),
+          content: Text(e.message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _isLoadingCalendars = false;
+      });
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error'),
+          content: Text('Failed to load calendars: $e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Color _parseColor(String? colorHex) {
+    if (colorHex == null || colorHex.isEmpty) {
+      return Colors.grey;
+    }
+    try {
+      final hexColor = colorHex.replaceAll('#', '');
+      return Color(int.parse('FF$hexColor', radix: 16));
+    } catch (e) {
+      return Colors.grey;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // This method is rerun every time setState is called, for instance as done
@@ -175,39 +246,153 @@ class _MyHomePageState extends State<MyHomePage> {
         // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Text('Running on:'),
-            Text(
-              _platformVersion,
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton(
-              onPressed: _getPlatformVersion,
-              child: const Text('Refresh Platform Version'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    const Text('Platform Info'),
+                    const SizedBox(height: 8),
+                    Text(
+                      _platformVersion,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _getPlatformVersion,
+                      child: const Text('Refresh Platform Version'),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _requestPermissions,
-              child: const Text('Request Calendar Permissions'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    const Text('Permissions'),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed: _requestPermissions,
+                      child: const Text('Request Calendar Permissions'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Calendars',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        if (_calendars.isNotEmpty)
+                          Text(
+                            '${_calendars.length} found',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: _isLoadingCalendars ? null : _loadCalendars,
+                      icon: _isLoadingCalendars
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.refresh),
+                      label: Text(_isLoadingCalendars
+                          ? 'Loading...'
+                          : 'Load Calendars'),
+                    ),
+                    if (_calendars.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _calendars.map((calendar) {
+                          final color = _parseColor(calendar.colorHex);
+                          final luminance = color.computeLuminance();
+                          final textColor =
+                              luminance > 0.5 ? Colors.black : Colors.white;
+
+                          return Chip(
+                            backgroundColor: color,
+                            label: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  calendar.name,
+                                  style: TextStyle(
+                                    color: textColor,
+                                    fontWeight: calendar.isPrimary
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                                if (calendar.isPrimary) ...[
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    Icons.star,
+                                    size: 14,
+                                    color: textColor,
+                                  ),
+                                ],
+                                if (calendar.readOnly) ...[
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    Icons.lock,
+                                    size: 14,
+                                    color: textColor,
+                                  ),
+                                ],
+                                if (calendar.hidden) ...[
+                                  const SizedBox(width: 4),
+                                  Icon(
+                                    Icons.visibility_off,
+                                    size: 14,
+                                    color: textColor,
+                                  ),
+                                ],
+                              ],
+                            ),
+                            avatar: calendar.accountName != null
+                                ? CircleAvatar(
+                                    backgroundColor:
+                                        color.withValues(alpha: 0.3),
+                                    child: Text(
+                                      calendar.accountName![0].toUpperCase(),
+                                      style: TextStyle(
+                                        color: textColor,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  )
+                                : null,
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ],
         ),

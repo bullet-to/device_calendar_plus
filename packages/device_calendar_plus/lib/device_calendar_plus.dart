@@ -1,18 +1,21 @@
 import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
 import 'package:flutter/services.dart';
 
+import 'src/calendar.dart';
 import 'src/calendar_permission_status.dart';
 import 'src/device_calendar_error.dart';
 
+export 'src/calendar.dart';
 export 'src/calendar_permission_status.dart';
 export 'src/device_calendar_error.dart';
 
 /// Main API for accessing device calendar functionality.
-class DeviceCalendar {
-  DeviceCalendar._(); // Prevent instantiation
+class DeviceCalendarPlugin {
+  DeviceCalendarPlugin._(); // Prevent instantiation
 
-  // Platform exception code for missing manifest permissions
+  // Platform exception codes
   static const String _permissionsNotDeclared = 'PERMISSIONS_NOT_DECLARED';
+  static const String _permissionDenied = 'PERMISSION_DENIED';
 
   /// Returns the platform version (e.g., "Android 13", "iOS 17.0").
   static Future<String?> getPlatformVersion() {
@@ -24,12 +27,7 @@ class DeviceCalendar {
   /// On first call, this will show the system permission dialog.
   /// On subsequent calls, it returns the current permission status.
   ///
-  /// Returns a [CalendarPermissionStatus] indicating the result:
-  /// - [CalendarPermissionStatus.granted]: Full read/write access
-  /// - [CalendarPermissionStatus.writeOnly]: Write-only access (iOS 17+ only)
-  /// - [CalendarPermissionStatus.denied]: User denied permission
-  /// - [CalendarPermissionStatus.restricted]: Blocked by device policies (iOS only)
-  /// - [CalendarPermissionStatus.notDetermined]: Not yet requested (iOS only)
+  /// Returns a [CalendarPermissionStatus] indicating the result
   ///
   /// Example:
   /// ```dart
@@ -42,9 +40,6 @@ class DeviceCalendar {
   ///   // Show "Contact administrator" message
   /// }
   /// ```
-  ///
-  /// Throws [DeviceCalendarException] if calendar permissions are not properly
-  /// configured in the app's manifest (AndroidManifest.xml or Info.plist).
   static Future<CalendarPermissionStatus> requestPermissions() async {
     try {
       final int? statusCode =
@@ -61,6 +56,37 @@ class DeviceCalendar {
         throw DeviceCalendarException(
           errorCode: DeviceCalendarError.permissionsNotDeclared,
           message: e.message ?? 'Calendar permissions not declared in manifest',
+          details: e.details,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Lists all calendars available on the device.
+  ///
+  /// Returns a list of [Calendar] objects representing each calendar.
+  ///
+  /// Example:
+  /// ```dart
+  /// final calendars = await DeviceCalendarPlugin.listCalendars();
+  /// for (final calendar in calendars) {
+  ///   print('${calendar.name} (${calendar.id})');
+  ///   print('  Read-only: ${calendar.readOnly}');
+  ///   print('  Primary: ${calendar.isPrimary}');
+  ///   print('  Color: ${calendar.colorHex}');
+  /// }
+  /// ```
+  static Future<List<Calendar>> listCalendars() async {
+    try {
+      final List<Map<String, dynamic>> rawCalendars =
+          await DeviceCalendarPlusPlatform.instance.listCalendars();
+      return rawCalendars.map((map) => Calendar.fromMap(map)).toList();
+    } on PlatformException catch (e) {
+      if (e.code == _permissionDenied) {
+        throw DeviceCalendarException(
+          errorCode: DeviceCalendarError.permissionDenied,
+          message: e.message ?? 'Calendar permission denied',
           details: e.details,
         );
       }

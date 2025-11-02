@@ -13,5 +13,12 @@ object PlatformExceptionCodes {
      * Corresponds to DeviceCalendarError.permissionsNotDeclared in Dart.
      */
     const val PERMISSIONS_NOT_DECLARED = "PERMISSIONS_NOT_DECLARED"
+    
+    /**
+     * Calendar permission denied by user.
+     * 
+     * Corresponds to DeviceCalendarError.permissionDenied in Dart.
+     */
+    const val PERMISSION_DENIED = "PERMISSION_DENIED"
 }
 

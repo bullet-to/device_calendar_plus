@@ -10,6 +10,9 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   @override
   Future<int?> requestPermissions() async =>
       0; // CalendarPermissionStatus.granted
+
+  @override
+  Future<List<Map<String, dynamic>>> listCalendars() async => [];
 }
 
 void main() {

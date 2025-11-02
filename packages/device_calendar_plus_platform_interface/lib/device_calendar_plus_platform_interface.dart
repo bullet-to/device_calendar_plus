@@ -46,4 +46,10 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// Returns the raw integer status code from the platform.
   /// The main API layer converts this to [CalendarPermissionStatus].
   Future<int?> requestPermissions();
+
+  /// Lists all calendars available on the device.
+  ///
+  /// Returns a list of calendar data as maps. The main API layer
+  /// converts these to [DeviceCalendar] objects.
+  Future<List<Map<String, dynamic>>> listCalendars();
 }

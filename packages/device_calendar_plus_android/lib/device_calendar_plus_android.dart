@@ -22,4 +22,12 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   Future<int?> requestPermissions() async {
     return await methodChannel.invokeMethod<int>('requestPermissions');
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> listCalendars() async {
+    final result =
+        await methodChannel.invokeMethod<List<dynamic>>('listCalendars');
+    return result?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ??
+        [];
+  }
 }
