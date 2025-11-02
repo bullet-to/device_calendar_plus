@@ -13,6 +13,10 @@ class Event {
   /// to fetch or display this specific event occurrence.
   ///
   /// For non-recurring events, this is the same as [eventId].
+  /// For recurring events, this is derived from [eventId] and [startDate].
+  ///
+  /// **Important:** If a user modifies the event's date, the instanceId will become invalid.
+  /// You must re-fetch the event to get the updated instanceId before using it again.
   final String instanceId;
 
   /// ID of the calendar this event belongs to.
