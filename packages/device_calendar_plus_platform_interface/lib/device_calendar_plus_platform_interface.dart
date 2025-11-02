@@ -72,15 +72,13 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// Returns event data as a map (including instanceId field), or null if not found.
   Future<Map<String, dynamic>?> getEvent(String instanceId);
 
-  /// Opens a calendar event in the native calendar app or modal.
+  /// Shows a calendar event in a modal dialog.
   ///
-  /// [instanceId] uniquely identifies the event instance to open:
+  /// [instanceId] uniquely identifies the event instance to show:
   /// - For non-recurring events: Just the eventId
   /// - For recurring events: "eventId@rawTimestampMillis" format
   ///
-  /// [useModal] controls presentation style on iOS:
-  /// - true: Presents event in a modal within the app (iOS only)
-  /// - false: Opens the Calendar app
-  /// On Android, this parameter is ignored and always opens the Calendar app.
-  Future<void> openEvent(String instanceId, bool useModal);
+  /// On iOS, presents the event in a modal using EKEventViewController.
+  /// On Android, opens the event using an Intent with ACTION_VIEW.
+  Future<void> showEvent(String instanceId);
 }

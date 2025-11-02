@@ -3,13 +3,37 @@ import EventKitUI
 
 extension EKEventAvailability {
   var stringValue: String {
-    String(describing: self)
+    switch self {
+    case .notSupported:
+      return "notSupported"
+    case .busy:
+      return "busy"
+    case .free:
+      return "free"
+    case .tentative:
+      return "tentative"
+    case .unavailable:
+      return "unavailable"
+    @unknown default:
+      return "notSupported"
+    }
   }
 }
 
 extension EKEventStatus {
   var stringValue: String {
-    String(describing: self)
+    switch self {
+    case .none:
+      return "none"
+    case .confirmed:
+      return "confirmed"
+    case .tentative:
+      return "tentative"
+    case .canceled:
+      return "canceled"
+    @unknown default:
+      return "none"
+    }
   }
 }
 
@@ -180,9 +204,8 @@ class EventsService {
     }
   }
   
-  func openEvent(
+  func showEvent(
     instanceId: String,
-    useModal: Bool,
     completion: @escaping (Result<EKEventViewController?, CalendarError>) -> Void
   ) {
     // Check permission
@@ -203,12 +226,6 @@ class EventsService {
       occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
     } else {
       occurrenceDate = nil
-    }
-    
-    // If not using modal, open in Calendar app
-    if !useModal {
-      openInCalendarApp(eventId: eventId, occurrenceDate: occurrenceDate, completion: completion)
-      return
     }
     
     // Fetch the event for modal presentation
@@ -252,60 +269,6 @@ class EventsService {
     eventViewController.allowsCalendarPreview = true
     
     completion(.success(eventViewController))
-  }
-  
-  private func openInCalendarApp(
-    eventId: String,
-    occurrenceDate: Date?,
-    completion: @escaping (Result<EKEventViewController?, CalendarError>) -> Void
-  ) {
-    // Construct Calendar app URL
-    // Format: calshow:[beginTime]
-    var urlString = "calshow:"
-    
-    if let occurrenceDate = occurrenceDate {
-      // Add timestamp for specific occurrence
-      let timestamp = occurrenceDate.timeIntervalSinceReferenceDate
-      urlString += "\(timestamp)"
-    } else {
-      // For master event, try to get its start date
-      if let event = eventStore.event(withIdentifier: eventId) {
-        let timestamp = event.startDate.timeIntervalSinceReferenceDate
-        urlString += "\(timestamp)"
-      }
-    }
-    
-    guard let url = URL(string: urlString) else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
-        message: "Failed to create Calendar app URL"
-      )))
-      return
-    }
-    
-    // Open URL
-    if #available(iOS 10.0, *) {
-      UIApplication.shared.open(url, options: [:]) { success in
-        if success {
-          completion(.success(nil))
-        } else {
-          completion(.failure(CalendarError(
-            code: PlatformExceptionCodes.unknownError,
-            message: "Failed to open Calendar app"
-          )))
-        }
-      }
-    } else {
-      let success = UIApplication.shared.openURL(url)
-      if success {
-        completion(.success(nil))
-      } else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.unknownError,
-          message: "Failed to open Calendar app"
-        )))
-      }
-    }
   }
 }
 

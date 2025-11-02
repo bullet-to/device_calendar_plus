@@ -8,9 +8,11 @@ class Event {
   final String eventId;
 
   /// Instance identifier that uniquely identifies this specific event instance.
+  ///
+  /// Use this with [DeviceCalendarPlugin.getEvent] and [DeviceCalendarPlugin.showEvent]
+  /// to fetch or display this specific event occurrence.
+  ///
   /// For non-recurring events, this is the same as [eventId].
-  /// For recurring events, this is formatted as "eventId@rawTimestampMillis"
-  /// where the timestamp is the raw value from the native platform.
   final String instanceId;
 
   /// ID of the calendar this event belongs to.

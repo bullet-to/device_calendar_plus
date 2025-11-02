@@ -61,13 +61,10 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }
 
   @override
-  Future<void> openEvent(String instanceId, bool useModal) async {
+  Future<void> showEvent(String instanceId) async {
     await methodChannel.invokeMethod<void>(
-      'openEvent',
-      <String, dynamic>{
-        'instanceId': instanceId,
-        'useModal': useModal,
-      },
+      'showEvent',
+      <String, dynamic>{'instanceId': instanceId},
     );
   }
 }

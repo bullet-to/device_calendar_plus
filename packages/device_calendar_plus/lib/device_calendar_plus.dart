@@ -158,25 +158,22 @@ class DeviceCalendarPlugin {
 
   /// Retrieves a single event by instance ID.
   ///
-  /// The [instanceId] uniquely identifies an event instance:
-  /// - For non-recurring events: Just the eventId (e.g., "event-123")
-  /// - For recurring events: "eventId@rawTimestampMillis" (e.g., "event-456@1730822400000")
-  ///   to identify a specific occurrence
+  /// The [instanceId] uniquely identifies the event instance. You should obtain
+  /// this from an Event object via `event.instanceId`, not construct it manually.
   ///
-  /// You can get the instanceId from an Event object via `event.instanceId`.
+  /// **For recurring events:**
+  /// - Use the `instanceId` to get a specific occurrence
+  /// - Use the `eventId` to get the master event definition
   ///
   /// Returns null if no matching event is found.
   ///
   /// Example:
   /// ```dart
-  /// // Get a non-recurring event or master recurring event
-  /// final event = await DeviceCalendarPlugin.getEvent('event-123');
-  ///
-  /// // Get a specific instance using instanceId from an event
+  /// // Get specific instance of a recurring event
   /// final instance = await DeviceCalendarPlugin.getEvent(event.instanceId);
   ///
-  /// // Or construct instanceId manually for a recurring event instance
-  /// final instance = await DeviceCalendarPlugin.getEvent('event-456@1730822400000');
+  /// // Get master event definition for a recurring event
+  /// final masterEvent = await DeviceCalendarPlugin.getEvent(event.eventId);
   /// ```
   static Future<Event?> getEvent(String instanceId) async {
     try {
@@ -198,51 +195,33 @@ class DeviceCalendarPlugin {
     }
   }
 
-  /// Opens a calendar event in the native calendar application or modal view.
+  /// Shows a calendar event in a modal dialog.
   ///
-  /// The [instanceId] uniquely identifies the event instance to open:
-  /// - For non-recurring events: Just the eventId (e.g., "event-123")
-  /// - For recurring events: "eventId@rawTimestampMillis" (e.g., "event-456@1730822400000")
-  ///   to open a specific occurrence
+  /// The [instanceId] uniquely identifies the event instance. You should obtain
+  /// this from an Event object via `event.instanceId`, not construct it manually.
   ///
-  /// You can get the instanceId from an Event object via `event.instanceId`.
-  ///
-  /// [useModal] controls the presentation style on iOS only:
-  /// - `true` (default): Presents the event in a native modal within your app
-  ///   using EventKit's `EKEventViewController`. The user can view and edit
-  ///   the event without leaving your app.
-  /// - `false`: Opens the event in the native Calendar app.
+  /// **For recurring events:**
+  /// - Use the `instanceId` to show a specific occurrence
+  /// - Use the `eventId` to show the master event definition
   ///
   /// **Platform Differences:**
-  /// - **iOS**: The `useModal` parameter is respected. When `true`, presents
-  ///   a native EventKit modal. When `false`, opens the Calendar app.
-  ///   Requires your app to be in the foreground for modal presentation.
-  /// - **Android**: The `useModal` parameter is ignored. Always opens the
-  ///   event in the native Calendar app.
+  /// - **iOS**: Presents the event in a native modal using EventKit's
+  ///   `EKEventViewController`. The user can view and edit the event without
+  ///   leaving your app. Requires your app to be in the foreground.
+  /// - **Android**: Opens the event using an Intent with `ACTION_VIEW`.
+  ///   The system handles the presentation based on device and app configuration.
   ///
   /// Example:
   /// ```dart
-  /// // Open event in modal on iOS, Calendar app on Android
-  /// await DeviceCalendarPlugin.openEvent('event-123');
+  /// // Show specific instance of a recurring event
+  /// await DeviceCalendarPlugin.showEvent(event.instanceId);
   ///
-  /// // Open specific instance using instanceId from an event
-  /// await DeviceCalendarPlugin.openEvent(event.instanceId);
-  ///
-  /// // Force opening in Calendar app on all platforms
-  /// await DeviceCalendarPlugin.openEvent(
-  ///   'event-789',
-  ///   useModal: false,
-  /// );
+  /// // Show master event definition
+  /// await DeviceCalendarPlugin.showEvent(event.eventId);
   /// ```
-  static Future<void> openEvent(
-    String instanceId, {
-    bool useModal = true,
-  }) async {
+  static Future<void> showEvent(String instanceId) async {
     try {
-      await DeviceCalendarPlusPlatform.instance.openEvent(
-        instanceId,
-        useModal,
-      );
+      await DeviceCalendarPlusPlatform.instance.showEvent(instanceId);
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);

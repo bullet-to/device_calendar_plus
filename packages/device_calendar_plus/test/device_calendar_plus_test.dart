@@ -81,7 +81,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
-  Future<void> openEvent(String instanceId, bool useModal) async {
+  Future<void> showEvent(String instanceId) async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
     }

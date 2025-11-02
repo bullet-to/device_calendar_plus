@@ -35,7 +35,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "listCalendars" -> handleListCalendars(result)
             "retrieveEvents" -> handleRetrieveEvents(call, result)
             "getEvent" -> handleGetEvent(call, result)
-            "openEvent" -> handleOpenEvent(call, result)
+            "showEvent" -> handleShowEvent(call, result)
             else -> result.notImplemented()
         }
     }
@@ -144,7 +144,7 @@ class DeviceCalendarPlusAndroidPlugin :
         )
     }
     
-    private fun handleOpenEvent(call: MethodCall, result: Result) {
+    private fun handleShowEvent(call: MethodCall, result: Result) {
         val service = eventsService ?: run {
             result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
             return
@@ -152,7 +152,6 @@ class DeviceCalendarPlusAndroidPlugin :
         
         // Parse arguments
         val instanceId = call.argument<String>("instanceId")
-        val useModal = call.argument<Boolean>("useModal") ?: true // Ignored on Android
         
         if (instanceId == null) {
             result.error(
@@ -163,7 +162,7 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        val serviceResult = service.openEvent(instanceId, useModal)
+        val serviceResult = service.showEvent(instanceId)
         serviceResult.fold(
             onSuccess = { result.success(null) },
             onFailure = { error ->

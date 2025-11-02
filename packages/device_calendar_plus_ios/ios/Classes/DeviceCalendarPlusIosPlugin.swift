@@ -27,8 +27,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleRetrieveEvents(call: call, result: result)
     case "getEvent":
       handleGetEvent(call: call, result: result)
-    case "openEvent":
-      handleOpenEvent(call: call, result: result)
+    case "showEvent":
+      handleShowEvent(call: call, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -149,11 +149,11 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
   
-  private func handleOpenEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
+  private func handleShowEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
     guard let args = call.arguments as? [String: Any] else {
       result(FlutterError(
         code: PlatformExceptionCodes.invalidArguments,
-        message: "Invalid arguments for openEvent",
+        message: "Invalid arguments for showEvent",
         details: nil
       ))
       return
@@ -169,13 +169,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       return
     }
     
-    // Parse useModal flag (default true)
-    let useModal = args["useModal"] as? Bool ?? true
-    
-    eventsService.openEvent(
-      instanceId: instanceId,
-      useModal: useModal
-    ) { serviceResult in
+    eventsService.showEvent(instanceId: instanceId) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
         case .success(let viewController):

@@ -26,7 +26,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   Future<Map<String, dynamic>?> getEvent(String instanceId) async => null;
 
   @override
-  Future<void> openEvent(String instanceId, bool useModal) async {}
+  Future<void> showEvent(String instanceId) async {}
 }
 
 void main() {
@@ -74,10 +74,10 @@ void main() {
     expect(result, null);
   });
 
-  test('openEvent completes', () async {
+  test('showEvent completes', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
-    await DeviceCalendarPlusPlatform.instance.openEvent('event-123', true);
+    await DeviceCalendarPlusPlatform.instance.showEvent('event-123');
     // Should complete without error
   });
 }

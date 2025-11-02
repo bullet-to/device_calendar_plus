@@ -71,7 +71,9 @@ Add calendar permissions to `android/app/src/main/AndroidManifest.xml`:
 ```
 
 
-## 🛠️ Example
+## 🛠️ Usage Examples
+
+### Request Permissions
 
 ```dart
 import 'package:device_calendar_plus/device_calendar_plus.dart';
@@ -82,7 +84,11 @@ if (status != CalendarPermissionStatus.granted) {
   // Handle permission denied
   return;
 }
+```
 
+### List Calendars
+
+```dart
 // List all calendars
 final calendars = await DeviceCalendarPlugin.listCalendars();
 for (final calendar in calendars) {
@@ -100,7 +106,60 @@ final writableCalendar = calendars.firstWhere(
   (cal) => !cal.readOnly,
   orElse: () => calendars.first,
 );
-print('Using calendar: ${writableCalendar.name}');
+```
+
+### Retrieve Events
+
+```dart
+// Get events for the next 30 days
+final now = DateTime.now();
+final startDate = now;
+final endDate = now.add(const Duration(days: 30));
+
+// Get events from all calendars
+final allEvents = await DeviceCalendarPlugin.retrieveEvents(
+  startDate,
+  endDate,
+);
+print('Found ${allEvents.length} events');
+
+// Get events from specific calendars only
+final calendarIds = ['calendar-id-1', 'calendar-id-2'];
+final filteredEvents = await DeviceCalendarPlugin.retrieveEvents(
+  startDate,
+  endDate,
+  calendarIds: calendarIds,
+);
+
+```
+
+### Get Single Event
+
+```dart
+// Get a specific event by instanceId
+final event = await DeviceCalendarPlugin.getEvent(event.instanceId);
+if (event != null) {
+  print('Event: ${event.title}');
+}
+
+// For recurring events, get a specific occurrence
+final instance = await DeviceCalendarPlugin.getEvent(event.instanceId);
+
+// For recurring events, get the master event definition
+final masterEvent = await DeviceCalendarPlugin.getEvent(event.eventId);
+```
+
+### Show Event in Modal
+
+```dart
+// Show a specific event in a modal dialog
+await DeviceCalendarPlugin.showEvent(event.instanceId);
+
+// For recurring events, show a specific occurrence
+await DeviceCalendarPlugin.showEvent(event.instanceId);
+
+// For recurring events, show the master event
+await DeviceCalendarPlugin.showEvent(event.eventId);
 ```
 
 ## 🧱 Exception model

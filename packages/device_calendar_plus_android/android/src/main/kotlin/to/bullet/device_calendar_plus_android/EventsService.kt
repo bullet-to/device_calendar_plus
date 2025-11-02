@@ -319,15 +319,9 @@ class EventsService(private val activity: Activity) {
     }
 
     /**
-     * Opens a calendar event in the native Calendar app.
-     *
-     * Note: Android does not support modal event views, so useModal is ignored.
-     * This always opens the event in the Calendar app.
+     * Shows a calendar event in a modal dialog.
      */
-    fun openEvent(
-        instanceId: String,
-        useModal: Boolean // Ignored on Android
-    ): Result<Unit> {
+    fun showEvent(instanceId: String): Result<Unit> {
         return try {
             // Validate permissions
             if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
@@ -345,14 +339,16 @@ class EventsService(private val activity: Activity) {
             val eventId = parts[0]
             
             val intent = Intent(Intent.ACTION_VIEW)
+            
+            // Build event URI
             val eventUri = android.content.ContentUris.withAppendedId(
                 CalendarContract.Events.CONTENT_URI,
                 eventId.toLong()
             )
             intent.data = eventUri
             
+            // Add begin time for specific recurring event instances
             if (parts.size == 2) {
-                // Open specific instance with begin time
                 val occurrenceMillis = parts[1].toLongOrNull()
                 if (occurrenceMillis != null) {
                     intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, occurrenceMillis)

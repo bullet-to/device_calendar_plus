@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter/material.dart';
 
@@ -400,10 +398,7 @@ class _MyHomePageState extends State<MyHomePage> {
             TextButton(
               onPressed: () async {
                 try {
-                  await DeviceCalendarPlugin.openEvent(
-                    fetchedEvent.instanceId,
-                    useModal: false, // Opens in calendar app on both platforms
-                  );
+                  await DeviceCalendarPlugin.showEvent(fetchedEvent.instanceId);
                 } on DeviceCalendarException catch (e) {
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -412,34 +407,12 @@ class _MyHomePageState extends State<MyHomePage> {
                 } catch (e) {
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to open event: $e')),
+                    SnackBar(content: Text('Failed to show event: $e')),
                   );
                 }
               },
-              child: const Text('Open in Calendar'),
+              child: const Text('Show in Modal'),
             ),
-            if (Platform.isIOS)
-              TextButton(
-                onPressed: () async {
-                  try {
-                    await DeviceCalendarPlugin.openEvent(
-                      fetchedEvent.instanceId,
-                      useModal: true, // Opens in modal on iOS
-                    );
-                  } on DeviceCalendarException catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Error: ${e.message}')),
-                    );
-                  } catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to open modal: $e')),
-                    );
-                  }
-                },
-                child: const Text('Open in Modal'),
-              ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Close'),
