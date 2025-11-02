@@ -1,7 +1,7 @@
 # device_calendar_plus
 
 A modern, maintained Flutter plugin for reading and writing device calendar events on **Android** and **iOS**.
-Modern replacement for the unmaintained [`device_calendar`](https://pub.dev/packages/device_calendar) plugin — rebuilt for 2025 Flutter standards, working towards feature parity with a cleaner API.
+Modern replacement for the unmaintained [`device_calendar`](https://pub.dev/packages/device_calendar) plugin — rebuilt for 2025 Flutter standards, working towards feature parity with a cleaner API, and no timezone package dependency.
 
 [![pub package](https://img.shields.io/pub/v/device_calendar_plus.svg)](https://pub.dev/packages/device_calendar_plus)
 [![platforms](https://img.shields.io/badge/platforms-android%20%7C%20ios-blue.svg)](#)
