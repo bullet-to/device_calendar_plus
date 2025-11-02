@@ -298,6 +298,175 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<void> _showEventDetails(Event event) async {
+    try {
+      // Fetch the specific event instance
+      // If the event is recurring, pass the startDate as occurrenceDate
+      // to get this specific instance. Otherwise, just use eventId.
+      final fetchedEvent = await DeviceCalendarPlugin.getEvent(
+        event.eventId,
+        occurrenceDate: event.isRecurring ? event.startDate : null,
+      );
+
+      if (fetchedEvent == null) {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Error'),
+            content: const Text('Event not found'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+
+      final calendar = _calendars.firstWhere(
+        (c) => c.id == fetchedEvent.calendarId,
+        orElse: () => _calendars.first,
+      );
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(fetchedEvent.title),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDetailRow(
+                  Icons.calendar_today,
+                  'Calendar',
+                  calendar.name,
+                ),
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  Icons.access_time,
+                  'Time',
+                  fetchedEvent.isAllDay
+                      ? 'All Day'
+                      : '${_formatEventDate(fetchedEvent.startDate)} • ${_formatEventTime(fetchedEvent)}',
+                ),
+                if (fetchedEvent.location != null) ...[
+                  const SizedBox(height: 12),
+                  _buildDetailRow(
+                    Icons.location_on,
+                    'Location',
+                    fetchedEvent.location!,
+                  ),
+                ],
+                if (fetchedEvent.description != null) ...[
+                  const SizedBox(height: 12),
+                  _buildDetailRow(
+                    Icons.notes,
+                    'Description',
+                    fetchedEvent.description!,
+                  ),
+                ],
+                if (fetchedEvent.timeZone != null) ...[
+                  const SizedBox(height: 12),
+                  _buildDetailRow(
+                    Icons.public,
+                    'Timezone',
+                    fetchedEvent.timeZone!,
+                  ),
+                ],
+                if (fetchedEvent.isRecurring) ...[
+                  const SizedBox(height: 12),
+                  _buildDetailRow(
+                    Icons.repeat,
+                    'Recurring',
+                    'Yes',
+                  ),
+                ],
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  Icons.info_outline,
+                  'Status',
+                  '${fetchedEvent.status.name} • ${fetchedEvent.availability.name}',
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } on DeviceCalendarException catch (e) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Calendar Error'),
+          content: Text(e.message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error'),
+          content: Text('Failed to load event details: $e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: Colors.grey[600]),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   String _formatEventTime(Event event) {
     if (event.isAllDay) {
       return 'All Day';
@@ -578,6 +747,7 @@ class _MyHomePageState extends State<MyHomePage> {
                               final color = _parseColor(calendar.colorHex);
 
                               return ListTile(
+                                onTap: () => _showEventDetails(event),
                                 leading: Container(
                                   width: 4,
                                   decoration: BoxDecoration(

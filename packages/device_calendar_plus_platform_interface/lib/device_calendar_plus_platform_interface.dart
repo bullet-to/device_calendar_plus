@@ -62,4 +62,18 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     DateTime endDate,
     List<String>? calendarIds,
   );
+
+  /// Retrieves a single event by ID.
+  ///
+  /// If [occurrenceDate] is provided, fetches events within ±24 hours
+  /// of that date. The Dart layer will filter to the specific instance.
+  ///
+  /// If [occurrenceDate] is null, fetches the master event definition
+  /// (for recurring events, this is the original event with recurrence rules).
+  ///
+  /// Returns event data as a map, or null if not found.
+  Future<Map<String, dynamic>?> getEvent(
+    String eventId,
+    DateTime? occurrenceDate,
+  );
 }

@@ -38,6 +38,10 @@ class Event {
   /// Null for all-day events (floating dates).
   final String? timeZone;
 
+  /// Whether this is a recurring event.
+  /// True for recurring events, false for one-time events.
+  final bool isRecurring;
+
   Event({
     required this.eventId,
     required this.calendarId,
@@ -50,6 +54,7 @@ class Event {
     required this.availability,
     required this.status,
     this.timeZone,
+    required this.isRecurring,
   });
 
   /// Creates an Event from a map returned by the platform.
@@ -66,6 +71,7 @@ class Event {
       availability: EventAvailability.fromName(map['availability'] as String),
       status: EventStatus.fromName(map['status'] as String),
       timeZone: map['timeZone'] as String?,
+      isRecurring: map['isRecurring'] as bool? ?? false,
     );
   }
 
@@ -80,6 +86,7 @@ class Event {
       'isAllDay': isAllDay,
       'availability': availability.name,
       'status': status.name,
+      'isRecurring': isRecurring,
     };
 
     if (description != null) map['description'] = description;
@@ -109,7 +116,9 @@ class Event {
         other.endDate == endDate &&
         other.isAllDay == isAllDay &&
         other.availability == availability &&
-        other.status == status;
+        other.status == status &&
+        other.timeZone == timeZone &&
+        other.isRecurring == isRecurring;
   }
 
   @override
@@ -125,6 +134,8 @@ class Event {
       isAllDay,
       availability,
       status,
+      timeZone,
+      isRecurring,
     );
   }
 }

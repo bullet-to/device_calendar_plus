@@ -34,6 +34,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "requestPermissions" -> handleRequestPermissions(result)
             "listCalendars" -> handleListCalendars(result)
             "retrieveEvents" -> handleRetrieveEvents(call, result)
+            "getEvent" -> handleGetEvent(call, result)
             else -> result.notImplemented()
         }
     }
@@ -101,6 +102,44 @@ class DeviceCalendarPlusAndroidPlugin :
         val serviceResult = service.retrieveEvents(startDate, endDate, calendarIds)
         serviceResult.fold(
             onSuccess = { events -> result.success(events) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+    
+    private fun handleGetEvent(call: MethodCall, result: Result) {
+        val service = eventsService ?: run {
+            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
+            return
+        }
+        
+        // Parse arguments
+        val eventId = call.argument<String>("eventId")
+        val occurrenceDateMillis = call.argument<Long>("occurrenceDate")
+        
+        if (eventId == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing or invalid eventId",
+                null
+            )
+            return
+        }
+        
+        val occurrenceDate = if (occurrenceDateMillis != null) {
+            java.util.Date(occurrenceDateMillis)
+        } else {
+            null
+        }
+        
+        val serviceResult = service.getEvent(eventId, occurrenceDate)
+        serviceResult.fold(
+            onSuccess = { event -> result.success(event) },
             onFailure = { error ->
                 if (error is CalendarException) {
                     result.error(error.code, error.message, null)

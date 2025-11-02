@@ -48,4 +48,20 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     return result?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ??
         [];
   }
+
+  @override
+  Future<Map<String, dynamic>?> getEvent(
+    String eventId,
+    DateTime? occurrenceDate,
+  ) async {
+    final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'getEvent',
+      <String, dynamic>{
+        'eventId': eventId,
+        if (occurrenceDate != null)
+          'occurrenceDate': occurrenceDate.millisecondsSinceEpoch,
+      },
+    );
+    return result != null ? Map<String, dynamic>.from(result) : null;
+  }
 }

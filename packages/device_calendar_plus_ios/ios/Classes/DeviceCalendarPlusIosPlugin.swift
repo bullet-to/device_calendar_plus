@@ -24,6 +24,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin {
       handleListCalendars(result: result)
     case "retrieveEvents":
       handleRetrieveEvents(call: call, result: result)
+    case "getEvent":
+      handleGetEvent(call: call, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -105,6 +107,47 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin {
         switch serviceResult {
         case .success(let events):
           result(events)
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+  
+  private func handleGetEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any] else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Invalid arguments for getEvent",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse event ID
+    guard let eventId = args["eventId"] as? String else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Missing or invalid eventId",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse occurrence date (optional)
+    var occurrenceDate: Date?
+    if let occurrenceDateMillis = args["occurrenceDate"] as? Int64 {
+      occurrenceDate = Date(timeIntervalSince1970: TimeInterval(occurrenceDateMillis) / 1000.0)
+    }
+    
+    eventsService.getEvent(
+      eventId: eventId,
+      occurrenceDate: occurrenceDate
+    ) { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success(let event):
+          result(event)
         case .failure(let error):
           result(FlutterError(code: error.code, message: error.message, details: nil))
         }

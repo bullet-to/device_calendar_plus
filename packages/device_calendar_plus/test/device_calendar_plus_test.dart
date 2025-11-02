@@ -10,6 +10,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   int? _permissionStatusCode = 4; // CalendarPermissionStatus.notDetermined
   List<Map<String, dynamic>> _calendars = [];
   List<Map<String, dynamic>> _events = [];
+  Map<String, dynamic>? _event;
   PlatformException? _exceptionToThrow;
 
   void setPlatformVersion(String? version) {
@@ -26,6 +27,10 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   void setEvents(List<Map<String, dynamic>> events) {
     _events = events;
+  }
+
+  void setEvent(Map<String, dynamic>? event) {
+    _event = event;
   }
 
   void throwException(PlatformException exception) {
@@ -65,6 +70,17 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       throw _exceptionToThrow!;
     }
     return _events;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getEvent(
+    String eventId,
+    DateTime? occurrenceDate,
+  ) async {
+    if (_exceptionToThrow != null) {
+      throw _exceptionToThrow!;
+    }
+    return _event;
   }
 }
 
@@ -322,6 +338,182 @@ void main() {
             DateTime.now(),
             DateTime.now().add(Duration(days: 7)),
           ),
+          throwsA(
+            isA<DeviceCalendarException>().having(
+              (e) => e.errorCode,
+              'errorCode',
+              DeviceCalendarError.permissionDenied,
+            ),
+          ),
+        );
+      });
+    });
+
+    group('getEvent', () {
+      test('returns event when found without occurrence date', () async {
+        final now = DateTime.now();
+
+        mockPlatform.setEvent({
+          'eventId': 'event1',
+          'calendarId': 'cal1',
+          'title': 'Team Meeting',
+          'description': 'Weekly sync',
+          'startDate': now.millisecondsSinceEpoch,
+          'endDate': now.add(Duration(hours: 1)).millisecondsSinceEpoch,
+          'isAllDay': false,
+          'availability': 'busy',
+          'status': 'confirmed',
+        });
+
+        final event = await DeviceCalendarPlugin.getEvent('event1');
+
+        expect(event, isNotNull);
+        expect(event!.eventId, 'event1');
+        expect(event.title, 'Team Meeting');
+        expect(event.description, 'Weekly sync');
+      });
+
+      test('returns null when event not found without occurrence date',
+          () async {
+        mockPlatform.setEvent(null);
+
+        final event = await DeviceCalendarPlugin.getEvent('nonexistent');
+
+        expect(event, isNull);
+      });
+
+      test('finds event by occurrence date in ±24 hour window', () async {
+        final occurrenceDate = DateTime(2025, 11, 15, 14, 0);
+        final eventStart = DateTime(2025, 11, 15, 14, 0);
+
+        mockPlatform.setEvents([
+          {
+            'eventId': 'recurring1',
+            'calendarId': 'cal1',
+            'title': 'Daily Standup',
+            'startDate': eventStart.millisecondsSinceEpoch,
+            'endDate':
+                eventStart.add(Duration(minutes: 30)).millisecondsSinceEpoch,
+            'isAllDay': false,
+            'availability': 'busy',
+            'status': 'confirmed',
+          },
+        ]);
+
+        final event = await DeviceCalendarPlugin.getEvent(
+          'recurring1',
+          occurrenceDate: occurrenceDate,
+        );
+
+        expect(event, isNotNull);
+        expect(event!.eventId, 'recurring1');
+        expect(event.title, 'Daily Standup');
+        expect(event.startDate, eventStart);
+      });
+
+      test('finds closest matching event when multiple instances exist',
+          () async {
+        final occurrenceDate = DateTime(2025, 11, 15, 14, 0);
+        final closeEvent = DateTime(2025, 11, 15, 14, 5); // 5 minutes after
+        final farEvent = DateTime(2025, 11, 15, 10, 0); // 4 hours before
+
+        mockPlatform.setEvents([
+          {
+            'eventId': 'recurring1',
+            'calendarId': 'cal1',
+            'title': 'Event Instance 1',
+            'startDate': farEvent.millisecondsSinceEpoch,
+            'endDate': farEvent.add(Duration(hours: 1)).millisecondsSinceEpoch,
+            'isAllDay': false,
+            'availability': 'busy',
+            'status': 'confirmed',
+          },
+          {
+            'eventId': 'recurring1',
+            'calendarId': 'cal1',
+            'title': 'Event Instance 2',
+            'startDate': closeEvent.millisecondsSinceEpoch,
+            'endDate':
+                closeEvent.add(Duration(hours: 1)).millisecondsSinceEpoch,
+            'isAllDay': false,
+            'availability': 'busy',
+            'status': 'confirmed',
+          },
+        ]);
+
+        final event = await DeviceCalendarPlugin.getEvent(
+          'recurring1',
+          occurrenceDate: occurrenceDate,
+        );
+
+        expect(event, isNotNull);
+        expect(event!.title, 'Event Instance 2');
+        expect(event.startDate, closeEvent);
+      });
+
+      test('returns null when no matching event in occurrence date window',
+          () async {
+        final occurrenceDate = DateTime(2025, 11, 15, 14, 0);
+
+        mockPlatform.setEvents([]);
+
+        final event = await DeviceCalendarPlugin.getEvent(
+          'recurring1',
+          occurrenceDate: occurrenceDate,
+        );
+
+        expect(event, isNull);
+      });
+
+      test('filters by eventId when occurrence date provided', () async {
+        final occurrenceDate = DateTime(2025, 11, 15, 14, 0);
+        final eventStart = DateTime(2025, 11, 15, 14, 0);
+
+        mockPlatform.setEvents([
+          {
+            'eventId': 'event1',
+            'calendarId': 'cal1',
+            'title': 'Wrong Event',
+            'startDate': eventStart.millisecondsSinceEpoch,
+            'endDate':
+                eventStart.add(Duration(hours: 1)).millisecondsSinceEpoch,
+            'isAllDay': false,
+            'availability': 'busy',
+            'status': 'confirmed',
+          },
+          {
+            'eventId': 'event2',
+            'calendarId': 'cal1',
+            'title': 'Right Event',
+            'startDate': eventStart.millisecondsSinceEpoch,
+            'endDate':
+                eventStart.add(Duration(hours: 1)).millisecondsSinceEpoch,
+            'isAllDay': false,
+            'availability': 'busy',
+            'status': 'confirmed',
+          },
+        ]);
+
+        final event = await DeviceCalendarPlugin.getEvent(
+          'event2',
+          occurrenceDate: occurrenceDate,
+        );
+
+        expect(event, isNotNull);
+        expect(event!.eventId, 'event2');
+        expect(event.title, 'Right Event');
+      });
+
+      test('throws DeviceCalendarException when permission denied', () async {
+        mockPlatform.throwException(
+          PlatformException(
+            code: 'PERMISSION_DENIED',
+            message: 'Calendar permission denied',
+          ),
+        );
+
+        expect(
+          () => DeviceCalendarPlugin.getEvent('event1'),
           throwsA(
             isA<DeviceCalendarException>().having(
               (e) => e.errorCode,

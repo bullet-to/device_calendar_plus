@@ -21,6 +21,13 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     List<String>? calendarIds,
   ) async =>
       [];
+
+  @override
+  Future<Map<String, dynamic>?> getEvent(
+    String eventId,
+    DateTime? occurrenceDate,
+  ) async =>
+      null;
 }
 
 void main() {
@@ -58,5 +65,15 @@ void main() {
       null,
     );
     expect(result, []);
+  });
+
+  test('getEvent returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    final result = await DeviceCalendarPlusPlatform.instance.getEvent(
+      'event-123',
+      null,
+    );
+    expect(result, null);
   });
 }

@@ -155,4 +155,90 @@ class DeviceCalendarPlugin {
       rethrow;
     }
   }
+
+  /// Retrieves a single event by ID.
+  ///
+  /// [eventId] is required and identifies the event to retrieve.
+  ///
+  /// [occurrenceDate] is optional and used to identify a specific instance
+  /// of a recurring event. If provided, this method will:
+  /// - Query events within ±24 hours of the specified date
+  /// - Find the instance whose start date is closest to [occurrenceDate]
+  /// - Return that specific instance
+  ///
+  /// If [occurrenceDate] is null:
+  /// - For non-recurring events: Returns the event
+  /// - For recurring events: Returns the master event definition with the
+  ///   original start/end dates and recurrence rule information
+  ///
+  /// Returns null if no matching event is found.
+  ///
+  /// Example:
+  /// ```dart
+  /// // Get a non-recurring event
+  /// final event = await DeviceCalendarPlugin.getEvent('event-123');
+  ///
+  /// // Get a specific instance of a recurring event
+  /// final instance = await DeviceCalendarPlugin.getEvent(
+  ///   'recurring-event-456',
+  ///   occurrenceDate: DateTime(2025, 11, 15),
+  /// );
+  /// ```
+  static Future<Event?> getEvent(
+    String eventId, {
+    DateTime? occurrenceDate,
+  }) async {
+    try {
+      if (occurrenceDate != null) {
+        // Query ±24 hours around the occurrence date
+        final startDate = occurrenceDate.subtract(const Duration(hours: 24));
+        final endDate = occurrenceDate.add(const Duration(hours: 24));
+
+        // Use existing retrieveEvents to get all events in that range
+        final events = await retrieveEvents(startDate, endDate);
+
+        // Filter by eventId
+        final matchingEvents =
+            events.where((event) => event.eventId == eventId).toList();
+
+        if (matchingEvents.isEmpty) {
+          return null;
+        }
+
+        // Find the event with start date closest to occurrenceDate
+        Event? closestEvent;
+        Duration? closestDifference;
+
+        for (final event in matchingEvents) {
+          final difference = event.startDate.difference(occurrenceDate).abs();
+          if (closestDifference == null || difference < closestDifference) {
+            closestEvent = event;
+            closestDifference = difference;
+          }
+        }
+
+        return closestEvent;
+      } else {
+        // Get master event directly from platform
+        final Map<String, dynamic>? rawEvent =
+            await DeviceCalendarPlusPlatform.instance.getEvent(
+          eventId,
+          null,
+        );
+
+        if (rawEvent == null) {
+          return null;
+        }
+
+        return Event.fromMap(rawEvent);
+      }
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
 }

@@ -34,7 +34,8 @@ class EventsService(private val activity: Activity) {
             CalendarContract.Instances.ALL_DAY,
             CalendarContract.Instances.AVAILABILITY,
             CalendarContract.Instances.STATUS,
-            CalendarContract.Instances.EVENT_TIMEZONE
+            CalendarContract.Instances.EVENT_TIMEZONE,
+            CalendarContract.Instances.RRULE
         )
         
         // Build selection clause for calendar filtering
@@ -55,69 +56,22 @@ class EventsService(private val activity: Activity) {
                 selectionArgs,
                 "${CalendarContract.Instances.BEGIN} ASC"
             )?.use { cursor ->
-                val eventIdIndex = cursor.getColumnIndex(CalendarContract.Instances.EVENT_ID)
-                val calendarIdIndex = cursor.getColumnIndex(CalendarContract.Instances.CALENDAR_ID)
-                val titleIndex = cursor.getColumnIndex(CalendarContract.Instances.TITLE)
-                val descriptionIndex = cursor.getColumnIndex(CalendarContract.Instances.DESCRIPTION)
-                val locationIndex = cursor.getColumnIndex(CalendarContract.Instances.EVENT_LOCATION)
-                val beginIndex = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)
-                val endIndex = cursor.getColumnIndex(CalendarContract.Instances.END)
-                val allDayIndex = cursor.getColumnIndex(CalendarContract.Instances.ALL_DAY)
-                val availabilityIndex = cursor.getColumnIndex(CalendarContract.Instances.AVAILABILITY)
-                val statusIndex = cursor.getColumnIndex(CalendarContract.Instances.STATUS)
-                val timeZoneIndex = cursor.getColumnIndex(CalendarContract.Instances.EVENT_TIMEZONE)
-                
                 while (cursor.moveToNext()) {
-                    val eventId = cursor.getString(eventIdIndex)
-                    val calendarId = cursor.getString(calendarIdIndex)
-                    val title = if (!cursor.isNull(titleIndex)) cursor.getString(titleIndex) else ""
-                    val description = if (!cursor.isNull(descriptionIndex)) cursor.getString(descriptionIndex) else null
-                    val location = if (!cursor.isNull(locationIndex)) cursor.getString(locationIndex) else null
-                    var begin = cursor.getLong(beginIndex)
-                    var end = cursor.getLong(endIndex)
-                    val allDay = if (!cursor.isNull(allDayIndex)) cursor.getInt(allDayIndex) == 1 else false
-                    val availability = if (!cursor.isNull(availabilityIndex)) cursor.getInt(availabilityIndex) else 0
-                    val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else 0
-                    val timeZone = if (!cursor.isNull(timeZoneIndex)) cursor.getString(timeZoneIndex) else null
-                    
-                    // For all-day events, Android stores times in UTC but we want local floating dates
-                    // Convert UTC milliseconds to local date at midnight
-                    if (allDay) {
-                        val calendar = java.util.Calendar.getInstance()
-                        calendar.timeInMillis = begin
-                        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
-                        calendar.set(java.util.Calendar.MINUTE, 0)
-                        calendar.set(java.util.Calendar.SECOND, 0)
-                        calendar.set(java.util.Calendar.MILLISECOND, 0)
-                        begin = calendar.timeInMillis
-                        
-                        calendar.timeInMillis = end
-                        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
-                        calendar.set(java.util.Calendar.MINUTE, 0)
-                        calendar.set(java.util.Calendar.SECOND, 0)
-                        calendar.set(java.util.Calendar.MILLISECOND, 0)
-                        end = calendar.timeInMillis
-                    }
-                    
-                    val eventMap = mutableMapOf<String, Any>(
-                        "eventId" to eventId,
-                        "calendarId" to calendarId,
-                        "title" to title,
-                        "startDate" to begin,
-                        "endDate" to end,
-                        "isAllDay" to allDay,
-                        "availability" to availabilityToString(availability),
-                        "status" to statusToString(status)
+                    val eventMap = buildEventMapFromCursor(
+                        cursor,
+                        CalendarContract.Instances.EVENT_ID,
+                        CalendarContract.Instances.CALENDAR_ID,
+                        CalendarContract.Instances.TITLE,
+                        CalendarContract.Instances.DESCRIPTION,
+                        CalendarContract.Instances.EVENT_LOCATION,
+                        CalendarContract.Instances.BEGIN,
+                        CalendarContract.Instances.END,
+                        CalendarContract.Instances.ALL_DAY,
+                        CalendarContract.Instances.AVAILABILITY,
+                        CalendarContract.Instances.STATUS,
+                        CalendarContract.Instances.EVENT_TIMEZONE,
+                        CalendarContract.Instances.RRULE
                     )
-                    
-                    description?.let { eventMap["description"] = it }
-                    location?.let { eventMap["location"] = it }
-                    
-                    // Add timezone for timed events only (null for all-day events)
-                    if (!allDay && timeZone != null) {
-                        eventMap["timeZone"] = timeZone
-                    }
-                    
                     events.add(eventMap)
                 }
             }
@@ -155,6 +109,179 @@ class EventsService(private val activity: Activity) {
             CalendarContract.Events.STATUS_TENTATIVE -> "tentative"
             CalendarContract.Events.STATUS_CANCELED -> "canceled"
             else -> "none"
+        }
+    }
+    
+    private fun buildEventMapFromCursor(
+        cursor: android.database.Cursor,
+        eventIdColumn: String,
+        calendarIdColumn: String,
+        titleColumn: String,
+        descriptionColumn: String,
+        locationColumn: String,
+        startColumn: String,
+        endColumn: String,
+        allDayColumn: String,
+        availabilityColumn: String,
+        statusColumn: String,
+        timeZoneColumn: String,
+        recurrenceRuleColumn: String
+    ): Map<String, Any> {
+        val eventIdIndex = cursor.getColumnIndex(eventIdColumn)
+        val calendarIdIndex = cursor.getColumnIndex(calendarIdColumn)
+        val titleIndex = cursor.getColumnIndex(titleColumn)
+        val descriptionIndex = cursor.getColumnIndex(descriptionColumn)
+        val locationIndex = cursor.getColumnIndex(locationColumn)
+        val startIndex = cursor.getColumnIndex(startColumn)
+        val endIndex = cursor.getColumnIndex(endColumn)
+        val allDayIndex = cursor.getColumnIndex(allDayColumn)
+        val availabilityIndex = cursor.getColumnIndex(availabilityColumn)
+        val statusIndex = cursor.getColumnIndex(statusColumn)
+        val timeZoneIndex = cursor.getColumnIndex(timeZoneColumn)
+        val recurrenceRuleIndex = cursor.getColumnIndex(recurrenceRuleColumn)
+        
+        val eventId = cursor.getString(eventIdIndex)
+        val calendarId = cursor.getString(calendarIdIndex)
+        val title = if (!cursor.isNull(titleIndex)) cursor.getString(titleIndex) else ""
+        val description = if (!cursor.isNull(descriptionIndex)) cursor.getString(descriptionIndex) else null
+        val location = if (!cursor.isNull(locationIndex)) cursor.getString(locationIndex) else null
+        var start = cursor.getLong(startIndex)
+        var end = if (!cursor.isNull(endIndex)) cursor.getLong(endIndex) else start
+        val allDay = if (!cursor.isNull(allDayIndex)) cursor.getInt(allDayIndex) == 1 else false
+        val availability = if (!cursor.isNull(availabilityIndex)) cursor.getInt(availabilityIndex) else 0
+        val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else 0
+        val timeZone = if (!cursor.isNull(timeZoneIndex)) cursor.getString(timeZoneIndex) else null
+        val recurrenceRule = if (!cursor.isNull(recurrenceRuleIndex)) cursor.getString(recurrenceRuleIndex) else null
+        
+        // For all-day events, Android stores times in UTC but we want local floating dates
+        if (allDay) {
+            val calendar = java.util.Calendar.getInstance()
+            calendar.timeInMillis = start
+            calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            calendar.set(java.util.Calendar.MINUTE, 0)
+            calendar.set(java.util.Calendar.SECOND, 0)
+            calendar.set(java.util.Calendar.MILLISECOND, 0)
+            start = calendar.timeInMillis
+            
+            calendar.timeInMillis = end
+            calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            calendar.set(java.util.Calendar.MINUTE, 0)
+            calendar.set(java.util.Calendar.SECOND, 0)
+            calendar.set(java.util.Calendar.MILLISECOND, 0)
+            end = calendar.timeInMillis
+        }
+        
+        val eventMap = mutableMapOf<String, Any>(
+            "eventId" to eventId,
+            "calendarId" to calendarId,
+            "title" to title,
+            "startDate" to start,
+            "endDate" to end,
+            "isAllDay" to allDay,
+            "availability" to availabilityToString(availability),
+            "status" to statusToString(status)
+        )
+        
+        description?.let { eventMap["description"] = it }
+        location?.let { eventMap["location"] = it }
+        
+        // Add timezone for timed events only
+        if (!allDay && timeZone != null) {
+            eventMap["timeZone"] = timeZone
+        }
+        
+        // Set isRecurring flag
+        eventMap["isRecurring"] = (recurrenceRule != null)
+        
+        return eventMap
+    }
+    
+    fun getEvent(
+        eventId: String,
+        occurrenceDate: Date?
+    ): Result<Map<String, Any>?> {
+        if (occurrenceDate != null) {
+            // Query ±24 hours around the occurrence date
+            val occurrenceMillis = occurrenceDate.time
+            val startMillis = occurrenceMillis - (24 * 60 * 60 * 1000)
+            val endMillis = occurrenceMillis + (24 * 60 * 60 * 1000)
+            
+            val startDate = Date(startMillis)
+            val endDate = Date(endMillis)
+            
+            // Use existing retrieveEvents to get events in range
+            val eventsResult = retrieveEvents(startDate, endDate, null)
+            
+            return eventsResult.mapCatching { events ->
+                // Filter by eventId and return first match
+                events.firstOrNull { it["eventId"] == eventId }
+            }
+        } else {
+            // Get master event directly from Events table
+            val projection = arrayOf(
+                CalendarContract.Events._ID,
+                CalendarContract.Events.CALENDAR_ID,
+                CalendarContract.Events.TITLE,
+                CalendarContract.Events.DESCRIPTION,
+                CalendarContract.Events.EVENT_LOCATION,
+                CalendarContract.Events.DTSTART,
+                CalendarContract.Events.DTEND,
+                CalendarContract.Events.ALL_DAY,
+                CalendarContract.Events.AVAILABILITY,
+                CalendarContract.Events.STATUS,
+                CalendarContract.Events.EVENT_TIMEZONE,
+                CalendarContract.Events.RRULE
+            )
+            
+            val selection = "${CalendarContract.Events._ID} = ?"
+            val selectionArgs = arrayOf(eventId)
+            
+            try {
+                activity.contentResolver.query(
+                    CalendarContract.Events.CONTENT_URI,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val eventMap = buildEventMapFromCursor(
+                            cursor,
+                            CalendarContract.Events._ID,
+                            CalendarContract.Events.CALENDAR_ID,
+                            CalendarContract.Events.TITLE,
+                            CalendarContract.Events.DESCRIPTION,
+                            CalendarContract.Events.EVENT_LOCATION,
+                            CalendarContract.Events.DTSTART,
+                            CalendarContract.Events.DTEND,
+                            CalendarContract.Events.ALL_DAY,
+                            CalendarContract.Events.AVAILABILITY,
+                            CalendarContract.Events.STATUS,
+                            CalendarContract.Events.EVENT_TIMEZONE,
+                            CalendarContract.Events.RRULE
+                        )
+                        return Result.success(eventMap)
+                    } else {
+                        return Result.success(null)
+                    }
+                }
+                
+                return Result.success(null)
+            } catch (e: SecurityException) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.PERMISSION_DENIED,
+                        "Calendar permission denied: ${e.message}"
+                    )
+                )
+            } catch (e: Exception) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.UNKNOWN_ERROR,
+                        "Failed to query event: ${e.message}"
+                    )
+                )
+            }
         }
     }
 }
