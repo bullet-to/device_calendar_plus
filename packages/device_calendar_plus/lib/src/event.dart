@@ -28,9 +28,14 @@ class Event {
   final String? location;
 
   /// Start date and time of the event.
+  ///
+  /// For all-day events, treat this as a floating date (timezone-independent).
   final DateTime startDate;
 
   /// End date and time of the event.
+  ///
+  /// For all-day events, treat this as a floating date (timezone-independent).
+  /// Uses half-open interval [start, end). (i.e. the event is up to, but not including, the end date.)
   final DateTime endDate;
 
   /// Whether this is an all-day event.
