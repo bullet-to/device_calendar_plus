@@ -9,6 +9,9 @@ enum DeviceCalendarError {
   /// Calendar permission was denied by the user.
   permissionDenied,
 
+  /// Invalid arguments were passed to a method.
+  invalidArguments,
+
   /// An unknown error occurred.
   unknown,
 }

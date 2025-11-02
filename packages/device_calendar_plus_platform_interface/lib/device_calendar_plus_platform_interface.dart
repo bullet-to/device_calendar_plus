@@ -52,4 +52,14 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// Returns a list of calendar data as maps. The main API layer
   /// converts these to [DeviceCalendar] objects.
   Future<List<Map<String, dynamic>>> listCalendars();
+
+  /// Retrieves events within the specified date range.
+  ///
+  /// Returns a list of event data as maps. The main API layer
+  /// converts these to [Event] objects.
+  Future<List<Map<String, dynamic>>> retrieveEvents(
+    DateTime startDate,
+    DateTime endDate,
+    List<String>? calendarIds,
+  );
 }

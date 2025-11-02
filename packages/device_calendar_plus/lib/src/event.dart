@@ -1,0 +1,130 @@
+import 'event_availability.dart';
+import 'event_status.dart';
+
+/// Represents a calendar event.
+class Event {
+  /// Unique identifier for this event.
+  /// For recurring events, all instances share the same eventId.
+  final String eventId;
+
+  /// ID of the calendar this event belongs to.
+  final String calendarId;
+
+  /// Title of the event.
+  final String title;
+
+  /// Description of the event.
+  final String? description;
+
+  /// Location of the event.
+  final String? location;
+
+  /// Start date and time of the event.
+  final DateTime startDate;
+
+  /// End date and time of the event.
+  final DateTime endDate;
+
+  /// Whether this is an all-day event.
+  final bool isAllDay;
+
+  /// Availability status of the event.
+  final EventAvailability availability;
+
+  /// Status of the event.
+  final EventStatus status;
+
+  /// Timezone identifier for the event (e.g., "America/New_York").
+  /// Null for all-day events (floating dates).
+  final String? timeZone;
+
+  Event({
+    required this.eventId,
+    required this.calendarId,
+    required this.title,
+    this.description,
+    this.location,
+    required this.startDate,
+    required this.endDate,
+    required this.isAllDay,
+    required this.availability,
+    required this.status,
+    this.timeZone,
+  });
+
+  /// Creates an Event from a map returned by the platform.
+  factory Event.fromMap(Map<String, dynamic> map) {
+    return Event(
+      eventId: map['eventId'] as String,
+      calendarId: map['calendarId'] as String,
+      title: map['title'] as String,
+      description: map['description'] as String?,
+      location: map['location'] as String?,
+      startDate: DateTime.fromMillisecondsSinceEpoch(map['startDate'] as int),
+      endDate: DateTime.fromMillisecondsSinceEpoch(map['endDate'] as int),
+      isAllDay: map['isAllDay'] as bool,
+      availability: EventAvailability.fromName(map['availability'] as String),
+      status: EventStatus.fromName(map['status'] as String),
+      timeZone: map['timeZone'] as String?,
+    );
+  }
+
+  /// Converts this Event to a map for platform communication.
+  Map<String, dynamic> toMap() {
+    final map = <String, dynamic>{
+      'eventId': eventId,
+      'calendarId': calendarId,
+      'title': title,
+      'startDate': startDate.millisecondsSinceEpoch,
+      'endDate': endDate.millisecondsSinceEpoch,
+      'isAllDay': isAllDay,
+      'availability': availability.name,
+      'status': status.name,
+    };
+
+    if (description != null) map['description'] = description;
+    if (location != null) map['location'] = location;
+    if (timeZone != null) map['timeZone'] = timeZone;
+
+    return map;
+  }
+
+  @override
+  String toString() {
+    return 'Event(eventId: $eventId, calendarId: $calendarId, title: $title, '
+        'startDate: $startDate, endDate: $endDate, isAllDay: $isAllDay)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is Event &&
+        other.eventId == eventId &&
+        other.calendarId == calendarId &&
+        other.title == title &&
+        other.description == description &&
+        other.location == location &&
+        other.startDate == startDate &&
+        other.endDate == endDate &&
+        other.isAllDay == isAllDay &&
+        other.availability == availability &&
+        other.status == status;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(
+      eventId,
+      calendarId,
+      title,
+      description,
+      location,
+      startDate,
+      endDate,
+      isAllDay,
+      availability,
+      status,
+    );
+  }
+}

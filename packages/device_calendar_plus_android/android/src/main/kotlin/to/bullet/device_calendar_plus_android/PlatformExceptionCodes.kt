@@ -22,6 +22,13 @@ object PlatformExceptionCodes {
     const val PERMISSION_DENIED = "PERMISSION_DENIED"
     
     /**
+     * Invalid arguments passed to a method.
+     * 
+     * Corresponds to DeviceCalendarError.invalidArguments in Dart.
+     */
+    const val INVALID_ARGUMENTS = "INVALID_ARGUMENTS"
+    
+    /**
      * An unknown error occurred.
      * 
      * Corresponds to DeviceCalendarError.unknown in Dart.

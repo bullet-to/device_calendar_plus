@@ -3,11 +3,15 @@ import 'package:flutter/services.dart';
 
 import 'src/calendar.dart';
 import 'src/calendar_permission_status.dart';
+import 'src/event.dart';
 import 'src/platform_exception_converter.dart';
 
 export 'src/calendar.dart';
 export 'src/calendar_permission_status.dart';
 export 'src/device_calendar_error.dart';
+export 'src/event.dart';
+export 'src/event_availability.dart';
+export 'src/event_status.dart';
 
 /// Main API for accessing device calendar functionality.
 class DeviceCalendarPlugin {
@@ -76,6 +80,72 @@ class DeviceCalendarPlugin {
       final List<Map<String, dynamic>> rawCalendars =
           await DeviceCalendarPlusPlatform.instance.listCalendars();
       return rawCalendars.map((map) => Calendar.fromMap(map)).toList();
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  /// Retrieves events within the specified date range.
+  ///
+  /// [startDate] and [endDate] are required parameters that define the time
+  /// window for fetching events.
+  ///
+  /// **Important iOS Limitation**: iOS automatically limits event queries to a
+  /// maximum span of 4 years. If you specify a range exceeding 4 years, iOS
+  /// will truncate it to the first 4 years automatically.
+  ///
+  /// [calendarIds] is an optional parameter to filter events to specific
+  /// calendars. If null or empty, events from all calendars are returned.
+  ///
+  /// Recurring events are automatically expanded into individual instances
+  /// within the date range. Each instance has:
+  /// - The same [Event.eventId]
+  /// - Different [Event.startDate] and [Event.endDate]
+  ///
+  /// This combination uniquely identifies each occurrence of a recurring event.
+  ///
+  /// Returns a list of [Event] objects sorted by start date.
+  ///
+  /// Example:
+  /// ```dart
+  /// final now = DateTime.now();
+  /// final nextMonth = now.add(Duration(days: 30));
+  ///
+  /// // Get all events in the next month
+  /// final events = await DeviceCalendarPlugin.retrieveEvents(
+  ///   now,
+  ///   nextMonth,
+  /// );
+  ///
+  /// // Get events from specific calendars only
+  /// final workEvents = await DeviceCalendarPlugin.retrieveEvents(
+  ///   now,
+  ///   nextMonth,
+  ///   calendarIds: ['work-calendar-id', 'project-calendar-id'],
+  /// );
+  ///
+  /// for (final event in events) {
+  ///   print('${event.title} at ${event.startDate}');
+  /// }
+  /// ```
+  static Future<List<Event>> retrieveEvents(
+    DateTime startDate,
+    DateTime endDate, {
+    List<String>? calendarIds,
+  }) async {
+    try {
+      final List<Map<String, dynamic>> rawEvents =
+          await DeviceCalendarPlusPlatform.instance.retrieveEvents(
+        startDate,
+        endDate,
+        calendarIds,
+      );
+      return rawEvents.map((map) => Event.fromMap(map)).toList();
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);

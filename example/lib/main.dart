@@ -58,6 +58,9 @@ class _MyHomePageState extends State<MyHomePage> {
   String _platformVersion = 'Unknown';
   List<Calendar> _calendars = [];
   bool _isLoadingCalendars = false;
+  final Set<String> _selectedCalendarIds = {};
+  List<Event> _events = [];
+  bool _isLoadingEvents = false;
 
   @override
   void initState() {
@@ -228,6 +231,114 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<void> _loadEvents() async {
+    setState(() {
+      _isLoadingEvents = true;
+    });
+
+    try {
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month - 3, now.day);
+      final endDate = DateTime(now.year, now.month + 3, now.day);
+
+      final events = await DeviceCalendarPlugin.retrieveEvents(
+        startDate,
+        endDate,
+        calendarIds:
+            _selectedCalendarIds.isEmpty ? null : _selectedCalendarIds.toList(),
+      );
+
+      print(
+          'Events: ${events.length >= 2 ? events.sublist(events.length - 2) : events}');
+
+      setState(() {
+        _events = events;
+        _isLoadingEvents = false;
+      });
+    } on DeviceCalendarException catch (e) {
+      setState(() {
+        _isLoadingEvents = false;
+      });
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Calendar Error'),
+          content: Text(e.message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _isLoadingEvents = false;
+      });
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error'),
+          content: Text('Failed to load events: $e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  String _formatEventTime(Event event) {
+    if (event.isAllDay) {
+      return 'All Day';
+    }
+    final startTime =
+        '${event.startDate.hour.toString().padLeft(2, '0')}:${event.startDate.minute.toString().padLeft(2, '0')}';
+    final endTime =
+        '${event.endDate.hour.toString().padLeft(2, '0')}:${event.endDate.minute.toString().padLeft(2, '0')}';
+    return '$startTime - $endTime';
+  }
+
+  String _formatEventDate(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final eventDay = DateTime(date.year, date.month, date.day);
+
+    if (eventDay == today) {
+      return 'Today';
+    } else if (eventDay == today.add(const Duration(days: 1))) {
+      return 'Tomorrow';
+    } else if (eventDay == today.subtract(const Duration(days: 1))) {
+      return 'Yesterday';
+    } else {
+      final months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec'
+      ];
+      return '${months[date.month - 1]} ${date.day}, ${date.year}';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // This method is rerun every time setState is called, for instance as done
@@ -324,6 +435,11 @@ class _MyHomePageState extends State<MyHomePage> {
                     ),
                     if (_calendars.isNotEmpty) ...[
                       const SizedBox(height: 16),
+                      Text(
+                        'Select calendars to fetch events:',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -332,16 +448,21 @@ class _MyHomePageState extends State<MyHomePage> {
                           final luminance = color.computeLuminance();
                           final textColor =
                               luminance > 0.5 ? Colors.black : Colors.white;
+                          final isSelected =
+                              _selectedCalendarIds.contains(calendar.id);
 
-                          return Chip(
-                            backgroundColor: color,
+                          return FilterChip(
+                            selected: isSelected,
+                            backgroundColor: color.withValues(alpha: 0.3),
+                            selectedColor: color,
+                            checkmarkColor: textColor,
                             label: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   calendar.name,
                                   style: TextStyle(
-                                    color: textColor,
+                                    color: isSelected ? textColor : null,
                                     fontWeight: calendar.isPrimary
                                         ? FontWeight.bold
                                         : FontWeight.normal,
@@ -352,7 +473,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                   Icon(
                                     Icons.star,
                                     size: 14,
-                                    color: textColor,
+                                    color: isSelected ? textColor : null,
                                   ),
                                 ],
                                 if (calendar.readOnly) ...[
@@ -360,32 +481,34 @@ class _MyHomePageState extends State<MyHomePage> {
                                   Icon(
                                     Icons.lock,
                                     size: 14,
-                                    color: textColor,
-                                  ),
-                                ],
-                                if (calendar.hidden) ...[
-                                  const SizedBox(width: 4),
-                                  Icon(
-                                    Icons.visibility_off,
-                                    size: 14,
-                                    color: textColor,
+                                    color: isSelected ? textColor : null,
                                   ),
                                 ],
                               ],
                             ),
                             avatar: calendar.accountName != null
                                 ? CircleAvatar(
-                                    backgroundColor:
-                                        color.withValues(alpha: 0.3),
+                                    backgroundColor: isSelected
+                                        ? color.withValues(alpha: 0.3)
+                                        : color.withValues(alpha: 0.2),
                                     child: Text(
                                       calendar.accountName![0].toUpperCase(),
                                       style: TextStyle(
-                                        color: textColor,
+                                        color: isSelected ? textColor : null,
                                         fontSize: 12,
                                       ),
                                     ),
                                   )
                                 : null,
+                            onSelected: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  _selectedCalendarIds.add(calendar.id);
+                                } else {
+                                  _selectedCalendarIds.remove(calendar.id);
+                                }
+                              });
+                            },
                           );
                         }).toList(),
                       ),
@@ -394,6 +517,161 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ),
             ),
+            if (_calendars.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Events',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          if (_events.isNotEmpty)
+                            Text(
+                              '${_events.length} found',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'From 3 months ago to 3 months ahead',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _isLoadingEvents ? null : _loadEvents,
+                        icon: _isLoadingEvents
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.event),
+                        label: Text(_isLoadingEvents
+                            ? 'Loading...'
+                            : _selectedCalendarIds.isEmpty
+                                ? 'Fetch Events (All calendars)'
+                                : 'Fetch Events (${_selectedCalendarIds.length} selected)'),
+                      ),
+                      if (_events.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          height: 400,
+                          child: ListView.separated(
+                            itemCount: _events.length,
+                            separatorBuilder: (context, index) =>
+                                const Divider(),
+                            itemBuilder: (context, index) {
+                              final event = _events[index];
+                              final calendar = _calendars.firstWhere(
+                                (c) => c.id == event.calendarId,
+                                orElse: () => _calendars.first,
+                              );
+                              final color = _parseColor(calendar.colorHex);
+
+                              return ListTile(
+                                leading: Container(
+                                  width: 4,
+                                  decoration: BoxDecoration(
+                                    color: color,
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
+                                title: Text(
+                                  event.title,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w500),
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${_formatEventDate(event.startDate)} • ${_formatEventTime(event)}',
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                    if (event.timeZone != null) ...[
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.access_time,
+                                              size: 12),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            event.timeZone!,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  fontStyle: FontStyle.italic,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                    if (event.location != null) ...[
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.location_on,
+                                              size: 12),
+                                          const SizedBox(width: 4),
+                                          Expanded(
+                                            child: Text(
+                                              event.location!,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      calendar.name,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: color,
+                                          ),
+                                    ),
+                                  ],
+                                ),
+                                trailing: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    if (event.isAllDay)
+                                      const Icon(Icons.all_inclusive, size: 16),
+                                    if (event.status == EventStatus.tentative)
+                                      const Icon(Icons.help_outline, size: 16),
+                                    if (event.status == EventStatus.canceled)
+                                      const Icon(Icons.cancel_outlined,
+                                          size: 16),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -9,6 +9,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   String? _platformVersion;
   int? _permissionStatusCode = 4; // CalendarPermissionStatus.notDetermined
   List<Map<String, dynamic>> _calendars = [];
+  List<Map<String, dynamic>> _events = [];
   PlatformException? _exceptionToThrow;
 
   void setPlatformVersion(String? version) {
@@ -21,6 +22,10 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   void setCalendars(List<Map<String, dynamic>> calendars) {
     _calendars = calendars;
+  }
+
+  void setEvents(List<Map<String, dynamic>> events) {
+    _events = events;
   }
 
   void throwException(PlatformException exception) {
@@ -48,6 +53,18 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       throw _exceptionToThrow!;
     }
     return _calendars;
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> retrieveEvents(
+    DateTime startDate,
+    DateTime endDate,
+    List<String>? calendarIds,
+  ) async {
+    if (_exceptionToThrow != null) {
+      throw _exceptionToThrow!;
+    }
+    return _events;
   }
 }
 
@@ -203,6 +220,116 @@ void main() {
         mockPlatform.setCalendars([]);
         final calendars = await DeviceCalendarPlugin.listCalendars();
         expect(calendars, isEmpty);
+      });
+    });
+
+    group('retrieveEvents', () {
+      test('returns list of Event objects', () async {
+        final now = DateTime.now();
+        final later = now.add(Duration(hours: 2));
+
+        mockPlatform.setEvents([
+          {
+            'eventId': 'event1',
+            'calendarId': 'cal1',
+            'title': 'Team Meeting',
+            'description': 'Weekly sync',
+            'location': 'Conference Room A',
+            'startDate': now.millisecondsSinceEpoch,
+            'endDate': later.millisecondsSinceEpoch,
+            'isAllDay': false,
+            'availability': 'busy',
+            'status': 'confirmed',
+          },
+          {
+            'eventId': 'event2',
+            'calendarId': 'cal1',
+            'title': 'All Day Event',
+            'startDate': now.millisecondsSinceEpoch,
+            'endDate': later.millisecondsSinceEpoch,
+            'isAllDay': true,
+            'availability': 'free',
+            'status': 'tentative',
+          },
+        ]);
+
+        final events = await DeviceCalendarPlugin.retrieveEvents(
+          now,
+          now.add(Duration(days: 7)),
+        );
+
+        expect(events, hasLength(2));
+        expect(events[0].eventId, 'event1');
+        expect(events[0].title, 'Team Meeting');
+        expect(events[0].description, 'Weekly sync');
+        expect(events[0].location, 'Conference Room A');
+        expect(events[0].isAllDay, false);
+        expect(events[0].availability, EventAvailability.busy);
+        expect(events[0].status, EventStatus.confirmed);
+
+        expect(events[1].eventId, 'event2');
+        expect(events[1].title, 'All Day Event');
+        expect(events[1].isAllDay, true);
+        expect(events[1].availability, EventAvailability.free);
+        expect(events[1].status, EventStatus.tentative);
+      });
+
+      test('handles unknown availability and status gracefully', () async {
+        final now = DateTime.now();
+
+        mockPlatform.setEvents([
+          {
+            'eventId': 'event1',
+            'calendarId': 'cal1',
+            'title': 'Test Event',
+            'startDate': now.millisecondsSinceEpoch,
+            'endDate': now.millisecondsSinceEpoch,
+            'isAllDay': false,
+            'availability': 'unknownValue',
+            'status': 'unknownStatus',
+          },
+        ]);
+
+        final events = await DeviceCalendarPlugin.retrieveEvents(
+          now,
+          now.add(Duration(days: 1)),
+        );
+
+        expect(events, hasLength(1));
+        expect(events[0].availability, EventAvailability.notSupported);
+        expect(events[0].status, EventStatus.none);
+      });
+
+      test('returns empty list when no events', () async {
+        mockPlatform.setEvents([]);
+        final events = await DeviceCalendarPlugin.retrieveEvents(
+          DateTime.now(),
+          DateTime.now().add(Duration(days: 7)),
+        );
+        expect(events, isEmpty);
+      });
+
+      test('throws DeviceCalendarException when permission denied', () async {
+        mockPlatform.throwException(
+          PlatformException(
+            code: 'PERMISSION_DENIED',
+            message: 'Calendar permission denied',
+          ),
+        );
+
+        expect(
+          () => DeviceCalendarPlugin.retrieveEvents(
+            DateTime.now(),
+            DateTime.now().add(Duration(days: 7)),
+          ),
+          throwsA(
+            isA<DeviceCalendarException>().having(
+              (e) => e.errorCode,
+              'errorCode',
+              DeviceCalendarError.permissionDenied,
+            ),
+          ),
+        );
       });
     });
   });

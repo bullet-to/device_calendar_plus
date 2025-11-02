@@ -30,4 +30,22 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     return result?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ??
         [];
   }
+
+  @override
+  Future<List<Map<String, dynamic>>> retrieveEvents(
+    DateTime startDate,
+    DateTime endDate,
+    List<String>? calendarIds,
+  ) async {
+    final result = await methodChannel.invokeMethod<List<dynamic>>(
+      'retrieveEvents',
+      <String, dynamic>{
+        'startDate': startDate.millisecondsSinceEpoch,
+        'endDate': endDate.millisecondsSinceEpoch,
+        'calendarIds': calendarIds,
+      },
+    );
+    return result?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ??
+        [];
+  }
 }

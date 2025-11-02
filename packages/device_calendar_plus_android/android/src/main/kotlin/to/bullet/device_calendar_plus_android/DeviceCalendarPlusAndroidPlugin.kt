@@ -21,6 +21,7 @@ class DeviceCalendarPlusAndroidPlugin :
     private var activity: Activity? = null
     private var permissionService: PermissionService? = null
     private var calendarService: CalendarService? = null
+    private var eventsService: EventsService? = null
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "device_calendar_plus_android")
@@ -32,6 +33,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "getPlatformVersion" -> handleGetPlatformVersion(result)
             "requestPermissions" -> handleRequestPermissions(result)
             "listCalendars" -> handleListCalendars(result)
+            "retrieveEvents" -> handleRetrieveEvents(call, result)
             else -> result.notImplemented()
         }
     }
@@ -72,6 +74,42 @@ class DeviceCalendarPlusAndroidPlugin :
             }
         )
     }
+    
+    private fun handleRetrieveEvents(call: MethodCall, result: Result) {
+        val service = eventsService ?: run {
+            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
+            return
+        }
+        
+        // Parse arguments
+        val startDateMillis = call.argument<Long>("startDate")
+        val endDateMillis = call.argument<Long>("endDate")
+        val calendarIds = call.argument<List<String>>("calendarIds")
+        
+        if (startDateMillis == null || endDateMillis == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing or invalid startDate or endDate",
+                null
+            )
+            return
+        }
+        
+        val startDate = java.util.Date(startDateMillis)
+        val endDate = java.util.Date(endDateMillis)
+        
+        val serviceResult = service.retrieveEvents(startDate, endDate, calendarIds)
+        serviceResult.fold(
+            onSuccess = { events -> result.success(events) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
 
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -89,6 +127,7 @@ class DeviceCalendarPlusAndroidPlugin :
         activity = binding.activity
         permissionService = PermissionService(binding.activity)
         calendarService = CalendarService(binding.activity)
+        eventsService = EventsService(binding.activity)
         binding.addRequestPermissionsResultListener(this)
     }
 
@@ -96,12 +135,14 @@ class DeviceCalendarPlusAndroidPlugin :
         activity = null
         permissionService = null
         calendarService = null
+        eventsService = null
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         activity = binding.activity
         permissionService = PermissionService(binding.activity)
         calendarService = CalendarService(binding.activity)
+        eventsService = EventsService(binding.activity)
         binding.addRequestPermissionsResultListener(this)
     }
 
@@ -109,5 +150,6 @@ class DeviceCalendarPlusAndroidPlugin :
         activity = null
         permissionService = null
         calendarService = null
+        eventsService = null
     }
 }

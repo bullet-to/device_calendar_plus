@@ -9,6 +9,7 @@ class PlatformExceptionConverter {
   // Platform exception codes
   static const String _permissionsNotDeclared = 'PERMISSIONS_NOT_DECLARED';
   static const String _permissionDenied = 'PERMISSION_DENIED';
+  static const String _invalidArguments = 'INVALID_ARGUMENTS';
   static const String _unknownError = 'UNKNOWN_ERROR';
 
   /// Converts a platform exception code string to a DeviceCalendarError enum.
@@ -18,6 +19,8 @@ class PlatformExceptionConverter {
         return DeviceCalendarError.permissionsNotDeclared;
       case _permissionDenied:
         return DeviceCalendarError.permissionDenied;
+      case _invalidArguments:
+        return DeviceCalendarError.invalidArguments;
       case _unknownError:
         return DeviceCalendarError.unknown;
       default:
@@ -34,6 +37,7 @@ class PlatformExceptionConverter {
     // Only convert known error codes
     if (e.code == _permissionsNotDeclared ||
         e.code == _permissionDenied ||
+        e.code == _invalidArguments ||
         e.code == _unknownError) {
       return DeviceCalendarException(
         errorCode: errorCode,
