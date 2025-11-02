@@ -156,82 +156,93 @@ class DeviceCalendarPlugin {
     }
   }
 
-  /// Retrieves a single event by ID.
+  /// Retrieves a single event by instance ID.
   ///
-  /// [eventId] is required and identifies the event to retrieve.
+  /// The [instanceId] uniquely identifies an event instance:
+  /// - For non-recurring events: Just the eventId (e.g., "event-123")
+  /// - For recurring events: "eventId@rawTimestampMillis" (e.g., "event-456@1730822400000")
+  ///   to identify a specific occurrence
   ///
-  /// [occurrenceDate] is optional and used to identify a specific instance
-  /// of a recurring event. If provided, this method will:
-  /// - Query events within ±24 hours of the specified date
-  /// - Find the instance whose start date is closest to [occurrenceDate]
-  /// - Return that specific instance
-  ///
-  /// If [occurrenceDate] is null:
-  /// - For non-recurring events: Returns the event
-  /// - For recurring events: Returns the master event definition with the
-  ///   original start/end dates and recurrence rule information
+  /// You can get the instanceId from an Event object via `event.instanceId`.
   ///
   /// Returns null if no matching event is found.
   ///
   /// Example:
   /// ```dart
-  /// // Get a non-recurring event
+  /// // Get a non-recurring event or master recurring event
   /// final event = await DeviceCalendarPlugin.getEvent('event-123');
   ///
-  /// // Get a specific instance of a recurring event
-  /// final instance = await DeviceCalendarPlugin.getEvent(
-  ///   'recurring-event-456',
-  ///   occurrenceDate: DateTime(2025, 11, 15),
+  /// // Get a specific instance using instanceId from an event
+  /// final instance = await DeviceCalendarPlugin.getEvent(event.instanceId);
+  ///
+  /// // Or construct instanceId manually for a recurring event instance
+  /// final instance = await DeviceCalendarPlugin.getEvent('event-456@1730822400000');
+  /// ```
+  static Future<Event?> getEvent(String instanceId) async {
+    try {
+      final Map<String, dynamic>? rawEvent =
+          await DeviceCalendarPlusPlatform.instance.getEvent(instanceId);
+
+      if (rawEvent == null) {
+        return null;
+      }
+
+      return Event.fromMap(rawEvent);
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  /// Opens a calendar event in the native calendar application or modal view.
+  ///
+  /// The [instanceId] uniquely identifies the event instance to open:
+  /// - For non-recurring events: Just the eventId (e.g., "event-123")
+  /// - For recurring events: "eventId@rawTimestampMillis" (e.g., "event-456@1730822400000")
+  ///   to open a specific occurrence
+  ///
+  /// You can get the instanceId from an Event object via `event.instanceId`.
+  ///
+  /// [useModal] controls the presentation style on iOS only:
+  /// - `true` (default): Presents the event in a native modal within your app
+  ///   using EventKit's `EKEventViewController`. The user can view and edit
+  ///   the event without leaving your app.
+  /// - `false`: Opens the event in the native Calendar app.
+  ///
+  /// **Platform Differences:**
+  /// - **iOS**: The `useModal` parameter is respected. When `true`, presents
+  ///   a native EventKit modal. When `false`, opens the Calendar app.
+  ///   Requires your app to be in the foreground for modal presentation.
+  /// - **Android**: The `useModal` parameter is ignored. Always opens the
+  ///   event in the native Calendar app.
+  ///
+  /// Example:
+  /// ```dart
+  /// // Open event in modal on iOS, Calendar app on Android
+  /// await DeviceCalendarPlugin.openEvent('event-123');
+  ///
+  /// // Open specific instance using instanceId from an event
+  /// await DeviceCalendarPlugin.openEvent(event.instanceId);
+  ///
+  /// // Force opening in Calendar app on all platforms
+  /// await DeviceCalendarPlugin.openEvent(
+  ///   'event-789',
+  ///   useModal: false,
   /// );
   /// ```
-  static Future<Event?> getEvent(
-    String eventId, {
-    DateTime? occurrenceDate,
+  static Future<void> openEvent(
+    String instanceId, {
+    bool useModal = true,
   }) async {
     try {
-      if (occurrenceDate != null) {
-        // Query ±24 hours around the occurrence date
-        final startDate = occurrenceDate.subtract(const Duration(hours: 24));
-        final endDate = occurrenceDate.add(const Duration(hours: 24));
-
-        // Use existing retrieveEvents to get all events in that range
-        final events = await retrieveEvents(startDate, endDate);
-
-        // Filter by eventId
-        final matchingEvents =
-            events.where((event) => event.eventId == eventId).toList();
-
-        if (matchingEvents.isEmpty) {
-          return null;
-        }
-
-        // Find the event with start date closest to occurrenceDate
-        Event? closestEvent;
-        Duration? closestDifference;
-
-        for (final event in matchingEvents) {
-          final difference = event.startDate.difference(occurrenceDate).abs();
-          if (closestDifference == null || difference < closestDifference) {
-            closestEvent = event;
-            closestDifference = difference;
-          }
-        }
-
-        return closestEvent;
-      } else {
-        // Get master event directly from platform
-        final Map<String, dynamic>? rawEvent =
-            await DeviceCalendarPlusPlatform.instance.getEvent(
-          eventId,
-          null,
-        );
-
-        if (rawEvent == null) {
-          return null;
-        }
-
-        return Event.fromMap(rawEvent);
-      }
+      await DeviceCalendarPlusPlatform.instance.openEvent(
+        instanceId,
+        useModal,
+      );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);

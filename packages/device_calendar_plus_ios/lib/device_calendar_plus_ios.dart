@@ -50,18 +50,24 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }
 
   @override
-  Future<Map<String, dynamic>?> getEvent(
-    String eventId,
-    DateTime? occurrenceDate,
-  ) async {
+  Future<Map<String, dynamic>?> getEvent(String instanceId) async {
     final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
       'getEvent',
       <String, dynamic>{
-        'eventId': eventId,
-        if (occurrenceDate != null)
-          'occurrenceDate': occurrenceDate.millisecondsSinceEpoch,
+        'instanceId': instanceId,
       },
     );
     return result != null ? Map<String, dynamic>.from(result) : null;
+  }
+
+  @override
+  Future<void> openEvent(String instanceId, bool useModal) async {
+    await methodChannel.invokeMethod<void>(
+      'openEvent',
+      <String, dynamic>{
+        'instanceId': instanceId,
+        'useModal': useModal,
+      },
+    );
   }
 }

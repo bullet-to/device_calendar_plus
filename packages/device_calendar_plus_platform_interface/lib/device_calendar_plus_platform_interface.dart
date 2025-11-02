@@ -63,17 +63,24 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     List<String>? calendarIds,
   );
 
-  /// Retrieves a single event by ID.
+  /// Retrieves a single event by instance ID.
   ///
-  /// If [occurrenceDate] is provided, fetches events within ±24 hours
-  /// of that date. The Dart layer will filter to the specific instance.
+  /// [instanceId] uniquely identifies the event instance:
+  /// - For non-recurring events: Just the eventId
+  /// - For recurring events: "eventId@rawTimestampMillis" format
   ///
-  /// If [occurrenceDate] is null, fetches the master event definition
-  /// (for recurring events, this is the original event with recurrence rules).
+  /// Returns event data as a map (including instanceId field), or null if not found.
+  Future<Map<String, dynamic>?> getEvent(String instanceId);
+
+  /// Opens a calendar event in the native calendar app or modal.
   ///
-  /// Returns event data as a map, or null if not found.
-  Future<Map<String, dynamic>?> getEvent(
-    String eventId,
-    DateTime? occurrenceDate,
-  );
+  /// [instanceId] uniquely identifies the event instance to open:
+  /// - For non-recurring events: Just the eventId
+  /// - For recurring events: "eventId@rawTimestampMillis" format
+  ///
+  /// [useModal] controls presentation style on iOS:
+  /// - true: Presents event in a modal within the app (iOS only)
+  /// - false: Opens the Calendar app
+  /// On Android, this parameter is ignored and always opens the Calendar app.
+  Future<void> openEvent(String instanceId, bool useModal);
 }

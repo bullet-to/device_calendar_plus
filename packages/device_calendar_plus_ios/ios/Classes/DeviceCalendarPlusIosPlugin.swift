@@ -1,8 +1,9 @@
 import Flutter
 import UIKit
 import EventKit
+import EventKitUI
 
-public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin {
+public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDelegate {
   private let eventStore = EKEventStore()
   private lazy var permissionService = PermissionService(eventStore: eventStore)
   private lazy var calendarService = CalendarService(eventStore: eventStore, permissionService: permissionService)
@@ -26,6 +27,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin {
       handleRetrieveEvents(call: call, result: result)
     case "getEvent":
       handleGetEvent(call: call, result: result)
+    case "openEvent":
+      handleOpenEvent(call: call, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -124,26 +127,17 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin {
       return
     }
     
-    // Parse event ID
-    guard let eventId = args["eventId"] as? String else {
+    // Parse instance ID
+    guard let instanceId = args["instanceId"] as? String else {
       result(FlutterError(
         code: PlatformExceptionCodes.invalidArguments,
-        message: "Missing or invalid eventId",
+        message: "Missing or invalid instanceId",
         details: nil
       ))
       return
     }
     
-    // Parse occurrence date (optional)
-    var occurrenceDate: Date?
-    if let occurrenceDateMillis = args["occurrenceDate"] as? Int64 {
-      occurrenceDate = Date(timeIntervalSince1970: TimeInterval(occurrenceDateMillis) / 1000.0)
-    }
-    
-    eventsService.getEvent(
-      eventId: eventId,
-      occurrenceDate: occurrenceDate
-    ) { serviceResult in
+    eventsService.getEvent(instanceId: instanceId) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
         case .success(let event):
@@ -152,6 +146,91 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin {
           result(FlutterError(code: error.code, message: error.message, details: nil))
         }
       }
+    }
+  }
+  
+  private func handleOpenEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any] else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Invalid arguments for openEvent",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse instance ID
+    guard let instanceId = args["instanceId"] as? String else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Missing or invalid instanceId",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse useModal flag (default true)
+    let useModal = args["useModal"] as? Bool ?? true
+    
+    eventsService.openEvent(
+      instanceId: instanceId,
+      useModal: useModal
+    ) { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success(let viewController):
+          // If we have a view controller (modal mode), present it
+          if let viewController = viewController {
+            // Get the root view controller
+            guard let rootViewController = self.getRootViewController() else {
+              result(FlutterError(
+                code: PlatformExceptionCodes.unknownError,
+                message: "Failed to get root view controller",
+                details: nil
+              ))
+              return
+            }
+            
+            // Set the delegate
+            viewController.delegate = self
+            
+            // Wrap in navigation controller for proper dismissal
+            let navigationController = UINavigationController(rootViewController: viewController)
+            navigationController.modalPresentationStyle = .pageSheet
+            
+            rootViewController.present(navigationController, animated: true) {
+              result(nil)
+            }
+          } else {
+            // Calendar app was opened
+            result(nil)
+          }
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+  
+  // MARK: - EKEventViewControllerDelegate
+  
+  public func eventViewController(_ controller: EKEventViewController, didCompleteWith action: EKEventViewAction) {
+    // Dismiss the modal
+    controller.navigationController?.dismiss(animated: true, completion: nil)
+  }
+  
+  // MARK: - Helper Methods
+  
+  private func getRootViewController() -> UIViewController? {
+    // Get the key window
+    if #available(iOS 13.0, *) {
+      // Use window scene for iOS 13+
+      let scenes = UIApplication.shared.connectedScenes
+      let windowScene = scenes.first as? UIWindowScene
+      return windowScene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
+    } else {
+      // Use deprecated keyWindow for older iOS versions
+      return UIApplication.shared.keyWindow?.rootViewController
     }
   }
 }

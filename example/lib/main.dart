@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter/material.dart';
 
@@ -300,12 +302,10 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _showEventDetails(Event event) async {
     try {
-      // Fetch the specific event instance
-      // If the event is recurring, pass the startDate as occurrenceDate
-      // to get this specific instance. Otherwise, just use eventId.
+      // Fetch the specific event instance using instanceId
+      // For recurring events, instanceId includes the timestamp
       final fetchedEvent = await DeviceCalendarPlugin.getEvent(
-        event.eventId,
-        occurrenceDate: event.isRecurring ? event.startDate : null,
+        event.instanceId,
       );
 
       if (fetchedEvent == null) {
@@ -397,6 +397,49 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
           ),
           actions: [
+            TextButton(
+              onPressed: () async {
+                try {
+                  await DeviceCalendarPlugin.openEvent(
+                    fetchedEvent.instanceId,
+                    useModal: false, // Opens in calendar app on both platforms
+                  );
+                } on DeviceCalendarException catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error: ${e.message}')),
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to open event: $e')),
+                  );
+                }
+              },
+              child: const Text('Open in Calendar'),
+            ),
+            if (Platform.isIOS)
+              TextButton(
+                onPressed: () async {
+                  try {
+                    await DeviceCalendarPlugin.openEvent(
+                      fetchedEvent.instanceId,
+                      useModal: true, // Opens in modal on iOS
+                    );
+                  } on DeviceCalendarException catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: ${e.message}')),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to open modal: $e')),
+                    );
+                  }
+                },
+                child: const Text('Open in Modal'),
+              ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Close'),

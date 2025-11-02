@@ -35,6 +35,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "listCalendars" -> handleListCalendars(result)
             "retrieveEvents" -> handleRetrieveEvents(call, result)
             "getEvent" -> handleGetEvent(call, result)
+            "openEvent" -> handleOpenEvent(call, result)
             else -> result.notImplemented()
         }
     }
@@ -119,27 +120,52 @@ class DeviceCalendarPlusAndroidPlugin :
         }
         
         // Parse arguments
-        val eventId = call.argument<String>("eventId")
-        val occurrenceDateMillis = call.argument<Long>("occurrenceDate")
+        val instanceId = call.argument<String>("instanceId")
         
-        if (eventId == null) {
+        if (instanceId == null) {
             result.error(
                 PlatformExceptionCodes.INVALID_ARGUMENTS,
-                "Missing or invalid eventId",
+                "Missing or invalid instanceId",
                 null
             )
             return
         }
         
-        val occurrenceDate = if (occurrenceDateMillis != null) {
-            java.util.Date(occurrenceDateMillis)
-        } else {
-            null
-        }
-        
-        val serviceResult = service.getEvent(eventId, occurrenceDate)
+        val serviceResult = service.getEvent(instanceId)
         serviceResult.fold(
             onSuccess = { event -> result.success(event) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+    
+    private fun handleOpenEvent(call: MethodCall, result: Result) {
+        val service = eventsService ?: run {
+            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
+            return
+        }
+        
+        // Parse arguments
+        val instanceId = call.argument<String>("instanceId")
+        val useModal = call.argument<Boolean>("useModal") ?: true // Ignored on Android
+        
+        if (instanceId == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing or invalid instanceId",
+                null
+            )
+            return
+        }
+        
+        val serviceResult = service.openEvent(instanceId, useModal)
+        serviceResult.fold(
+            onSuccess = { result.success(null) },
             onFailure = { error ->
                 if (error is CalendarException) {
                     result.error(error.code, error.message, null)

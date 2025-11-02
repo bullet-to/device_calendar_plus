@@ -7,6 +7,12 @@ class Event {
   /// For recurring events, all instances share the same eventId.
   final String eventId;
 
+  /// Instance identifier that uniquely identifies this specific event instance.
+  /// For non-recurring events, this is the same as [eventId].
+  /// For recurring events, this is formatted as "eventId@rawTimestampMillis"
+  /// where the timestamp is the raw value from the native platform.
+  final String instanceId;
+
   /// ID of the calendar this event belongs to.
   final String calendarId;
 
@@ -44,6 +50,7 @@ class Event {
 
   Event({
     required this.eventId,
+    required this.instanceId,
     required this.calendarId,
     required this.title,
     this.description,
@@ -61,6 +68,7 @@ class Event {
   factory Event.fromMap(Map<String, dynamic> map) {
     return Event(
       eventId: map['eventId'] as String,
+      instanceId: map['instanceId'] as String,
       calendarId: map['calendarId'] as String,
       title: map['title'] as String,
       description: map['description'] as String?,
@@ -79,6 +87,7 @@ class Event {
   Map<String, dynamic> toMap() {
     final map = <String, dynamic>{
       'eventId': eventId,
+      'instanceId': instanceId,
       'calendarId': calendarId,
       'title': title,
       'startDate': startDate.millisecondsSinceEpoch,
@@ -98,7 +107,7 @@ class Event {
 
   @override
   String toString() {
-    return 'Event(eventId: $eventId, calendarId: $calendarId, title: $title, '
+    return 'Event(eventId: $eventId, instanceId: $instanceId, calendarId: $calendarId, title: $title, '
         'startDate: $startDate, endDate: $endDate, isAllDay: $isAllDay)';
   }
 
@@ -108,6 +117,7 @@ class Event {
 
     return other is Event &&
         other.eventId == eventId &&
+        other.instanceId == instanceId &&
         other.calendarId == calendarId &&
         other.title == title &&
         other.description == description &&
@@ -125,6 +135,7 @@ class Event {
   int get hashCode {
     return Object.hash(
       eventId,
+      instanceId,
       calendarId,
       title,
       description,

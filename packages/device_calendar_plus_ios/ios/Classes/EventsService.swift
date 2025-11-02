@@ -1,4 +1,5 @@
 import EventKit
+import EventKitUI
 
 extension EKEventAvailability {
   var stringValue: String {
@@ -70,8 +71,19 @@ class EventsService {
   }
   
   private func eventToMap(event: EKEvent) -> [String: Any] {
+    // Generate instanceId
+    let startMillis = Int64(event.startDate.timeIntervalSince1970 * 1000)
+    let eventId = event.eventIdentifier ?? ""
+    let instanceId: String
+    if event.hasRecurrenceRules {
+      instanceId = "\(eventId)@\(startMillis)"
+    } else {
+      instanceId = eventId
+    }
+    
     var eventMap: [String: Any] = [
-      "eventId": event.eventIdentifier,
+      "eventId": eventId,
+      "instanceId": instanceId,
       "calendarId": event.calendar.calendarIdentifier,
       "title": event.title ?? "",
       "isAllDay": event.isAllDay
@@ -114,8 +126,7 @@ class EventsService {
   }
   
   func getEvent(
-    eventId: String,
-    occurrenceDate: Date?,
+    instanceId: String,
     completion: @escaping (Result<[String: Any]?, CalendarError>) -> Void
   ) {
     // Check permission
@@ -127,42 +138,172 @@ class EventsService {
       return
     }
     
-    if let occurrenceDate = occurrenceDate {
-      // Query ±24 hours around the occurrence date
-      let startDate = occurrenceDate.addingTimeInterval(-24 * 60 * 60)
-      let endDate = occurrenceDate.addingTimeInterval(24 * 60 * 60)
+    // Parse instanceId: "eventId" or "eventId@timestamp"
+    let parts = instanceId.split(separator: "@", maxSplits: 1)
+    let eventId = String(parts[0])
+    
+    if parts.count == 2, let timestampMillis = Int64(parts[1]) {
+      // Recurring event with timestamp
+      let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
       
-      // Create predicate for events
+      // Query ±1 second around the exact occurrence time
+      // We use a small window since we have the precise timestamp
+      let startDate = occurrenceDate.addingTimeInterval(-1)
+      let endDate = occurrenceDate.addingTimeInterval(1)
+      
       let predicate = eventStore.predicateForEvents(
         withStart: startDate,
         end: endDate,
         calendars: nil
       )
       
-      // Fetch events
       let events = eventStore.events(matching: predicate)
       
-      // Filter by eventId and convert to maps
-      let matchingEvents = events.filter { event in
-        event.eventIdentifier == eventId
-      }.map { event in
-        eventToMap(event: event)
-      }
+      // Find the closest matching instance
+      let matchingEvents = events.filter { $0.eventIdentifier == eventId }
+      let closestEvent = matchingEvents.min(by: { 
+        abs($0.startDate.timeIntervalSince(occurrenceDate)) < abs($1.startDate.timeIntervalSince(occurrenceDate))
+      })
       
-      // Return all matches (Dart will pick the closest one)
-      if matchingEvents.isEmpty {
-        completion(.success(nil))
+      if let closestEvent = closestEvent {
+        completion(.success(eventToMap(event: closestEvent)))
       } else {
-        // Return the first match (Dart filters for closest)
-        completion(.success(matchingEvents.first))
+        completion(.success(nil))
       }
     } else {
-      // Get master event directly by identifier
+      // Non-recurring event or master event
       if let event = eventStore.event(withIdentifier: eventId) {
-        let eventMap = eventToMap(event: event)
-        completion(.success(eventMap))
+        completion(.success(eventToMap(event: event)))
       } else {
         completion(.success(nil))
+      }
+    }
+  }
+  
+  func openEvent(
+    instanceId: String,
+    useModal: Bool,
+    completion: @escaping (Result<EKEventViewController?, CalendarError>) -> Void
+  ) {
+    // Check permission
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+    
+    // Parse instanceId: "eventId" or "eventId@timestamp"
+    let parts = instanceId.split(separator: "@", maxSplits: 1)
+    let eventId = String(parts[0])
+    let occurrenceDate: Date?
+    
+    if parts.count == 2, let timestampMillis = Int64(parts[1]) {
+      occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
+    } else {
+      occurrenceDate = nil
+    }
+    
+    // If not using modal, open in Calendar app
+    if !useModal {
+      openInCalendarApp(eventId: eventId, occurrenceDate: occurrenceDate, completion: completion)
+      return
+    }
+    
+    // Fetch the event for modal presentation
+    let event: EKEvent?
+    
+    if let occurrenceDate = occurrenceDate {
+      // Query ±1 second around the exact occurrence time
+      // We use a small window since we have the precise timestamp
+      let startDate = occurrenceDate.addingTimeInterval(-1)
+      let endDate = occurrenceDate.addingTimeInterval(1)
+      
+      let predicate = eventStore.predicateForEvents(
+        withStart: startDate,
+        end: endDate,
+        calendars: nil
+      )
+      
+      let events = eventStore.events(matching: predicate)
+      let matchingEvents = events.filter { $0.eventIdentifier == eventId }
+      
+      // Find the closest match to the occurrence date
+      event = matchingEvents.min(by: { abs($0.startDate.timeIntervalSince(occurrenceDate)) < abs($1.startDate.timeIntervalSince(occurrenceDate)) })
+    } else {
+      // Get master event directly
+      event = eventStore.event(withIdentifier: eventId)
+    }
+    
+    // Check if event was found
+    guard let foundEvent = event else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Event not found with instance ID: \(instanceId)"
+      )))
+      return
+    }
+    
+    // Create event view controller
+    let eventViewController = EKEventViewController()
+    eventViewController.event = foundEvent
+    eventViewController.allowsEditing = true
+    eventViewController.allowsCalendarPreview = true
+    
+    completion(.success(eventViewController))
+  }
+  
+  private func openInCalendarApp(
+    eventId: String,
+    occurrenceDate: Date?,
+    completion: @escaping (Result<EKEventViewController?, CalendarError>) -> Void
+  ) {
+    // Construct Calendar app URL
+    // Format: calshow:[beginTime]
+    var urlString = "calshow:"
+    
+    if let occurrenceDate = occurrenceDate {
+      // Add timestamp for specific occurrence
+      let timestamp = occurrenceDate.timeIntervalSinceReferenceDate
+      urlString += "\(timestamp)"
+    } else {
+      // For master event, try to get its start date
+      if let event = eventStore.event(withIdentifier: eventId) {
+        let timestamp = event.startDate.timeIntervalSinceReferenceDate
+        urlString += "\(timestamp)"
+      }
+    }
+    
+    guard let url = URL(string: urlString) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Failed to create Calendar app URL"
+      )))
+      return
+    }
+    
+    // Open URL
+    if #available(iOS 10.0, *) {
+      UIApplication.shared.open(url, options: [:]) { success in
+        if success {
+          completion(.success(nil))
+        } else {
+          completion(.failure(CalendarError(
+            code: PlatformExceptionCodes.unknownError,
+            message: "Failed to open Calendar app"
+          )))
+        }
+      }
+    } else {
+      let success = UIApplication.shared.openURL(url)
+      if success {
+        completion(.success(nil))
+      } else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.unknownError,
+          message: "Failed to open Calendar app"
+        )))
       }
     }
   }

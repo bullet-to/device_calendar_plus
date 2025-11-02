@@ -1,6 +1,8 @@
 package to.bullet.device_calendar_plus_android
 
 import android.app.Activity
+import android.content.ContentUris
+import android.content.Intent
 import android.provider.CalendarContract
 import java.util.Date
 
@@ -9,7 +11,8 @@ class EventsService(private val activity: Activity) {
     fun retrieveEvents(
         startDate: Date,
         endDate: Date,
-        calendarIds: List<String>?
+        calendarIds: List<String>?,
+        eventId: String? = null
     ): Result<List<Map<String, Any>>> {
         val events = mutableListOf<Map<String, Any>>()
         
@@ -38,15 +41,23 @@ class EventsService(private val activity: Activity) {
             CalendarContract.Instances.RRULE
         )
         
-        // Build selection clause for calendar filtering
-        var selection: String? = null
-        var selectionArgs: Array<String>? = null
+        // Build selection clause for calendar and event filtering
+        val selections = mutableListOf<String>()
+        val args = mutableListOf<String>()
         
         if (calendarIds != null && calendarIds.isNotEmpty()) {
             val placeholders = calendarIds.joinToString(",") { "?" }
-            selection = "${CalendarContract.Instances.CALENDAR_ID} IN ($placeholders)"
-            selectionArgs = calendarIds.toTypedArray()
+            selections.add("${CalendarContract.Instances.CALENDAR_ID} IN ($placeholders)")
+            args.addAll(calendarIds)
         }
+        
+        if (eventId != null) {
+            selections.add("${CalendarContract.Instances.EVENT_ID} = ?")
+            args.add(eventId)
+        }
+        
+        val selection = if (selections.isNotEmpty()) selections.joinToString(" AND ") else null
+        val selectionArgs = if (args.isNotEmpty()) args.toTypedArray() else null
         
         try {
             activity.contentResolver.query(
@@ -145,15 +156,24 @@ class EventsService(private val activity: Activity) {
         val title = if (!cursor.isNull(titleIndex)) cursor.getString(titleIndex) else ""
         val description = if (!cursor.isNull(descriptionIndex)) cursor.getString(descriptionIndex) else null
         val location = if (!cursor.isNull(locationIndex)) cursor.getString(locationIndex) else null
-        var start = cursor.getLong(startIndex)
-        var end = if (!cursor.isNull(endIndex)) cursor.getLong(endIndex) else start
+        val rawStart = cursor.getLong(startIndex)
+        val rawEnd = if (!cursor.isNull(endIndex)) cursor.getLong(endIndex) else rawStart
         val allDay = if (!cursor.isNull(allDayIndex)) cursor.getInt(allDayIndex) == 1 else false
         val availability = if (!cursor.isNull(availabilityIndex)) cursor.getInt(availabilityIndex) else 0
         val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else 0
         val timeZone = if (!cursor.isNull(timeZoneIndex)) cursor.getString(timeZoneIndex) else null
         val recurrenceRule = if (!cursor.isNull(recurrenceRuleIndex)) cursor.getString(recurrenceRuleIndex) else null
         
+        // Generate instanceId using RAW timestamps before any modifications
+        val instanceId: String = if (recurrenceRule != null) {
+            "$eventId@$rawStart"
+        } else {
+            eventId
+        }
+        
         // For all-day events, Android stores times in UTC but we want local floating dates
+        var start = rawStart
+        var end = rawEnd
         if (allDay) {
             val calendar = java.util.Calendar.getInstance()
             calendar.timeInMillis = start
@@ -173,6 +193,7 @@ class EventsService(private val activity: Activity) {
         
         val eventMap = mutableMapOf<String, Any>(
             "eventId" to eventId,
+            "instanceId" to instanceId,
             "calendarId" to calendarId,
             "title" to title,
             "startDate" to start,
@@ -196,28 +217,40 @@ class EventsService(private val activity: Activity) {
         return eventMap
     }
     
-    fun getEvent(
-        eventId: String,
-        occurrenceDate: Date?
-    ): Result<Map<String, Any>?> {
-        if (occurrenceDate != null) {
-            // Query ±24 hours around the occurrence date
-            val occurrenceMillis = occurrenceDate.time
-            val startMillis = occurrenceMillis - (24 * 60 * 60 * 1000)
-            val endMillis = occurrenceMillis + (24 * 60 * 60 * 1000)
+    fun getEvent(instanceId: String): Result<Map<String, Any>?> {
+        // Parse instanceId: "eventId" or "eventId@timestamp"
+        val parts = instanceId.split("@", limit = 2)
+        val eventId = parts[0]
+        
+        if (parts.size == 2) {
+            // Recurring event with timestamp
+            val occurrenceMillis = parts[1].toLongOrNull() ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "Invalid instanceId format: $instanceId"
+                )
+            )
+            
+            // Query ±1 second around the exact occurrence time
+            // We use a small window since we have the precise timestamp
+            val startMillis = occurrenceMillis - 1000
+            val endMillis = occurrenceMillis + 1000
             
             val startDate = Date(startMillis)
             val endDate = Date(endMillis)
             
-            // Use existing retrieveEvents to get events in range
-            val eventsResult = retrieveEvents(startDate, endDate, null)
+            // Use retrieveEvents with event ID filter
+            val eventsResult = retrieveEvents(startDate, endDate, null, eventId)
             
             return eventsResult.mapCatching { events ->
-                // Filter by eventId and return first match
-                events.firstOrNull { it["eventId"] == eventId }
+                // Find closest match to the occurrence time
+                events.minByOrNull { event ->
+                    val eventStart = event["startDate"] as? Long ?: return@minByOrNull Long.MAX_VALUE
+                    kotlin.math.abs(eventStart - occurrenceMillis)
+                }
             }
         } else {
-            // Get master event directly from Events table
+            // Non-recurring event or master event
             val projection = arrayOf(
                 CalendarContract.Events._ID,
                 CalendarContract.Events.CALENDAR_ID,
@@ -282,6 +315,75 @@ class EventsService(private val activity: Activity) {
                     )
                 )
             }
+        }
+    }
+
+    /**
+     * Opens a calendar event in the native Calendar app.
+     *
+     * Note: Android does not support modal event views, so useModal is ignored.
+     * This always opens the event in the Calendar app.
+     */
+    fun openEvent(
+        instanceId: String,
+        useModal: Boolean // Ignored on Android
+    ): Result<Unit> {
+        return try {
+            // Validate permissions
+            if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
+                activity.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.PERMISSION_DENIED,
+                        "Calendar permission denied. Call requestPermissions() first."
+                    )
+                )
+            }
+
+            // Parse instanceId: "eventId" or "eventId@timestamp"
+            val parts = instanceId.split("@", limit = 2)
+            val eventId = parts[0]
+            
+            val intent = Intent(Intent.ACTION_VIEW)
+            val eventUri = android.content.ContentUris.withAppendedId(
+                CalendarContract.Events.CONTENT_URI,
+                eventId.toLong()
+            )
+            intent.data = eventUri
+            
+            if (parts.size == 2) {
+                // Open specific instance with begin time
+                val occurrenceMillis = parts[1].toLongOrNull()
+                if (occurrenceMillis != null) {
+                    intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, occurrenceMillis)
+                }
+            }
+            
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            
+            activity.startActivity(intent)
+            Result.success(Unit)
+        } catch (e: android.content.ActivityNotFoundException) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Calendar app not found"
+                )
+            )
+        } catch (e: SecurityException) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to open event: ${e.message}"
+                )
+            )
         }
     }
 }
