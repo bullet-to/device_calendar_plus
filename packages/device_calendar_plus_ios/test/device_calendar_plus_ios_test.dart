@@ -21,6 +21,8 @@ void main() {
         switch (methodCall.method) {
           case 'getPlatformVersion':
             return kPlatformVersion;
+          case 'requestPermissions':
+            return 0; // CalendarPermissionStatus.granted
           default:
             return null;
         }
@@ -39,6 +41,15 @@ void main() {
         <Matcher>[isMethodCall('getPlatformVersion', arguments: null)],
       );
       expect(version, equals(kPlatformVersion));
+    });
+
+    test('requestPermissions returns granted status', () async {
+      final status = await plugin.requestPermissions();
+      expect(
+        log,
+        <Matcher>[isMethodCall('requestPermissions', arguments: null)],
+      );
+      expect(status, equals(0)); // CalendarPermissionStatus.granted
     });
   });
 }

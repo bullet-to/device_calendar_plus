@@ -1,7 +1,4 @@
-import 'package:device_calendar_plus_platform_interface/src/method_channel_device_calendar_plus.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
-
-export 'src/method_channel_device_calendar_plus.dart';
 
 /// The interface that implementations of device_calendar_plus must implement.
 ///
@@ -15,13 +12,21 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
 
   static final Object _token = Object();
 
-  static DeviceCalendarPlusPlatform _instance =
-      MethodChannelDeviceCalendarPlus();
+  static DeviceCalendarPlusPlatform? _instance;
 
   /// The default instance of [DeviceCalendarPlusPlatform] to use.
   ///
-  /// Defaults to [MethodChannelDeviceCalendarPlus].
-  static DeviceCalendarPlusPlatform get instance => _instance;
+  /// Platform-specific implementations (Android/iOS) set this automatically.
+  static DeviceCalendarPlusPlatform get instance {
+    if (_instance == null) {
+      throw StateError(
+        'DeviceCalendarPlusPlatform.instance has not been initialized. '
+        'This should never happen in production as platform-specific '
+        'implementations register themselves automatically.',
+      );
+    }
+    return _instance!;
+  }
 
   /// Platform-specific plugins should set this with their own platform-specific
   /// class that extends [DeviceCalendarPlusPlatform] when they register themselves.
@@ -32,4 +37,13 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
 
   /// Returns the platform version.
   Future<String?> getPlatformVersion();
+
+  /// Requests calendar permissions from the user.
+  ///
+  /// On first call, this will show the system permission dialog.
+  /// On subsequent calls, it returns the current permission status.
+  ///
+  /// Returns the raw integer status code from the platform.
+  /// The main API layer converts this to [CalendarPermissionStatus].
+  Future<int?> requestPermissions();
 }

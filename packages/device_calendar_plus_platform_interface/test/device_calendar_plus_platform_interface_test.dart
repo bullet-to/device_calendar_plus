@@ -6,6 +6,10 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     with MockPlatformInterfaceMixin {
   @override
   Future<String?> getPlatformVersion() async => 'Mock Platform 1.0';
+
+  @override
+  Future<int?> requestPermissions() async =>
+      0; // CalendarPermissionStatus.granted
 }
 
 void main() {
@@ -20,5 +24,11 @@ void main() {
     DeviceCalendarPlusPlatform.instance = mock;
     expect(await DeviceCalendarPlusPlatform.instance.getPlatformVersion(),
         'Mock Platform 1.0');
+  });
+
+  test('requestPermissions returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    expect(await DeviceCalendarPlusPlatform.instance.requestPermissions(), 0);
   });
 }

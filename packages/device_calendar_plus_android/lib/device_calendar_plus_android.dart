@@ -17,4 +17,9 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   Future<String?> getPlatformVersion() {
     return methodChannel.invokeMethod<String>('getPlatformVersion');
   }
+
+  @override
+  Future<int?> requestPermissions() async {
+    return await methodChannel.invokeMethod<int>('requestPermissions');
+  }
 }

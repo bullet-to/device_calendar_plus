@@ -70,6 +70,93 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
+  Future<void> _requestPermissions() async {
+    try {
+      final status = await DeviceCalendar.requestPermissions();
+
+      if (!mounted) return;
+
+      String message;
+      switch (status) {
+        case CalendarPermissionStatus.granted:
+          message = 'Permission granted! Full read/write access to calendars.';
+          break;
+        case CalendarPermissionStatus.writeOnly:
+          message =
+              'Write-only permission granted (iOS 17+). Can add events but not read existing ones.';
+          break;
+        case CalendarPermissionStatus.denied:
+          message =
+              'Permission denied. Please enable calendar access in Settings.';
+          break;
+        case CalendarPermissionStatus.restricted:
+          message =
+              'Calendar access is restricted by device policies (MDM/parental controls).';
+          break;
+        case CalendarPermissionStatus.notDetermined:
+          message = 'Permission not yet determined.';
+          break;
+      }
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Calendar Permission Status'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } on DeviceCalendarException catch (e) {
+      // Developer configuration error (missing manifest permissions)
+      if (!mounted) return;
+
+      final title = e.errorCode == DeviceCalendarError.permissionsNotDeclared
+          ? 'Configuration Error'
+          : 'Calendar Error';
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(title),
+          content: SingleChildScrollView(
+            child: Text(
+              e.message,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      // Other errors
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error'),
+          content: Text('Failed to request permissions: $e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // This method is rerun every time setState is called, for instance as done
@@ -116,6 +203,11 @@ class _MyHomePageState extends State<MyHomePage> {
             ElevatedButton(
               onPressed: _getPlatformVersion,
               child: const Text('Refresh Platform Version'),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _requestPermissions,
+              child: const Text('Request Calendar Permissions'),
             ),
           ],
         ),
