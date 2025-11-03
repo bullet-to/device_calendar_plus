@@ -69,6 +69,14 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
+  Future<void> updateCalendar(
+      String calendarId, String? name, String? colorHex) async {
+    if (_exceptionToThrow != null) {
+      throw _exceptionToThrow!;
+    }
+  }
+
+  @override
   Future<void> deleteCalendar(String calendarId) async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
@@ -325,43 +333,139 @@ void main() {
         );
       });
 
-      test('throws DeviceCalendarException when name is empty', () async {
+      test('throws ArgumentError when name is empty', () async {
         expect(
           () => DeviceCalendar.instance.createCalendar(name: ''),
           throwsA(
-            isA<DeviceCalendarException>()
-                .having(
-                  (e) => e.errorCode,
-                  'errorCode',
-                  DeviceCalendarError.invalidArguments,
-                )
-                .having(
-                  (e) => e.message,
-                  'message',
-                  contains('cannot be empty'),
-                ),
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('cannot be empty'),
+            ),
           ),
         );
       });
 
-      test('throws DeviceCalendarException when name is whitespace only',
-          () async {
+      test('throws ArgumentError when name is whitespace only', () async {
         expect(
           () => DeviceCalendar.instance.createCalendar(name: '   '),
           throwsA(
-            isA<DeviceCalendarException>()
-                .having(
-                  (e) => e.errorCode,
-                  'errorCode',
-                  DeviceCalendarError.invalidArguments,
-                )
-                .having(
-                  (e) => e.message,
-                  'message',
-                  contains('cannot be empty'),
-                ),
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('cannot be empty'),
+            ),
           ),
         );
+      });
+    });
+
+    group('updateCalendar', () {
+      test('updates calendar successfully', () async {
+        await DeviceCalendar.instance.updateCalendar(
+          'calendar-123',
+          name: 'Updated Name',
+          colorHex: '#00FF00',
+        );
+        // Should complete without error
+      });
+
+      test('updates calendar with name only', () async {
+        await DeviceCalendar.instance.updateCalendar(
+          'calendar-123',
+          name: 'New Name',
+        );
+        // Should complete without error
+      });
+
+      test('updates calendar with color only', () async {
+        await DeviceCalendar.instance.updateCalendar(
+          'calendar-123',
+          colorHex: '#FF5733',
+        );
+        // Should complete without error
+      });
+
+      test('throws ArgumentError when no parameters provided', () async {
+        expect(
+          () => DeviceCalendar.instance.updateCalendar('calendar-123'),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('At least one'),
+            ),
+          ),
+        );
+      });
+
+      test('throws ArgumentError when name is empty', () async {
+        expect(
+          () =>
+              DeviceCalendar.instance.updateCalendar('calendar-123', name: ''),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('cannot be empty'),
+            ),
+          ),
+        );
+      });
+
+      test('throws ArgumentError when name is whitespace only', () async {
+        expect(
+          () => DeviceCalendar.instance
+              .updateCalendar('calendar-123', name: '   '),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('cannot be empty'),
+            ),
+          ),
+        );
+      });
+
+      test('converts permissionDenied PlatformException', () async {
+        mockPlatform.throwException(
+          PlatformException(
+              code: 'PERMISSION_DENIED', message: 'Permission denied'),
+        );
+
+        expect(
+          () => DeviceCalendar.instance
+              .updateCalendar('calendar-123', name: 'New Name'),
+          throwsA(
+            isA<DeviceCalendarException>().having(
+              (e) => e.errorCode,
+              'errorCode',
+              DeviceCalendarError.permissionDenied,
+            ),
+          ),
+        );
+
+        mockPlatform.clearException();
+      });
+
+      test('rethrows unknown PlatformException', () async {
+        mockPlatform.throwException(
+          PlatformException(code: 'someOtherError', message: 'Some error'),
+        );
+
+        expect(
+          () => DeviceCalendar.instance
+              .updateCalendar('calendar-123', name: 'New Name'),
+          throwsA(
+            isA<PlatformException>().having(
+              (e) => e.code,
+              'code',
+              'someOtherError',
+            ),
+          ),
+        );
+
+        mockPlatform.clearException();
       });
     });
 

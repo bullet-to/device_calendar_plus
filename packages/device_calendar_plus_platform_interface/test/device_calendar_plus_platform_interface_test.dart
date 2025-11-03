@@ -19,6 +19,10 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       'mock-calendar-id';
 
   @override
+  Future<void> updateCalendar(
+      String calendarId, String? name, String? colorHex) async {}
+
+  @override
   Future<void> deleteCalendar(String calendarId) async {}
 
   @override
@@ -68,6 +72,21 @@ void main() {
     final calendarId = await DeviceCalendarPlusPlatform.instance
         .createCalendar('Test Calendar', '#FF5733');
     expect(calendarId, equals('mock-calendar-id'));
+  });
+
+  test('updateCalendar completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance
+        .updateCalendar('calendar-123', 'New Name', '#00FF00');
+    // Should complete without error
+  });
+
+  test('deleteCalendar completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.deleteCalendar('calendar-123');
+    // Should complete without error
   });
 
   test('retrieveEvents returns expected value', () async {

@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import 'src/calendar.dart';
 import 'src/calendar_permission_status.dart';
-import 'src/device_calendar_error.dart';
 import 'src/event.dart';
 import 'src/platform_exception_converter.dart';
 
@@ -125,9 +124,10 @@ class DeviceCalendar {
     String? colorHex,
   }) async {
     if (name.trim().isEmpty) {
-      throw DeviceCalendarException(
-        errorCode: DeviceCalendarError.invalidArguments,
-        message: 'Calendar name cannot be empty',
+      throw ArgumentError.value(
+        name,
+        'name',
+        'Calendar name cannot be empty',
       );
     }
 
@@ -135,6 +135,66 @@ class DeviceCalendar {
       final String calendarId = await DeviceCalendarPlusPlatform.instance
           .createCalendar(name, colorHex);
       return calendarId;
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  /// Updates an existing calendar on the device.
+  ///
+  /// [calendarId] is the ID of the calendar to update.
+  /// [name] is the new display name for the calendar (optional).
+  /// [colorHex] is the new color in #RRGGBB format (optional, e.g., "#FF5733").
+  ///
+  /// At least one of [name] or [colorHex] must be provided.
+  /// Requires calendar write permissions - call [requestPermissions] first.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  ///
+  /// // Update just the name
+  /// await plugin.updateCalendar(calendarId, name: 'New Name');
+  ///
+  /// // Update just the color
+  /// await plugin.updateCalendar(calendarId, colorHex: '#FF5733');
+  ///
+  /// // Update both name and color
+  /// await plugin.updateCalendar(
+  ///   calendarId,
+  ///   name: 'New Name',
+  ///   colorHex: '#FF5733',
+  /// );
+  /// ```
+  Future<void> updateCalendar(
+    String calendarId, {
+    String? name,
+    String? colorHex,
+  }) async {
+    // Validate that at least one parameter is provided
+    if (name == null && colorHex == null) {
+      throw ArgumentError(
+        'At least one of name or colorHex must be provided',
+      );
+    }
+
+    // Validate name if provided
+    if (name != null && name.trim().isEmpty) {
+      throw ArgumentError.value(
+        name,
+        'name',
+        'Calendar name cannot be empty',
+      );
+    }
+
+    try {
+      await DeviceCalendarPlusPlatform.instance
+          .updateCalendar(calendarId, name, colorHex);
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);

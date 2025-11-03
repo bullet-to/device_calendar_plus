@@ -96,6 +96,56 @@ class CalendarService {
     }
   }
   
+  func updateCalendar(calendarId: String, name: String?, colorHex: String?, completion: @escaping (Result<Void, CalendarError>) -> Void) {
+    // Check current permission status - updating calendars requires full access (writing)
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+    
+    // Find the calendar by ID
+    guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Calendar with ID \(calendarId) not found"
+      )))
+      return
+    }
+    
+    // Check if calendar is modifiable
+    guard calendar.allowsContentModifications else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Calendar is read-only and cannot be modified"
+      )))
+      return
+    }
+    
+    // Update name if provided
+    if let name = name {
+      calendar.title = name
+    }
+    
+    // Update color if provided
+    if let colorHex = colorHex {
+      calendar.cgColor = ColorHelper.hexToColor(hex: colorHex)
+    }
+    
+    // Save the calendar
+    do {
+      try eventStore.saveCalendar(calendar, commit: true)
+      completion(.success(()))
+    } catch {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Failed to update calendar: \(error.localizedDescription)"
+      )))
+    }
+  }
+  
   func deleteCalendar(calendarId: String, completion: @escaping (Result<Void, CalendarError>) -> Void) {
     // Check current permission status - deleting calendars requires full access (writing)
     guard permissionService.hasPermission(for: .full) else {

@@ -25,6 +25,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleListCalendars(result: result)
     case "createCalendar":
       handleCreateCalendar(call: call, result: result)
+    case "updateCalendar":
+      handleUpdateCalendar(call: call, result: result)
     case "deleteCalendar":
       handleDeleteCalendar(call: call, result: result)
     case "retrieveEvents":
@@ -96,6 +98,44 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
         switch serviceResult {
         case .success(let calendarId):
           result(calendarId)
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+  
+  private func handleUpdateCalendar(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any] else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Invalid arguments for updateCalendar",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse calendar ID (required)
+    guard let calendarId = args["calendarId"] as? String else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Missing or invalid calendarId",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse name (optional)
+    let name = args["name"] as? String
+    
+    // Parse colorHex (optional)
+    let colorHex = args["colorHex"] as? String
+    
+    calendarService.updateCalendar(calendarId: calendarId, name: name, colorHex: colorHex) { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success:
+          result(nil)
         case .failure(let error):
           result(FlutterError(code: error.code, message: error.message, details: nil))
         }

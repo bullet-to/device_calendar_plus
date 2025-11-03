@@ -64,6 +64,17 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// Requires calendar write permissions.
   Future<String> createCalendar(String name, String? colorHex);
 
+  /// Updates an existing calendar on the device.
+  ///
+  /// [calendarId] is the ID of the calendar to update.
+  /// [name] is the new display name for the calendar (optional).
+  /// [colorHex] is the new color in #RRGGBB format (optional).
+  ///
+  /// At least one of [name] or [colorHex] must be provided.
+  /// Requires calendar write permissions.
+  Future<void> updateCalendar(
+      String calendarId, String? name, String? colorHex);
+
   /// Deletes a calendar from the device.
   ///
   /// [calendarId] is the ID of the calendar to delete.

@@ -163,6 +163,69 @@ class CalendarService(private val activity: Activity) {
         }
     }
     
+    fun updateCalendar(calendarId: String, name: String?, colorHex: String?): Result<Unit> {
+        // Check for write calendar permission
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_CALENDAR) 
+            != PackageManager.PERMISSION_GRANTED) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied. Call requestPermissions() first."
+                )
+            )
+        }
+        
+        try {
+            // Prepare values to update
+            val values = android.content.ContentValues()
+            
+            // Update name if provided
+            if (name != null) {
+                values.put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, name)
+                values.put(CalendarContract.Calendars.NAME, name)
+            }
+            
+            // Update color if provided
+            if (colorHex != null) {
+                val color = ColorHelper.hexToColor(colorHex)
+                values.put(CalendarContract.Calendars.CALENDAR_COLOR, color)
+            }
+            
+            // Update the calendar
+            val updatedRows = activity.contentResolver.update(
+                CalendarContract.Calendars.CONTENT_URI,
+                values,
+                "${CalendarContract.Calendars._ID} = ?",
+                arrayOf(calendarId)
+            )
+            
+            if (updatedRows == 0) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "Calendar with ID $calendarId not found"
+                    )
+                )
+            }
+            
+            return Result.success(Unit)
+        } catch (e: SecurityException) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to update calendar: ${e.message}"
+                )
+            )
+        }
+    }
+    
     fun deleteCalendar(calendarId: String): Result<Unit> {
         // Check for write calendar permission
         if (ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_CALENDAR) 

@@ -220,32 +220,142 @@ void main() {
       print('   - All required fields present with correct types');
     });
 
-    test('7. Error Handling - Empty Name', () async {
+    test('7. Update Calendar - Name Only', () async {
+      // Create a calendar and update just its name
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final originalName = 'Update Name Test $timestamp';
+      final newName = 'Updated Name $timestamp';
+
+      final calendarId = await plugin.createCalendar(name: originalName);
+      createdCalendarIds.add(calendarId);
+      print('✅ Created calendar: $originalName (ID: $calendarId)');
+
+      // Update just the name
+      await plugin.updateCalendar(calendarId, name: newName);
+      print('✅ Updated calendar name to: $newName');
+
+      // Verify the update
+      final calendars = await plugin.listCalendars();
+      final updatedCalendar =
+          calendars.firstWhere((cal) => cal.id == calendarId);
+      expect(updatedCalendar.name, equals(newName));
+      print('✅ Verified calendar name was updated');
+    });
+
+    test('8. Update Calendar - Color Only', () async {
+      // Create a calendar and update just its color
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarName = 'Update Color Test $timestamp';
+      final newColor = '#00FF00'; // Green
+
+      final calendarId = await plugin.createCalendar(
+        name: calendarName,
+        colorHex: '#FF0000', // Red
+      );
+      createdCalendarIds.add(calendarId);
+      print(
+          '✅ Created calendar: $calendarName (ID: $calendarId) with red color');
+
+      // Update just the color
+      await plugin.updateCalendar(calendarId, colorHex: newColor);
+      print('✅ Updated calendar color to: $newColor');
+
+      // Verify the update
+      final calendars = await plugin.listCalendars();
+      final updatedCalendar =
+          calendars.firstWhere((cal) => cal.id == calendarId);
+      expect(updatedCalendar.colorHex?.toUpperCase(),
+          equals(newColor.toUpperCase()));
+      print('✅ Verified calendar color was updated');
+    });
+
+    test('9. Update Calendar - Name and Color', () async {
+      // Create a calendar and update both name and color
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final originalName = 'Update Both Test $timestamp';
+      final newName = 'Updated Both $timestamp';
+      final newColor = '#0000FF'; // Blue
+
+      final calendarId = await plugin.createCalendar(
+        name: originalName,
+        colorHex: '#FF0000', // Red
+      );
+      createdCalendarIds.add(calendarId);
+      print('✅ Created calendar: $originalName (ID: $calendarId)');
+
+      // Update both name and color
+      await plugin.updateCalendar(calendarId,
+          name: newName, colorHex: newColor);
+      print('✅ Updated calendar name and color');
+
+      // Verify the updates
+      final calendars = await plugin.listCalendars();
+      final updatedCalendar =
+          calendars.firstWhere((cal) => cal.id == calendarId);
+      expect(updatedCalendar.name, equals(newName));
+      expect(updatedCalendar.colorHex?.toUpperCase(),
+          equals(newColor.toUpperCase()));
+      print('✅ Verified calendar name and color were updated');
+    });
+
+    test('10. Error Handling - Update with No Parameters', () async {
+      // Create a calendar first
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId =
+          await plugin.createCalendar(name: 'Error Test $timestamp');
+      createdCalendarIds.add(calendarId);
+
+      // Try to update without providing any parameters
+      try {
+        await plugin.updateCalendar(calendarId);
+        fail('Should have thrown an error when no parameters provided');
+      } on ArgumentError catch (e) {
+        print('✅ Correctly rejected update with no parameters: $e');
+        expect(e.message, contains('At least one'));
+      }
+    });
+
+    test('11. Error Handling - Update with Empty Name', () async {
+      // Create a calendar first
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId =
+          await plugin.createCalendar(name: 'Empty Name Test $timestamp');
+      createdCalendarIds.add(calendarId);
+
+      // Try to update with an empty name
+      try {
+        await plugin.updateCalendar(calendarId, name: '');
+        fail('Should have thrown an error for empty name');
+      } on ArgumentError catch (e) {
+        print('✅ Correctly rejected empty name in update: $e');
+        expect(e.message, contains('cannot be empty'));
+      }
+    });
+
+    test('12. Error Handling - Create with Empty Name', () async {
       // Attempting to create a calendar with an empty name should fail
       try {
         await plugin.createCalendar(name: '');
         fail('Should have thrown an error for empty calendar name');
-      } on DeviceCalendarException catch (e) {
+      } on ArgumentError catch (e) {
         // Expected - test passes
         print('✅ Correctly rejected empty calendar name: $e');
-        expect(e.errorCode, equals(DeviceCalendarError.invalidArguments));
         expect(e.message, contains('cannot be empty'));
       }
     });
 
-    test('7b. Error Handling - Whitespace-only Name', () async {
+    test('13. Error Handling - Create with Whitespace-only Name', () async {
       // Whitespace-only names should also fail
       try {
         await plugin.createCalendar(name: '   ');
         fail('Should have thrown an error for whitespace-only calendar name');
-      } on DeviceCalendarException catch (e) {
+      } on ArgumentError catch (e) {
         print('✅ Correctly rejected whitespace-only calendar name: $e');
-        expect(e.errorCode, equals(DeviceCalendarError.invalidArguments));
         expect(e.message, contains('cannot be empty'));
       }
     });
 
-    test('8. Color Format Variations', () async {
+    test('14. Color Format Variations', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
 
       // Test different valid color formats

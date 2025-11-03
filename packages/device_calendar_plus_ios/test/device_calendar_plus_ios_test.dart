@@ -35,6 +35,8 @@ void main() {
             ];
           case 'createCalendar':
             return 'test-calendar-id-123';
+          case 'updateCalendar':
+            return null;
           case 'deleteCalendar':
             return null;
           case 'retrieveEvents':
@@ -109,6 +111,34 @@ void main() {
       expect(log[0].arguments['name'], equals('Work Calendar'));
       expect(log[0].arguments['colorHex'], equals('#FF5733'));
       expect(calendarId, equals('test-calendar-id-123'));
+    });
+
+    test('updateCalendar with name only', () async {
+      await plugin.updateCalendar('cal-123', 'Updated Name', null);
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('updateCalendar'));
+      expect(log[0].arguments['calendarId'], equals('cal-123'));
+      expect(log[0].arguments['name'], equals('Updated Name'));
+      expect(log[0].arguments['colorHex'], isNull);
+    });
+
+    test('updateCalendar with name and color', () async {
+      await plugin.updateCalendar('cal-123', 'Updated Name', '#00FF00');
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('updateCalendar'));
+      expect(log[0].arguments['calendarId'], equals('cal-123'));
+      expect(log[0].arguments['name'], equals('Updated Name'));
+      expect(log[0].arguments['colorHex'], equals('#00FF00'));
+    });
+
+    test('deleteCalendar calls method with correct arguments', () async {
+      await plugin.deleteCalendar('cal-123');
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('deleteCalendar'));
+      expect(log[0].arguments['calendarId'], equals('cal-123'));
     });
 
     test('retrieveEvents returns list of events', () async {
