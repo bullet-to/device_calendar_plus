@@ -33,6 +33,10 @@ void main() {
                 'hidden': false,
               }
             ];
+          case 'createCalendar':
+            return 'test-calendar-id-123';
+          case 'deleteCalendar':
+            return null;
           case 'retrieveEvents':
             return [
               {
@@ -84,6 +88,27 @@ void main() {
       expect(calendars, hasLength(1));
       expect(calendars[0]['id'], equals('1'));
       expect(calendars[0]['name'], equals('Work'));
+    });
+
+    test('createCalendar with name only', () async {
+      final calendarId = await plugin.createCalendar('My Calendar', null);
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('createCalendar'));
+      expect(log[0].arguments['name'], equals('My Calendar'));
+      expect(log[0].arguments['colorHex'], isNull);
+      expect(calendarId, equals('test-calendar-id-123'));
+    });
+
+    test('createCalendar with name and color', () async {
+      final calendarId =
+          await plugin.createCalendar('Work Calendar', '#FF5733');
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('createCalendar'));
+      expect(log[0].arguments['name'], equals('Work Calendar'));
+      expect(log[0].arguments['colorHex'], equals('#FF5733'));
+      expect(calendarId, equals('test-calendar-id-123'));
     });
 
     test('retrieveEvents returns list of events', () async {

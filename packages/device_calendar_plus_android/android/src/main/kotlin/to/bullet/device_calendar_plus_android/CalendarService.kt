@@ -53,7 +53,7 @@ class CalendarService(private val activity: Activity) {
                     val readOnly = accessLevel < CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR
                     
                     // Convert color to hex string
-                    val colorHex = color?.let { colorToHex(it) }
+                    val colorHex = color?.let { ColorHelper.colorToHex(it) }
                     
                     val calendarMap = mutableMapOf<String, Any>(
                         "id" to id,
@@ -89,10 +89,126 @@ class CalendarService(private val activity: Activity) {
         return Result.success(calendars)
     }
     
-    private fun colorToHex(color: Int): String {
-        // Android color is ARGB, we want RGB hex string
-        return String.format("#%06X", 0xFFFFFF and color)
+    fun createCalendar(name: String, colorHex: String?): Result<String> {
+        // Check for write calendar permission
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_CALENDAR) 
+            != PackageManager.PERMISSION_GRANTED) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied. Call requestPermissions() first."
+                )
+            )
+        }
+        
+        val accountName = "local"
+        val accountType = CalendarContract.ACCOUNT_TYPE_LOCAL
+        
+        // Android automatically creates the account when inserting the first calendar
+        try {
+            val values = android.content.ContentValues().apply {
+                put(CalendarContract.Calendars.ACCOUNT_NAME, accountName)
+                put(CalendarContract.Calendars.ACCOUNT_TYPE, accountType)
+                put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, name)
+                put(CalendarContract.Calendars.NAME, name)
+                put(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL, CalendarContract.Calendars.CAL_ACCESS_OWNER)
+                put(CalendarContract.Calendars.OWNER_ACCOUNT, accountName)
+                put(CalendarContract.Calendars.VISIBLE, 1)
+                put(CalendarContract.Calendars.SYNC_EVENTS, 1)
+                
+                // Set color if provided
+                if (colorHex != null) {
+                    val color = ColorHelper.hexToColor(colorHex)
+                    put(CalendarContract.Calendars.CALENDAR_COLOR, color)
+                }
+            }
+            
+            val uri = activity.contentResolver.insert(
+                CalendarContract.Calendars.CONTENT_URI
+                    .buildUpon()
+                    .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+                    .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, accountName)
+                    .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, accountType)
+                    .build(),
+                values
+            )
+            
+            if (uri != null) {
+                val calendarId = uri.lastPathSegment
+                if (calendarId != null) {
+                    return Result.success(calendarId)
+                }
+            }
+            
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to create calendar: No calendar ID returned"
+                )
+            )
+        } catch (e: SecurityException) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to create calendar: ${e.message}"
+                )
+            )
+        }
     }
+    
+    fun deleteCalendar(calendarId: String): Result<Unit> {
+        // Check for write calendar permission
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_CALENDAR) 
+            != PackageManager.PERMISSION_GRANTED) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied. Call requestPermissions() first."
+                )
+            )
+        }
+        
+        try {
+            val deletedRows = activity.contentResolver.delete(
+                CalendarContract.Calendars.CONTENT_URI,
+                "${CalendarContract.Calendars._ID} = ?",
+                arrayOf(calendarId)
+            )
+            
+            if (deletedRows == 0) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "Calendar with ID $calendarId not found"
+                    )
+                )
+            }
+            
+            return Result.success(Unit)
+        } catch (e: SecurityException) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to delete calendar: ${e.message}"
+                )
+            )
+        }
+    }
+    
 }
 
 data class CalendarException(

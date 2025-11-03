@@ -15,6 +15,13 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   Future<List<Map<String, dynamic>>> listCalendars() async => [];
 
   @override
+  Future<String> createCalendar(String name, String? colorHex) async =>
+      'mock-calendar-id';
+
+  @override
+  Future<void> deleteCalendar(String calendarId) async {}
+
+  @override
   Future<List<Map<String, dynamic>>> retrieveEvents(
     DateTime startDate,
     DateTime endDate,
@@ -53,6 +60,14 @@ void main() {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
     expect(await DeviceCalendarPlusPlatform.instance.listCalendars(), []);
+  });
+
+  test('createCalendar returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    final calendarId = await DeviceCalendarPlusPlatform.instance
+        .createCalendar('Test Calendar', '#FF5733');
+    expect(calendarId, equals('mock-calendar-id'));
   });
 
   test('retrieveEvents returns expected value', () async {

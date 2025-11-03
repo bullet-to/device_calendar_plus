@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'src/calendar.dart';
 import 'src/calendar_permission_status.dart';
+import 'src/device_calendar_error.dart';
 import 'src/event.dart';
 import 'src/platform_exception_converter.dart';
 
@@ -86,6 +87,81 @@ class DeviceCalendar {
       final List<Map<String, dynamic>> rawCalendars =
           await DeviceCalendarPlusPlatform.instance.listCalendars();
       return rawCalendars.map((map) => Calendar.fromMap(map)).toList();
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  /// Creates a new calendar on the device.
+  ///
+  /// [name] is the display name for the calendar (required).
+  /// [colorHex] is an optional color in #RRGGBB format (e.g., "#FF5733").
+  ///
+  /// Returns the ID of the newly created calendar.
+  ///
+  /// The calendar is created in the device's local storage.
+  /// Requires calendar write permissions - call [requestPermissions] first.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  ///
+  /// // Create a calendar with just a name
+  /// final calendarId = await plugin.createCalendar(name: 'My Calendar');
+  ///
+  /// // Create a calendar with a name and color
+  /// final coloredCalendarId = await plugin.createCalendar(
+  ///   name: 'Work Calendar',
+  ///   colorHex: '#FF5733',
+  /// );
+  /// ```
+  Future<String> createCalendar({
+    required String name,
+    String? colorHex,
+  }) async {
+    if (name.trim().isEmpty) {
+      throw DeviceCalendarException(
+        errorCode: DeviceCalendarError.invalidArguments,
+        message: 'Calendar name cannot be empty',
+      );
+    }
+
+    try {
+      final String calendarId = await DeviceCalendarPlusPlatform.instance
+          .createCalendar(name, colorHex);
+      return calendarId;
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  /// Deletes a calendar from the device.
+  ///
+  /// [calendarId] is the ID of the calendar to delete.
+  ///
+  /// This will also delete all events within the calendar.
+  /// Requires calendar write permissions - call [requestPermissions] first.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  ///
+  /// // Delete a calendar by ID
+  /// await plugin.deleteCalendar(calendarId);
+  /// ```
+  Future<void> deleteCalendar(String calendarId) async {
+    try {
+      await DeviceCalendarPlusPlatform.instance.deleteCalendar(calendarId);
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);

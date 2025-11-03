@@ -36,7 +36,7 @@ class CalendarService {
       
       // Add color if available
       if let cgColor = calendar.cgColor {
-        calendarMap["colorHex"] = colorToHex(cgColor: cgColor)
+        calendarMap["colorHex"] = ColorHelper.colorToHex(cgColor: cgColor)
       }
       
       // Add account name from source
@@ -55,16 +55,76 @@ class CalendarService {
     completion(.success(calendarMaps))
   }
   
-  private func colorToHex(cgColor: CGColor) -> String {
-    guard let components = cgColor.components, components.count >= 3 else {
-      return "#000000"
+  func createCalendar(name: String, colorHex: String?, completion: @escaping (Result<String, CalendarError>) -> Void) {
+    // Check current permission status - creating calendars requires full access (writing)
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
     }
     
-    let r = Int(components[0] * 255.0)
-    let g = Int(components[1] * 255.0)
-    let b = Int(components[2] * 255.0)
+    // Find the local source - this is the only writable source for local calendars
+    guard let localSource = eventStore.sources.first(where: { $0.sourceType == .local }) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Could not find local calendar source"
+      )))
+      return
+    }
     
-    return String(format: "#%02X%02X%02X", r, g, b)
+    // Create a new calendar
+    let calendar = EKCalendar(for: .event, eventStore: eventStore)
+    calendar.source = localSource
+    calendar.title = name
+    
+    // Set color if provided
+    if let colorHex = colorHex {
+      calendar.cgColor = ColorHelper.hexToColor(hex: colorHex)
+    }
+    
+    // Save the calendar
+    do {
+      try eventStore.saveCalendar(calendar, commit: true)
+      completion(.success(calendar.calendarIdentifier))
+    } catch {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Failed to save calendar: \(error.localizedDescription)"
+      )))
+    }
+  }
+  
+  func deleteCalendar(calendarId: String, completion: @escaping (Result<Void, CalendarError>) -> Void) {
+    // Check current permission status - deleting calendars requires full access (writing)
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+    
+    // Find the calendar by ID
+    guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Calendar with ID \(calendarId) not found"
+      )))
+      return
+    }
+    
+    // Delete the calendar
+    do {
+      try eventStore.removeCalendar(calendar, commit: true)
+      completion(.success(()))
+    } catch {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Failed to delete calendar: \(error.localizedDescription)"
+      )))
+    }
   }
   
   private func sourceTypeToString(sourceType: EKSourceType) -> String {

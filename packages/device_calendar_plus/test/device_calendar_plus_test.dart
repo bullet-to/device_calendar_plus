@@ -61,6 +61,21 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
+  Future<String> createCalendar(String name, String? colorHex) async {
+    if (_exceptionToThrow != null) {
+      throw _exceptionToThrow!;
+    }
+    return 'mock-calendar-id-${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  @override
+  Future<void> deleteCalendar(String calendarId) async {
+    if (_exceptionToThrow != null) {
+      throw _exceptionToThrow!;
+    }
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> retrieveEvents(
     DateTime startDate,
     DateTime endDate,
@@ -241,6 +256,112 @@ void main() {
         mockPlatform.setCalendars([]);
         final calendars = await DeviceCalendar.instance.listCalendars();
         expect(calendars, isEmpty);
+      });
+    });
+
+    group('createCalendar', () {
+      test('returns calendar ID when created successfully', () async {
+        final calendarId =
+            await DeviceCalendar.instance.createCalendar(name: 'Test Calendar');
+
+        expect(calendarId, isNotEmpty);
+        expect(calendarId, isA<String>());
+        expect(calendarId, startsWith('mock-calendar-id'));
+      });
+
+      test('creates calendar with name only', () async {
+        final calendarId =
+            await DeviceCalendar.instance.createCalendar(name: 'Work Calendar');
+
+        expect(calendarId, isNotEmpty);
+      });
+
+      test('creates calendar with name and color', () async {
+        final calendarId = await DeviceCalendar.instance.createCalendar(
+          name: 'Personal Calendar',
+          colorHex: '#FF5733',
+        );
+
+        expect(calendarId, isNotEmpty);
+      });
+
+      test('throws DeviceCalendarException when permission denied', () async {
+        mockPlatform.throwException(
+          PlatformException(
+            code: 'PERMISSION_DENIED',
+            message: 'Calendar permission denied',
+          ),
+        );
+
+        expect(
+          () => DeviceCalendar.instance.createCalendar(name: 'Test Calendar'),
+          throwsA(
+            isA<DeviceCalendarException>().having(
+              (e) => e.errorCode,
+              'errorCode',
+              DeviceCalendarError.permissionDenied,
+            ),
+          ),
+        );
+      });
+
+      test('rethrows other PlatformExceptions unchanged', () async {
+        mockPlatform.throwException(
+          PlatformException(
+            code: 'SOME_OTHER_ERROR',
+            message: 'Something went wrong',
+          ),
+        );
+
+        expect(
+          () => DeviceCalendar.instance.createCalendar(name: 'Test Calendar'),
+          throwsA(
+            isA<PlatformException>().having(
+              (e) => e.code,
+              'code',
+              'SOME_OTHER_ERROR',
+            ),
+          ),
+        );
+      });
+
+      test('throws DeviceCalendarException when name is empty', () async {
+        expect(
+          () => DeviceCalendar.instance.createCalendar(name: ''),
+          throwsA(
+            isA<DeviceCalendarException>()
+                .having(
+                  (e) => e.errorCode,
+                  'errorCode',
+                  DeviceCalendarError.invalidArguments,
+                )
+                .having(
+                  (e) => e.message,
+                  'message',
+                  contains('cannot be empty'),
+                ),
+          ),
+        );
+      });
+
+      test('throws DeviceCalendarException when name is whitespace only',
+          () async {
+        expect(
+          () => DeviceCalendar.instance.createCalendar(name: '   '),
+          throwsA(
+            isA<DeviceCalendarException>()
+                .having(
+                  (e) => e.errorCode,
+                  'errorCode',
+                  DeviceCalendarError.invalidArguments,
+                )
+                .having(
+                  (e) => e.message,
+                  'message',
+                  contains('cannot be empty'),
+                ),
+          ),
+        );
       });
     });
 

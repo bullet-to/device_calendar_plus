@@ -32,6 +32,26 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   }
 
   @override
+  Future<String> createCalendar(String name, String? colorHex) async {
+    final result = await methodChannel.invokeMethod<String>(
+      'createCalendar',
+      <String, dynamic>{
+        'name': name,
+        'colorHex': colorHex,
+      },
+    );
+    return result!;
+  }
+
+  @override
+  Future<void> deleteCalendar(String calendarId) async {
+    await methodChannel.invokeMethod<void>(
+      'deleteCalendar',
+      <String, dynamic>{'calendarId': calendarId},
+    );
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> retrieveEvents(
     DateTime startDate,
     DateTime endDate,

@@ -33,6 +33,8 @@ class DeviceCalendarPlusAndroidPlugin :
             "getPlatformVersion" -> handleGetPlatformVersion(result)
             "requestPermissions" -> handleRequestPermissions(result)
             "listCalendars" -> handleListCalendars(result)
+            "createCalendar" -> handleCreateCalendar(call, result)
+            "deleteCalendar" -> handleDeleteCalendar(call, result)
             "retrieveEvents" -> handleRetrieveEvents(call, result)
             "getEvent" -> handleGetEvent(call, result)
             "showEvent" -> handleShowEvent(call, result)
@@ -67,6 +69,69 @@ class DeviceCalendarPlusAndroidPlugin :
         val serviceResult = service.listCalendars()
         serviceResult.fold(
             onSuccess = { calendars -> result.success(calendars) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+    
+    private fun handleCreateCalendar(call: MethodCall, result: Result) {
+        val service = calendarService ?: run {
+            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "CalendarService not initialized", null)
+            return
+        }
+        
+        // Parse arguments
+        val name = call.argument<String>("name")
+        val colorHex = call.argument<String>("colorHex")
+        
+        if (name == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing or invalid name",
+                null
+            )
+            return
+        }
+        
+        val serviceResult = service.createCalendar(name, colorHex)
+        serviceResult.fold(
+            onSuccess = { calendarId -> result.success(calendarId) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+    
+    private fun handleDeleteCalendar(call: MethodCall, result: Result) {
+        val service = calendarService ?: run {
+            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "CalendarService not initialized", null)
+            return
+        }
+        
+        // Parse arguments
+        val calendarId = call.argument<String>("calendarId")
+        
+        if (calendarId == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing or invalid calendarId",
+                null
+            )
+            return
+        }
+        
+        val serviceResult = service.deleteCalendar(calendarId)
+        serviceResult.fold(
+            onSuccess = { result.success(null) },
             onFailure = { error ->
                 if (error is CalendarException) {
                     result.error(error.code, error.message, null)

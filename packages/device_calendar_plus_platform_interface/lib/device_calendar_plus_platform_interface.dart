@@ -53,6 +53,25 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// converts these to [DeviceCalendar] objects.
   Future<List<Map<String, dynamic>>> listCalendars();
 
+  /// Creates a new calendar on the device.
+  ///
+  /// [name] is the display name for the calendar (required).
+  /// [colorHex] is an optional color in #RRGGBB format.
+  ///
+  /// Returns the ID of the newly created calendar.
+  ///
+  /// The calendar is created in the device's local storage.
+  /// Requires calendar write permissions.
+  Future<String> createCalendar(String name, String? colorHex);
+
+  /// Deletes a calendar from the device.
+  ///
+  /// [calendarId] is the ID of the calendar to delete.
+  ///
+  /// This will also delete all events within the calendar.
+  /// Requires calendar write permissions.
+  Future<void> deleteCalendar(String calendarId);
+
   /// Retrieves events within the specified date range.
   ///
   /// Returns a list of event data as maps. The main API layer
