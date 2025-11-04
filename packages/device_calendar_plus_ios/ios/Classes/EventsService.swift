@@ -455,7 +455,6 @@ class EventsService {
     location: String?,
     isAllDay: Bool?,
     timeZone: String?,
-    availability: String?,
     completion: @escaping (Result<Void, CalendarError>) -> Void
   ) {
     // Check permission
@@ -545,20 +544,6 @@ class EventsService {
       foundEvent.timeZone = nil
     } else if let timeZoneIdentifier = timeZone {
       foundEvent.timeZone = TimeZone(identifier: timeZoneIdentifier)
-    }
-    
-    // Update availability if provided
-    if let availability = availability {
-      switch availability {
-      case "free":
-        foundEvent.availability = .free
-      case "tentative":
-        foundEvent.availability = .tentative
-      case "unavailable":
-        foundEvent.availability = .unavailable
-      default: // "busy" or default
-        foundEvent.availability = .busy
-      }
     }
     
     // Determine the span for update

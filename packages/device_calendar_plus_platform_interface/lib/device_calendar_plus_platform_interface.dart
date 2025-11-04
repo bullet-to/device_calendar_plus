@@ -178,7 +178,6 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// - [location] - new event location
   /// - [isAllDay] - change between all-day and timed event
   /// - [timeZone] - new timezone identifier
-  /// - [availability] - new availability status (busy, free, tentative, unavailable)
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions.
@@ -192,6 +191,5 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? location,
     bool? isAllDay,
     String? timeZone,
-    String? availability,
   });
 }

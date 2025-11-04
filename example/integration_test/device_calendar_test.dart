@@ -755,7 +755,6 @@ void main() {
       // Update to free
       await plugin.updateEvent(
         instanceId: eventId,
-        availability: EventAvailability.free,
       );
 
       // Verify update

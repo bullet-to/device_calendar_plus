@@ -56,12 +56,6 @@ flutter pub get
 
 This project uses Dart workspaces, so a single `flutter pub get` at the root will install dependencies for all packages.
 
-### Running the Example App
-
-```bash
-cd example
-flutter run
-```
 
 ## 🧪 Testing
 

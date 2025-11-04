@@ -268,7 +268,6 @@ void main() {
         location: 'Updated location',
         isAllDay: false,
         timeZone: 'America/New_York',
-        availability: 'busy',
       );
 
       expect(log.length, equals(1));
@@ -284,7 +283,6 @@ void main() {
       expect(log[0].arguments['location'], equals('Updated location'));
       expect(log[0].arguments['isAllDay'], equals(false));
       expect(log[0].arguments['timeZone'], equals('America/New_York'));
-      expect(log[0].arguments['availability'], equals('busy'));
     });
 
     test('updateEvent with minimal parameters', () async {

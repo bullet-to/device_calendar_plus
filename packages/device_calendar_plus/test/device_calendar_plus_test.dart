@@ -232,7 +232,6 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? location,
     bool? isAllDay,
     String? timeZone,
-    String? availability,
   }) async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
@@ -248,7 +247,6 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
         location: location,
         isAllDay: isAllDay,
         timeZone: timeZone,
-        availability: availability,
       );
     }
   }
@@ -899,7 +897,6 @@ void main() {
           description: 'Weekly sync',
           location: 'Conference Room A',
           timeZone: 'America/New_York',
-          availability: EventAvailability.busy,
         );
 
         expect(eventId, isNotEmpty);
@@ -913,7 +910,6 @@ void main() {
           startDate: DateTime(2024, 3, 15),
           endDate: DateTime(2024, 3, 16),
           isAllDay: true,
-          availability: EventAvailability.free,
         );
 
         expect(eventId, isNotEmpty);
@@ -1151,7 +1147,6 @@ void main() {
           location: 'Updated location',
           isAllDay: false,
           timeZone: 'America/New_York',
-          availability: EventAvailability.busy,
         );
         // Should complete without error
       });

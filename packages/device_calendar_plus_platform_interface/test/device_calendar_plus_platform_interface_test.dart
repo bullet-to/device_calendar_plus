@@ -200,7 +200,6 @@ void main() {
       location: 'Updated location',
       isAllDay: false,
       timeZone: 'America/New_York',
-      availability: 'busy',
     );
     // Should complete without error
   });
