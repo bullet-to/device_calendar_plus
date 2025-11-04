@@ -23,6 +23,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleRequestPermissions(result: result)
     case "hasPermissions":
       handleHasPermissions(result: result)
+    case "openAppSettings":
+      handleOpenAppSettings(result: result)
     case "listCalendars":
       handleListCalendars(result: result)
     case "createCalendar":
@@ -72,6 +74,37 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       result(status)
     case .failure(let error):
       result(FlutterError(code: error.code, message: error.message, details: nil))
+    }
+  }
+  
+  private func handleOpenAppSettings(result: @escaping FlutterResult) {
+    guard let settingsUrl = URL(string: UIApplication.openSettingsURLString) else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Failed to create settings URL",
+        details: nil
+      ))
+      return
+    }
+    
+    if UIApplication.shared.canOpenURL(settingsUrl) {
+      UIApplication.shared.open(settingsUrl, options: [:]) { success in
+        if success {
+          result(nil)
+        } else {
+          result(FlutterError(
+            code: PlatformExceptionCodes.unknownError,
+            message: "Failed to open app settings",
+            details: nil
+          ))
+        }
+      }
+    } else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Cannot open settings URL",
+        details: nil
+      ))
     }
   }
   

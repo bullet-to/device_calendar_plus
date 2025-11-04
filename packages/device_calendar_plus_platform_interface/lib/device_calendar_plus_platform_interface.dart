@@ -56,6 +56,15 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// The main API layer converts this to [CalendarPermissionStatus].
   Future<String?> hasPermissions();
 
+  /// Opens the app's settings page in the system settings.
+  ///
+  /// This is useful when permissions have been denied and you want to guide
+  /// the user to manually enable calendar permissions in the system settings.
+  ///
+  /// On iOS, opens the app's specific settings page.
+  /// On Android, opens the app info page where users can navigate to permissions.
+  Future<void> openAppSettings();
+
   /// Lists all calendars available on the device.
   ///
   /// Returns a list of calendar data as maps. The main API layer

@@ -33,6 +33,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "getPlatformVersion" -> handleGetPlatformVersion(result)
             "requestPermissions" -> handleRequestPermissions(result)
             "hasPermissions" -> handleHasPermissions(result)
+            "openAppSettings" -> handleOpenAppSettings(result)
             "listCalendars" -> handleListCalendars(result)
             "createCalendar" -> handleCreateCalendar(call, result)
             "updateCalendar" -> handleUpdateCalendar(call, result)
@@ -82,6 +83,34 @@ class DeviceCalendarPlusAndroidPlugin :
                 }
             }
         )
+    }
+    
+    private fun handleOpenAppSettings(result: Result) {
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error(
+                PlatformExceptionCodes.UNKNOWN_ERROR,
+                "Activity not available",
+                null
+            )
+            return
+        }
+        
+        try {
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.parse("package:${currentActivity.packageName}")
+            )
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            currentActivity.startActivity(intent)
+            result.success(null)
+        } catch (e: Exception) {
+            result.error(
+                PlatformExceptionCodes.UNKNOWN_ERROR,
+                "Failed to open app settings: ${e.message}",
+                null
+            )
+        }
     }
     
     private fun handleListCalendars(result: Result) {

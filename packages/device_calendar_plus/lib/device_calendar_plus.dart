@@ -82,6 +82,51 @@ class DeviceCalendar {
     );
   }
 
+  /// Opens the app's settings page in the system settings.
+  ///
+  /// This is useful when permissions have been denied and you want to guide
+  /// the user to manually enable calendar permissions in the system settings.
+  ///
+  /// On iOS, this opens the app's specific settings page directly.
+  /// On Android, this opens the app info page where users can navigate to permissions.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  /// final status = await plugin.hasPermissions();
+  /// if (status == CalendarPermissionStatus.denied) {
+  ///   // Show dialog explaining why permission is needed
+  ///   showDialog(
+  ///     context: context,
+  ///     builder: (context) => AlertDialog(
+  ///       title: Text('Calendar Permission Required'),
+  ///       content: Text('Please enable calendar access in settings.'),
+  ///       actions: [
+  ///         TextButton(
+  ///           onPressed: () {
+  ///             Navigator.pop(context);
+  ///             plugin.openAppSettings();
+  ///           },
+  ///           child: Text('Open Settings'),
+  ///         ),
+  ///       ],
+  ///     ),
+  ///   );
+  /// }
+  /// ```
+  Future<void> openAppSettings() async {
+    try {
+      await DeviceCalendarPlusPlatform.instance.openAppSettings();
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
   /// Helper method to handle permission requests and convert status values
   Future<CalendarPermissionStatus> _handlePermissionRequest(
     Future<String?> Function() permissionCall,

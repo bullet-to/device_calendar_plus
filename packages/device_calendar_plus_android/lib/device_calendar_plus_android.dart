@@ -29,6 +29,11 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   }
 
   @override
+  Future<void> openAppSettings() async {
+    await methodChannel.invokeMethod<void>('openAppSettings');
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> listCalendars() async {
     final result =
         await methodChannel.invokeMethod<List<dynamic>>('listCalendars');
