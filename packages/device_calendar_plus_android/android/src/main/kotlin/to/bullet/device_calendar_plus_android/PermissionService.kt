@@ -18,11 +18,10 @@ class PermissionService(private val activity: Activity) {
     
     private var pendingCallback: ((Result<Int>) -> Unit)? = null
     
-    fun requestPermissions(callback: (Result<Int>) -> Unit) {
+    private fun checkPermissionsDeclared(): PermissionException? {
         val readPermission = Manifest.permission.READ_CALENDAR
         val writePermission = Manifest.permission.WRITE_CALENDAR
         
-        // Check if permissions are declared in AndroidManifest.xml
         val packageInfo = activity.packageManager.getPackageInfo(
             activity.packageName,
             PackageManager.GET_PERMISSIONS
@@ -36,9 +35,15 @@ class PermissionService(private val activity: Activity) {
                 "<uses-permission android:name=\"android.permission.READ_CALENDAR\"/>\n" +
                 "<uses-permission android:name=\"android.permission.WRITE_CALENDAR\"/>"
             
-            callback(Result.failure(PermissionException(PlatformExceptionCodes.PERMISSIONS_NOT_DECLARED, errorMessage)))
-            return
+            return PermissionException(PlatformExceptionCodes.PERMISSIONS_NOT_DECLARED, errorMessage)
         }
+        
+        return null
+    }
+    
+    private fun getCurrentPermissionStatus(): Int {
+        val readPermission = Manifest.permission.READ_CALENDAR
+        val writePermission = Manifest.permission.WRITE_CALENDAR
         
         val readGranted = ContextCompat.checkSelfPermission(
             activity,
@@ -50,7 +55,27 @@ class PermissionService(private val activity: Activity) {
             writePermission
         ) == PackageManager.PERMISSION_GRANTED
         
-        if (readGranted && writeGranted) {
+        return if (readGranted && writeGranted) STATUS_GRANTED else STATUS_DENIED
+    }
+    
+    fun hasPermissions(): Result<Int> {
+        val error = checkPermissionsDeclared()
+        if (error != null) {
+            return Result.failure(error)
+        }
+        
+        return Result.success(getCurrentPermissionStatus())
+    }
+    
+    fun requestPermissions(callback: (Result<Int>) -> Unit) {
+        val error = checkPermissionsDeclared()
+        if (error != null) {
+            callback(Result.failure(error))
+            return
+        }
+        
+        val currentStatus = getCurrentPermissionStatus()
+        if (currentStatus == STATUS_GRANTED) {
             callback(Result.success(STATUS_GRANTED))
             return
         }
@@ -59,6 +84,8 @@ class PermissionService(private val activity: Activity) {
         pendingCallback = callback
         
         // Request both permissions
+        val readPermission = Manifest.permission.READ_CALENDAR
+        val writePermission = Manifest.permission.WRITE_CALENDAR
         ActivityCompat.requestPermissions(
             activity,
             arrayOf(readPermission, writePermission),

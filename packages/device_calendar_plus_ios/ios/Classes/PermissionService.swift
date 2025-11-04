@@ -63,8 +63,7 @@ class PermissionService {
     }
   }
   
-  func requestPermissions(completion: @escaping (Result<Int, PermissionError>) -> Void) {
-    // Check if required Info.plist keys are present
+  private func checkUsageDescriptionDeclared() -> PermissionError? {
     let usageDescription = Bundle.main.object(forInfoDictionaryKey: "NSCalendarsUsageDescription") as? String
     
     if usageDescription == nil || usageDescription?.isEmpty == true {
@@ -74,52 +73,81 @@ class PermissionService {
       errorMessage += "<string>Access your calendar to view and manage events.</string>\n"
       errorMessage += "<key>NSCalendarsWriteOnlyAccessUsageDescription</key>\n"
       errorMessage += "<string>Add events without reading existing events.</string>"
-
       
-      completion(.failure(PermissionError(code: PlatformExceptionCodes.permissionsNotDeclared, message: errorMessage)))
-      return
+      return PermissionError(code: PlatformExceptionCodes.permissionsNotDeclared, message: errorMessage)
     }
     
+    return nil
+  }
+  
+  private func getCurrentPermissionStatus() -> Int {
     if #available(iOS 17.0, *) {
-      // iOS 17+ has separate read and write access
       let currentStatus = EKEventStore.authorizationStatus(for: .event)
       
       switch currentStatus {
       case .fullAccess:
-        completion(.success(PermissionService.statusGranted))
+        return PermissionService.statusGranted
       case .writeOnly:
-        completion(.success(PermissionService.statusWriteOnly))
+        return PermissionService.statusWriteOnly
       case .denied:
-        completion(.success(PermissionService.statusDenied))
+        return PermissionService.statusDenied
       case .restricted:
-        completion(.success(PermissionService.statusRestricted))
+        return PermissionService.statusRestricted
       case .notDetermined:
-        // Request full access
-        eventStore.requestFullAccessToEvents { granted, error in
-          let status = granted ? PermissionService.statusGranted : PermissionService.statusDenied
-          completion(.success(status))
-        }
+        return PermissionService.statusNotDetermined
       @unknown default:
-        completion(.success(PermissionService.statusDenied))
+        return PermissionService.statusDenied
       }
     } else {
-      // iOS 16 and below
       let currentStatus = EKEventStore.authorizationStatus(for: .event)
       
       switch currentStatus {
       case .authorized:
-        completion(.success(PermissionService.statusGranted))
+        return PermissionService.statusGranted
       case .denied:
-        completion(.success(PermissionService.statusDenied))
+        return PermissionService.statusDenied
       case .restricted:
-        completion(.success(PermissionService.statusRestricted))
+        return PermissionService.statusRestricted
       case .notDetermined:
-        eventStore.requestAccess(to: .event) { granted, error in
-          let status = granted ? PermissionService.statusGranted : PermissionService.statusDenied
-          completion(.success(status))
-        }
+        return PermissionService.statusNotDetermined
       @unknown default:
-        completion(.success(PermissionService.statusDenied))
+        return PermissionService.statusDenied
+      }
+    }
+  }
+  
+  func hasPermissions() -> Result<Int, PermissionError> {
+    if let error = checkUsageDescriptionDeclared() {
+      return .failure(error)
+    }
+    
+    return .success(getCurrentPermissionStatus())
+  }
+  
+  func requestPermissions(completion: @escaping (Result<Int, PermissionError>) -> Void) {
+    if let error = checkUsageDescriptionDeclared() {
+      completion(.failure(error))
+      return
+    }
+    
+    let currentStatus = getCurrentPermissionStatus()
+    
+    // If already determined (granted, denied, restricted, or writeOnly), return immediately
+    if currentStatus != PermissionService.statusNotDetermined {
+      completion(.success(currentStatus))
+      return
+    }
+    
+    // Request permissions if not determined
+    if #available(iOS 17.0, *) {
+      eventStore.requestFullAccessToEvents { granted, error in
+        let status = granted ? PermissionService.statusGranted : PermissionService.statusDenied
+        completion(.success(status))
+      }
+    } else {
+      eventStore.requestAccess(to: .event) { granted, error in
+        let status = granted ? PermissionService.statusGranted : PermissionService.statusDenied
+        completion(.success(status))
       }
     }
   }

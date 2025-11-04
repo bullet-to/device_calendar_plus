@@ -21,6 +21,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleGetPlatformVersion(result: result)
     case "requestPermissions":
       handleRequestPermissions(result: result)
+    case "hasPermissions":
+      handleHasPermissions(result: result)
     case "listCalendars":
       handleListCalendars(result: result)
     case "createCalendar":
@@ -60,6 +62,16 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
           result(FlutterError(code: error.code, message: error.message, details: nil))
         }
       }
+    }
+  }
+  
+  private func handleHasPermissions(result: @escaping FlutterResult) {
+    let serviceResult = permissionService.hasPermissions()
+    switch serviceResult {
+    case .success(let status):
+      result(status)
+    case .failure(let error):
+      result(FlutterError(code: error.code, message: error.message, details: nil))
     }
   }
   

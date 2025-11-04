@@ -153,6 +153,28 @@ if (status != CalendarPermissionStatus.granted) {
 }
 ```
 
+### Check Permissions
+
+Use `hasPermissions()` to check the current permission status without prompting the user:
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Check current permission status (doesn't prompt)
+final status = await plugin.hasPermissions();
+
+if (status == CalendarPermissionStatus.granted) {
+  // Permissions already granted
+  final calendars = await plugin.listCalendars();
+} else if (status == CalendarPermissionStatus.notDetermined) {
+  // User hasn't been asked yet - now we can prompt
+  final newStatus = await plugin.requestPermissions();
+} else {
+  // Denied or restricted - show appropriate UI
+  print('Permissions: $status');
+}
+```
+
 ### List Calendars
 
 ```dart

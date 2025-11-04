@@ -24,6 +24,11 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }
 
   @override
+  Future<int?> hasPermissions() async {
+    return await methodChannel.invokeMethod<int>('hasPermissions');
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> listCalendars() async {
     final result =
         await methodChannel.invokeMethod<List<dynamic>>('listCalendars');

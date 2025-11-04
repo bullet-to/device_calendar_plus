@@ -47,16 +47,47 @@ class DeviceCalendar {
   /// }
   /// ```
   Future<CalendarPermissionStatus> requestPermissions() async {
+    return _handlePermissionRequest(
+      () => DeviceCalendarPlusPlatform.instance.requestPermissions(),
+    );
+  }
+
+  /// Checks the current calendar permission status WITHOUT requesting permissions.
+  ///
+  /// Unlike [requestPermissions], this method will NOT prompt the user for
+  /// permissions if they haven't been granted yet. It only checks the current status.
+  ///
+  /// Use this method if you want to check permissions before deciding whether
+  /// to call [requestPermissions], or when you want to verify permissions without
+  /// triggering the system permission dialog.
+  ///
+  /// Returns the current [CalendarPermissionStatus].
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  /// final status = await plugin.hasPermissions();
+  /// if (status == CalendarPermissionStatus.granted) {
+  ///   // Permissions already granted
+  ///   final calendars = await plugin.listCalendars();
+  /// } else if (status == CalendarPermissionStatus.notDetermined) {
+  ///   // User hasn't been asked yet
+  ///   final newStatus = await plugin.requestPermissions();
+  /// }
+  /// ```
+  Future<CalendarPermissionStatus> hasPermissions() async {
+    return _handlePermissionRequest(
+      () => DeviceCalendarPlusPlatform.instance.hasPermissions(),
+    );
+  }
+
+  /// Helper method to handle permission requests and convert status codes
+  Future<CalendarPermissionStatus> _handlePermissionRequest(
+    Future<int?> Function() permissionCall,
+  ) async {
     try {
-      final int? statusCode =
-          await DeviceCalendarPlusPlatform.instance.requestPermissions();
-      // Default to denied if status is null or out of range
-      if (statusCode == null ||
-          statusCode < 0 ||
-          statusCode >= CalendarPermissionStatus.values.length) {
-        return CalendarPermissionStatus.denied;
-      }
-      return CalendarPermissionStatus.values[statusCode];
+      final int? statusCode = await permissionCall();
+      return _convertStatusCode(statusCode);
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);
@@ -65,6 +96,17 @@ class DeviceCalendar {
       }
       rethrow;
     }
+  }
+
+  /// Converts a status code to CalendarPermissionStatus
+  CalendarPermissionStatus _convertStatusCode(int? statusCode) {
+    // Default to denied if status is null or out of range
+    if (statusCode == null ||
+        statusCode < 0 ||
+        statusCode >= CalendarPermissionStatus.values.length) {
+      return CalendarPermissionStatus.denied;
+    }
+    return CalendarPermissionStatus.values[statusCode];
   }
 
   /// Lists all calendars available on the device.

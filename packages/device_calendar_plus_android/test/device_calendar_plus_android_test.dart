@@ -23,6 +23,8 @@ void main() {
             return kPlatformVersion;
           case 'requestPermissions':
             return 0; // CalendarPermissionStatus.granted
+          case 'hasPermissions':
+            return 0; // CalendarPermissionStatus.granted
           case 'listCalendars':
             return [
               {
@@ -84,6 +86,15 @@ void main() {
       expect(
         log,
         <Matcher>[isMethodCall('requestPermissions', arguments: null)],
+      );
+      expect(status, equals(0)); // CalendarPermissionStatus.granted
+    });
+
+    test('hasPermissions returns granted status', () async {
+      final status = await plugin.hasPermissions();
+      expect(
+        log,
+        <Matcher>[isMethodCall('hasPermissions', arguments: null)],
       );
       expect(status, equals(0)); // CalendarPermissionStatus.granted
     });

@@ -113,6 +113,14 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
+  Future<int?> hasPermissions() async {
+    if (_exceptionToThrow != null) {
+      throw _exceptionToThrow!;
+    }
+    return _permissionStatusCode;
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> listCalendars() async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
@@ -323,6 +331,79 @@ void main() {
 
           expect(
             () => DeviceCalendar.instance.requestPermissions(),
+            throwsA(
+              isA<PlatformException>().having(
+                (e) => e.code,
+                'code',
+                'SOME_OTHER_ERROR',
+              ),
+            ),
+          );
+        });
+      });
+    });
+
+    group('hasPermissions', () {
+      group('status conversion', () {
+        test('converts status code to CalendarPermissionStatus', () async {
+          mockPlatform.setPermissionStatus(CalendarPermissionStatus.granted);
+          final result = await DeviceCalendar.instance.hasPermissions();
+          expect(result, CalendarPermissionStatus.granted);
+        });
+      });
+
+      group('edge case handling', () {
+        test('defaults to denied when status is null', () async {
+          mockPlatform._permissionStatusCode = null;
+          final result = await DeviceCalendar.instance.hasPermissions();
+          expect(result, CalendarPermissionStatus.denied);
+        });
+
+        test('defaults to denied when status is negative', () async {
+          mockPlatform._permissionStatusCode = -1;
+          final result = await DeviceCalendar.instance.hasPermissions();
+          expect(result, CalendarPermissionStatus.denied);
+        });
+
+        test('defaults to denied when status is out of range', () async {
+          mockPlatform._permissionStatusCode = 999;
+          final result = await DeviceCalendar.instance.hasPermissions();
+          expect(result, CalendarPermissionStatus.denied);
+        });
+      });
+
+      group('error handling', () {
+        test('throws DeviceCalendarException when permissions not declared',
+            () async {
+          mockPlatform.throwException(
+            PlatformException(
+              code: 'PERMISSIONS_NOT_DECLARED',
+              message: 'Calendar permissions must be declared',
+            ),
+          );
+
+          expect(
+            () => DeviceCalendar.instance.hasPermissions(),
+            throwsA(
+              isA<DeviceCalendarException>().having(
+                (e) => e.errorCode,
+                'errorCode',
+                DeviceCalendarError.permissionsNotDeclared,
+              ),
+            ),
+          );
+        });
+
+        test('rethrows other PlatformExceptions unchanged', () async {
+          mockPlatform.throwException(
+            PlatformException(
+              code: 'SOME_OTHER_ERROR',
+              message: 'Something went wrong',
+            ),
+          );
+
+          expect(
+            () => DeviceCalendar.instance.hasPermissions(),
             throwsA(
               isA<PlatformException>().having(
                 (e) => e.code,

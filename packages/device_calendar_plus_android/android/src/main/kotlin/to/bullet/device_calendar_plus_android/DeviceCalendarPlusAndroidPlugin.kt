@@ -32,6 +32,7 @@ class DeviceCalendarPlusAndroidPlugin :
         when (call.method) {
             "getPlatformVersion" -> handleGetPlatformVersion(result)
             "requestPermissions" -> handleRequestPermissions(result)
+            "hasPermissions" -> handleHasPermissions(result)
             "listCalendars" -> handleListCalendars(result)
             "createCalendar" -> handleCreateCalendar(call, result)
             "updateCalendar" -> handleUpdateCalendar(call, result)
@@ -65,6 +66,22 @@ class DeviceCalendarPlusAndroidPlugin :
                 }
             )
         }
+    }
+    
+    private fun handleHasPermissions(result: Result) {
+        val service = permissionService!!
+        
+        val serviceResult = service.hasPermissions()
+        serviceResult.fold(
+            onSuccess = { status -> result.success(status) },
+            onFailure = { error ->
+                if (error is PermissionException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
     }
     
     private fun handleListCalendars(result: Result) {

@@ -47,6 +47,15 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// The main API layer converts this to [CalendarPermissionStatus].
   Future<int?> requestPermissions();
 
+  /// Checks the current calendar permission status WITHOUT requesting permissions.
+  ///
+  /// Unlike [requestPermissions], this method will NOT prompt the user for
+  /// permissions if they haven't been granted yet. It only checks the current status.
+  ///
+  /// Returns the raw integer status code from the platform.
+  /// The main API layer converts this to [CalendarPermissionStatus].
+  Future<int?> hasPermissions();
+
   /// Lists all calendars available on the device.
   ///
   /// Returns a list of calendar data as maps. The main API layer

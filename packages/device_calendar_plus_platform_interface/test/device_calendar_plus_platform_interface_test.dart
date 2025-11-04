@@ -12,6 +12,9 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       0; // CalendarPermissionStatus.granted
 
   @override
+  Future<int?> hasPermissions() async => 0; // CalendarPermissionStatus.granted
+
+  @override
   Future<List<Map<String, dynamic>>> listCalendars() async => [];
 
   @override
@@ -89,6 +92,12 @@ void main() {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
     expect(await DeviceCalendarPlusPlatform.instance.requestPermissions(), 0);
+  });
+
+  test('hasPermissions returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    expect(await DeviceCalendarPlusPlatform.instance.hasPermissions(), 0);
   });
 
   test('listCalendars returns expected value', () async {

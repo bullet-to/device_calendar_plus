@@ -52,6 +52,16 @@ void main() {
           ]));
     });
 
+    test('1b. Check Permissions Status', () async {
+      final status = await plugin.hasPermissions();
+      print('Current permission status: $status');
+
+      // After auto-granting permissions via run_integration_tests.sh,
+      // the status should be granted
+      expect(status, CalendarPermissionStatus.granted);
+      print('✅ hasPermissions() correctly returns granted status');
+    });
+
     test('2. Create and Delete Calendar', () async {
       // This test creates and immediately deletes a calendar to verify delete works
       // If delete fails, only one calendar needs manual cleanup
