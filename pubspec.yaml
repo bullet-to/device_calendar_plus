@@ -10,7 +10,7 @@ workspace:
   - packages/device_calendar_plus_platform_interface
   - packages/device_calendar_plus_android
   - packages/device_calendar_plus_ios
-  - example
+  - packages/device_calendar_plus/example
 
 dev_dependencies:
   melos: ^6.0.0
