@@ -38,6 +38,23 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   @override
   Future<void> showEvent(String instanceId) async {}
+
+  @override
+  Future<String> createEvent(
+    String calendarId,
+    String title,
+    DateTime startDate,
+    DateTime endDate,
+    bool isAllDay,
+    String? description,
+    String? location,
+    String? timeZone,
+    String availability,
+  ) async =>
+      'mock-event-id';
+
+  @override
+  Future<void> deleteEvent(String instanceId, bool deleteAllInstances) async {}
 }
 
 void main() {
@@ -112,6 +129,37 @@ void main() {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
     await DeviceCalendarPlusPlatform.instance.showEvent('event-123');
+    // Should complete without error
+  });
+
+  test('createEvent returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    final eventId = await DeviceCalendarPlusPlatform.instance.createEvent(
+      'calendar-123',
+      'Team Meeting',
+      DateTime(2024, 3, 15, 14, 0),
+      DateTime(2024, 3, 15, 15, 0),
+      false,
+      'Weekly team sync',
+      'Conference Room A',
+      'America/New_York',
+      'busy',
+    );
+    expect(eventId, equals('mock-event-id'));
+  });
+
+  test('deleteEvent completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.deleteEvent('event-123', false);
+    // Should complete without error
+  });
+
+  test('deleteEvent with deleteAllInstances completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.deleteEvent('event-123', true);
     // Should complete without error
   });
 }

@@ -111,4 +111,43 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// On iOS, presents the event in a modal using EKEventViewController.
   /// On Android, opens the event using an Intent with ACTION_VIEW.
   Future<void> showEvent(String instanceId);
+
+  /// Creates a new event in the specified calendar.
+  ///
+  /// [calendarId] is the ID of the calendar to create the event in.
+  /// [title] is the event title.
+  /// [startDate] is the start date/time.
+  /// [endDate] is the end date/time.
+  /// [isAllDay] indicates if this is an all-day event.
+  /// [description] is optional event notes/description.
+  /// [location] is optional event location.
+  /// [timeZone] is optional timezone identifier (null for all-day events).
+  /// [availability] is the availability status (busy, free, tentative, unavailable).
+  ///
+  /// Returns the ID of the newly created event (system-generated).
+  /// Requires calendar write permissions.
+  Future<String> createEvent(
+    String calendarId,
+    String title,
+    DateTime startDate,
+    DateTime endDate,
+    bool isAllDay,
+    String? description,
+    String? location,
+    String? timeZone,
+    String availability,
+  );
+
+  /// Deletes an event from the device.
+  ///
+  /// [instanceId] uniquely identifies the event instance to delete:
+  /// - For non-recurring events: Just the eventId
+  /// - For recurring events: "eventId@rawTimestampMillis" format
+  ///
+  /// [deleteAllInstances] determines deletion behavior for recurring events:
+  /// - true: Deletes all instances of the recurring event
+  /// - false: Deletes only this specific instance
+  ///
+  /// Requires calendar write permissions.
+  Future<void> deleteEvent(String instanceId, bool deleteAllInstances);
 }

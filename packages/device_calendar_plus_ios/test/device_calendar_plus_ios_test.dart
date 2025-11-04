@@ -52,6 +52,10 @@ void main() {
                 'status': 'confirmed',
               }
             ];
+          case 'createEvent':
+            return 'ios-event-id-456';
+          case 'deleteEvent':
+            return null;
           default:
             return null;
         }
@@ -156,6 +160,84 @@ void main() {
       expect(events, hasLength(1));
       expect(events[0]['eventId'], equals('event1'));
       expect(events[0]['title'], equals('Test Event'));
+    });
+
+    test('createEvent with all parameters', () async {
+      final startDate = DateTime(2024, 3, 15, 14, 0);
+      final endDate = DateTime(2024, 3, 15, 15, 0);
+
+      final eventId = await plugin.createEvent(
+        'cal-123',
+        'Team Meeting',
+        startDate,
+        endDate,
+        false,
+        'Weekly sync',
+        'Conference Room A',
+        'America/New_York',
+        'busy',
+      );
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('createEvent'));
+      expect(log[0].arguments['calendarId'], equals('cal-123'));
+      expect(log[0].arguments['title'], equals('Team Meeting'));
+      expect(log[0].arguments['startDate'],
+          equals(startDate.millisecondsSinceEpoch));
+      expect(
+          log[0].arguments['endDate'], equals(endDate.millisecondsSinceEpoch));
+      expect(log[0].arguments['isAllDay'], equals(false));
+      expect(log[0].arguments['description'], equals('Weekly sync'));
+      expect(log[0].arguments['location'], equals('Conference Room A'));
+      expect(log[0].arguments['timeZone'], equals('America/New_York'));
+      expect(log[0].arguments['availability'], equals('busy'));
+      expect(eventId, equals('ios-event-id-456'));
+    });
+
+    test('createEvent with minimal parameters', () async {
+      final startDate = DateTime(2024, 3, 15, 14, 0);
+      final endDate = DateTime(2024, 3, 15, 15, 0);
+
+      final eventId = await plugin.createEvent(
+        'cal-123',
+        'Quick Event',
+        startDate,
+        endDate,
+        true,
+        null,
+        null,
+        null,
+        'free',
+      );
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('createEvent'));
+      expect(log[0].arguments['calendarId'], equals('cal-123'));
+      expect(log[0].arguments['title'], equals('Quick Event'));
+      expect(log[0].arguments['isAllDay'], equals(true));
+      expect(log[0].arguments['description'], isNull);
+      expect(log[0].arguments['location'], isNull);
+      expect(log[0].arguments['timeZone'], isNull);
+      expect(log[0].arguments['availability'], equals('free'));
+      expect(eventId, equals('ios-event-id-456'));
+    });
+
+    test('deleteEvent calls method with correct arguments', () async {
+      await plugin.deleteEvent('event-123', false);
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('deleteEvent'));
+      expect(log[0].arguments['instanceId'], equals('event-123'));
+      expect(log[0].arguments['deleteAllInstances'], equals(false));
+    });
+
+    test('deleteEvent with deleteAllInstances true', () async {
+      await plugin.deleteEvent('event-123@123456789', true);
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('deleteEvent'));
+      expect(log[0].arguments['instanceId'], equals('event-123@123456789'));
+      expect(log[0].arguments['deleteAllInstances'], equals(true));
     });
   });
 }

@@ -35,6 +35,10 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleGetEvent(call: call, result: result)
     case "showEvent":
       handleShowEvent(call: call, result: result)
+    case "createEvent":
+      handleCreateEvent(call: call, result: result)
+    case "deleteEvent":
+      handleDeleteEvent(call: call, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -310,6 +314,98 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
             // Calendar app was opened
             result(nil)
           }
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+  
+  private func handleCreateEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any] else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Invalid arguments for createEvent",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse required parameters
+    guard let calendarId = args["calendarId"] as? String,
+          let title = args["title"] as? String,
+          let startDateMillis = args["startDate"] as? Int64,
+          let endDateMillis = args["endDate"] as? Int64,
+          let isAllDay = args["isAllDay"] as? Bool,
+          let availability = args["availability"] as? String else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Missing required arguments for createEvent",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse optional parameters
+    let description = args["description"] as? String
+    let location = args["location"] as? String
+    let timeZone = args["timeZone"] as? String
+    
+    // Convert dates
+    let startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
+    let endDate = Date(timeIntervalSince1970: TimeInterval(endDateMillis) / 1000.0)
+    
+    eventsService.createEvent(
+      calendarId: calendarId,
+      title: title,
+      startDate: startDate,
+      endDate: endDate,
+      isAllDay: isAllDay,
+      description: description,
+      location: location,
+      timeZone: timeZone,
+      availability: availability
+    ) { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success(let eventId):
+          result(eventId)
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+  
+  private func handleDeleteEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any] else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Invalid arguments for deleteEvent",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse parameters
+    guard let instanceId = args["instanceId"] as? String,
+          let deleteAllInstances = args["deleteAllInstances"] as? Bool else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Missing required arguments for deleteEvent",
+        details: nil
+      ))
+      return
+    }
+    
+    eventsService.deleteEvent(
+      instanceId: instanceId,
+      deleteAllInstances: deleteAllInstances
+    ) { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success:
+          result(nil)
         case .failure(let error):
           result(FlutterError(code: error.code, message: error.message, details: nil))
         }

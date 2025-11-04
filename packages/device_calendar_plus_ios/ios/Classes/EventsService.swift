@@ -123,12 +123,30 @@ class EventsService {
     }
     
     // Convert dates to milliseconds since epoch
-    let startDate = event.startDate!
+    var startDate = event.startDate!
     var endDate = event.endDate!
     
-    // For all-day events, iOS sets end time to 23:59:59, but we want midnight (open interval)
+    // For all-day events, iOS returns dates in UTC representing "floating" dates
+    // We need to convert them to the device's local timezone to preserve the calendar date
+    // Example: "Jan 1, 2022" in UTC should become "Jan 1, 2022 00:00" in local time
     if event.isAllDay {
+      // For end date: iOS sets end time to 23:59:59, so add 1 second to get midnight (open interval)
       endDate = endDate.addingTimeInterval(1)
+      
+      // Extract date components from UTC dates
+      let utcCalendar = Calendar(identifier: .gregorian)
+      let startComponents = utcCalendar.dateComponents([.year, .month, .day], from: startDate)
+      let endComponents = utcCalendar.dateComponents([.year, .month, .day], from: endDate)
+      
+      // Create dates in local timezone with same calendar date components
+      var localCalendar = Calendar.current
+      localCalendar.timeZone = TimeZone.current
+      if let localStartDate = localCalendar.date(from: startComponents) {
+        startDate = localStartDate
+      }
+      if let localEndDate = localCalendar.date(from: endComponents) {
+        endDate = localEndDate
+      }
     }
     
     eventMap["startDate"] = Int64(startDate.timeIntervalSince1970 * 1000)
@@ -269,6 +287,162 @@ class EventsService {
     eventViewController.allowsCalendarPreview = true
     
     completion(.success(eventViewController))
+  }
+  
+  func createEvent(
+    calendarId: String,
+    title: String,
+    startDate: Date,
+    endDate: Date,
+    isAllDay: Bool,
+    description: String?,
+    location: String?,
+    timeZone: String?,
+    availability: String,
+    completion: @escaping (Result<String, CalendarError>) -> Void
+  ) {
+    // Check permission
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+    
+    // Get the calendar
+    guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Calendar with ID \(calendarId) not found"
+      )))
+      return
+    }
+    
+    // Create the event
+    let event = EKEvent(eventStore: eventStore)
+    event.calendar = calendar
+    event.title = title
+    event.startDate = startDate
+    event.endDate = endDate
+    event.isAllDay = isAllDay
+    
+    // Set optional properties
+    if let description = description {
+      event.notes = description
+    }
+    
+    if let location = location {
+      event.location = location
+    }
+    
+    // Set timezone (nil for all-day events)
+    if !isAllDay, let timeZoneIdentifier = timeZone {
+      event.timeZone = TimeZone(identifier: timeZoneIdentifier)
+    }
+    
+    // Map availability string to EKEventAvailability
+    switch availability {
+    case "free":
+      event.availability = .free
+    case "tentative":
+      event.availability = .tentative
+    case "unavailable":
+      event.availability = .unavailable
+    default: // "busy" or default
+      event.availability = .busy
+    }
+    
+    // Save the event
+    do {
+      try eventStore.save(event, span: .thisEvent)
+      
+      // Return the event ID
+      if let eventId = event.eventIdentifier {
+        completion(.success(eventId))
+      } else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.unknownError,
+          message: "Failed to get event ID after creation"
+        )))
+      }
+    } catch {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Failed to save event: \(error.localizedDescription)"
+      )))
+    }
+  }
+  
+  func deleteEvent(
+    instanceId: String,
+    deleteAllInstances: Bool,
+    completion: @escaping (Result<Void, CalendarError>) -> Void
+  ) {
+    // Check permission
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+    
+    // Parse instanceId: "eventId" or "eventId@timestamp"
+    let parts = instanceId.split(separator: "@", maxSplits: 1)
+    let eventId = String(parts[0])
+    
+    // Fetch the event
+    let event: EKEvent?
+    
+    if parts.count == 2, let timestampMillis = Int64(parts[1]) {
+      // Recurring event with timestamp
+      let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
+      
+      // Query ±1 second around the exact occurrence time
+      let startDate = occurrenceDate.addingTimeInterval(-1)
+      let endDate = occurrenceDate.addingTimeInterval(1)
+      
+      let predicate = eventStore.predicateForEvents(
+        withStart: startDate,
+        end: endDate,
+        calendars: nil
+      )
+      
+      let events = eventStore.events(matching: predicate)
+      let matchingEvents = events.filter { $0.eventIdentifier == eventId }
+      
+      // Find the closest match
+      event = matchingEvents.min(by: {
+        abs($0.startDate.timeIntervalSince(occurrenceDate)) < abs($1.startDate.timeIntervalSince(occurrenceDate))
+      })
+    } else {
+      // Non-recurring event or master event
+      event = eventStore.event(withIdentifier: eventId)
+    }
+    
+    // Check if event was found
+    guard let foundEvent = event else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Event not found with instance ID: \(instanceId)"
+      )))
+      return
+    }
+    
+    // Determine the span for deletion
+    let span: EKSpan = deleteAllInstances ? .futureEvents : .thisEvent
+    
+    // Delete the event
+    do {
+      try eventStore.remove(foundEvent, span: span)
+      completion(.success(()))
+    } catch {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Failed to delete event: \(error.localizedDescription)"
+      )))
+    }
   }
 }
 

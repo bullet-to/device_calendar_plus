@@ -100,4 +100,44 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       <String, dynamic>{'instanceId': instanceId},
     );
   }
+
+  @override
+  Future<String> createEvent(
+    String calendarId,
+    String title,
+    DateTime startDate,
+    DateTime endDate,
+    bool isAllDay,
+    String? description,
+    String? location,
+    String? timeZone,
+    String availability,
+  ) async {
+    final result = await methodChannel.invokeMethod<String>(
+      'createEvent',
+      <String, dynamic>{
+        'calendarId': calendarId,
+        'title': title,
+        'startDate': startDate.millisecondsSinceEpoch,
+        'endDate': endDate.millisecondsSinceEpoch,
+        'isAllDay': isAllDay,
+        'description': description,
+        'location': location,
+        'timeZone': timeZone,
+        'availability': availability,
+      },
+    );
+    return result!;
+  }
+
+  @override
+  Future<void> deleteEvent(String instanceId, bool deleteAllInstances) async {
+    await methodChannel.invokeMethod<void>(
+      'deleteEvent',
+      <String, dynamic>{
+        'instanceId': instanceId,
+        'deleteAllInstances': deleteAllInstances,
+      },
+    );
+  }
 }

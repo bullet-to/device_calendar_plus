@@ -380,5 +380,251 @@ void main() {
 
       print('✅ Successfully created calendars with various color formats');
     });
+
+    test('11. Create Event', () async {
+      // Create a test calendar first
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Event Test Calendar $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day, 14, 0);
+      final endDate = DateTime(now.year, now.month, now.day, 15, 0);
+
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Test Event',
+        startDate: startDate,
+        endDate: endDate,
+        description: 'This is a test event',
+        location: 'Test Location',
+        availability: EventAvailability.busy,
+      );
+
+      expect(eventId, isNotEmpty);
+      print('✅ Created event with ID: $eventId');
+
+      // Verify event was created by retrieving it
+      final events = await plugin.retrieveEvents(
+        startDate.subtract(Duration(hours: 1)),
+        endDate.add(Duration(hours: 1)),
+        calendarIds: [calendarId],
+      );
+
+      expect(events, isNotEmpty);
+      final createdEvent = events.firstWhere((e) => e.eventId == eventId);
+      expect(createdEvent.title, 'Test Event');
+      expect(createdEvent.description, 'This is a test event');
+      expect(createdEvent.location, 'Test Location');
+
+      print('✅ Verified event was created successfully');
+    });
+
+    test('12. Create All-Day Event', () async {
+      // Create a test calendar
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'All-Day Event Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final today = DateTime.now();
+      final tomorrow = today.add(Duration(days: 1));
+
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'All-Day Test Event',
+        startDate: DateTime(today.year, today.month, today.day),
+        endDate: DateTime(tomorrow.year, tomorrow.month, tomorrow.day),
+        isAllDay: true,
+        availability: EventAvailability.free,
+      );
+
+      expect(eventId, isNotEmpty);
+      print('✅ Created all-day event with ID: $eventId');
+
+      // Verify the event is all-day
+      final events = await plugin.retrieveEvents(
+        DateTime(today.year, today.month, today.day),
+        DateTime(tomorrow.year, tomorrow.month, tomorrow.day)
+            .add(Duration(days: 1)),
+        calendarIds: [calendarId],
+      );
+
+      expect(events, isNotEmpty);
+      final allDayEvent = events.firstWhere((e) => e.eventId == eventId);
+      expect(allDayEvent.isAllDay, true);
+      print('✅ Verified all-day event was created successfully');
+    });
+
+    test('12b. All-Day Event Date Normalization', () async {
+      // Test that all-day events strip time components
+      // Pass DateTime with time components, verify event is still all-day
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Date Normalization Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final today = DateTime.now();
+      final tomorrow = today.add(Duration(days: 1));
+
+      // Pass dates WITH time components
+      final startWithTime =
+          DateTime(today.year, today.month, today.day, 14, 30, 45);
+      final endWithTime =
+          DateTime(tomorrow.year, tomorrow.month, tomorrow.day, 18, 15, 30);
+
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'All-Day with Time Components',
+        startDate: startWithTime,
+        endDate: endWithTime,
+        isAllDay: true,
+      );
+
+      expect(eventId, isNotEmpty);
+      print('✅ Created all-day event with time components: $eventId');
+
+      // Retrieve and verify the event is still all-day
+      final events = await plugin.retrieveEvents(
+        DateTime(today.year, today.month, today.day),
+        DateTime(tomorrow.year, tomorrow.month, tomorrow.day)
+            .add(Duration(days: 1)),
+        calendarIds: [calendarId],
+      );
+
+      expect(events, isNotEmpty);
+      final normalizedEvent = events.firstWhere((e) => e.eventId == eventId);
+      expect(normalizedEvent.isAllDay, true);
+
+      // Verify the date is preserved correctly (floating date behavior)
+      // All-day events should maintain the same calendar date regardless of timezone
+      // The date components (year/month/day) must match what we passed in
+      expect(normalizedEvent.startDate.year, today.year,
+          reason: 'Year should be preserved for all-day events');
+      expect(normalizedEvent.startDate.month, today.month,
+          reason: 'Month should be preserved for all-day events');
+      expect(normalizedEvent.startDate.day, today.day,
+          reason: 'Day should be preserved for all-day events');
+
+      // Time should be midnight (00:00:00)
+      expect(normalizedEvent.startDate.hour, 0);
+      expect(normalizedEvent.startDate.minute, 0);
+      expect(normalizedEvent.startDate.second, 0);
+
+      print(
+          '✅ Verified all-day event preserves date components (floating date behavior)');
+    });
+
+    test('13. Delete Event', () async {
+      // Create a test calendar and event
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Delete Event Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day, 16, 0);
+      final endDate = DateTime(now.year, now.month, now.day, 17, 0);
+
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Event To Delete',
+        startDate: startDate,
+        endDate: endDate,
+      );
+
+      print('✅ Created event to delete: $eventId');
+
+      // Verify event exists
+      final eventsBefore = await plugin.retrieveEvents(
+        startDate.subtract(Duration(hours: 1)),
+        endDate.add(Duration(hours: 1)),
+        calendarIds: [calendarId],
+      );
+      expect(eventsBefore, isNotEmpty);
+
+      // Delete the event
+      await plugin.deleteEvent(eventId);
+      print('✅ Deleted event: $eventId');
+
+      // Verify event no longer exists
+      final eventsAfter = await plugin.retrieveEvents(
+        startDate.subtract(Duration(hours: 1)),
+        endDate.add(Duration(hours: 1)),
+        calendarIds: [calendarId],
+      );
+
+      final deletedEvent =
+          eventsAfter.where((e) => e.eventId == eventId).toList();
+      expect(deletedEvent, isEmpty);
+      print('✅ Verified event was deleted successfully');
+    });
+
+    test('14. Create Event with Different Availabilities', () async {
+      // Create a test calendar
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Availability Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final now = DateTime.now();
+      final availabilities = [
+        EventAvailability.busy,
+        EventAvailability.free,
+        EventAvailability.tentative,
+      ];
+
+      for (var i = 0; i < availabilities.length; i++) {
+        final availability = availabilities[i];
+        final startDate = DateTime(now.year, now.month, now.day, 9 + i, 0);
+        final endDate = DateTime(now.year, now.month, now.day, 10 + i, 0);
+
+        final eventId = await plugin.createEvent(
+          calendarId: calendarId,
+          title: 'Event ${availability.name}',
+          startDate: startDate,
+          endDate: endDate,
+          availability: availability,
+        );
+
+        expect(eventId, isNotEmpty);
+        print('✅ Created event with ${availability.name} availability');
+      }
+
+      print('✅ Successfully created events with various availabilities');
+    });
+
+    test(
+      '15. Delete All Instances of Recurring Event',
+      () async {
+        // This test requires a recurring event to exist, which must be created
+        // manually in the iOS Calendar or Android Calendar app since we don't
+        // support creating recurring events yet.
+        //
+        // To test manually:
+        // 1. Create a recurring event in your device's calendar app
+        // 2. Get the instanceId (format: "eventId@timestamp")
+        // 3. Uncomment and update the code below with the actual instanceId
+        // 4. Run this test
+        //
+        // Example:
+        // const recurringInstanceId = 'YOUR-EVENT-ID@1234567890000';
+        // await plugin.deleteEvent(recurringInstanceId, deleteAllInstances: true);
+        //
+        // Expected: All instances of the recurring event should be deleted
+
+        fail(
+            'This test requires manual setup. Create a recurring event in your '
+            'device calendar app, then update this test with the instanceId.');
+      },
+      skip: 'Requires manual creation of recurring event. '
+          'Will be automated when recurrence rule support is added.',
+    );
   });
 }

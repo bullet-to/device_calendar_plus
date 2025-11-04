@@ -39,6 +39,8 @@ class DeviceCalendarPlusAndroidPlugin :
             "retrieveEvents" -> handleRetrieveEvents(call, result)
             "getEvent" -> handleGetEvent(call, result)
             "showEvent" -> handleShowEvent(call, result)
+            "createEvent" -> handleCreateEvent(call, result)
+            "deleteEvent" -> handleDeleteEvent(call, result)
             else -> result.notImplemented()
         }
     }
@@ -262,6 +264,93 @@ class DeviceCalendarPlusAndroidPlugin :
         }
         
         val serviceResult = service.showEvent(instanceId)
+        serviceResult.fold(
+            onSuccess = { result.success(null) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+    
+    private fun handleCreateEvent(call: MethodCall, result: Result) {
+        val service = eventsService ?: run {
+            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
+            return
+        }
+        
+        // Parse arguments
+        val calendarId = call.argument<String>("calendarId")
+        val title = call.argument<String>("title")
+        val startDateMillis = call.argument<Long>("startDate")
+        val endDateMillis = call.argument<Long>("endDate")
+        val isAllDay = call.argument<Boolean>("isAllDay")
+        val description = call.argument<String>("description")
+        val location = call.argument<String>("location")
+        val timeZone = call.argument<String>("timeZone")
+        val availability = call.argument<String>("availability")
+        
+        // Validate required arguments
+        if (calendarId == null || title == null || startDateMillis == null || 
+            endDateMillis == null || isAllDay == null || availability == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing required arguments for createEvent",
+                null
+            )
+            return
+        }
+        
+        val startDate = java.util.Date(startDateMillis)
+        val endDate = java.util.Date(endDateMillis)
+        
+        val serviceResult = service.createEvent(
+            calendarId,
+            title,
+            startDate,
+            endDate,
+            isAllDay,
+            description,
+            location,
+            timeZone,
+            availability
+        )
+        
+        serviceResult.fold(
+            onSuccess = { eventId -> result.success(eventId) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+    
+    private fun handleDeleteEvent(call: MethodCall, result: Result) {
+        val service = eventsService ?: run {
+            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
+            return
+        }
+        
+        // Parse arguments
+        val instanceId = call.argument<String>("instanceId")
+        val deleteAllInstances = call.argument<Boolean>("deleteAllInstances")
+        
+        if (instanceId == null || deleteAllInstances == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing required arguments for deleteEvent",
+                null
+            )
+            return
+        }
+        
+        val serviceResult = service.deleteEvent(instanceId, deleteAllInstances)
         serviceResult.fold(
             onSuccess = { result.success(null) },
             onFailure = { error ->

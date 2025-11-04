@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'src/calendar.dart';
 import 'src/calendar_permission_status.dart';
 import 'src/event.dart';
+import 'src/event_availability.dart';
 import 'src/platform_exception_converter.dart';
 
 export 'src/calendar.dart';
@@ -367,6 +368,176 @@ class DeviceCalendar {
   Future<void> showEvent(String instanceId) async {
     try {
       await DeviceCalendarPlusPlatform.instance.showEvent(instanceId);
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  /// Creates a new event in the specified calendar.
+  ///
+  /// [calendarId] is the ID of the calendar to create the event in (required).
+  /// [title] is the event title (required).
+  /// [startDate] is the start date/time (required).
+  /// [endDate] is the end date/time (required).
+  /// [isAllDay] indicates if this is an all-day event (default: false).
+  /// [description] is optional event notes/description.
+  /// [location] is optional event location.
+  /// [timeZone] is optional timezone identifier (null for all-day events).
+  ///   The platform will validate the timezone string.
+  /// [url] is optional event URL (supported on both platforms).
+  /// [availability] is the availability status (default: EventAvailability.busy).
+  ///
+  /// Returns the system-generated event ID.
+  /// Requires calendar write permissions - call [requestPermissions] first.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  ///
+  /// // Create a basic event
+  /// final eventId = await plugin.createEvent(
+  ///   calendarId: 'cal-123',
+  ///   title: 'Team Meeting',
+  ///   startDate: DateTime.now(),
+  ///   endDate: DateTime.now().add(Duration(hours: 1)),
+  /// );
+  ///
+  /// // Create an event with all options
+  /// final detailedEventId = await plugin.createEvent(
+  ///   calendarId: 'cal-123',
+  ///   title: 'Project Review',
+  ///   startDate: DateTime(2024, 3, 15, 14, 0),
+  ///   endDate: DateTime(2024, 3, 15, 15, 0),
+  ///   description: 'Q1 project review meeting',
+  ///   location: 'Conference Room A',
+  ///   timeZone: 'America/New_York',
+  ///   availability: EventAvailability.busy,
+  /// );
+  /// ```
+  Future<String> createEvent({
+    required String calendarId,
+    required String title,
+    required DateTime startDate,
+    required DateTime endDate,
+    bool isAllDay = false,
+    String? description,
+    String? location,
+    String? timeZone,
+    EventAvailability availability = EventAvailability.busy,
+  }) async {
+    // Validate required fields
+    if (calendarId.trim().isEmpty) {
+      throw ArgumentError.value(
+        calendarId,
+        'calendarId',
+        'Calendar ID cannot be empty',
+      );
+    }
+
+    if (title.trim().isEmpty) {
+      throw ArgumentError.value(
+        title,
+        'title',
+        'Event title cannot be empty',
+      );
+    }
+
+    if (endDate.isBefore(startDate)) {
+      throw ArgumentError(
+        'End date must be after start date',
+      );
+    }
+
+    // Normalize dates for all-day events
+    // All-day events should use midnight (00:00:00) and ignore time components
+    DateTime normalizedStartDate = startDate;
+    DateTime normalizedEndDate = endDate;
+
+    if (isAllDay) {
+      normalizedStartDate = DateTime(
+        startDate.year,
+        startDate.month,
+        startDate.day,
+      );
+      normalizedEndDate = DateTime(
+        endDate.year,
+        endDate.month,
+        endDate.day,
+      );
+    }
+
+    try {
+      final String eventId =
+          await DeviceCalendarPlusPlatform.instance.createEvent(
+        calendarId,
+        title,
+        normalizedStartDate,
+        normalizedEndDate,
+        isAllDay,
+        description,
+        location,
+        timeZone,
+        availability.name,
+      );
+      return eventId;
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  /// Deletes an event from the device.
+  ///
+  /// [instanceId] uniquely identifies the event instance to delete.
+  /// You should obtain this from an Event object via `event.instanceId`.
+  ///
+  /// [deleteAllInstances] determines deletion behavior for recurring events:
+  /// - false (default): Deletes only this specific instance
+  /// - true: Deletes all instances of the recurring event
+  ///
+  /// For non-recurring events, [deleteAllInstances] has no effect.
+  /// Requires calendar write permissions - call [requestPermissions] first.
+  ///
+  /// **Note**: Deleting single instances of recurring events may not be fully
+  /// supported on all platforms. If unsupported, an error will be thrown.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  ///
+  /// // Delete a single event
+  /// await plugin.deleteEvent(event.instanceId);
+  ///
+  /// // Delete all instances of a recurring event
+  /// await plugin.deleteEvent(
+  ///   event.instanceId,
+  ///   deleteAllInstances: true,
+  /// );
+  /// ```
+  Future<void> deleteEvent(
+    String instanceId, {
+    bool deleteAllInstances = false,
+  }) async {
+    if (instanceId.trim().isEmpty) {
+      throw ArgumentError.value(
+        instanceId,
+        'instanceId',
+        'Instance ID cannot be empty',
+      );
+    }
+
+    try {
+      await DeviceCalendarPlusPlatform.instance
+          .deleteEvent(instanceId, deleteAllInstances);
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);

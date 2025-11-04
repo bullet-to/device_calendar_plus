@@ -173,6 +173,52 @@ await plugin.showEvent(event.instanceId);
 await plugin.showEvent(event.eventId);
 ```
 
+## ⏰ DateTime and Timezone Behavior
+
+**All DateTimes returned by this plugin are in local time.**
+
+### All-Day Events (Floating Dates)
+
+All-day events are treated as **floating calendar dates**, not specific instants in time. This means:
+
+- An all-day event for "January 15, 2024" will always display as January 15, regardless of what timezone your device is in
+- The date components (year, month, day) are preserved across timezone changes
+- **Do NOT convert all-day event DateTimes to UTC** — they represent calendar dates, not moments in time
+- Example: A birthday on "January 15" should always show as January 15, whether you're in New York or Tokyo
+
+### Non-All-Day Events (Instants in Time)
+
+Regular timed events represent specific moments in time and can be converted to UTC as needed:
+
+- These events have specific start/end times in a timezone (e.g., "3:00 PM New York time")
+- They represent absolute instants that correspond to different local times across timezones
+- **You can freely convert these DateTimes to UTC** for storage, comparison, or API calls
+- Example: A meeting at "3:00 PM EST" is the same instant as "12:00 PM PST"
+
+### Summary
+
+```dart
+// All-day event - treat as a calendar date, NOT a UTC instant
+final birthdayEvent = await plugin.getEvent(birthdayId);
+if (birthdayEvent.isAllDay) {
+  // ✅ Use the date components directly
+  print('Birthday: ${birthdayEvent.startDate.year}-${birthdayEvent.startDate.month}-${birthdayEvent.startDate.day}');
+  
+  // ❌ Don't convert to UTC - it's a calendar date, not a moment in time
+  // final utcDate = birthdayEvent.startDate.toUtc(); // DON'T DO THIS
+}
+
+// Regular timed event - this IS an instant in time
+final meetingEvent = await plugin.getEvent(meetingId);
+if (!meetingEvent.isAllDay) {
+  // ✅ Convert to UTC for storage/comparison
+  final utcTime = meetingEvent.startDate.toUtc();
+  
+  // ✅ Format in local time for display
+  print('Meeting at: ${meetingEvent.startDate}');
+}
+```
+
 ## 🧱 Exception model
 
 Each `DeviceCalendarException` uses an enum code to describe the error type:

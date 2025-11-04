@@ -171,24 +171,36 @@ class EventsService(private val activity: Activity) {
             eventId
         }
         
-        // For all-day events, Android stores times in UTC but we want local floating dates
-        var start = rawStart
-        var end = rawEnd
+        // For all-day events, Android stores and returns UTC timestamps
+        // We need to convert them to local time while preserving the calendar date
+        val start: Long
+        val end: Long
+        
         if (allDay) {
-            val calendar = java.util.Calendar.getInstance()
-            calendar.timeInMillis = start
-            calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
-            calendar.set(java.util.Calendar.MINUTE, 0)
-            calendar.set(java.util.Calendar.SECOND, 0)
-            calendar.set(java.util.Calendar.MILLISECOND, 0)
-            start = calendar.timeInMillis
+            // Extract date components from UTC timestamp
+            val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+            utcCal.timeInMillis = rawStart
+            val startYear = utcCal.get(java.util.Calendar.YEAR)
+            val startMonth = utcCal.get(java.util.Calendar.MONTH)
+            val startDay = utcCal.get(java.util.Calendar.DAY_OF_MONTH)
             
-            calendar.timeInMillis = end
-            calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
-            calendar.set(java.util.Calendar.MINUTE, 0)
-            calendar.set(java.util.Calendar.SECOND, 0)
-            calendar.set(java.util.Calendar.MILLISECOND, 0)
-            end = calendar.timeInMillis
+            utcCal.timeInMillis = rawEnd
+            val endYear = utcCal.get(java.util.Calendar.YEAR)
+            val endMonth = utcCal.get(java.util.Calendar.MONTH)
+            val endDay = utcCal.get(java.util.Calendar.DAY_OF_MONTH)
+            
+            // Create local timestamps with those date components
+            val localCal = java.util.Calendar.getInstance()
+            localCal.set(startYear, startMonth, startDay, 0, 0, 0)
+            localCal.set(java.util.Calendar.MILLISECOND, 0)
+            start = localCal.timeInMillis
+            
+            localCal.set(endYear, endMonth, endDay, 0, 0, 0)
+            localCal.set(java.util.Calendar.MILLISECOND, 0)
+            end = localCal.timeInMillis
+        } else {
+            start = rawStart
+            end = rawEnd
         }
         
         val eventMap = mutableMapOf<String, Any>(
@@ -378,6 +390,220 @@ class EventsService(private val activity: Activity) {
                 CalendarException(
                     PlatformExceptionCodes.UNKNOWN_ERROR,
                     "Failed to open event: ${e.message}"
+                )
+            )
+        }
+    }
+    
+    fun createEvent(
+        calendarId: String,
+        title: String,
+        startDate: java.util.Date,
+        endDate: java.util.Date,
+        isAllDay: Boolean,
+        description: String?,
+        location: String?,
+        timeZone: String?,
+        availability: String
+    ): Result<String> {
+        // Check for write calendar permission
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
+            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied. Call requestPermissions() first."
+                )
+            )
+        }
+        
+        try {
+            // For all-day events, Android interprets timestamps as UTC to determine the calendar date
+            // We need to convert local date components to UTC midnight to preserve the calendar date
+            val startMillis: Long
+            val endMillis: Long
+            
+            if (isAllDay) {
+                // Extract date components from local time
+                val localCal = java.util.Calendar.getInstance()
+                localCal.time = startDate
+                val startYear = localCal.get(java.util.Calendar.YEAR)
+                val startMonth = localCal.get(java.util.Calendar.MONTH)
+                val startDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
+                
+                localCal.time = endDate
+                val endYear = localCal.get(java.util.Calendar.YEAR)
+                val endMonth = localCal.get(java.util.Calendar.MONTH)
+                val endDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
+                
+                // Create UTC timestamps with those date components
+                val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+                utcCal.set(startYear, startMonth, startDay, 0, 0, 0)
+                utcCal.set(java.util.Calendar.MILLISECOND, 0)
+                startMillis = utcCal.timeInMillis
+                
+                utcCal.set(endYear, endMonth, endDay, 0, 0, 0)
+                utcCal.set(java.util.Calendar.MILLISECOND, 0)
+                endMillis = utcCal.timeInMillis
+            } else {
+                startMillis = startDate.time
+                endMillis = endDate.time
+            }
+            
+            val values = android.content.ContentValues().apply {
+                put(CalendarContract.Events.CALENDAR_ID, calendarId.toLong())
+                put(CalendarContract.Events.TITLE, title)
+                put(CalendarContract.Events.DTSTART, startMillis)
+                put(CalendarContract.Events.DTEND, endMillis)
+                put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+                
+                // Set description if provided
+                if (description != null) {
+                    put(CalendarContract.Events.DESCRIPTION, description)
+                }
+                
+                // Set location if provided
+                if (location != null) {
+                    put(CalendarContract.Events.EVENT_LOCATION, location)
+                }
+                
+                // Set timezone
+                // For all-day events, use device timezone to make them "floating"
+                // This ensures the date components (year/month/day) stay the same
+                // regardless of timezone changes
+                if (isAllDay) {
+                    put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
+                } else {
+                    // For non-all-day events, use provided timezone or default to device timezone
+                    val tz = timeZone ?: java.util.TimeZone.getDefault().id
+                    put(CalendarContract.Events.EVENT_TIMEZONE, tz)
+                }
+                
+                // Map availability string to Android constant
+                val availabilityValue = when (availability) {
+                    "free" -> CalendarContract.Events.AVAILABILITY_FREE
+                    "tentative" -> CalendarContract.Events.AVAILABILITY_TENTATIVE
+                    "unavailable" -> CalendarContract.Events.AVAILABILITY_BUSY
+                    else -> CalendarContract.Events.AVAILABILITY_BUSY // "busy" or default
+                }
+                put(CalendarContract.Events.AVAILABILITY, availabilityValue)
+                
+                // Set status to confirmed
+                put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
+            }
+            
+            val uri = activity.contentResolver.insert(
+                CalendarContract.Events.CONTENT_URI,
+                values
+            )
+            
+            if (uri != null) {
+                val eventId = uri.lastPathSegment
+                if (eventId != null) {
+                    return Result.success(eventId)
+                }
+            }
+            
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to create event: No event ID returned"
+                )
+            )
+        } catch (e: SecurityException) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to create event: ${e.message}"
+                )
+            )
+        }
+    }
+    
+    fun deleteEvent(instanceId: String, deleteAllInstances: Boolean): Result<Unit> {
+        // Check for write calendar permission
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
+            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied. Call requestPermissions() first."
+                )
+            )
+        }
+        
+        try {
+            // Parse instanceId: "eventId" or "eventId@timestamp"
+            val parts = instanceId.split("@", limit = 2)
+            val eventId = parts[0]
+            
+            if (parts.size == 2 && !deleteAllInstances) {
+                // Deleting a single instance of a recurring event
+                // This requires using the Instances table with a specific timestamp
+                val occurrenceMillis = parts[1].toLongOrNull()
+                if (occurrenceMillis == null) {
+                    return Result.failure(
+                        CalendarException(
+                            PlatformExceptionCodes.INVALID_ARGUMENTS,
+                            "Invalid instanceId format: $instanceId"
+                        )
+                    )
+                }
+                
+                // For single instance deletion of recurring events, we need to query the specific instance
+                // and delete it from the Instances table
+                val deleteUri = ContentUris.withAppendedId(
+                    CalendarContract.Events.CONTENT_URI,
+                    eventId.toLong()
+                )
+                
+                // Note: Android doesn't easily support deleting single instances
+                // We'll need to use CONTENT_EXCEPTION_URI or similar
+                // For now, return an error indicating this is not fully supported
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.UNKNOWN_ERROR,
+                        "Deleting single instances of recurring events is not yet fully supported. Set deleteAllInstances to true to delete the entire series."
+                    )
+                )
+            } else {
+                // Delete the event (or all instances if recurring)
+                val deletedRows = activity.contentResolver.delete(
+                    CalendarContract.Events.CONTENT_URI,
+                    "${CalendarContract.Events._ID} = ?",
+                    arrayOf(eventId)
+                )
+                
+                if (deletedRows == 0) {
+                    return Result.failure(
+                        CalendarException(
+                            PlatformExceptionCodes.INVALID_ARGUMENTS,
+                            "Event with ID $eventId not found"
+                        )
+                    )
+                }
+                
+                return Result.success(Unit)
+            }
+        } catch (e: SecurityException) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to delete event: ${e.message}"
                 )
             )
         }
