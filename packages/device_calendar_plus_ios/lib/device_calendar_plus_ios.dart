@@ -140,4 +140,34 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       },
     );
   }
+
+  @override
+  Future<void> updateEvent(
+    String instanceId,
+    bool updateAllInstances, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? timeZone,
+    String? availability,
+  }) async {
+    await methodChannel.invokeMethod<void>(
+      'updateEvent',
+      <String, dynamic>{
+        'instanceId': instanceId,
+        'updateAllInstances': updateAllInstances,
+        'title': title,
+        'startDate': startDate?.millisecondsSinceEpoch,
+        'endDate': endDate?.millisecondsSinceEpoch,
+        'description': description,
+        'location': location,
+        'isAllDay': isAllDay,
+        'timeZone': timeZone,
+        'availability': availability,
+      },
+    );
+  }
 }

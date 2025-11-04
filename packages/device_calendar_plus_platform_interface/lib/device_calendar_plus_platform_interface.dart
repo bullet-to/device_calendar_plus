@@ -150,4 +150,39 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// Requires calendar write permissions.
   Future<void> deleteEvent(String instanceId, bool deleteAllInstances);
+
+  /// Updates an existing event on the device.
+  ///
+  /// [instanceId] uniquely identifies the event instance to update:
+  /// - For non-recurring events: Just the eventId
+  /// - For recurring events: "eventId@rawTimestampMillis" format
+  ///
+  /// [updateAllInstances] determines update behavior for recurring events:
+  /// - true: Updates all instances of the recurring event
+  /// - false: Updates only this specific instance
+  ///
+  /// All field parameters are optional - only provided fields will be updated:
+  /// - [title] - new event title
+  /// - [startDate] - new start date/time
+  /// - [endDate] - new end date/time
+  /// - [description] - new event description
+  /// - [location] - new event location
+  /// - [isAllDay] - change between all-day and timed event
+  /// - [timeZone] - new timezone identifier
+  /// - [availability] - new availability status (busy, free, tentative, unavailable)
+  ///
+  /// At least one field must be provided.
+  /// Requires calendar write permissions.
+  Future<void> updateEvent(
+    String instanceId,
+    bool updateAllInstances, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? timeZone,
+    String? availability,
+  });
 }

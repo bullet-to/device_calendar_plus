@@ -444,5 +444,136 @@ class EventsService {
       )))
     }
   }
+  
+  func updateEvent(
+    instanceId: String,
+    updateAllInstances: Bool,
+    title: String?,
+    startDate: Date?,
+    endDate: Date?,
+    description: String?,
+    location: String?,
+    isAllDay: Bool?,
+    timeZone: String?,
+    availability: String?,
+    completion: @escaping (Result<Void, CalendarError>) -> Void
+  ) {
+    // Check permission
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+    
+    // Parse instanceId: "eventId" or "eventId@timestamp"
+    let parts = instanceId.split(separator: "@", maxSplits: 1)
+    let eventId = String(parts[0])
+    
+    // Fetch the event (use same logic as deleteEvent)
+    let event: EKEvent?
+    
+    if parts.count == 2, let timestampMillis = Int64(parts[1]) {
+      // Recurring event with timestamp
+      let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
+      
+      // Query ±1 second around the exact occurrence time
+      let startDateQuery = occurrenceDate.addingTimeInterval(-1)
+      let endDateQuery = occurrenceDate.addingTimeInterval(1)
+      
+      let predicate = eventStore.predicateForEvents(
+        withStart: startDateQuery,
+        end: endDateQuery,
+        calendars: nil
+      )
+      
+      let events = eventStore.events(matching: predicate)
+      let matchingEvents = events.filter { $0.eventIdentifier == eventId }
+      
+      // Find the closest match
+      event = matchingEvents.min(by: {
+        abs($0.startDate.timeIntervalSince(occurrenceDate)) < abs($1.startDate.timeIntervalSince(occurrenceDate))
+      })
+    } else {
+      // Non-recurring event or master event
+      event = eventStore.event(withIdentifier: eventId)
+    }
+    
+    // Check if event was found
+    guard let foundEvent = event else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Event not found with instance ID: \(instanceId)"
+      )))
+      return
+    }
+    
+    // Update only provided fields
+    if let title = title {
+      foundEvent.title = title
+    }
+    
+    if let description = description {
+      foundEvent.notes = description
+    }
+    
+    if let location = location {
+      foundEvent.location = location
+    }
+    
+    // Determine if event is/will be all-day
+    let effectiveIsAllDay = isAllDay ?? foundEvent.isAllDay
+    
+    // Update isAllDay if provided
+    if let isAllDay = isAllDay {
+      foundEvent.isAllDay = isAllDay
+    }
+    
+    // Update dates if provided
+    if let startDate = startDate {
+      foundEvent.startDate = startDate
+    }
+    if let endDate = endDate {
+      foundEvent.endDate = endDate
+    }
+    
+    // Update timezone
+    // For all-day events, timezone should be nil
+    // For timed events, set the timezone if provided
+    if effectiveIsAllDay {
+      foundEvent.timeZone = nil
+    } else if let timeZoneIdentifier = timeZone {
+      foundEvent.timeZone = TimeZone(identifier: timeZoneIdentifier)
+    }
+    
+    // Update availability if provided
+    if let availability = availability {
+      switch availability {
+      case "free":
+        foundEvent.availability = .free
+      case "tentative":
+        foundEvent.availability = .tentative
+      case "unavailable":
+        foundEvent.availability = .unavailable
+      default: // "busy" or default
+        foundEvent.availability = .busy
+      }
+    }
+    
+    // Determine the span for update
+    let span: EKSpan = updateAllInstances ? .futureEvents : .thisEvent
+    
+    // Save the event
+    do {
+      try eventStore.save(foundEvent, span: span)
+      completion(.success(()))
+    } catch {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.unknownError,
+        message: "Failed to update event: \(error.localizedDescription)"
+      )))
+    }
+  }
 }
 

@@ -39,6 +39,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleCreateEvent(call: call, result: result)
     case "deleteEvent":
       handleDeleteEvent(call: call, result: result)
+    case "updateEvent":
+      handleUpdateEvent(call: call, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -401,6 +403,73 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     eventsService.deleteEvent(
       instanceId: instanceId,
       deleteAllInstances: deleteAllInstances
+    ) { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success:
+          result(nil)
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+  
+  private func handleUpdateEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any] else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Invalid arguments for updateEvent",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse required parameters
+    guard let instanceId = args["instanceId"] as? String,
+          let updateAllInstances = args["updateAllInstances"] as? Bool else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Missing required arguments for updateEvent",
+        details: nil
+      ))
+      return
+    }
+    
+    // Parse optional parameters
+    let title = args["title"] as? String
+    let description = args["description"] as? String
+    let location = args["location"] as? String
+    let isAllDay = args["isAllDay"] as? Bool
+    let timeZone = args["timeZone"] as? String
+    let availability = args["availability"] as? String
+    
+    // Parse dates if provided
+    let startDate: Date?
+    if let startDateMillis = args["startDate"] as? Int64 {
+      startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
+    } else {
+      startDate = nil
+    }
+    
+    let endDate: Date?
+    if let endDateMillis = args["endDate"] as? Int64 {
+      endDate = Date(timeIntervalSince1970: TimeInterval(endDateMillis) / 1000.0)
+    } else {
+      endDate = nil
+    }
+    
+    eventsService.updateEvent(
+      instanceId: instanceId,
+      updateAllInstances: updateAllInstances,
+      title: title,
+      startDate: startDate,
+      endDate: endDate,
+      description: description,
+      location: location,
+      isAllDay: isAllDay,
+      timeZone: timeZone,
+      availability: availability
     ) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {

@@ -56,6 +56,8 @@ void main() {
             return 'ios-event-id-456';
           case 'deleteEvent':
             return null;
+          case 'updateEvent':
+            return null;
           default:
             return null;
         }
@@ -238,6 +240,74 @@ void main() {
       expect(log[0].method, equals('deleteEvent'));
       expect(log[0].arguments['instanceId'], equals('event-123@123456789'));
       expect(log[0].arguments['deleteAllInstances'], equals(true));
+    });
+
+    test('updateEvent with all parameters', () async {
+      final startDate = DateTime(2024, 3, 20, 10, 0);
+      final endDate = DateTime(2024, 3, 20, 11, 0);
+
+      await plugin.updateEvent(
+        'event-123',
+        false,
+        title: 'Updated Title',
+        startDate: startDate,
+        endDate: endDate,
+        description: 'Updated description',
+        location: 'Updated location',
+        isAllDay: false,
+        timeZone: 'America/New_York',
+        availability: 'busy',
+      );
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('updateEvent'));
+      expect(log[0].arguments['instanceId'], equals('event-123'));
+      expect(log[0].arguments['updateAllInstances'], equals(false));
+      expect(log[0].arguments['title'], equals('Updated Title'));
+      expect(log[0].arguments['startDate'],
+          equals(startDate.millisecondsSinceEpoch));
+      expect(
+          log[0].arguments['endDate'], equals(endDate.millisecondsSinceEpoch));
+      expect(log[0].arguments['description'], equals('Updated description'));
+      expect(log[0].arguments['location'], equals('Updated location'));
+      expect(log[0].arguments['isAllDay'], equals(false));
+      expect(log[0].arguments['timeZone'], equals('America/New_York'));
+      expect(log[0].arguments['availability'], equals('busy'));
+    });
+
+    test('updateEvent with minimal parameters', () async {
+      await plugin.updateEvent(
+        'event-123',
+        false,
+        title: 'New Title',
+      );
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('updateEvent'));
+      expect(log[0].arguments['instanceId'], equals('event-123'));
+      expect(log[0].arguments['updateAllInstances'], equals(false));
+      expect(log[0].arguments['title'], equals('New Title'));
+      expect(log[0].arguments['startDate'], isNull);
+      expect(log[0].arguments['endDate'], isNull);
+      expect(log[0].arguments['description'], isNull);
+      expect(log[0].arguments['location'], isNull);
+      expect(log[0].arguments['isAllDay'], isNull);
+      expect(log[0].arguments['timeZone'], isNull);
+      expect(log[0].arguments['availability'], isNull);
+    });
+
+    test('updateEvent with updateAllInstances true', () async {
+      await plugin.updateEvent(
+        'event-123',
+        true,
+        title: 'Updated Series',
+      );
+
+      expect(log.length, equals(1));
+      expect(log[0].method, equals('updateEvent'));
+      expect(log[0].arguments['instanceId'], equals('event-123'));
+      expect(log[0].arguments['updateAllInstances'], equals(true));
+      expect(log[0].arguments['title'], equals('Updated Series'));
     });
   });
 }

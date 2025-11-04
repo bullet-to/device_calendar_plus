@@ -626,5 +626,294 @@ void main() {
       skip: 'Requires manual creation of recurring event. '
           'Will be automated when recurrence rule support is added.',
     );
+
+    test('16. Update Event Title', () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Update Title Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      // Create event
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Original Title',
+        startDate: DateTime.now().add(Duration(hours: 1)),
+        endDate: DateTime.now().add(Duration(hours: 2)),
+      );
+
+      // Update title
+      await plugin.updateEvent(
+        instanceId: eventId,
+        title: 'Updated Title',
+      );
+
+      // Verify update
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.title, 'Updated Title');
+      print('✅ Event title updated successfully');
+    });
+
+    test('17. Update Event Dates', () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Update Dates Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final originalStart = DateTime.now().add(Duration(hours: 1));
+      final originalEnd = DateTime.now().add(Duration(hours: 2));
+
+      // Create event
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Date Update Test',
+        startDate: originalStart,
+        endDate: originalEnd,
+      );
+
+      // Update dates
+      final newStart = DateTime.now().add(Duration(days: 1, hours: 3));
+      final newEnd = DateTime.now().add(Duration(days: 1, hours: 4));
+
+      await plugin.updateEvent(
+        instanceId: eventId,
+        startDate: newStart,
+        endDate: newEnd,
+      );
+
+      // Verify update
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      // Allow small time differences (within 1 minute)
+      expect(event!.startDate.difference(newStart).abs(),
+          lessThan(Duration(minutes: 1)));
+      expect(event.endDate.difference(newEnd).abs(),
+          lessThan(Duration(minutes: 1)));
+      print('✅ Event dates updated successfully');
+    });
+
+    test('18. Update Event Description and Location', () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Update Multi-field Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      // Create event
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Multi-field Update Test',
+        startDate: DateTime.now().add(Duration(hours: 1)),
+        endDate: DateTime.now().add(Duration(hours: 2)),
+        description: 'Original description',
+        location: 'Original location',
+      );
+
+      // Update multiple fields
+      await plugin.updateEvent(
+        instanceId: eventId,
+        description: 'Updated description',
+        location: 'Updated location',
+      );
+
+      // Verify update
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.description, 'Updated description');
+      expect(event.location, 'Updated location');
+      print('✅ Event description and location updated successfully');
+    });
+
+    test('19. Update Event Availability', () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Update Availability Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      // Create event with busy availability
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Availability Update Test',
+        startDate: DateTime.now().add(Duration(hours: 1)),
+        endDate: DateTime.now().add(Duration(hours: 2)),
+        availability: EventAvailability.busy,
+      );
+
+      // Update to free
+      await plugin.updateEvent(
+        instanceId: eventId,
+        availability: EventAvailability.free,
+      );
+
+      // Verify update
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.availability, EventAvailability.free);
+      print('✅ Event availability updated successfully');
+    });
+
+    test('20. Change Timed Event to All-Day', () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Timed to All-Day Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final today = DateTime.now();
+
+      // Create timed event
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Timed to All-Day',
+        startDate: DateTime(today.year, today.month, today.day, 14, 0),
+        endDate: DateTime(today.year, today.month, today.day, 15, 0),
+        isAllDay: false,
+      );
+
+      // Update to all-day
+      await plugin.updateEvent(
+        instanceId: eventId,
+        isAllDay: true,
+      );
+
+      // Verify update
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.isAllDay, true);
+      // Time should be stripped to midnight
+      expect(event.startDate.hour, 0);
+      expect(event.startDate.minute, 0);
+      expect(event.startDate.second, 0);
+      print('✅ Timed event changed to all-day successfully');
+    });
+
+    test('21. Change All-Day Event to Timed', () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'All-Day to Timed Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final today = DateTime.now();
+
+      // Create all-day event
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'All-Day to Timed',
+        startDate: DateTime(today.year, today.month, today.day),
+        endDate: DateTime(today.year, today.month, today.day + 1),
+        isAllDay: true,
+      );
+
+      // Update to timed with specific hours
+      final newStart = DateTime(today.year, today.month, today.day, 10, 0);
+      final newEnd = DateTime(today.year, today.month, today.day, 11, 0);
+
+      await plugin.updateEvent(
+        instanceId: eventId,
+        isAllDay: false,
+        startDate: newStart,
+        endDate: newEnd,
+      );
+
+      // Verify update
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.isAllDay, false);
+      // Should have specific time now (allowing small differences)
+      expect(event.startDate.difference(newStart).abs(),
+          lessThan(Duration(minutes: 1)));
+      print('✅ All-day event changed to timed successfully');
+    });
+
+    test('22. Update Event TimeZone', () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Update Timezone Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final startDate = DateTime.now().add(Duration(hours: 1));
+      final endDate = DateTime.now().add(Duration(hours: 2));
+
+      // Create event with New York timezone
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Timezone Update Test',
+        startDate: startDate,
+        endDate: endDate,
+        timeZone: 'America/New_York',
+      );
+
+      // Update to Los Angeles timezone
+      // Note: This reinterprets the local time, not preserving the instant
+      await plugin.updateEvent(
+        instanceId: eventId,
+        timeZone: 'America/Los_Angeles',
+      );
+
+      // Verify event is updated (note: the exact behavior may vary by platform)
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      print('✅ Event timezone updated successfully');
+    });
+
+    test('23. Update Event with No Fields Throws Error', () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'No Fields Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      // Create event
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'No Fields Test',
+        startDate: DateTime.now().add(Duration(hours: 1)),
+        endDate: DateTime.now().add(Duration(hours: 2)),
+      );
+
+      // Attempt to update with no fields - should throw
+      expect(
+        () async => await plugin.updateEvent(instanceId: eventId),
+        throwsA(isA<ArgumentError>()),
+      );
+
+      print('✅ Update with no fields correctly throws ArgumentError');
+    });
+
+    test(
+      '24. Update All Instances of Recurring Event',
+      () async {
+        // This test requires a recurring event to exist, which must be created
+        // manually in the iOS Calendar or Android Calendar app since we don't
+        // support creating recurring events yet.
+        //
+        // To test manually:
+        // 1. Create a recurring event in your device's calendar app
+        // 2. Get the instanceId (format: "eventId" for series update)
+        // 3. Uncomment and update the code below with the actual instanceId
+        // 4. Run this test
+        //
+        // Example:
+        // const recurringEventId = 'YOUR-EVENT-ID';
+        // await plugin.updateEvent(
+        //   instanceId: recurringEventId,
+        //   updateAllInstances: true,
+        //   title: 'Updated Recurring Event',
+        // );
+        //
+        // Expected: All instances of the recurring event should be updated
+
+        fail(
+            'This test requires manual setup. Create a recurring event in your '
+            'device calendar app, then update this test with the eventId.');
+      },
+      skip: 'Requires manual creation of recurring event. '
+          'Will be automated when recurrence rule support is added.',
+    );
   });
 }

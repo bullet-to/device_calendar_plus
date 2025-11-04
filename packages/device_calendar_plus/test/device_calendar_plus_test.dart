@@ -26,6 +26,20 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String availability,
   )? _createEventCallback;
 
+  // Callback to capture updateEvent arguments
+  Future<void> Function(
+    String instanceId,
+    bool updateAllInstances, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? timeZone,
+    String? availability,
+  })? _updateEventCallback;
+
   void setPlatformVersion(String? version) {
     _platformVersion = version;
   }
@@ -68,6 +82,23 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     ) callback,
   ) {
     _createEventCallback = callback;
+  }
+
+  void setUpdateEventCallback(
+    Future<void> Function(
+      String instanceId,
+      bool updateAllInstances, {
+      String? title,
+      DateTime? startDate,
+      DateTime? endDate,
+      String? description,
+      String? location,
+      bool? isAllDay,
+      String? timeZone,
+      String? availability,
+    }) callback,
+  ) {
+    _updateEventCallback = callback;
   }
 
   @override
@@ -178,6 +209,38 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   Future<void> deleteEvent(String instanceId, bool deleteAllInstances) async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
+    }
+  }
+
+  @override
+  Future<void> updateEvent(
+    String instanceId,
+    bool updateAllInstances, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? timeZone,
+    String? availability,
+  }) async {
+    if (_exceptionToThrow != null) {
+      throw _exceptionToThrow!;
+    }
+    if (_updateEventCallback != null) {
+      return _updateEventCallback!(
+        instanceId,
+        updateAllInstances,
+        title: title,
+        startDate: startDate,
+        endDate: endDate,
+        description: description,
+        location: location,
+        isAllDay: isAllDay,
+        timeZone: timeZone,
+        availability: availability,
+      );
     }
   }
 }
@@ -1008,6 +1071,182 @@ void main() {
 
         expect(
           () => DeviceCalendar.instance.deleteEvent('event-123'),
+          throwsA(
+            isA<DeviceCalendarException>().having(
+              (e) => e.errorCode,
+              'errorCode',
+              DeviceCalendarError.permissionDenied,
+            ),
+          ),
+        );
+      });
+    });
+
+    group('updateEvent', () {
+      test('updates event with all parameters', () async {
+        await DeviceCalendar.instance.updateEvent(
+          instanceId: 'event-123',
+          title: 'Updated Title',
+          startDate: DateTime(2024, 3, 20, 10, 0),
+          endDate: DateTime(2024, 3, 20, 11, 0),
+          description: 'Updated description',
+          location: 'Updated location',
+          isAllDay: false,
+          timeZone: 'America/New_York',
+          availability: EventAvailability.busy,
+        );
+        // Should complete without error
+      });
+
+      test('updates event with single field', () async {
+        await DeviceCalendar.instance.updateEvent(
+          instanceId: 'event-123',
+          title: 'New Title',
+        );
+        // Should complete without error
+      });
+
+      test('updates all instances of recurring event', () async {
+        await DeviceCalendar.instance.updateEvent(
+          instanceId: 'event-123',
+          updateAllInstances: true,
+          title: 'Updated Series',
+        );
+        // Should complete without error
+      });
+
+      test('normalizes dates when isAllDay is true', () async {
+        final startWithTime = DateTime(2024, 3, 15, 14, 30, 45);
+        final endWithTime = DateTime(2024, 3, 16, 18, 15, 30);
+
+        DateTime? capturedStart;
+        DateTime? capturedEnd;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setUpdateEventCallback((
+          instanceId,
+          updateAllInstances, {
+          title,
+          startDate,
+          endDate,
+          description,
+          location,
+          isAllDay,
+          timeZone,
+          availability,
+        }) {
+          capturedStart = startDate;
+          capturedEnd = endDate;
+          return Future.value();
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.updateEvent(
+          instanceId: 'event-123',
+          startDate: startWithTime,
+          endDate: endWithTime,
+          isAllDay: true,
+        );
+
+        expect(capturedStart, isNotNull);
+        expect(capturedEnd, isNotNull);
+        expect(capturedStart!.hour, 0);
+        expect(capturedStart!.minute, 0);
+        expect(capturedStart!.second, 0);
+        expect(capturedStart!.millisecond, 0);
+        expect(capturedEnd!.hour, 0);
+        expect(capturedEnd!.minute, 0);
+        expect(capturedEnd!.second, 0);
+        expect(capturedEnd!.millisecond, 0);
+
+        expect(capturedStart!.year, 2024);
+        expect(capturedStart!.month, 3);
+        expect(capturedStart!.day, 15);
+        expect(capturedEnd!.year, 2024);
+        expect(capturedEnd!.month, 3);
+        expect(capturedEnd!.day, 16);
+      });
+
+      test('preserves exact time when isAllDay is false', () async {
+        final startWithTime = DateTime(2024, 3, 15, 14, 30, 45);
+        final endWithTime = DateTime(2024, 3, 15, 18, 15, 30);
+
+        DateTime? capturedStart;
+        DateTime? capturedEnd;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setUpdateEventCallback((
+          instanceId,
+          updateAllInstances, {
+          title,
+          startDate,
+          endDate,
+          description,
+          location,
+          isAllDay,
+          timeZone,
+          availability,
+        }) {
+          capturedStart = startDate;
+          capturedEnd = endDate;
+          return Future.value();
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.updateEvent(
+          instanceId: 'event-123',
+          startDate: startWithTime,
+          endDate: endWithTime,
+          isAllDay: false,
+        );
+
+        expect(capturedStart, equals(startWithTime));
+        expect(capturedEnd, equals(endWithTime));
+      });
+
+      test('throws ArgumentError when instanceId is empty', () async {
+        expect(
+          () => DeviceCalendar.instance.updateEvent(
+            instanceId: '',
+            title: 'New Title',
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when no fields provided', () async {
+        expect(
+          () => DeviceCalendar.instance.updateEvent(
+            instanceId: 'event-123',
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when endDate is before startDate', () async {
+        expect(
+          () => DeviceCalendar.instance.updateEvent(
+            instanceId: 'event-123',
+            startDate: DateTime(2024, 3, 20, 11, 0),
+            endDate: DateTime(2024, 3, 20, 10, 0),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('converts PlatformException to DeviceCalendarException', () async {
+        mockPlatform.throwException(
+          PlatformException(
+            code: 'PERMISSION_DENIED',
+            message: 'Calendar permission denied',
+          ),
+        );
+
+        expect(
+          () => DeviceCalendar.instance.updateEvent(
+            instanceId: 'event-123',
+            title: 'New Title',
+          ),
           throwsA(
             isA<DeviceCalendarException>().having(
               (e) => e.errorCode,

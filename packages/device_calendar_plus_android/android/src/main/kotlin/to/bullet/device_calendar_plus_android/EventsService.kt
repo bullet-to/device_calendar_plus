@@ -608,5 +608,181 @@ class EventsService(private val activity: Activity) {
             )
         }
     }
+    
+    fun updateEvent(
+        instanceId: String,
+        updateAllInstances: Boolean,
+        title: String?,
+        startDate: java.util.Date?,
+        endDate: java.util.Date?,
+        description: String?,
+        location: String?,
+        isAllDay: Boolean?,
+        timeZone: String?,
+        availability: String?
+    ): Result<Unit> {
+        // Check for write calendar permission
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
+            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied. Call requestPermissions() first."
+                )
+            )
+        }
+        
+        try {
+            // Parse instanceId: "eventId" or "eventId@timestamp"
+            val parts = instanceId.split("@", limit = 2)
+            val eventId = parts[0]
+            
+            // Check if this is a single instance update on a recurring event
+            if (parts.size == 2 && !updateAllInstances) {
+                // Updating a single instance of a recurring event is not fully supported
+                // Similar limitation to deletion
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.UNKNOWN_ERROR,
+                        "Updating single instances of recurring events is not yet fully supported. Set updateAllInstances to true to update the entire series."
+                    )
+                )
+            }
+            
+            // Need to fetch existing event to determine if it's all-day
+            // This is required for proper date normalization
+            val existingEventResult = getEvent(instanceId)
+            val existingEvent = existingEventResult.getOrNull()
+            val wasAllDay = existingEvent?.get("isAllDay") as? Boolean ?: false
+            
+            // Build ContentValues with only provided fields
+            val values = android.content.ContentValues()
+            
+            // Update title if provided
+            if (title != null) {
+                values.put(CalendarContract.Events.TITLE, title)
+            }
+            
+            // Update description if provided
+            if (description != null) {
+                values.put(CalendarContract.Events.DESCRIPTION, description)
+            }
+            
+            // Update location if provided
+            if (location != null) {
+                values.put(CalendarContract.Events.EVENT_LOCATION, location)
+            }
+            
+            // Update isAllDay if provided
+            val effectiveIsAllDay = isAllDay ?: wasAllDay
+            if (isAllDay != null) {
+                values.put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+            }
+            
+            // Update dates if provided
+            // If event is/becomes all-day, need to normalize to UTC midnight
+            if (startDate != null || endDate != null) {
+                val startMillis: Long?
+                val endMillis: Long?
+                
+                if (effectiveIsAllDay) {
+                    // For all-day events, convert date components to UTC midnight
+                    val localCal = java.util.Calendar.getInstance()
+                    
+                    if (startDate != null) {
+                        localCal.time = startDate
+                        val startYear = localCal.get(java.util.Calendar.YEAR)
+                        val startMonth = localCal.get(java.util.Calendar.MONTH)
+                        val startDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
+                        
+                        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+                        utcCal.set(startYear, startMonth, startDay, 0, 0, 0)
+                        utcCal.set(java.util.Calendar.MILLISECOND, 0)
+                        startMillis = utcCal.timeInMillis
+                    } else {
+                        startMillis = null
+                    }
+                    
+                    if (endDate != null) {
+                        localCal.time = endDate
+                        val endYear = localCal.get(java.util.Calendar.YEAR)
+                        val endMonth = localCal.get(java.util.Calendar.MONTH)
+                        val endDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
+                        
+                        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+                        utcCal.set(endYear, endMonth, endDay, 0, 0, 0)
+                        utcCal.set(java.util.Calendar.MILLISECOND, 0)
+                        endMillis = utcCal.timeInMillis
+                    } else {
+                        endMillis = null
+                    }
+                } else {
+                    // For timed events, use timestamps directly
+                    startMillis = startDate?.time
+                    endMillis = endDate?.time
+                }
+                
+                if (startMillis != null) {
+                    values.put(CalendarContract.Events.DTSTART, startMillis)
+                }
+                if (endMillis != null) {
+                    values.put(CalendarContract.Events.DTEND, endMillis)
+                }
+            }
+            
+            // Update timezone if provided
+            // Note: For all-day events, timezone should be set but is less relevant
+            if (timeZone != null) {
+                values.put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
+            } else if (isAllDay == true) {
+                // If changing to all-day, set device timezone
+                values.put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
+            }
+            
+            // Update availability if provided
+            if (availability != null) {
+                val availabilityValue = when (availability) {
+                    "free" -> CalendarContract.Events.AVAILABILITY_FREE
+                    "tentative" -> CalendarContract.Events.AVAILABILITY_TENTATIVE
+                    "unavailable" -> CalendarContract.Events.AVAILABILITY_BUSY
+                    else -> CalendarContract.Events.AVAILABILITY_BUSY // "busy" or default
+                }
+                values.put(CalendarContract.Events.AVAILABILITY, availabilityValue)
+            }
+            
+            // Perform the update
+            val updatedRows = activity.contentResolver.update(
+                CalendarContract.Events.CONTENT_URI,
+                values,
+                "${CalendarContract.Events._ID} = ?",
+                arrayOf(eventId)
+            )
+            
+            if (updatedRows == 0) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "Event with ID $eventId not found"
+                    )
+                )
+            }
+            
+            return Result.success(Unit)
+        } catch (e: SecurityException) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to update event: ${e.message}"
+                )
+            )
+        }
+    }
 }
 

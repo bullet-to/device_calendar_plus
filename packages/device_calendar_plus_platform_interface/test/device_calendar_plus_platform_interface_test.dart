@@ -55,6 +55,20 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   @override
   Future<void> deleteEvent(String instanceId, bool deleteAllInstances) async {}
+
+  @override
+  Future<void> updateEvent(
+    String instanceId,
+    bool updateAllInstances, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? timeZone,
+    String? availability,
+  }) async {}
 }
 
 void main() {
@@ -160,6 +174,46 @@ void main() {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
     await DeviceCalendarPlusPlatform.instance.deleteEvent('event-123', true);
+    // Should complete without error
+  });
+
+  test('updateEvent with all parameters completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.updateEvent(
+      'event-123',
+      false,
+      title: 'Updated Title',
+      startDate: DateTime(2024, 3, 20, 10, 0),
+      endDate: DateTime(2024, 3, 20, 11, 0),
+      description: 'Updated description',
+      location: 'Updated location',
+      isAllDay: false,
+      timeZone: 'America/New_York',
+      availability: 'busy',
+    );
+    // Should complete without error
+  });
+
+  test('updateEvent with minimal parameters completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.updateEvent(
+      'event-123',
+      false,
+      title: 'New Title',
+    );
+    // Should complete without error
+  });
+
+  test('updateEvent with updateAllInstances completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.updateEvent(
+      'event-123',
+      true,
+      title: 'Updated Series',
+    );
     // Should complete without error
   });
 }

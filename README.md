@@ -70,6 +70,70 @@ Add calendar permissions to `android/app/src/main/AndroidManifest.xml`:
 <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 ```
 
+## ⏰ DateTime and Timezone Behavior
+
+**All DateTimes returned by this plugin are in local time.**
+
+### All-Day Events (Floating Dates)
+
+All-day events are treated as **floating calendar dates**, not specific instants in time. This means:
+
+- An all-day event for "January 15, 2024" will always display as January 15, regardless of what timezone your device is in
+- The date components (year, month, day) are preserved across timezone changes
+- **Do NOT convert all-day event DateTimes to UTC** — they represent calendar dates, not moments in time
+- Example: A birthday on "January 15" should always show as January 15, whether you're in New York or Tokyo
+
+### Non-All-Day Events (Instants in Time)
+
+Regular timed events represent specific moments in time and can be converted to UTC as needed:
+
+- These events have specific start/end times in a timezone (e.g., "3:00 PM New York time")
+- They represent absolute instants that correspond to different local times across timezones
+- **You can freely convert these DateTimes to UTC** for storage, comparison, or API calls
+- Example: A meeting at "3:00 PM EST" is the same instant as "12:00 PM PST"
+
+### Summary
+
+```dart
+// All-day event - treat as a calendar date, NOT a UTC instant
+final birthdayEvent = await plugin.getEvent(birthdayId);
+if (birthdayEvent.isAllDay) {
+  // ✅ Use the date components directly
+  print('Birthday: ${birthdayEvent.startDate.year}-${birthdayEvent.startDate.month}-${birthdayEvent.startDate.day}');
+  
+  // ❌ Don't convert to UTC - it's a calendar date, not a moment in time
+  // final utcDate = birthdayEvent.startDate.toUtc(); // DON'T DO THIS
+}
+
+// Regular timed event - this IS an instant in time
+final meetingEvent = await plugin.getEvent(meetingId);
+if (!meetingEvent.isAllDay) {
+  // ✅ Convert to UTC for storage/comparison
+  final utcTime = meetingEvent.startDate.toUtc();
+  
+  // ✅ Format in local time for display
+  print('Meeting at: ${meetingEvent.startDate}');
+}
+```
+
+## 🧱 Exception model
+
+Each `DeviceCalendarException` uses an enum code to describe the error type:
+
+```dart
+enum DeviceCalendarError {
+  permissionDenied,
+  ...
+}
+```
+
+This enum provides stable, descriptive error codes for all exceptions thrown by the plugin.
+
+> **Note on error codes:**
+> `DeviceCalendarError` exists for developer ergonomics and clearer `switch` handling.
+> We may introduce new enum values in future minor versions as new error cases appear.
+We do not consider this a breaking change.
+
 
 ## 🛠️ Usage Examples
 
@@ -173,69 +237,105 @@ await plugin.showEvent(event.instanceId);
 await plugin.showEvent(event.eventId);
 ```
 
-## ⏰ DateTime and Timezone Behavior
-
-**All DateTimes returned by this plugin are in local time.**
-
-### All-Day Events (Floating Dates)
-
-All-day events are treated as **floating calendar dates**, not specific instants in time. This means:
-
-- An all-day event for "January 15, 2024" will always display as January 15, regardless of what timezone your device is in
-- The date components (year, month, day) are preserved across timezone changes
-- **Do NOT convert all-day event DateTimes to UTC** — they represent calendar dates, not moments in time
-- Example: A birthday on "January 15" should always show as January 15, whether you're in New York or Tokyo
-
-### Non-All-Day Events (Instants in Time)
-
-Regular timed events represent specific moments in time and can be converted to UTC as needed:
-
-- These events have specific start/end times in a timezone (e.g., "3:00 PM New York time")
-- They represent absolute instants that correspond to different local times across timezones
-- **You can freely convert these DateTimes to UTC** for storage, comparison, or API calls
-- Example: A meeting at "3:00 PM EST" is the same instant as "12:00 PM PST"
-
-### Summary
+### Create Event
 
 ```dart
-// All-day event - treat as a calendar date, NOT a UTC instant
-final birthdayEvent = await plugin.getEvent(birthdayId);
-if (birthdayEvent.isAllDay) {
-  // ✅ Use the date components directly
-  print('Birthday: ${birthdayEvent.startDate.year}-${birthdayEvent.startDate.month}-${birthdayEvent.startDate.day}');
-  
-  // ❌ Don't convert to UTC - it's a calendar date, not a moment in time
-  // final utcDate = birthdayEvent.startDate.toUtc(); // DON'T DO THIS
-}
+final plugin = DeviceCalendar.instance;
 
-// Regular timed event - this IS an instant in time
-final meetingEvent = await plugin.getEvent(meetingId);
-if (!meetingEvent.isAllDay) {
-  // ✅ Convert to UTC for storage/comparison
-  final utcTime = meetingEvent.startDate.toUtc();
-  
-  // ✅ Format in local time for display
-  print('Meeting at: ${meetingEvent.startDate}');
-}
+// Create a basic event
+final eventId = await plugin.createEvent(
+  calendarId: 'your-calendar-id',
+  title: 'Team Meeting',
+  startDate: DateTime(2024, 3, 20, 14, 0),
+  endDate: DateTime(2024, 3, 20, 15, 0),
+);
+
+// Create an all-day event
+final allDayEventId = await plugin.createEvent(
+  calendarId: 'your-calendar-id',
+  title: 'Conference',
+  startDate: DateTime(2024, 3, 20),
+  endDate: DateTime(2024, 3, 21),
+  isAllDay: true,
+);
+
+// Create event with all optional parameters
+final detailedEventId = await plugin.createEvent(
+  calendarId: 'your-calendar-id',
+  title: 'Project Kickoff',
+  startDate: DateTime(2024, 3, 20, 10, 0),
+  endDate: DateTime(2024, 3, 20, 12, 0),
+  description: 'Quarterly project kickoff meeting',
+  location: 'Conference Room A',
+  timeZone: 'America/New_York',
+  availability: EventAvailability.busy,
+);
 ```
 
-## 🧱 Exception model
-
-Each `DeviceCalendarException` uses an enum code to describe the error type:
+### Update Event
 
 ```dart
-enum DeviceCalendarError {
-  permissionDenied,
-  ...
-}
+final plugin = DeviceCalendar.instance;
+
+// Update event title
+await plugin.updateEvent(
+  instanceId: event.instanceId,
+  title: 'Updated Meeting Title',
+);
+
+// Update multiple fields
+await plugin.updateEvent(
+  instanceId: event.instanceId,
+  title: 'Team Sync',
+  startDate: DateTime(2024, 3, 21, 15, 0),
+  endDate: DateTime(2024, 3, 21, 16, 0),
+  location: 'Conference Room B',
+  description: 'Updated description',
+);
+
+// Change a timed event to all-day
+await plugin.updateEvent(
+  instanceId: event.instanceId,
+  isAllDay: true,
+);
+
+// Change an all-day event to timed
+await plugin.updateEvent(
+  instanceId: event.instanceId,
+  isAllDay: false,
+  startDate: DateTime(2024, 3, 21, 10, 0),
+  endDate: DateTime(2024, 3, 21, 11, 0),
+);
+
+// Update timezone (reinterprets local time)
+// Note: "3 PM EST" becomes "3 PM PST" (different instant in time)
+await plugin.updateEvent(
+  instanceId: event.instanceId,
+  timeZone: 'America/Los_Angeles',
+);
+
+// Update all instances of a recurring event
+await plugin.updateEvent(
+  instanceId: event.eventId, // Use eventId for series
+  updateAllInstances: true,
+  title: 'Updated Recurring Event',
+);
 ```
 
-This enum provides stable, descriptive error codes for all exceptions thrown by the plugin.
+### Delete Event
 
-> **Note on error codes:**
-> `DeviceCalendarError` exists for developer ergonomics and clearer `switch` handling.
-> We may introduce new enum values in future minor versions as new error cases appear.
-We do not consider this a breaking change.
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Delete a single event or single instance of recurring event
+await plugin.deleteEvent(event.instanceId);
+
+// Delete all instances of a recurring event
+await plugin.deleteEvent(
+  event.eventId, // Use eventId for series
+  deleteAllInstances: true,
+);
+```
 
 ## 🤝 Contributing
 

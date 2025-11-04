@@ -547,4 +547,155 @@ class DeviceCalendar {
       rethrow;
     }
   }
+
+  /// Updates an existing event on the device.
+  ///
+  /// [instanceId] uniquely identifies the event instance to update (required).
+  /// You should obtain this from an Event object via `event.instanceId`.
+  ///
+  /// [updateAllInstances] determines update behavior for recurring events:
+  /// - false (default): Updates only this specific instance
+  /// - true: Updates all instances of the recurring event
+  ///
+  /// All field parameters are optional - only provided fields will be updated:
+  /// - [title] - new event title
+  /// - [startDate] - new start date/time
+  /// - [endDate] - new end date/time
+  /// - [description] - new event description
+  /// - [location] - new event location
+  /// - [isAllDay] - change between all-day and timed event
+  ///   - Changing timed → all-day: Time components are stripped to midnight
+  ///   - Changing all-day → timed: Midnight time is used
+  /// - [timeZone] - new timezone identifier
+  ///   - Note: This reinterprets the local time, not preserving the instant
+  ///   - Example: "3:00 PM EST" → "3:00 PM PST" (different instant in time)
+  /// - [availability] - new availability status
+  ///
+  /// At least one field must be provided.
+  /// Requires calendar write permissions - call [requestPermissions] first.
+  ///
+  /// **Note**: Updating single instances of recurring events may not be fully
+  /// supported on all platforms. If unsupported, an error will be thrown.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  ///
+  /// // Update event title
+  /// await plugin.updateEvent(
+  ///   instanceId: event.instanceId,
+  ///   title: 'Updated Meeting Title',
+  /// );
+  ///
+  /// // Change timed event to all-day
+  /// await plugin.updateEvent(
+  ///   instanceId: event.instanceId,
+  ///   isAllDay: true,
+  /// );
+  ///
+  /// // Update multiple fields
+  /// await plugin.updateEvent(
+  ///   instanceId: event.instanceId,
+  ///   title: 'Team Sync',
+  ///   startDate: DateTime(2024, 3, 20, 10, 0),
+  ///   endDate: DateTime(2024, 3, 20, 11, 0),
+  ///   location: 'Conference Room B',
+  /// );
+  ///
+  /// // Update all instances of recurring event
+  /// await plugin.updateEvent(
+  ///   instanceId: event.instanceId,
+  ///   updateAllInstances: true,
+  ///   title: 'Updated Recurring Event',
+  /// );
+  /// ```
+  Future<void> updateEvent({
+    required String instanceId,
+    bool updateAllInstances = false,
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? timeZone,
+    EventAvailability? availability,
+  }) async {
+    // Validate instanceId
+    if (instanceId.trim().isEmpty) {
+      throw ArgumentError.value(
+        instanceId,
+        'instanceId',
+        'Instance ID cannot be empty',
+      );
+    }
+
+    // Validate at least one field is provided
+    if (title == null &&
+        startDate == null &&
+        endDate == null &&
+        description == null &&
+        location == null &&
+        isAllDay == null &&
+        timeZone == null &&
+        availability == null) {
+      throw ArgumentError(
+        'At least one field must be provided to update',
+      );
+    }
+
+    // Validate dates if both are provided
+    if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
+      throw ArgumentError(
+        'End date must be after start date',
+      );
+    }
+
+    // Normalize dates for all-day events
+    // We need to check if the event is becoming all-day or if we're updating dates on an existing all-day event
+    // Since we don't have access to the existing event here, we'll let the platform handle it
+    // But if isAllDay is being set to true, we should normalize the dates
+    DateTime? normalizedStartDate = startDate;
+    DateTime? normalizedEndDate = endDate;
+
+    if (isAllDay == true) {
+      // Event is becoming all-day, normalize dates to midnight
+      if (startDate != null) {
+        normalizedStartDate = DateTime(
+          startDate.year,
+          startDate.month,
+          startDate.day,
+        );
+      }
+      if (endDate != null) {
+        normalizedEndDate = DateTime(
+          endDate.year,
+          endDate.month,
+          endDate.day,
+        );
+      }
+    }
+
+    try {
+      await DeviceCalendarPlusPlatform.instance.updateEvent(
+        instanceId,
+        updateAllInstances,
+        title: title,
+        startDate: normalizedStartDate,
+        endDate: normalizedEndDate,
+        description: description,
+        location: location,
+        isAllDay: isAllDay,
+        timeZone: timeZone,
+        availability: availability?.name,
+      );
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
 }

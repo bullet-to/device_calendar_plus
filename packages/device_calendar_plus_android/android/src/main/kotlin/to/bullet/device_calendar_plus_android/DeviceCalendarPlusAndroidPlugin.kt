@@ -41,6 +41,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "showEvent" -> handleShowEvent(call, result)
             "createEvent" -> handleCreateEvent(call, result)
             "deleteEvent" -> handleDeleteEvent(call, result)
+            "updateEvent" -> handleUpdateEvent(call, result)
             else -> result.notImplemented()
         }
     }
@@ -351,6 +352,69 @@ class DeviceCalendarPlusAndroidPlugin :
         }
         
         val serviceResult = service.deleteEvent(instanceId, deleteAllInstances)
+        serviceResult.fold(
+            onSuccess = { result.success(null) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+    
+    private fun handleUpdateEvent(call: MethodCall, result: Result) {
+        val service = eventsService
+        if (service == null) {
+            result.error(
+                PlatformExceptionCodes.UNKNOWN_ERROR,
+                "EventsService is not initialized",
+                null
+            )
+            return
+        }
+        
+        // Parse required arguments
+        val instanceId = call.argument<String>("instanceId")
+        val updateAllInstances = call.argument<Boolean>("updateAllInstances")
+        
+        if (instanceId == null || updateAllInstances == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing required arguments for updateEvent",
+                null
+            )
+            return
+        }
+        
+        // Parse optional arguments (all can be null)
+        val title = call.argument<String>("title")
+        val startDateMillis = call.argument<Long>("startDate")
+        val endDateMillis = call.argument<Long>("endDate")
+        val description = call.argument<String>("description")
+        val location = call.argument<String>("location")
+        val isAllDay = call.argument<Boolean>("isAllDay")
+        val timeZone = call.argument<String>("timeZone")
+        val availability = call.argument<String>("availability")
+        
+        // Convert dates if provided
+        val startDate = startDateMillis?.let { java.util.Date(it) }
+        val endDate = endDateMillis?.let { java.util.Date(it) }
+        
+        val serviceResult = service.updateEvent(
+            instanceId,
+            updateAllInstances,
+            title,
+            startDate,
+            endDate,
+            description,
+            location,
+            isAllDay,
+            timeZone,
+            availability
+        )
+        
         serviceResult.fold(
             onSuccess = { result.success(null) },
             onFailure = { error ->
