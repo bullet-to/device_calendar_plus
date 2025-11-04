@@ -41,7 +41,7 @@ void main() {
             return null;
           case 'deleteCalendar':
             return null;
-          case 'retrieveEvents':
+          case 'listEvents':
             return [
               {
                 'eventId': 'event1',
@@ -158,14 +158,14 @@ void main() {
       expect(log[0].arguments['calendarId'], equals('cal-123'));
     });
 
-    test('retrieveEvents returns list of events', () async {
+    test('listEvents returns list of events', () async {
       final now = DateTime.now();
       final later = now.add(Duration(days: 7));
 
-      final events = await plugin.retrieveEvents(now, later, ['cal1']);
+      final events = await plugin.listEvents(now, later, ['cal1']);
 
       expect(log.length, equals(1));
-      expect(log[0].method, equals('retrieveEvents'));
+      expect(log[0].method, equals('listEvents'));
       expect(log[0].arguments['startDate'], equals(now.millisecondsSinceEpoch));
       expect(log[0].arguments['endDate'], equals(later.millisecondsSinceEpoch));
       expect(log[0].arguments['calendarIds'], equals(['cal1']));

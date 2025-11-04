@@ -152,7 +152,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
-  Future<List<Map<String, dynamic>>> retrieveEvents(
+  Future<List<Map<String, dynamic>>> listEvents(
     DateTime startDate,
     DateTime endDate,
     List<String>? calendarIds,
@@ -172,7 +172,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
-  Future<void> showEvent(String instanceId) async {
+  Future<void> showEventModal(String instanceId) async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
     }
@@ -683,7 +683,7 @@ void main() {
       });
     });
 
-    group('retrieveEvents', () {
+    group('listEvents', () {
       test('returns list of Event objects', () async {
         final now = DateTime.now();
         final later = now.add(Duration(hours: 2));
@@ -717,7 +717,7 @@ void main() {
           },
         ]);
 
-        final events = await DeviceCalendar.instance.retrieveEvents(
+        final events = await DeviceCalendar.instance.listEvents(
           now,
           now.add(Duration(days: 7)),
         );
@@ -756,7 +756,7 @@ void main() {
           },
         ]);
 
-        final events = await DeviceCalendar.instance.retrieveEvents(
+        final events = await DeviceCalendar.instance.listEvents(
           now,
           now.add(Duration(days: 1)),
         );
@@ -768,7 +768,7 @@ void main() {
 
       test('returns empty list when no events', () async {
         mockPlatform.setEvents([]);
-        final events = await DeviceCalendar.instance.retrieveEvents(
+        final events = await DeviceCalendar.instance.listEvents(
           DateTime.now(),
           DateTime.now().add(Duration(days: 7)),
         );
@@ -784,7 +784,7 @@ void main() {
         );
 
         expect(
-          () => DeviceCalendar.instance.retrieveEvents(
+          () => DeviceCalendar.instance.listEvents(
             DateTime.now(),
             DateTime.now().add(Duration(days: 7)),
           ),

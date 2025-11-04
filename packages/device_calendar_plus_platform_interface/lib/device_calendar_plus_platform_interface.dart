@@ -92,11 +92,11 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// Requires calendar write permissions.
   Future<void> deleteCalendar(String calendarId);
 
-  /// Retrieves events within the specified date range.
+  /// Lists events within the specified date range.
   ///
   /// Returns a list of event data as maps. The main API layer
   /// converts these to [Event] objects.
-  Future<List<Map<String, dynamic>>> retrieveEvents(
+  Future<List<Map<String, dynamic>>> listEvents(
     DateTime startDate,
     DateTime endDate,
     List<String>? calendarIds,
@@ -119,7 +119,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// On iOS, presents the event in a modal using EKEventViewController.
   /// On Android, opens the event using an Intent with ACTION_VIEW.
-  Future<void> showEvent(String instanceId);
+  Future<void> showEventModal(String instanceId);
 
   /// Creates a new event in the specified calendar.
   ///

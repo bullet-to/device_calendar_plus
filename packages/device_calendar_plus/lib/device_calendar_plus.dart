@@ -275,7 +275,7 @@ class DeviceCalendar {
     }
   }
 
-  /// Retrieves events within the specified date range.
+  /// Lists events within the specified date range.
   ///
   /// [startDate] and [endDate] are required parameters that define the time
   /// window for fetching events.
@@ -303,13 +303,13 @@ class DeviceCalendar {
   /// final nextMonth = now.add(Duration(days: 30));
   ///
   /// // Get all events in the next month
-  /// final events = await plugin.retrieveEvents(
+  /// final events = await plugin.listEvents(
   ///   now,
   ///   nextMonth,
   /// );
   ///
   /// // Get events from specific calendars only
-  /// final workEvents = await plugin.retrieveEvents(
+  /// final workEvents = await plugin.listEvents(
   ///   now,
   ///   nextMonth,
   ///   calendarIds: ['work-calendar-id', 'project-calendar-id'],
@@ -319,14 +319,14 @@ class DeviceCalendar {
   ///   print('${event.title} at ${event.startDate}');
   /// }
   /// ```
-  Future<List<Event>> retrieveEvents(
+  Future<List<Event>> listEvents(
     DateTime startDate,
     DateTime endDate, {
     List<String>? calendarIds,
   }) async {
     try {
       final List<Map<String, dynamic>> rawEvents =
-          await DeviceCalendarPlusPlatform.instance.retrieveEvents(
+          await DeviceCalendarPlusPlatform.instance.listEvents(
         startDate,
         endDate,
         calendarIds,
@@ -402,14 +402,14 @@ class DeviceCalendar {
   /// ```dart
   /// final plugin = DeviceCalendar.instance;
   /// // Show specific instance of a recurring event
-  /// await plugin.showEvent(event.instanceId);
+  /// await plugin.showEventModal(event.instanceId);
   ///
   /// // Show master event definition
-  /// await plugin.showEvent(event.eventId);
+  /// await plugin.showEventModal(event.eventId);
   /// ```
-  Future<void> showEvent(String instanceId) async {
+  Future<void> showEventModal(String instanceId) async {
     try {
-      await DeviceCalendarPlusPlatform.instance.showEvent(instanceId);
+      await DeviceCalendarPlusPlatform.instance.showEventModal(instanceId);
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);

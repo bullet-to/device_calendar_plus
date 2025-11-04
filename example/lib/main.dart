@@ -241,7 +241,7 @@ class _MyHomePageState extends State<MyHomePage> {
       final startDate = DateTime(now.year, now.month - 3, now.day);
       final endDate = DateTime(now.year, now.month + 3, now.day);
 
-      final events = await DeviceCalendar.instance.retrieveEvents(
+      final events = await DeviceCalendar.instance.listEvents(
         startDate,
         endDate,
         calendarIds:
@@ -399,7 +399,7 @@ class _MyHomePageState extends State<MyHomePage> {
               onPressed: () async {
                 try {
                   await DeviceCalendar.instance
-                      .showEvent(fetchedEvent.instanceId);
+                      .showEventModal(fetchedEvent.instanceId);
                 } on DeviceCalendarException catch (e) {
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(

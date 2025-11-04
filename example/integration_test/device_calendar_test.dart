@@ -417,7 +417,7 @@ void main() {
       print('✅ Created event with ID: $eventId');
 
       // Verify event was created by retrieving it
-      final events = await plugin.retrieveEvents(
+      final events = await plugin.listEvents(
         startDate.subtract(Duration(hours: 1)),
         endDate.add(Duration(hours: 1)),
         calendarIds: [calendarId],
@@ -456,7 +456,7 @@ void main() {
       print('✅ Created all-day event with ID: $eventId');
 
       // Verify the event is all-day
-      final events = await plugin.retrieveEvents(
+      final events = await plugin.listEvents(
         DateTime(today.year, today.month, today.day),
         DateTime(tomorrow.year, tomorrow.month, tomorrow.day)
             .add(Duration(days: 1)),
@@ -499,7 +499,7 @@ void main() {
       print('✅ Created all-day event with time components: $eventId');
 
       // Retrieve and verify the event is still all-day
-      final events = await plugin.retrieveEvents(
+      final events = await plugin.listEvents(
         DateTime(today.year, today.month, today.day),
         DateTime(tomorrow.year, tomorrow.month, tomorrow.day)
             .add(Duration(days: 1)),
@@ -551,7 +551,7 @@ void main() {
       print('✅ Created event to delete: $eventId');
 
       // Verify event exists
-      final eventsBefore = await plugin.retrieveEvents(
+      final eventsBefore = await plugin.listEvents(
         startDate.subtract(Duration(hours: 1)),
         endDate.add(Duration(hours: 1)),
         calendarIds: [calendarId],
@@ -563,7 +563,7 @@ void main() {
       print('✅ Deleted event: $eventId');
 
       // Verify event no longer exists
-      final eventsAfter = await plugin.retrieveEvents(
+      final eventsAfter = await plugin.listEvents(
         startDate.subtract(Duration(hours: 1)),
         endDate.add(Duration(hours: 1)),
         calendarIds: [calendarId],

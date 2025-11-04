@@ -70,13 +70,13 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> retrieveEvents(
+  Future<List<Map<String, dynamic>>> listEvents(
     DateTime startDate,
     DateTime endDate,
     List<String>? calendarIds,
   ) async {
     final result = await methodChannel.invokeMethod<List<dynamic>>(
-      'retrieveEvents',
+      'listEvents',
       <String, dynamic>{
         'startDate': startDate.millisecondsSinceEpoch,
         'endDate': endDate.millisecondsSinceEpoch,
@@ -99,9 +99,9 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   }
 
   @override
-  Future<void> showEvent(String instanceId) async {
+  Future<void> showEventModal(String instanceId) async {
     await methodChannel.invokeMethod<void>(
-      'showEvent',
+      'showEventModal',
       <String, dynamic>{'instanceId': instanceId},
     );
   }

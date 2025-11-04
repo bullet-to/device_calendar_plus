@@ -31,12 +31,12 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleUpdateCalendar(call: call, result: result)
     case "deleteCalendar":
       handleDeleteCalendar(call: call, result: result)
-    case "retrieveEvents":
-      handleRetrieveEvents(call: call, result: result)
+    case "listEvents":
+      handleListEvents(call: call, result: result)
     case "getEvent":
       handleGetEvent(call: call, result: result)
-    case "showEvent":
-      handleShowEvent(call: call, result: result)
+    case "showEventModal":
+      handleShowEventModal(call: call, result: result)
     case "createEvent":
       handleCreateEvent(call: call, result: result)
     case "deleteEvent":
@@ -193,11 +193,11 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
   
-  private func handleRetrieveEvents(call: FlutterMethodCall, result: @escaping FlutterResult) {
+  private func handleListEvents(call: FlutterMethodCall, result: @escaping FlutterResult) {
     guard let args = call.arguments as? [String: Any] else {
       result(FlutterError(
         code: PlatformExceptionCodes.invalidArguments,
-        message: "Invalid arguments for retrieveEvents",
+        message: "Invalid arguments for listEvents",
         details: nil
       ))
       return
@@ -278,11 +278,11 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
   
-  private func handleShowEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
+  private func handleShowEventModal(call: FlutterMethodCall, result: @escaping FlutterResult) {
     guard let args = call.arguments as? [String: Any] else {
       result(FlutterError(
         code: PlatformExceptionCodes.invalidArguments,
-        message: "Invalid arguments for showEvent",
+        message: "Invalid arguments for showEventModal",
         details: nil
       ))
       return

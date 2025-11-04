@@ -37,9 +37,9 @@ class DeviceCalendarPlusAndroidPlugin :
             "createCalendar" -> handleCreateCalendar(call, result)
             "updateCalendar" -> handleUpdateCalendar(call, result)
             "deleteCalendar" -> handleDeleteCalendar(call, result)
-            "retrieveEvents" -> handleRetrieveEvents(call, result)
+            "listEvents" -> handleListEvents(call, result)
             "getEvent" -> handleGetEvent(call, result)
-            "showEvent" -> handleShowEvent(call, result)
+            "showEventModal" -> handleShowEventModal(call, result)
             "createEvent" -> handleCreateEvent(call, result)
             "deleteEvent" -> handleDeleteEvent(call, result)
             "updateEvent" -> handleUpdateEvent(call, result)
@@ -196,7 +196,7 @@ class DeviceCalendarPlusAndroidPlugin :
         )
     }
     
-    private fun handleRetrieveEvents(call: MethodCall, result: Result) {
+    private fun handleListEvents(call: MethodCall, result: Result) {
         val service = eventsService ?: run {
             result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
             return
@@ -263,7 +263,7 @@ class DeviceCalendarPlusAndroidPlugin :
         )
     }
     
-    private fun handleShowEvent(call: MethodCall, result: Result) {
+    private fun handleShowEventModal(call: MethodCall, result: Result) {
         val service = eventsService ?: run {
             result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
             return

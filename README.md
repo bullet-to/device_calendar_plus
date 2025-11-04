@@ -210,7 +210,7 @@ final startDate = now;
 final endDate = now.add(const Duration(days: 30));
 
 // Get events from all calendars
-final allEvents = await plugin.retrieveEvents(
+final allEvents = await plugin.listEvents(
   startDate,
   endDate,
 );
@@ -218,7 +218,7 @@ print('Found ${allEvents.length} events');
 
 // Get events from specific calendars only
 final calendarIds = ['calendar-id-1', 'calendar-id-2'];
-final filteredEvents = await plugin.retrieveEvents(
+final filteredEvents = await plugin.listEvents(
   startDate,
   endDate,
   calendarIds: calendarIds,
@@ -250,13 +250,13 @@ final masterEvent = await plugin.getEvent(event.eventId);
 final plugin = DeviceCalendar.instance;
 
 // Show a specific event in a modal dialog
-await plugin.showEvent(event.instanceId);
+await plugin.showEventModal(event.instanceId);
 
 // For recurring events, show a specific occurrence
-await plugin.showEvent(event.instanceId);
+await plugin.showEventModal(event.instanceId);
 
 // For recurring events, show the master event
-await plugin.showEvent(event.eventId);
+await plugin.showEventModal(event.eventId);
 ```
 
 ### Create Event
