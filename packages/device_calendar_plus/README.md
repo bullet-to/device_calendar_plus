@@ -32,11 +32,10 @@ Created by [Bullet](https://bullet.to) — a personal task + notes + calendar ap
 - **Calendars**: Create, read, update, and delete calendars
 - **Events**: Create, read, update, and delete events
 - **Query**: Retrieve events by date range or specific event IDs
-- **Native UI**: Open native event modal for viewing/editing
+- **Native UI**: Open native event modal for viewing/editing in both android and iOS
 - **All-Day Events**: Proper handling of floating calendar dates
 - **Timezones**: Correct timezone behavior for timed events
 - **Recurring Events**: Read and update recurring event instances
-- **Federated**: Clean plugin architecture ready for community contributions
 
 ## 🧩 Installation
 
