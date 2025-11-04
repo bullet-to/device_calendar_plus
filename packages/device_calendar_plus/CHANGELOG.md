@@ -1,3 +1,8 @@
+## 0.1.1 - 2024-11-04
+
+### Added
+- Android: ProGuard/R8 rules for release build compatibility
+
 ## 0.1.0 - 2024-11-04
 
 Initial release.

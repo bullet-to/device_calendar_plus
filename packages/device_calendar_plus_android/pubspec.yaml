@@ -1,6 +1,6 @@
 name: device_calendar_plus_android
 description: Android implementation of the device_calendar_plus plugin.
-version: 0.1.0
+version: 0.1.1
 repository: https://github.com/bullet-to/device_calendar_plus
 
 resolution: workspace
