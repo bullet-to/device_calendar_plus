@@ -26,14 +26,17 @@ Created by [Bullet](https://bullet.to) — a personal task + notes + calendar ap
 | **Android** | **minSdk 24+** | **target/compile 35**  |
 | **iOS**     | **iOS 13+**    | Latest Xcode / iOS SDK |
 
-## 🚀 Features (v0.1.0)
+## 🚀 Features
 
-- Request and check permissions
-- List device calendars (read-only or writable)
-- Query events by date range or specific IDs
-- Open native event modal
-- Correct all-day and time-zone behaviour
-- Federated plugin structure ready for community PRs
+- **Permissions**: Request and check calendar permissions
+- **Calendars**: Create, read, update, and delete calendars
+- **Events**: Create, read, update, and delete events
+- **Query**: Retrieve events by date range or specific event IDs
+- **Native UI**: Open native event modal for viewing/editing
+- **All-Day Events**: Proper handling of floating calendar dates
+- **Timezones**: Correct timezone behavior for timed events
+- **Recurring Events**: Read and update recurring event instances
+- **Federated**: Clean plugin architecture ready for community contributions
 
 ## 🧩 Installation
 
