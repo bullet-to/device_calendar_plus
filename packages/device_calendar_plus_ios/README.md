@@ -1,15 +1,20 @@
 # device_calendar_plus_ios
 
-A new Flutter plugin project.
+iOS implementation of the `device_calendar_plus` plugin.
 
-## Getting Started
+This package implements calendar functionality using Apple's EventKit framework. It is automatically included when you add `device_calendar_plus` to your iOS app.
 
-This project is a starting point for a Flutter
-[plug-in package](https://flutter.dev/to/develop-plugins),
-a specialized package that includes platform-specific implementation code for
-Android and/or iOS.
+## For App Developers
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+You don't need to add this package directly. Just use the main [`device_calendar_plus`](https://pub.dev/packages/device_calendar_plus) package, and this iOS implementation will be automatically included.
 
+## Implementation Details
+
+- **Platform**: iOS 13+
+- **Language**: Swift
+- **APIs Used**: EventKit, EventKitUI
+- **Permissions**: Supports iOS 17+ write-only calendar access
+
+## License
+
+MIT © 2025 Bullet
