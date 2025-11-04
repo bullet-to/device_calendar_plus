@@ -23,11 +23,6 @@ class DeviceCalendar {
 
   factory DeviceCalendar() => instance;
 
-  /// Returns the platform version (e.g., "Android 13", "iOS 17.0").
-  Future<String?> getPlatformVersion() {
-    return DeviceCalendarPlusPlatform.instance.getPlatformVersion();
-  }
-
   /// Requests calendar permissions from the user.
   ///
   /// On first call, this will show the system permission dialog.

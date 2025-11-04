@@ -30,7 +30,6 @@ class DeviceCalendarPlusAndroidPlugin :
 
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
-            "getPlatformVersion" -> handleGetPlatformVersion(result)
             "requestPermissions" -> handleRequestPermissions(result)
             "hasPermissions" -> handleHasPermissions(result)
             "openAppSettings" -> handleOpenAppSettings(result)
@@ -46,10 +45,6 @@ class DeviceCalendarPlusAndroidPlugin :
             "updateEvent" -> handleUpdateEvent(call, result)
             else -> result.notImplemented()
         }
-    }
-
-    private fun handleGetPlatformVersion(result: Result) {
-        result.success("Android ${android.os.Build.VERSION.RELEASE}")
     }
 
     private fun handleRequestPermissions(result: Result) {

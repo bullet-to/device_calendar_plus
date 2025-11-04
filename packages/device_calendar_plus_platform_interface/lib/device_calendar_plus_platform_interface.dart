@@ -35,9 +35,6 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     _instance = instance;
   }
 
-  /// Returns the platform version.
-  Future<String?> getPlatformVersion();
-
   /// Requests calendar permissions from the user.
   ///
   /// On first call, this will show the system permission dialog.

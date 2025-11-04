@@ -17,8 +17,6 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
-    case "getPlatformVersion":
-      handleGetPlatformVersion(result: result)
     case "requestPermissions":
       handleRequestPermissions(result: result)
     case "hasPermissions":
@@ -48,10 +46,6 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     default:
       result(FlutterMethodNotImplemented)
     }
-  }
-  
-  private func handleGetPlatformVersion(result: @escaping FlutterResult) {
-    result("iOS " + UIDevice.current.systemVersion)
   }
   
   private func handleRequestPermissions(result: @escaping FlutterResult) {
