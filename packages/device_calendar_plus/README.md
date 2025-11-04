@@ -5,8 +5,6 @@ Modern replacement for the unmaintained [`device_calendar`](https://pub.dev/pack
 
 [![pub package](https://img.shields.io/pub/v/device_calendar_plus.svg)](https://pub.dev/packages/device_calendar_plus)
 [![pub points](https://img.shields.io/pub/points/device_calendar_plus)](https://pub.dev/packages/device_calendar_plus/score)
-[![popularity](https://img.shields.io/pub/popularity/device_calendar_plus)](https://pub.dev/packages/device_calendar_plus/score)
-[![likes](https://img.shields.io/pub/likes/device_calendar_plus)](https://pub.dev/packages/device_calendar_plus/score)
 [![platforms](https://img.shields.io/badge/platforms-android%20%7C%20ios-blue.svg)](#)
 [![MIT license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -72,6 +70,8 @@ Add calendar permissions to `android/app/src/main/AndroidManifest.xml`:
 <uses-permission android:name="android.permission.READ_CALENDAR" />
 <uses-permission android:name="android.permission.WRITE_CALENDAR" />
 ```
+
+**ProGuard / R8**: ProGuard rules are automatically applied by the plugin. No manual configuration needed.
 
 ## ⏰ DateTime and Timezone Behavior
 
