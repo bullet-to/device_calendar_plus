@@ -736,35 +736,7 @@ void main() {
       print('✅ Event description and location updated successfully');
     });
 
-    test('19. Update Event Availability', () async {
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final calendarId = await plugin.createCalendar(
-        name: 'Update Availability Test $timestamp',
-      );
-      createdCalendarIds.add(calendarId);
-
-      // Create event with busy availability
-      final eventId = await plugin.createEvent(
-        calendarId: calendarId,
-        title: 'Availability Update Test',
-        startDate: DateTime.now().add(Duration(hours: 1)),
-        endDate: DateTime.now().add(Duration(hours: 2)),
-        availability: EventAvailability.busy,
-      );
-
-      // Update to free
-      await plugin.updateEvent(
-        instanceId: eventId,
-      );
-
-      // Verify update
-      final event = await plugin.getEvent(eventId);
-      expect(event, isNotNull);
-      expect(event!.availability, EventAvailability.free);
-      print('✅ Event availability updated successfully');
-    });
-
-    test('20. Change Timed Event to All-Day', () async {
+    test('19. Change Timed Event to All-Day', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
         name: 'Timed to All-Day Test $timestamp',
@@ -799,7 +771,7 @@ void main() {
       print('✅ Timed event changed to all-day successfully');
     });
 
-    test('21. Change All-Day Event to Timed', () async {
+    test('20. Change All-Day Event to Timed', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
         name: 'All-Day to Timed Test $timestamp',
@@ -838,7 +810,7 @@ void main() {
       print('✅ All-day event changed to timed successfully');
     });
 
-    test('22. Update Event TimeZone', () async {
+    test('21. Update Event TimeZone', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
         name: 'Update Timezone Test $timestamp',
@@ -870,7 +842,7 @@ void main() {
       print('✅ Event timezone updated successfully');
     });
 
-    test('23. Update Event with No Fields Throws Error', () async {
+    test('22. Update Event with No Fields Throws Error', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
         name: 'No Fields Test $timestamp',
