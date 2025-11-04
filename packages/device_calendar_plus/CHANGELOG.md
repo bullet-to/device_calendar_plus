@@ -17,6 +17,3 @@ Initial release.
 - Federated plugin architecture (Android + iOS)
 - Support for Android API 24+ (target/compile 35)
 - Support for iOS 13+
-
-### Known Limitations
-- Recurring event creation not yet supported
