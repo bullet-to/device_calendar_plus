@@ -170,8 +170,6 @@ class _MyHomePageState extends State<MyHomePage> {
     try {
       final calendars = await DeviceCalendar.instance.listCalendars();
 
-      print('Calendars: $calendars');
-
       setState(() {
         _calendars = calendars;
         _isLoadingCalendars = false;
@@ -247,9 +245,6 @@ class _MyHomePageState extends State<MyHomePage> {
         calendarIds:
             _selectedCalendarIds.isEmpty ? null : _selectedCalendarIds.toList(),
       );
-
-      print(
-          'Events: ${events.length >= 2 ? events.sublist(events.length - 2) : events}');
 
       setState(() {
         _events = events;
@@ -401,12 +396,12 @@ class _MyHomePageState extends State<MyHomePage> {
                   await DeviceCalendar.instance
                       .showEventModal(fetchedEvent.instanceId);
                 } on DeviceCalendarException catch (e) {
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Error: ${e.message}')),
                   );
                 } catch (e) {
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Failed to show event: $e')),
                   );

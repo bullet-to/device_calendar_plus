@@ -16,32 +16,17 @@ void main() {
     tearDownAll(() async {
       // Clean up all created calendars
       if (createdCalendarIds.isNotEmpty) {
-        print(
-            '🧹 Cleaning up ${createdCalendarIds.length} test calendar(s)...');
-        int deletedCount = 0;
         for (final id in createdCalendarIds) {
-          try {
-            await plugin.deleteCalendar(id);
-            deletedCount++;
-          } catch (e) {
-            print('  ⚠️  Failed to delete calendar $id: $e');
-          }
+          await plugin.deleteCalendar(id);
         }
-        print(
-            '✅ Deleted $deletedCount/${createdCalendarIds.length} test calendars');
       }
     });
 
     test('1. Request Permissions', () async {
       final status = await plugin.requestPermissions();
 
-      print('Permission status: $status');
-
       // The test will continue regardless of permission status, but warn if denied
-      if (status != CalendarPermissionStatus.granted) {
-        print('⚠️  Calendar permissions not granted. Status: $status');
-        print('   Remaining tests may fail or be skipped.');
-      }
+      if (status != CalendarPermissionStatus.granted) {}
 
       expect(
           status,
@@ -54,12 +39,10 @@ void main() {
 
     test('1b. Check Permissions Status', () async {
       final status = await plugin.hasPermissions();
-      print('Current permission status: $status');
 
       // After auto-granting permissions via run_integration_tests.sh,
       // the status should be granted
       expect(status, CalendarPermissionStatus.granted);
-      print('✅ hasPermissions() correctly returns granted status');
     });
 
     test('2. Create and Delete Calendar', () async {
@@ -72,11 +55,9 @@ void main() {
       final calendarId = await plugin.createCalendar(name: calendarName);
       expect(calendarId, isNotEmpty);
       expect(calendarId, isA<String>());
-      print('✅ Created calendar: $calendarName (ID: $calendarId)');
 
       // Delete calendar
       await plugin.deleteCalendar(calendarId);
-      print('✅ Deleted calendar: $calendarId');
 
       // Verify it's gone by listing calendars
       final calendars = await plugin.listCalendars();
@@ -84,8 +65,6 @@ void main() {
           calendars.where((cal) => cal.id == calendarId).toList();
       expect(deletedCalendar, isEmpty,
           reason: 'Calendar should be deleted and not in list');
-
-      print('✅ Verified calendar was deleted');
     });
 
     test('3. Verify Calendar in List', () async {
@@ -109,14 +88,6 @@ void main() {
 
       expect(createdCalendar.name, equals(calendarName));
       expect(createdCalendar.id, equals(calendarId));
-
-      print('✅ Verified calendar in list: ${createdCalendar.name}');
-      print('   - ID: ${createdCalendar.id}');
-      print('   - Read-only: ${createdCalendar.readOnly}');
-      print('   - Primary: ${createdCalendar.isPrimary}');
-      print('   - Color: ${createdCalendar.colorHex}');
-      print(
-          '   - Account: ${createdCalendar.accountName} (${createdCalendar.accountType})');
     });
 
     test('4. Create Calendar with Color', () async {
@@ -141,9 +112,6 @@ void main() {
 
       // Note: iOS may convert the color to a different color space,
       // so we can't do an exact match. Just verify it has a color.
-      print('✅ Created colored calendar: ${coloredCalendar.name}');
-      print('   - Requested color: $colorHex');
-      print('   - Actual color: ${coloredCalendar.colorHex}');
 
       // On Android, the color should match exactly
       // On iOS, color may be slightly different due to color space conversion
@@ -186,8 +154,6 @@ void main() {
 
         expect(calendar.name, equals(calendarNames[i]));
       }
-
-      print('✅ Created and verified ${createdIds.length} calendars');
     });
 
     test('6. Cross-Platform Consistency', () async {
@@ -224,10 +190,6 @@ void main() {
       if (calendar.accountType != null) {
         expect(calendar.accountType, isA<String>());
       }
-
-      print('✅ Calendar data structure is consistent across platforms');
-      print('   - Platform: ${await plugin.getPlatformVersion()}');
-      print('   - All required fields present with correct types');
     });
 
     test('7. Update Calendar - Name Only', () async {
@@ -238,18 +200,15 @@ void main() {
 
       final calendarId = await plugin.createCalendar(name: originalName);
       createdCalendarIds.add(calendarId);
-      print('✅ Created calendar: $originalName (ID: $calendarId)');
 
       // Update just the name
       await plugin.updateCalendar(calendarId, name: newName);
-      print('✅ Updated calendar name to: $newName');
 
       // Verify the update
       final calendars = await plugin.listCalendars();
       final updatedCalendar =
           calendars.firstWhere((cal) => cal.id == calendarId);
       expect(updatedCalendar.name, equals(newName));
-      print('✅ Verified calendar name was updated');
     });
 
     test('8. Update Calendar - Color Only', () async {
@@ -263,12 +222,9 @@ void main() {
         colorHex: '#FF0000', // Red
       );
       createdCalendarIds.add(calendarId);
-      print(
-          '✅ Created calendar: $calendarName (ID: $calendarId) with red color');
 
       // Update just the color
       await plugin.updateCalendar(calendarId, colorHex: newColor);
-      print('✅ Updated calendar color to: $newColor');
 
       // Verify the update
       final calendars = await plugin.listCalendars();
@@ -276,7 +232,6 @@ void main() {
           calendars.firstWhere((cal) => cal.id == calendarId);
       expect(updatedCalendar.colorHex?.toUpperCase(),
           equals(newColor.toUpperCase()));
-      print('✅ Verified calendar color was updated');
     });
 
     test('9. Update Calendar - Name and Color', () async {
@@ -291,12 +246,10 @@ void main() {
         colorHex: '#FF0000', // Red
       );
       createdCalendarIds.add(calendarId);
-      print('✅ Created calendar: $originalName (ID: $calendarId)');
 
       // Update both name and color
       await plugin.updateCalendar(calendarId,
           name: newName, colorHex: newColor);
-      print('✅ Updated calendar name and color');
 
       // Verify the updates
       final calendars = await plugin.listCalendars();
@@ -305,7 +258,6 @@ void main() {
       expect(updatedCalendar.name, equals(newName));
       expect(updatedCalendar.colorHex?.toUpperCase(),
           equals(newColor.toUpperCase()));
-      print('✅ Verified calendar name and color were updated');
     });
 
     test('10. Error Handling - Update with No Parameters', () async {
@@ -320,7 +272,6 @@ void main() {
         await plugin.updateCalendar(calendarId);
         fail('Should have thrown an error when no parameters provided');
       } on ArgumentError catch (e) {
-        print('✅ Correctly rejected update with no parameters: $e');
         expect(e.message, contains('At least one'));
       }
     });
@@ -337,7 +288,6 @@ void main() {
         await plugin.updateCalendar(calendarId, name: '');
         fail('Should have thrown an error for empty name');
       } on ArgumentError catch (e) {
-        print('✅ Correctly rejected empty name in update: $e');
         expect(e.message, contains('cannot be empty'));
       }
     });
@@ -349,7 +299,6 @@ void main() {
         fail('Should have thrown an error for empty calendar name');
       } on ArgumentError catch (e) {
         // Expected - test passes
-        print('✅ Correctly rejected empty calendar name: $e');
         expect(e.message, contains('cannot be empty'));
       }
     });
@@ -360,7 +309,6 @@ void main() {
         await plugin.createCalendar(name: '   ');
         fail('Should have thrown an error for whitespace-only calendar name');
       } on ArgumentError catch (e) {
-        print('✅ Correctly rejected whitespace-only calendar name: $e');
         expect(e.message, contains('cannot be empty'));
       }
     });
@@ -387,8 +335,6 @@ void main() {
         expect(calendarId, isNotEmpty);
         createdCalendarIds.add(calendarId);
       }
-
-      print('✅ Successfully created calendars with various color formats');
     });
 
     test('11. Create Event', () async {
@@ -414,7 +360,6 @@ void main() {
       );
 
       expect(eventId, isNotEmpty);
-      print('✅ Created event with ID: $eventId');
 
       // Verify event was created by retrieving it
       final events = await plugin.listEvents(
@@ -428,8 +373,6 @@ void main() {
       expect(createdEvent.title, 'Test Event');
       expect(createdEvent.description, 'This is a test event');
       expect(createdEvent.location, 'Test Location');
-
-      print('✅ Verified event was created successfully');
     });
 
     test('12. Create All-Day Event', () async {
@@ -453,7 +396,6 @@ void main() {
       );
 
       expect(eventId, isNotEmpty);
-      print('✅ Created all-day event with ID: $eventId');
 
       // Verify the event is all-day
       final events = await plugin.listEvents(
@@ -466,7 +408,6 @@ void main() {
       expect(events, isNotEmpty);
       final allDayEvent = events.firstWhere((e) => e.eventId == eventId);
       expect(allDayEvent.isAllDay, true);
-      print('✅ Verified all-day event was created successfully');
     });
 
     test('12b. All-Day Event Date Normalization', () async {
@@ -496,7 +437,6 @@ void main() {
       );
 
       expect(eventId, isNotEmpty);
-      print('✅ Created all-day event with time components: $eventId');
 
       // Retrieve and verify the event is still all-day
       final events = await plugin.listEvents(
@@ -524,9 +464,6 @@ void main() {
       expect(normalizedEvent.startDate.hour, 0);
       expect(normalizedEvent.startDate.minute, 0);
       expect(normalizedEvent.startDate.second, 0);
-
-      print(
-          '✅ Verified all-day event preserves date components (floating date behavior)');
     });
 
     test('13. Delete Event', () async {
@@ -548,8 +485,6 @@ void main() {
         endDate: endDate,
       );
 
-      print('✅ Created event to delete: $eventId');
-
       // Verify event exists
       final eventsBefore = await plugin.listEvents(
         startDate.subtract(Duration(hours: 1)),
@@ -560,7 +495,6 @@ void main() {
 
       // Delete the event
       await plugin.deleteEvent(eventId);
-      print('✅ Deleted event: $eventId');
 
       // Verify event no longer exists
       final eventsAfter = await plugin.listEvents(
@@ -572,7 +506,6 @@ void main() {
       final deletedEvent =
           eventsAfter.where((e) => e.eventId == eventId).toList();
       expect(deletedEvent, isEmpty);
-      print('✅ Verified event was deleted successfully');
     });
 
     test('14. Create Event with Different Availabilities', () async {
@@ -604,10 +537,7 @@ void main() {
         );
 
         expect(eventId, isNotEmpty);
-        print('✅ Created event with ${availability.name} availability');
       }
-
-      print('✅ Successfully created events with various availabilities');
     });
 
     test(
@@ -662,7 +592,6 @@ void main() {
       final event = await plugin.getEvent(eventId);
       expect(event, isNotNull);
       expect(event!.title, 'Updated Title');
-      print('✅ Event title updated successfully');
     });
 
     test('17. Update Event Dates', () async {
@@ -701,7 +630,6 @@ void main() {
           lessThan(Duration(minutes: 1)));
       expect(event.endDate.difference(newEnd).abs(),
           lessThan(Duration(minutes: 1)));
-      print('✅ Event dates updated successfully');
     });
 
     test('18. Update Event Description and Location', () async {
@@ -733,7 +661,6 @@ void main() {
       expect(event, isNotNull);
       expect(event!.description, 'Updated description');
       expect(event.location, 'Updated location');
-      print('✅ Event description and location updated successfully');
     });
 
     test('19. Change Timed Event to All-Day', () async {
@@ -768,7 +695,6 @@ void main() {
       expect(event.startDate.hour, 0);
       expect(event.startDate.minute, 0);
       expect(event.startDate.second, 0);
-      print('✅ Timed event changed to all-day successfully');
     });
 
     test('20. Change All-Day Event to Timed', () async {
@@ -807,7 +733,6 @@ void main() {
       // Should have specific time now (allowing small differences)
       expect(event.startDate.difference(newStart).abs(),
           lessThan(Duration(minutes: 1)));
-      print('✅ All-day event changed to timed successfully');
     });
 
     test('21. Update Event TimeZone', () async {
@@ -839,7 +764,6 @@ void main() {
       // Verify event is updated (note: the exact behavior may vary by platform)
       final event = await plugin.getEvent(eventId);
       expect(event, isNotNull);
-      print('✅ Event timezone updated successfully');
     });
 
     test('22. Update Event with No Fields Throws Error', () async {
@@ -862,8 +786,6 @@ void main() {
         () async => await plugin.updateEvent(instanceId: eventId),
         throwsA(isA<ArgumentError>()),
       );
-
-      print('✅ Update with no fields correctly throws ArgumentError');
     });
 
     test(
