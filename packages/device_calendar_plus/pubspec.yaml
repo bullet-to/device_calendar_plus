@@ -20,12 +20,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  device_calendar_plus_platform_interface:
-    workspace: ^0.1.0
-  device_calendar_plus_android:
-    workspace: ^0.1.0
-  device_calendar_plus_ios:
-    workspace: ^0.1.0
+  device_calendar_plus_platform_interface: ^0.1.0
+  device_calendar_plus_android: ^0.1.0
+  device_calendar_plus_ios: ^0.1.0
 
 dev_dependencies:
   flutter_test:
