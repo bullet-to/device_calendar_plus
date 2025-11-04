@@ -13,6 +13,7 @@ export 'src/device_calendar_error.dart';
 export 'src/event.dart';
 export 'src/event_availability.dart';
 export 'src/event_status.dart';
+export 'src/platform_exception_codes.dart';
 
 /// Main API for accessing device calendar functionality.
 class DeviceCalendar {

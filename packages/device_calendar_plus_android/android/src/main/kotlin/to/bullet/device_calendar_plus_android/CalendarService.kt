@@ -142,7 +142,7 @@ class CalendarService(private val activity: Activity) {
             
             return Result.failure(
                 CalendarException(
-                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to create calendar: No calendar ID returned"
                 )
             )
@@ -156,7 +156,7 @@ class CalendarService(private val activity: Activity) {
         } catch (e: Exception) {
             return Result.failure(
                 CalendarException(
-                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to create calendar: ${e.message}"
                 )
             )
@@ -202,7 +202,7 @@ class CalendarService(private val activity: Activity) {
             if (updatedRows == 0) {
                 return Result.failure(
                     CalendarException(
-                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        PlatformExceptionCodes.NOT_FOUND,
                         "Calendar with ID $calendarId not found"
                     )
                 )
@@ -219,7 +219,7 @@ class CalendarService(private val activity: Activity) {
         } catch (e: Exception) {
             return Result.failure(
                 CalendarException(
-                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to update calendar: ${e.message}"
                 )
             )
@@ -248,7 +248,7 @@ class CalendarService(private val activity: Activity) {
             if (deletedRows == 0) {
                 return Result.failure(
                     CalendarException(
-                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        PlatformExceptionCodes.NOT_FOUND,
                         "Calendar with ID $calendarId not found"
                     )
                 )
@@ -265,7 +265,7 @@ class CalendarService(private val activity: Activity) {
         } catch (e: Exception) {
             return Result.failure(
                 CalendarException(
-                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to delete calendar: ${e.message}"
                 )
             )

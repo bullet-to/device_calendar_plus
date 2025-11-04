@@ -1,5 +1,7 @@
 /// Error codes for device calendar operations.
 enum DeviceCalendarError {
+  // Permission-related errors
+
   /// Calendar permissions are not declared in the app's manifest.
   ///
   /// On Android: Missing READ_CALENDAR or WRITE_CALENDAR in AndroidManifest.xml
@@ -9,8 +11,33 @@ enum DeviceCalendarError {
   /// Calendar permission was denied by the user.
   permissionDenied,
 
+  // Input validation errors
+
   /// Invalid arguments were passed to a method.
   invalidArguments,
+
+  // Resource errors
+
+  /// Requested calendar or event not found.
+  notFound,
+
+  /// Calendar is read-only and cannot be modified.
+  readOnly,
+
+  // Operation errors
+
+  /// Operation is not supported on this platform or in this context.
+  notSupported,
+
+  /// Calendar operation failed.
+  operationFailed,
+
+  // System/availability errors
+
+  /// Calendar system is not available.
+  calendarUnavailable,
+
+  // Generic errors
 
   /// An unknown error occurred.
   unknown,

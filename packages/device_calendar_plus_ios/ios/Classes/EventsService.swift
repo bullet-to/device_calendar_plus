@@ -274,7 +274,7 @@ class EventsService {
     // Check if event was found
     guard let foundEvent = event else {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
+        code: PlatformExceptionCodes.notFound,
         message: "Event not found with instance ID: \(instanceId)"
       )))
       return
@@ -313,7 +313,7 @@ class EventsService {
     // Get the calendar
     guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
+        code: PlatformExceptionCodes.notFound,
         message: "Calendar with ID \(calendarId) not found"
       )))
       return
@@ -362,13 +362,13 @@ class EventsService {
         completion(.success(eventId))
       } else {
         completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.unknownError,
+          code: PlatformExceptionCodes.operationFailed,
           message: "Failed to get event ID after creation"
         )))
       }
     } catch {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
+        code: PlatformExceptionCodes.operationFailed,
         message: "Failed to save event: \(error.localizedDescription)"
       )))
     }
@@ -424,7 +424,7 @@ class EventsService {
     // Check if event was found
     guard let foundEvent = event else {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
+        code: PlatformExceptionCodes.notFound,
         message: "Event not found with instance ID: \(instanceId)"
       )))
       return
@@ -439,7 +439,7 @@ class EventsService {
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
+        code: PlatformExceptionCodes.operationFailed,
         message: "Failed to delete event: \(error.localizedDescription)"
       )))
     }
@@ -503,7 +503,7 @@ class EventsService {
     // Check if event was found
     guard let foundEvent = event else {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
+        code: PlatformExceptionCodes.notFound,
         message: "Event not found with instance ID: \(instanceId)"
       )))
       return
@@ -570,7 +570,7 @@ class EventsService {
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
+        code: PlatformExceptionCodes.operationFailed,
         message: "Failed to update event: \(error.localizedDescription)"
       )))
     }

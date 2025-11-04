@@ -306,12 +306,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
           if let viewController = viewController {
             // Get the root view controller
             guard let rootViewController = self.getRootViewController() else {
-              result(FlutterError(
-                code: PlatformExceptionCodes.unknownError,
-                message: "Failed to get root view controller",
-                details: nil
-              ))
-              return
+              fatalError("Failed to get root view controller - plugin lifecycle error")
             }
             
             // Set the delegate

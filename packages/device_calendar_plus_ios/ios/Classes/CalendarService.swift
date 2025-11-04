@@ -68,7 +68,7 @@ class CalendarService {
     // Find the local source - this is the only writable source for local calendars
     guard let localSource = eventStore.sources.first(where: { $0.sourceType == .local }) else {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
+        code: PlatformExceptionCodes.calendarUnavailable,
         message: "Could not find local calendar source"
       )))
       return
@@ -90,7 +90,7 @@ class CalendarService {
       completion(.success(calendar.calendarIdentifier))
     } catch {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
+        code: PlatformExceptionCodes.operationFailed,
         message: "Failed to save calendar: \(error.localizedDescription)"
       )))
     }
@@ -109,7 +109,7 @@ class CalendarService {
     // Find the calendar by ID
     guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
+        code: PlatformExceptionCodes.notFound,
         message: "Calendar with ID \(calendarId) not found"
       )))
       return
@@ -118,7 +118,7 @@ class CalendarService {
     // Check if calendar is modifiable
     guard calendar.allowsContentModifications else {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
+        code: PlatformExceptionCodes.readOnly,
         message: "Calendar is read-only and cannot be modified"
       )))
       return
@@ -140,7 +140,7 @@ class CalendarService {
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
+        code: PlatformExceptionCodes.operationFailed,
         message: "Failed to update calendar: \(error.localizedDescription)"
       )))
     }
@@ -159,7 +159,7 @@ class CalendarService {
     // Find the calendar by ID
     guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
+        code: PlatformExceptionCodes.notFound,
         message: "Calendar with ID \(calendarId) not found"
       )))
       return
@@ -171,7 +171,7 @@ class CalendarService {
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.unknownError,
+        code: PlatformExceptionCodes.operationFailed,
         message: "Failed to delete calendar: \(error.localizedDescription)"
       )))
     }

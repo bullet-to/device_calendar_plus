@@ -101,10 +101,7 @@ class DeviceCalendarPlusAndroidPlugin :
     }
     
     private fun handleCreateCalendar(call: MethodCall, result: Result) {
-        val service = calendarService ?: run {
-            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "CalendarService not initialized", null)
-            return
-        }
+        val service = calendarService ?: error("CalendarService not initialized - plugin lifecycle error")
         
         // Parse arguments
         val name = call.argument<String>("name")
@@ -133,10 +130,7 @@ class DeviceCalendarPlusAndroidPlugin :
     }
     
     private fun handleUpdateCalendar(call: MethodCall, result: Result) {
-        val service = calendarService ?: run {
-            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "CalendarService not initialized", null)
-            return
-        }
+        val service = calendarService ?: error("CalendarService not initialized - plugin lifecycle error")
         
         // Parse arguments
         val calendarId = call.argument<String>("calendarId")
@@ -166,10 +160,7 @@ class DeviceCalendarPlusAndroidPlugin :
     }
     
     private fun handleDeleteCalendar(call: MethodCall, result: Result) {
-        val service = calendarService ?: run {
-            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "CalendarService not initialized", null)
-            return
-        }
+        val service = calendarService ?: error("CalendarService not initialized - plugin lifecycle error")
         
         // Parse arguments
         val calendarId = call.argument<String>("calendarId")
@@ -197,10 +188,7 @@ class DeviceCalendarPlusAndroidPlugin :
     }
     
     private fun handleListEvents(call: MethodCall, result: Result) {
-        val service = eventsService ?: run {
-            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
-            return
-        }
+        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
         
         // Parse arguments
         val startDateMillis = call.argument<Long>("startDate")
@@ -233,10 +221,7 @@ class DeviceCalendarPlusAndroidPlugin :
     }
     
     private fun handleGetEvent(call: MethodCall, result: Result) {
-        val service = eventsService ?: run {
-            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
-            return
-        }
+        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
         
         // Parse arguments
         val instanceId = call.argument<String>("instanceId")
@@ -264,10 +249,7 @@ class DeviceCalendarPlusAndroidPlugin :
     }
     
     private fun handleShowEventModal(call: MethodCall, result: Result) {
-        val service = eventsService ?: run {
-            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
-            return
-        }
+        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
         
         // Parse arguments
         val instanceId = call.argument<String>("instanceId")
@@ -295,10 +277,7 @@ class DeviceCalendarPlusAndroidPlugin :
     }
     
     private fun handleCreateEvent(call: MethodCall, result: Result) {
-        val service = eventsService ?: run {
-            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
-            return
-        }
+        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
         
         // Parse arguments
         val calendarId = call.argument<String>("calendarId")
@@ -350,10 +329,7 @@ class DeviceCalendarPlusAndroidPlugin :
     }
     
     private fun handleDeleteEvent(call: MethodCall, result: Result) {
-        val service = eventsService ?: run {
-            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, "EventsService not initialized", null)
-            return
-        }
+        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
         
         // Parse arguments
         val instanceId = call.argument<String>("instanceId")
@@ -382,15 +358,7 @@ class DeviceCalendarPlusAndroidPlugin :
     }
     
     private fun handleUpdateEvent(call: MethodCall, result: Result) {
-        val service = eventsService
-        if (service == null) {
-            result.error(
-                PlatformExceptionCodes.UNKNOWN_ERROR,
-                "EventsService is not initialized",
-                null
-            )
-            return
-        }
+        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
         
         // Parse required arguments
         val instanceId = call.argument<String>("instanceId")

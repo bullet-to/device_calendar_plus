@@ -1,30 +1,37 @@
 import 'package:flutter/services.dart';
 
 import 'device_calendar_error.dart';
+import 'platform_exception_codes.dart';
 
 /// Helper class for converting platform exceptions to DeviceCalendarExceptions.
 class PlatformExceptionConverter {
   PlatformExceptionConverter._(); // Prevent instantiation
 
-  // Platform exception codes
-  static const String _permissionsNotDeclared = 'PERMISSIONS_NOT_DECLARED';
-  static const String _permissionDenied = 'PERMISSION_DENIED';
-  static const String _invalidArguments = 'INVALID_ARGUMENTS';
-  static const String _unknownError = 'UNKNOWN_ERROR';
-
   /// Converts a platform exception code string to a DeviceCalendarError enum.
-  static DeviceCalendarError errorCodeFromString(String code) {
+  ///
+  /// Returns null for unrecognized error codes.
+  static DeviceCalendarError? errorCodeFromString(String code) {
     switch (code) {
-      case _permissionsNotDeclared:
+      case PlatformExceptionCodes.permissionsNotDeclared:
         return DeviceCalendarError.permissionsNotDeclared;
-      case _permissionDenied:
+      case PlatformExceptionCodes.permissionDenied:
         return DeviceCalendarError.permissionDenied;
-      case _invalidArguments:
+      case PlatformExceptionCodes.invalidArguments:
         return DeviceCalendarError.invalidArguments;
-      case _unknownError:
+      case PlatformExceptionCodes.notFound:
+        return DeviceCalendarError.notFound;
+      case PlatformExceptionCodes.readOnly:
+        return DeviceCalendarError.readOnly;
+      case PlatformExceptionCodes.notSupported:
+        return DeviceCalendarError.notSupported;
+      case PlatformExceptionCodes.operationFailed:
+        return DeviceCalendarError.operationFailed;
+      case PlatformExceptionCodes.calendarUnavailable:
+        return DeviceCalendarError.calendarUnavailable;
+      case PlatformExceptionCodes.unknownError:
         return DeviceCalendarError.unknown;
       default:
-        return DeviceCalendarError.unknown;
+        return null;
     }
   }
 
@@ -34,11 +41,8 @@ class PlatformExceptionConverter {
       PlatformException e) {
     final errorCode = errorCodeFromString(e.code);
 
-    // Only convert known error codes
-    if (e.code == _permissionsNotDeclared ||
-        e.code == _permissionDenied ||
-        e.code == _invalidArguments ||
-        e.code == _unknownError) {
+    // Only convert recognized error codes
+    if (errorCode != null) {
       return DeviceCalendarException(
         errorCode: errorCode,
         message: e.message ?? 'An error occurred',

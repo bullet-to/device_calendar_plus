@@ -374,7 +374,7 @@ class EventsService(private val activity: Activity) {
         } catch (e: android.content.ActivityNotFoundException) {
             Result.failure(
                 CalendarException(
-                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    PlatformExceptionCodes.CALENDAR_UNAVAILABLE,
                     "Calendar app not found"
                 )
             )
@@ -506,7 +506,7 @@ class EventsService(private val activity: Activity) {
             
             return Result.failure(
                 CalendarException(
-                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to create event: No event ID returned"
                 )
             )
@@ -520,7 +520,7 @@ class EventsService(private val activity: Activity) {
         } catch (e: Exception) {
             return Result.failure(
                 CalendarException(
-                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to create event: ${e.message}"
                 )
             )
@@ -569,7 +569,7 @@ class EventsService(private val activity: Activity) {
                 // For now, return an error indicating this is not fully supported
                 return Result.failure(
                     CalendarException(
-                        PlatformExceptionCodes.UNKNOWN_ERROR,
+                        PlatformExceptionCodes.NOT_SUPPORTED,
                         "Deleting single instances of recurring events is not yet fully supported. Set deleteAllInstances to true to delete the entire series."
                     )
                 )
@@ -584,7 +584,7 @@ class EventsService(private val activity: Activity) {
                 if (deletedRows == 0) {
                     return Result.failure(
                         CalendarException(
-                            PlatformExceptionCodes.INVALID_ARGUMENTS,
+                            PlatformExceptionCodes.NOT_FOUND,
                             "Event with ID $eventId not found"
                         )
                     )
@@ -602,7 +602,7 @@ class EventsService(private val activity: Activity) {
         } catch (e: Exception) {
             return Result.failure(
                 CalendarException(
-                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to delete event: ${e.message}"
                 )
             )
@@ -643,7 +643,7 @@ class EventsService(private val activity: Activity) {
                 // Similar limitation to deletion
                 return Result.failure(
                     CalendarException(
-                        PlatformExceptionCodes.UNKNOWN_ERROR,
+                        PlatformExceptionCodes.NOT_SUPPORTED,
                         "Updating single instances of recurring events is not yet fully supported. Set updateAllInstances to true to update the entire series."
                     )
                 )
@@ -761,7 +761,7 @@ class EventsService(private val activity: Activity) {
             if (updatedRows == 0) {
                 return Result.failure(
                     CalendarException(
-                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        PlatformExceptionCodes.NOT_FOUND,
                         "Event with ID $eventId not found"
                     )
                 )
@@ -778,7 +778,7 @@ class EventsService(private val activity: Activity) {
         } catch (e: Exception) {
             return Result.failure(
                 CalendarException(
-                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to update event: ${e.message}"
                 )
             )
