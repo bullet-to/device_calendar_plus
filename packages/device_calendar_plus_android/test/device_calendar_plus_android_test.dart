@@ -22,9 +22,9 @@ void main() {
           case 'getPlatformVersion':
             return kPlatformVersion;
           case 'requestPermissions':
-            return 0; // CalendarPermissionStatus.granted
+            return 'granted'; // CalendarPermissionStatus.granted
           case 'hasPermissions':
-            return 0; // CalendarPermissionStatus.granted
+            return 'granted'; // CalendarPermissionStatus.granted
           case 'listCalendars':
             return [
               {
@@ -87,7 +87,7 @@ void main() {
         log,
         <Matcher>[isMethodCall('requestPermissions', arguments: null)],
       );
-      expect(status, equals(0)); // CalendarPermissionStatus.granted
+      expect(status, equals('granted')); // CalendarPermissionStatus.granted
     });
 
     test('hasPermissions returns granted status', () async {
@@ -96,7 +96,7 @@ void main() {
         log,
         <Matcher>[isMethodCall('hasPermissions', arguments: null)],
       );
-      expect(status, equals(0)); // CalendarPermissionStatus.granted
+      expect(status, equals('granted')); // CalendarPermissionStatus.granted
     });
 
     test('listCalendars returns list of calendars', () async {

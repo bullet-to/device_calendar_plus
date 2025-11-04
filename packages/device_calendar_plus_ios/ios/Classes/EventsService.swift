@@ -301,8 +301,8 @@ class EventsService {
     availability: String,
     completion: @escaping (Result<String, CalendarError>) -> Void
   ) {
-    // Check permission
-    guard permissionService.hasPermission(for: .full) else {
+    // Check permission - creating events only requires write access
+    guard permissionService.hasPermission(for: .write) else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.permissionDenied,
         message: "Calendar permission denied. Call requestPermissions() first."

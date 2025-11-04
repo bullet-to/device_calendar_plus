@@ -11,12 +11,12 @@ class PermissionService(private val activity: Activity) {
     companion object {
         const val CALENDAR_PERMISSION_REQUEST_CODE = 2024
         
-        // Permission status codes matching CalendarPermissionStatus enum
-        const val STATUS_GRANTED = 0
-        const val STATUS_DENIED = 2
+        // Permission status values matching CalendarPermissionStatus enum
+        const val STATUS_GRANTED = "granted"
+        const val STATUS_DENIED = "denied"
     }
     
-    private var pendingCallback: ((Result<Int>) -> Unit)? = null
+    private var pendingCallback: ((Result<String>) -> Unit)? = null
     
     private fun checkPermissionsDeclared(): PermissionException? {
         val readPermission = Manifest.permission.READ_CALENDAR
@@ -41,7 +41,7 @@ class PermissionService(private val activity: Activity) {
         return null
     }
     
-    private fun getCurrentPermissionStatus(): Int {
+    private fun getCurrentPermissionStatus(): String {
         val readPermission = Manifest.permission.READ_CALENDAR
         val writePermission = Manifest.permission.WRITE_CALENDAR
         
@@ -58,7 +58,7 @@ class PermissionService(private val activity: Activity) {
         return if (readGranted && writeGranted) STATUS_GRANTED else STATUS_DENIED
     }
     
-    fun hasPermissions(): Result<Int> {
+    fun hasPermissions(): Result<String> {
         val error = checkPermissionsDeclared()
         if (error != null) {
             return Result.failure(error)
@@ -67,7 +67,7 @@ class PermissionService(private val activity: Activity) {
         return Result.success(getCurrentPermissionStatus())
     }
     
-    fun requestPermissions(callback: (Result<Int>) -> Unit) {
+    fun requestPermissions(callback: (Result<String>) -> Unit) {
         val error = checkPermissionsDeclared()
         if (error != null) {
             callback(Result.failure(error))

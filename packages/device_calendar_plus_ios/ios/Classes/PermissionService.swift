@@ -8,12 +8,12 @@ enum CalendarPermissionType {
 class PermissionService {
   private let eventStore: EKEventStore
   
-  // Permission status codes matching CalendarPermissionStatus enum
-  static let statusGranted = 0
-  static let statusWriteOnly = 1
-  static let statusDenied = 2
-  static let statusRestricted = 3
-  static let statusNotDetermined = 4
+  // Permission status values matching CalendarPermissionStatus enum
+  static let statusGranted = "granted"
+  static let statusWriteOnly = "writeOnly"
+  static let statusDenied = "denied"
+  static let statusRestricted = "restricted"
+  static let statusNotDetermined = "notDetermined"
   
   init(eventStore: EKEventStore) {
     self.eventStore = eventStore
@@ -80,7 +80,7 @@ class PermissionService {
     return nil
   }
   
-  private func getCurrentPermissionStatus() -> Int {
+  private func getCurrentPermissionStatus() -> String {
     if #available(iOS 17.0, *) {
       let currentStatus = EKEventStore.authorizationStatus(for: .event)
       
@@ -116,7 +116,7 @@ class PermissionService {
     }
   }
   
-  func hasPermissions() -> Result<Int, PermissionError> {
+  func hasPermissions() -> Result<String, PermissionError> {
     if let error = checkUsageDescriptionDeclared() {
       return .failure(error)
     }
@@ -124,7 +124,7 @@ class PermissionService {
     return .success(getCurrentPermissionStatus())
   }
   
-  func requestPermissions(completion: @escaping (Result<Int, PermissionError>) -> Void) {
+  func requestPermissions(completion: @escaping (Result<String, PermissionError>) -> Void) {
     if let error = checkUsageDescriptionDeclared() {
       completion(.failure(error))
       return

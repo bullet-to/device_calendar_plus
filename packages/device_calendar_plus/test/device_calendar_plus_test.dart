@@ -7,7 +7,8 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     with MockPlatformInterfaceMixin {
   String? _platformVersion;
-  int? _permissionStatusCode = 4; // CalendarPermissionStatus.notDetermined
+  String? _permissionStatusCode =
+      "notDetermined"; // CalendarPermissionStatus.notDetermined.name
   List<Map<String, dynamic>> _calendars = [];
   List<Map<String, dynamic>> _events = [];
   Map<String, dynamic>? _event;
@@ -45,7 +46,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   void setPermissionStatus(CalendarPermissionStatus status) {
-    _permissionStatusCode = status.index;
+    _permissionStatusCode = status.name;
   }
 
   void setCalendars(List<Map<String, dynamic>> calendars) {
@@ -105,7 +106,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   Future<String?> getPlatformVersion() async => _platformVersion;
 
   @override
-  Future<int?> requestPermissions() async {
+  Future<String?> requestPermissions() async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
     }
@@ -113,7 +114,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
-  Future<int?> hasPermissions() async {
+  Future<String?> hasPermissions() async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
     }
@@ -285,18 +286,6 @@ void main() {
           final result = await DeviceCalendar.instance.requestPermissions();
           expect(result, CalendarPermissionStatus.denied);
         });
-
-        test('defaults to denied when status is negative', () async {
-          mockPlatform._permissionStatusCode = -1;
-          final result = await DeviceCalendar.instance.requestPermissions();
-          expect(result, CalendarPermissionStatus.denied);
-        });
-
-        test('defaults to denied when status is out of range', () async {
-          mockPlatform._permissionStatusCode = 999;
-          final result = await DeviceCalendar.instance.requestPermissions();
-          expect(result, CalendarPermissionStatus.denied);
-        });
       });
 
       group('error handling', () {
@@ -355,18 +344,6 @@ void main() {
       group('edge case handling', () {
         test('defaults to denied when status is null', () async {
           mockPlatform._permissionStatusCode = null;
-          final result = await DeviceCalendar.instance.hasPermissions();
-          expect(result, CalendarPermissionStatus.denied);
-        });
-
-        test('defaults to denied when status is negative', () async {
-          mockPlatform._permissionStatusCode = -1;
-          final result = await DeviceCalendar.instance.hasPermissions();
-          expect(result, CalendarPermissionStatus.denied);
-        });
-
-        test('defaults to denied when status is out of range', () async {
-          mockPlatform._permissionStatusCode = 999;
           final result = await DeviceCalendar.instance.hasPermissions();
           expect(result, CalendarPermissionStatus.denied);
         });

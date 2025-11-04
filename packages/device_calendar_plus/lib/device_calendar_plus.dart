@@ -82,13 +82,13 @@ class DeviceCalendar {
     );
   }
 
-  /// Helper method to handle permission requests and convert status codes
+  /// Helper method to handle permission requests and convert status values
   Future<CalendarPermissionStatus> _handlePermissionRequest(
-    Future<int?> Function() permissionCall,
+    Future<String?> Function() permissionCall,
   ) async {
     try {
-      final int? statusCode = await permissionCall();
-      return _convertStatusCode(statusCode);
+      final String? statusValue = await permissionCall();
+      return _convertStatusValue(statusValue);
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);
@@ -99,15 +99,22 @@ class DeviceCalendar {
     }
   }
 
-  /// Converts a status code to CalendarPermissionStatus
-  CalendarPermissionStatus _convertStatusCode(int? statusCode) {
-    // Default to denied if status is null or out of range
-    if (statusCode == null ||
-        statusCode < 0 ||
-        statusCode >= CalendarPermissionStatus.values.length) {
+  /// Converts a status value string to CalendarPermissionStatus
+  CalendarPermissionStatus _convertStatusValue(String? statusValue) {
+    // Default to denied if status is null or unrecognized
+    if (statusValue == null) {
       return CalendarPermissionStatus.denied;
     }
-    return CalendarPermissionStatus.values[statusCode];
+
+    // Parse the enum value by name
+    try {
+      return CalendarPermissionStatus.values.firstWhere(
+        (e) => e.name == statusValue,
+        orElse: () => CalendarPermissionStatus.denied,
+      );
+    } catch (_) {
+      return CalendarPermissionStatus.denied;
+    }
   }
 
   /// Lists all calendars available on the device.
