@@ -3,20 +3,39 @@ import 'event_status.dart';
 
 /// Represents a calendar event.
 class Event {
-  /// Unique identifier for this event.
+  /// Unique system identifier for this event.
   /// For recurring events, all instances share the same eventId.
   final String eventId;
 
   /// Instance identifier that uniquely identifies this specific event instance.
   ///
+  /// **UNSTABLE ID:** This is a plugin-generated identifier, not a system ID.
+  /// It is derived from the [eventId] and the event's start date.
+  ///
   /// Use this with [DeviceCalendar.instance.getEvent] and [DeviceCalendar.instance.showEventModal]
   /// to fetch or display this specific event occurrence.
   ///
-  /// For non-recurring events, this is the same as [eventId].
-  /// For recurring events, this is derived from [eventId] and [startDate].
+  /// For non-recurring events, this equals [eventId].
+  /// For recurring events, this is a unique identifier for each occurrence.
   ///
-  /// **Important:** If a user modifies the event's date, the instanceId will become invalid.
-  /// You must re-fetch the event to get the updated instanceId before using it again.
+  /// **Important:** This ID becomes invalid when the event's start date changes.
+  /// You are responsible for keeping instanceId up to date by re-fetching events.
+  ///
+  /// Example scenario where instanceId becomes invalid:
+  /// ```dart
+  /// // 1. You fetch some events
+  /// final events = await plugin.retrieveEvents(calendarId, ...);
+  ///
+  /// // 2. User opens native modal from one of the events and changes the start date
+  /// await plugin.showEventModal(event.instanceId);
+  /// // User changes date from Nov 5 to Nov 6 and saves
+  ///
+  /// // 3. Your stored instanceId is now invalid!
+  /// // The savedInstanceId no longer points to any event
+  ///
+  /// // 4. You must re-fetch to get the updated instanceId
+  /// final events = await plugin.retrieveEvents(calendarId, ...);
+  /// ```
   final String instanceId;
 
   /// ID of the calendar this event belongs to.
