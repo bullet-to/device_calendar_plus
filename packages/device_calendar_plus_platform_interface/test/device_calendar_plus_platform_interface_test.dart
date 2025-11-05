@@ -5,13 +5,13 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     with MockPlatformInterfaceMixin {
   @override
-  Future<String?> getPlatformVersion() async => 'Mock Platform 1.0';
-
-  @override
   Future<String?> requestPermissions() async => "granted";
 
   @override
   Future<String?> hasPermissions() async => "granted";
+
+  @override
+  Future<void> openAppSettings() async {}
 
   @override
   Future<List<Map<String, dynamic>>> listCalendars() async => [];
@@ -80,13 +80,6 @@ void main() {
     expect(DeviceCalendarPlusPlatform.instance, mock);
   });
 
-  test('getPlatformVersion returns expected value', () async {
-    final mock = MockDeviceCalendarPlusPlatform();
-    DeviceCalendarPlusPlatform.instance = mock;
-    expect(await DeviceCalendarPlusPlatform.instance.getPlatformVersion(),
-        'Mock Platform 1.0');
-  });
-
   test('requestPermissions returns expected value', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
@@ -99,6 +92,13 @@ void main() {
     DeviceCalendarPlusPlatform.instance = mock;
     expect(
         await DeviceCalendarPlusPlatform.instance.hasPermissions(), 'granted');
+  });
+
+  test('openAppSettings completes successfully', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.openAppSettings();
+    // Should complete without error
   });
 
   test('listCalendars returns expected value', () async {

@@ -7,7 +7,6 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('DeviceCalendarPlusIos', () {
-    const kPlatformVersion = 'iOS 17.0';
     late DeviceCalendarPlusIos plugin;
     late List<MethodCall> log;
 
@@ -19,12 +18,12 @@ void main() {
           .setMockMethodCallHandler(plugin.methodChannel, (methodCall) async {
         log.add(methodCall);
         switch (methodCall.method) {
-          case 'getPlatformVersion':
-            return kPlatformVersion;
           case 'requestPermissions':
             return 'granted'; // CalendarPermissionStatus.granted
           case 'hasPermissions':
             return 'granted'; // CalendarPermissionStatus.granted
+          case 'openAppSettings':
+            return null;
           case 'listCalendars':
             return [
               {
@@ -71,15 +70,6 @@ void main() {
       expect(DeviceCalendarPlusPlatform.instance, isA<DeviceCalendarPlusIos>());
     });
 
-    test('getPlatformVersion returns correct version', () async {
-      final version = await plugin.getPlatformVersion();
-      expect(
-        log,
-        <Matcher>[isMethodCall('getPlatformVersion', arguments: null)],
-      );
-      expect(version, equals(kPlatformVersion));
-    });
-
     test('requestPermissions returns granted status', () async {
       final status = await plugin.requestPermissions();
       expect(
@@ -96,6 +86,14 @@ void main() {
         <Matcher>[isMethodCall('hasPermissions', arguments: null)],
       );
       expect(status, equals('granted')); // CalendarPermissionStatus.granted
+    });
+
+    test('openAppSettings calls method', () async {
+      await plugin.openAppSettings();
+      expect(
+        log,
+        <Matcher>[isMethodCall('openAppSettings', arguments: null)],
+      );
     });
 
     test('listCalendars returns list of calendars', () async {

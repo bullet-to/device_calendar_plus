@@ -375,6 +375,10 @@ Open an issue first for larger features or breaking changes.
   `/packages/device_calendar_plus_android` and `/packages/device_calendar_plus_ios`;
   shared contracts in `/packages/device_calendar_plus_platform_interface`.
 
+## 🧪 Testing Status
+
+This plugin includes both **unit tests** and **integration tests** to ensure reliability.
+
 ## 📄 License
 
 MIT © 2025 Bullet

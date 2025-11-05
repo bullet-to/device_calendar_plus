@@ -6,7 +6,6 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     with MockPlatformInterfaceMixin {
-  String? _platformVersion;
   String? _permissionStatusCode =
       "notDetermined"; // CalendarPermissionStatus.notDetermined.name
   List<Map<String, dynamic>> _calendars = [];
@@ -40,10 +39,6 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? timeZone,
     String? availability,
   })? _updateEventCallback;
-
-  void setPlatformVersion(String? version) {
-    _platformVersion = version;
-  }
 
   void setPermissionStatus(CalendarPermissionStatus status) {
     _permissionStatusCode = status.name;
@@ -103,9 +98,6 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
-  Future<String?> getPlatformVersion() async => _platformVersion;
-
-  @override
   Future<String?> requestPermissions() async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
@@ -119,6 +111,14 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       throw _exceptionToThrow!;
     }
     return _permissionStatusCode;
+  }
+
+  @override
+  Future<void> openAppSettings() async {
+    if (_exceptionToThrow != null) {
+      throw _exceptionToThrow!;
+    }
+    // Mock implementation - just returns successfully
   }
 
   @override
@@ -261,14 +261,6 @@ void main() {
   });
 
   group('DeviceCalendar', () {
-    group('getPlatformVersion', () {
-      test('returns platform version from platform interface', () async {
-        mockPlatform.setPlatformVersion('Test Platform 1.0');
-        final result = await DeviceCalendar.instance.getPlatformVersion();
-        expect(result, 'Test Platform 1.0');
-      });
-    });
-
     group('requestPermissions', () {
       group('status conversion', () {
         test('converts status code to CalendarPermissionStatus', () async {
@@ -384,6 +376,57 @@ void main() {
                 (e) => e.code,
                 'code',
                 'SOME_OTHER_ERROR',
+              ),
+            ),
+          );
+        });
+      });
+    });
+
+    group('openAppSettings', () {
+      test('completes successfully', () async {
+        mockPlatform.clearException();
+        await DeviceCalendar.instance.openAppSettings();
+        // Should complete without error
+      });
+
+      group('error handling', () {
+        test('throws DeviceCalendarException when permissions not declared',
+            () async {
+          mockPlatform.throwException(
+            PlatformException(
+              code: 'PERMISSIONS_NOT_DECLARED',
+              message: 'Calendar permissions must be declared',
+            ),
+          );
+
+          expect(
+            () => DeviceCalendar.instance.openAppSettings(),
+            throwsA(
+              isA<DeviceCalendarException>().having(
+                (e) => e.errorCode,
+                'errorCode',
+                DeviceCalendarError.permissionsNotDeclared,
+              ),
+            ),
+          );
+        });
+
+        test('rethrows other PlatformExceptions unchanged', () async {
+          mockPlatform.throwException(
+            PlatformException(
+              code: 'UNABLE_TO_OPEN_SETTINGS',
+              message: 'Failed to open settings',
+            ),
+          );
+
+          expect(
+            () => DeviceCalendar.instance.openAppSettings(),
+            throwsA(
+              isA<PlatformException>().having(
+                (e) => e.code,
+                'code',
+                'UNABLE_TO_OPEN_SETTINGS',
               ),
             ),
           );

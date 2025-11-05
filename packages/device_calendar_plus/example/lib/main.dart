@@ -55,7 +55,6 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  String _platformVersion = 'Unknown';
   List<Calendar> _calendars = [];
   bool _isLoadingCalendars = false;
   final Set<String> _selectedCalendarIds = {};
@@ -65,14 +64,6 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    _getPlatformVersion();
-  }
-
-  Future<void> _getPlatformVersion() async {
-    final version = await DeviceCalendar.instance.getPlatformVersion();
-    setState(() {
-      _platformVersion = version ?? 'Unknown';
-    });
   }
 
   Future<void> _requestPermissions() async {
@@ -543,27 +534,6 @@ class _MyHomePageState extends State<MyHomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    const Text('Platform Info'),
-                    const SizedBox(height: 8),
-                    Text(
-                      _platformVersion,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _getPlatformVersion,
-                      child: const Text('Refresh Platform Version'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
