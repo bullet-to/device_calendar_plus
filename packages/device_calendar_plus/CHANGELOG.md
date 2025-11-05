@@ -1,3 +1,15 @@
+## 0.2.0 - 2024-11-05
+
+### Added
+- `openAppSettings()` method to guide users to system settings when permissions are denied
+- Testing status documentation in README
+
+### Removed
+- **BREAKING**: `getPlatformVersion()` method (unused boilerplate)
+
+### Changed
+- Updated all platform packages to 0.2.0
+
 ## 0.1.1 - 2024-11-04
 
 ### Added
