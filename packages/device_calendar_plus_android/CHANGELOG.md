@@ -1,3 +1,13 @@
+## 0.3.0 - 2024-11-05
+
+### Changed
+- **BREAKING**: `deleteEvent()` now always deletes entire series for recurring events (removed `deleteAllInstances` parameter)
+- **BREAKING**: `updateEvent()` now always updates entire series for recurring events (removed `updateAllInstances` parameter)
+- Native code now extracts event ID from instance ID format automatically
+
+### Removed
+- **BREAKING**: `NOT_SUPPORTED` error code (no longer needed as single-instance operations are not attempted)
+
 ## 0.2.0 - 2024-11-05
 
 ### Added

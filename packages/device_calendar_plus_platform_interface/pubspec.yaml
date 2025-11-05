@@ -1,6 +1,6 @@
 name: device_calendar_plus_platform_interface
 description: Platform interface for device_calendar_plus plugin.
-version: 0.2.0
+version: 0.3.0
 repository: https://github.com/bullet-to/device_calendar_plus
 
 resolution: workspace

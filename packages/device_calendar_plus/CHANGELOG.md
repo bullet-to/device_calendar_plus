@@ -1,3 +1,14 @@
+## 0.3.0 - 2024-11-05
+
+### Changed
+- **BREAKING**: `deleteEvent()` now requires named parameter `eventId` and always deletes entire series for recurring events
+- **BREAKING**: `updateEvent()` now uses named parameter `eventId` (renamed from `instanceId`) and always updates entire series for recurring events
+- **BREAKING**: Removed `deleteAllInstances` and `updateAllInstances` parameters - operations on recurring events now always affect the entire series
+- Renamed `getEvent()` and `showEventModal()` parameter from `instanceId` to `id` to clarify that both event IDs and instance IDs are accepted
+
+### Removed
+- **BREAKING**: `NOT_SUPPORTED` error code (no longer needed)
+
 ## 0.2.0 - 2024-11-05
 
 ### Added

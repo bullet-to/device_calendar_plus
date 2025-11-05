@@ -1,6 +1,6 @@
 name: device_calendar_plus
 description: A modern, maintained Flutter plugin for reading and writing device calendar events on Android and iOS.
-version: 0.2.0
+version: 0.3.0
 repository: https://github.com/bullet-to/device_calendar_plus
 issue_tracker: https://github.com/bullet-to/device_calendar_plus/issues
 
@@ -20,9 +20,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  device_calendar_plus_platform_interface: ^0.2.0
-  device_calendar_plus_android: ^0.2.0
-  device_calendar_plus_ios: ^0.2.0
+  device_calendar_plus_platform_interface: ^0.3.0
+  device_calendar_plus_android: ^0.3.0
+  device_calendar_plus_ios: ^0.3.0
 
 dev_dependencies:
   flutter_test:
