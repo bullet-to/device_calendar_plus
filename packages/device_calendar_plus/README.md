@@ -35,7 +35,7 @@ Created by [Bullet](https://bullet.to) — a personal task + notes + calendar ap
 - **Native UI**: Open native event modal for viewing/editing in both android and iOS
 - **All-Day Events**: Proper handling of floating calendar dates
 - **Timezones**: Correct timezone behavior for timed events
-- **Recurring Events**: Read and update recurring event instances
+- **Recurring Events**: Read recurring event instances; update/delete entire series
 
 ## 🧩 Installation
 
@@ -340,28 +340,20 @@ await plugin.updateEvent(
   instanceId: event.instanceId,
   timeZone: 'America/Los_Angeles',
 );
-
-// Update all instances of a recurring event
-await plugin.updateEvent(
-  instanceId: event.eventId, // Use eventId for series
-  updateAllInstances: true,
-  title: 'Updated Recurring Event',
-);
 ```
+
+**Note on Recurring Events**: For recurring events, `updateEvent` will always update the ENTIRE series (all past and future occurrences). Single-instance updates are not supported to maintain consistent behavior across platforms.
 
 ### Delete Event
 
 ```dart
 final plugin = DeviceCalendar.instance;
 
-// Delete a single event or single instance of recurring event
+// Delete a single event
 await plugin.deleteEvent(event.instanceId);
 
-// Delete all instances of a recurring event
-await plugin.deleteEvent(
-  event.eventId, // Use eventId for series
-  deleteAllInstances: true,
-);
+// For recurring events, this deletes the ENTIRE series (all occurrences)
+await plugin.deleteEvent(event.instanceId);
 ```
 
 ## 🤝 Contributing

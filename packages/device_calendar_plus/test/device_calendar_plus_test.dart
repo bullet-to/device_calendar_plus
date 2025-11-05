@@ -28,8 +28,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   // Callback to capture updateEvent arguments
   Future<void> Function(
-    String instanceId,
-    bool updateAllInstances, {
+    String instanceId, {
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -82,8 +81,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   void setUpdateEventCallback(
     Future<void> Function(
-      String instanceId,
-      bool updateAllInstances, {
+      String instanceId, {
       String? title,
       DateTime? startDate,
       DateTime? endDate,
@@ -215,7 +213,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
-  Future<void> deleteEvent(String instanceId, bool deleteAllInstances) async {
+  Future<void> deleteEvent(String instanceId) async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
     }
@@ -223,8 +221,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   @override
   Future<void> updateEvent(
-    String instanceId,
-    bool updateAllInstances, {
+    String instanceId, {
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -239,7 +236,6 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     if (_updateEventCallback != null) {
       return _updateEventCallback!(
         instanceId,
-        updateAllInstances,
         title: title,
         startDate: startDate,
         endDate: endDate,
@@ -1131,29 +1127,27 @@ void main() {
 
     group('deleteEvent', () {
       test('deletes single event', () async {
-        await DeviceCalendar.instance.deleteEvent('event-123');
+        await DeviceCalendar.instance.deleteEvent(eventId: 'event-123');
         // Should complete without error
       });
 
       test('deletes all instances of recurring event', () async {
         await DeviceCalendar.instance.deleteEvent(
-          'event-123@123456789',
-          deleteAllInstances: true,
+          eventId: 'event-123@123456789',
         );
         // Should complete without error
       });
 
       test('deletes single instance of recurring event', () async {
         await DeviceCalendar.instance.deleteEvent(
-          'event-123@123456789',
-          deleteAllInstances: false,
+          eventId: 'event-123@123456789',
         );
         // Should complete without error
       });
 
       test('throws ArgumentError when instance ID is empty', () async {
         expect(
-          () => DeviceCalendar.instance.deleteEvent(''),
+          () => DeviceCalendar.instance.deleteEvent(eventId: ''),
           throwsArgumentError,
         );
       });
@@ -1167,7 +1161,7 @@ void main() {
         );
 
         expect(
-          () => DeviceCalendar.instance.deleteEvent('event-123'),
+          () => DeviceCalendar.instance.deleteEvent(eventId: 'event-123'),
           throwsA(
             isA<DeviceCalendarException>().having(
               (e) => e.errorCode,
@@ -1182,7 +1176,7 @@ void main() {
     group('updateEvent', () {
       test('updates event with all parameters', () async {
         await DeviceCalendar.instance.updateEvent(
-          instanceId: 'event-123',
+          eventId: 'event-123',
           title: 'Updated Title',
           startDate: DateTime(2024, 3, 20, 10, 0),
           endDate: DateTime(2024, 3, 20, 11, 0),
@@ -1196,19 +1190,18 @@ void main() {
 
       test('updates event with single field', () async {
         await DeviceCalendar.instance.updateEvent(
-          instanceId: 'event-123',
+          eventId: 'event-123',
           title: 'New Title',
         );
         // Should complete without error
       });
 
-      test('updates all instances of recurring event', () async {
+      test('updates entire series for recurring event', () async {
         await DeviceCalendar.instance.updateEvent(
-          instanceId: 'event-123',
-          updateAllInstances: true,
+          eventId: 'event-123',
           title: 'Updated Series',
         );
-        // Should complete without error
+        // Should complete without error (updates entire series automatically)
       });
 
       test('normalizes dates when isAllDay is true', () async {
@@ -1220,8 +1213,7 @@ void main() {
 
         final mock = MockDeviceCalendarPlusPlatform();
         mock.setUpdateEventCallback((
-          instanceId,
-          updateAllInstances, {
+          instanceId, {
           title,
           startDate,
           endDate,
@@ -1238,7 +1230,7 @@ void main() {
         DeviceCalendarPlusPlatform.instance = mock;
 
         await DeviceCalendar.instance.updateEvent(
-          instanceId: 'event-123',
+          eventId: 'event-123',
           startDate: startWithTime,
           endDate: endWithTime,
           isAllDay: true,
@@ -1272,8 +1264,7 @@ void main() {
 
         final mock = MockDeviceCalendarPlusPlatform();
         mock.setUpdateEventCallback((
-          instanceId,
-          updateAllInstances, {
+          instanceId, {
           title,
           startDate,
           endDate,
@@ -1290,7 +1281,7 @@ void main() {
         DeviceCalendarPlusPlatform.instance = mock;
 
         await DeviceCalendar.instance.updateEvent(
-          instanceId: 'event-123',
+          eventId: 'event-123',
           startDate: startWithTime,
           endDate: endWithTime,
           isAllDay: false,
@@ -1300,10 +1291,10 @@ void main() {
         expect(capturedEnd, equals(endWithTime));
       });
 
-      test('throws ArgumentError when instanceId is empty', () async {
+      test('throws ArgumentError when eventId is empty', () async {
         expect(
           () => DeviceCalendar.instance.updateEvent(
-            instanceId: '',
+            eventId: '',
             title: 'New Title',
           ),
           throwsArgumentError,
@@ -1313,7 +1304,7 @@ void main() {
       test('throws ArgumentError when no fields provided', () async {
         expect(
           () => DeviceCalendar.instance.updateEvent(
-            instanceId: 'event-123',
+            eventId: 'event-123',
           ),
           throwsArgumentError,
         );
@@ -1322,7 +1313,7 @@ void main() {
       test('throws ArgumentError when endDate is before startDate', () async {
         expect(
           () => DeviceCalendar.instance.updateEvent(
-            instanceId: 'event-123',
+            eventId: 'event-123',
             startDate: DateTime(2024, 3, 20, 11, 0),
             endDate: DateTime(2024, 3, 20, 10, 0),
           ),
@@ -1340,7 +1331,7 @@ void main() {
 
         expect(
           () => DeviceCalendar.instance.updateEvent(
-            instanceId: 'event-123',
+            eventId: 'event-123',
             title: 'New Title',
           ),
           throwsA(

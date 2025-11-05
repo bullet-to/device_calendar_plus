@@ -26,9 +26,6 @@ enum DeviceCalendarError {
 
   // Operation errors
 
-  /// Operation is not supported on this platform or in this context.
-  notSupported,
-
   /// Calendar operation failed.
   operationFailed,
 

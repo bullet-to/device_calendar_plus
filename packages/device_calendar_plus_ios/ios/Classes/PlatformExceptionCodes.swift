@@ -36,12 +36,6 @@ enum PlatformExceptionCodes {
   
   // Operation errors
   
-  /// Operation is not supported on this platform or in this context.
-  ///
-  /// Examples:
-  /// - Platform-specific feature not available
-  static let notSupported = "NOT_SUPPORTED"
-  
   /// Calendar operation failed.
   ///
   /// Save, update, or delete operation failed for reasons other than permissions.

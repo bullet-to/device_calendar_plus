@@ -234,21 +234,19 @@ void main() {
     });
 
     test('deleteEvent calls method with correct arguments', () async {
-      await plugin.deleteEvent('event-123', false);
+      await plugin.deleteEvent('event-123');
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('deleteEvent'));
       expect(log[0].arguments['instanceId'], equals('event-123'));
-      expect(log[0].arguments['deleteAllInstances'], equals(false));
     });
 
-    test('deleteEvent with deleteAllInstances true', () async {
-      await plugin.deleteEvent('event-123@123456789', true);
+    test('deleteEvent for recurring event deletes entire series', () async {
+      await plugin.deleteEvent('event-123@123456789');
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('deleteEvent'));
       expect(log[0].arguments['instanceId'], equals('event-123@123456789'));
-      expect(log[0].arguments['deleteAllInstances'], equals(true));
     });
 
     test('updateEvent with all parameters', () async {
@@ -257,7 +255,6 @@ void main() {
 
       await plugin.updateEvent(
         'event-123',
-        false,
         title: 'Updated Title',
         startDate: startDate,
         endDate: endDate,
@@ -270,7 +267,6 @@ void main() {
       expect(log.length, equals(1));
       expect(log[0].method, equals('updateEvent'));
       expect(log[0].arguments['instanceId'], equals('event-123'));
-      expect(log[0].arguments['updateAllInstances'], equals(false));
       expect(log[0].arguments['title'], equals('Updated Title'));
       expect(log[0].arguments['startDate'],
           equals(startDate.millisecondsSinceEpoch));
@@ -285,14 +281,12 @@ void main() {
     test('updateEvent with minimal parameters', () async {
       await plugin.updateEvent(
         'event-123',
-        false,
         title: 'New Title',
       );
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('updateEvent'));
       expect(log[0].arguments['instanceId'], equals('event-123'));
-      expect(log[0].arguments['updateAllInstances'], equals(false));
       expect(log[0].arguments['title'], equals('New Title'));
       expect(log[0].arguments['startDate'], isNull);
       expect(log[0].arguments['endDate'], isNull);
@@ -303,17 +297,15 @@ void main() {
       expect(log[0].arguments['availability'], isNull);
     });
 
-    test('updateEvent with updateAllInstances true', () async {
+    test('updateEvent for recurring event updates entire series', () async {
       await plugin.updateEvent(
         'event-123',
-        true,
         title: 'Updated Series',
       );
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('updateEvent'));
       expect(log[0].arguments['instanceId'], equals('event-123'));
-      expect(log[0].arguments['updateAllInstances'], equals(true));
       expect(log[0].arguments['title'], equals('Updated Series'));
     });
   });

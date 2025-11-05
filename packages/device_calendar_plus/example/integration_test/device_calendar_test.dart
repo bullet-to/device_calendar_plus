@@ -494,7 +494,7 @@ void main() {
       expect(eventsBefore, isNotEmpty);
 
       // Delete the event
-      await plugin.deleteEvent(eventId);
+      await plugin.deleteEvent(eventId: eventId);
 
       // Verify event no longer exists
       final eventsAfter = await plugin.listEvents(
@@ -555,9 +555,9 @@ void main() {
         //
         // Example:
         // const recurringInstanceId = 'YOUR-EVENT-ID@1234567890000';
-        // await plugin.deleteEvent(recurringInstanceId, deleteAllInstances: true);
+        // await plugin.deleteEvent(recurringInstanceId);
         //
-        // Expected: All instances of the recurring event should be deleted
+        // Expected: Entire series (all instances) of the recurring event should be deleted
 
         fail(
             'This test requires manual setup. Create a recurring event in your '
@@ -584,7 +584,7 @@ void main() {
 
       // Update title
       await plugin.updateEvent(
-        instanceId: eventId,
+        eventId: eventId,
         title: 'Updated Title',
       );
 
@@ -617,7 +617,7 @@ void main() {
       final newEnd = DateTime.now().add(Duration(days: 1, hours: 4));
 
       await plugin.updateEvent(
-        instanceId: eventId,
+        eventId: eventId,
         startDate: newStart,
         endDate: newEnd,
       );
@@ -651,7 +651,7 @@ void main() {
 
       // Update multiple fields
       await plugin.updateEvent(
-        instanceId: eventId,
+        eventId: eventId,
         description: 'Updated description',
         location: 'Updated location',
       );
@@ -683,7 +683,7 @@ void main() {
 
       // Update to all-day
       await plugin.updateEvent(
-        instanceId: eventId,
+        eventId: eventId,
         isAllDay: true,
       );
 
@@ -720,7 +720,7 @@ void main() {
       final newEnd = DateTime(today.year, today.month, today.day, 11, 0);
 
       await plugin.updateEvent(
-        instanceId: eventId,
+        eventId: eventId,
         isAllDay: false,
         startDate: newStart,
         endDate: newEnd,
@@ -757,7 +757,7 @@ void main() {
       // Update to Los Angeles timezone
       // Note: This reinterprets the local time, not preserving the instant
       await plugin.updateEvent(
-        instanceId: eventId,
+        eventId: eventId,
         timeZone: 'America/Los_Angeles',
       );
 
@@ -783,7 +783,7 @@ void main() {
 
       // Attempt to update with no fields - should throw
       expect(
-        () async => await plugin.updateEvent(instanceId: eventId),
+        () async => await plugin.updateEvent(eventId: eventId),
         throwsA(isA<ArgumentError>()),
       );
     });

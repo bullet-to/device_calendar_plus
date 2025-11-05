@@ -357,9 +357,8 @@ class DeviceCalendarPlusAndroidPlugin :
         
         // Parse arguments
         val instanceId = call.argument<String>("instanceId")
-        val deleteAllInstances = call.argument<Boolean>("deleteAllInstances")
         
-        if (instanceId == null || deleteAllInstances == null) {
+        if (instanceId == null) {
             result.error(
                 PlatformExceptionCodes.INVALID_ARGUMENTS,
                 "Missing required arguments for deleteEvent",
@@ -368,7 +367,7 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        val serviceResult = service.deleteEvent(instanceId, deleteAllInstances)
+        val serviceResult = service.deleteEvent(instanceId)
         serviceResult.fold(
             onSuccess = { result.success(null) },
             onFailure = { error ->
@@ -386,9 +385,8 @@ class DeviceCalendarPlusAndroidPlugin :
         
         // Parse required arguments
         val instanceId = call.argument<String>("instanceId")
-        val updateAllInstances = call.argument<Boolean>("updateAllInstances")
         
-        if (instanceId == null || updateAllInstances == null) {
+        if (instanceId == null) {
             result.error(
                 PlatformExceptionCodes.INVALID_ARGUMENTS,
                 "Missing required arguments for updateEvent",
@@ -412,7 +410,6 @@ class DeviceCalendarPlusAndroidPlugin :
         
         val serviceResult = service.updateEvent(
             instanceId,
-            updateAllInstances,
             title,
             startDate,
             endDate,

@@ -136,7 +136,9 @@ class EventsService(private val activity: Activity) {
         availabilityColumn: String,
         statusColumn: String,
         timeZoneColumn: String,
-        recurrenceRuleColumn: String
+        recurrenceRuleColumn: String,
+        createdColumn: String? = null,
+        lastModifiedColumn: String? = null
     ): Map<String, Any> {
         val eventIdIndex = cursor.getColumnIndex(eventIdColumn)
         val calendarIdIndex = cursor.getColumnIndex(calendarIdColumn)
@@ -150,6 +152,8 @@ class EventsService(private val activity: Activity) {
         val statusIndex = cursor.getColumnIndex(statusColumn)
         val timeZoneIndex = cursor.getColumnIndex(timeZoneColumn)
         val recurrenceRuleIndex = cursor.getColumnIndex(recurrenceRuleColumn)
+        val createdIndex = if (createdColumn != null) cursor.getColumnIndex(createdColumn) else -1
+        val lastModifiedIndex = if (lastModifiedColumn != null) cursor.getColumnIndex(lastModifiedColumn) else -1
         
         val eventId = cursor.getString(eventIdIndex)
         val calendarId = cursor.getString(calendarIdIndex)
@@ -163,6 +167,8 @@ class EventsService(private val activity: Activity) {
         val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else 0
         val timeZone = if (!cursor.isNull(timeZoneIndex)) cursor.getString(timeZoneIndex) else null
         val recurrenceRule = if (!cursor.isNull(recurrenceRuleIndex)) cursor.getString(recurrenceRuleIndex) else null
+        val createdDate = if (createdIndex >= 0 && !cursor.isNull(createdIndex)) cursor.getLong(createdIndex) else null
+        val lastModifiedDate = if (lastModifiedIndex >= 0 && !cursor.isNull(lastModifiedIndex)) cursor.getLong(lastModifiedIndex) else null
         
         // Generate instanceId using RAW timestamps before any modifications
         val instanceId: String = if (recurrenceRule != null) {
@@ -225,6 +231,14 @@ class EventsService(private val activity: Activity) {
         
         // Set isRecurring flag
         eventMap["isRecurring"] = (recurrenceRule != null)
+        
+        // Add creation and modification dates if available
+        if (createdDate != null) {
+            eventMap["createdDate"] = createdDate
+        }
+        if (lastModifiedDate != null) {
+            eventMap["updatedDate"] = lastModifiedDate
+        }
         
         return eventMap
     }
@@ -527,7 +541,7 @@ class EventsService(private val activity: Activity) {
         }
     }
     
-    fun deleteEvent(instanceId: String, deleteAllInstances: Boolean): Result<Unit> {
+    fun deleteEvent(instanceId: String): Result<Unit> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
             activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
@@ -541,57 +555,27 @@ class EventsService(private val activity: Activity) {
         
         try {
             // Parse instanceId: "eventId" or "eventId@timestamp"
+            // For recurring events, we always delete the entire series
             val parts = instanceId.split("@", limit = 2)
             val eventId = parts[0]
             
-            if (parts.size == 2 && !deleteAllInstances) {
-                // Deleting a single instance of a recurring event
-                // This requires using the Instances table with a specific timestamp
-                val occurrenceMillis = parts[1].toLongOrNull()
-                if (occurrenceMillis == null) {
-                    return Result.failure(
-                        CalendarException(
-                            PlatformExceptionCodes.INVALID_ARGUMENTS,
-                            "Invalid instanceId format: $instanceId"
-                        )
-                    )
-                }
-                
-                // For single instance deletion of recurring events, we need to query the specific instance
-                // and delete it from the Instances table
-                val deleteUri = ContentUris.withAppendedId(
-                    CalendarContract.Events.CONTENT_URI,
-                    eventId.toLong()
-                )
-                
-                // Note: Android doesn't easily support deleting single instances
-                // We'll need to use CONTENT_EXCEPTION_URI or similar
-                // For now, return an error indicating this is not fully supported
+            // Delete the event (entire series for recurring events)
+            val deletedRows = activity.contentResolver.delete(
+                CalendarContract.Events.CONTENT_URI,
+                "${CalendarContract.Events._ID} = ?",
+                arrayOf(eventId)
+            )
+            
+            if (deletedRows == 0) {
                 return Result.failure(
                     CalendarException(
-                        PlatformExceptionCodes.NOT_SUPPORTED,
-                        "Deleting single instances of recurring events is not yet fully supported. Set deleteAllInstances to true to delete the entire series."
+                        PlatformExceptionCodes.NOT_FOUND,
+                        "Event with ID $eventId not found"
                     )
                 )
-            } else {
-                // Delete the event (or all instances if recurring)
-                val deletedRows = activity.contentResolver.delete(
-                    CalendarContract.Events.CONTENT_URI,
-                    "${CalendarContract.Events._ID} = ?",
-                    arrayOf(eventId)
-                )
-                
-                if (deletedRows == 0) {
-                    return Result.failure(
-                        CalendarException(
-                            PlatformExceptionCodes.NOT_FOUND,
-                            "Event with ID $eventId not found"
-                        )
-                    )
-                }
-                
-                return Result.success(Unit)
             }
+            
+            return Result.success(Unit)
         } catch (e: SecurityException) {
             return Result.failure(
                 CalendarException(
@@ -611,7 +595,6 @@ class EventsService(private val activity: Activity) {
     
     fun updateEvent(
         instanceId: String,
-        updateAllInstances: Boolean,
         title: String?,
         startDate: java.util.Date?,
         endDate: java.util.Date?,
@@ -633,20 +616,9 @@ class EventsService(private val activity: Activity) {
         
         try {
             // Parse instanceId: "eventId" or "eventId@timestamp"
+            // For recurring events, we always update the entire series
             val parts = instanceId.split("@", limit = 2)
             val eventId = parts[0]
-            
-            // Check if this is a single instance update on a recurring event
-            if (parts.size == 2 && !updateAllInstances) {
-                // Updating a single instance of a recurring event is not fully supported
-                // Similar limitation to deletion
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.NOT_SUPPORTED,
-                        "Updating single instances of recurring events is not yet fully supported. Set updateAllInstances to true to update the entire series."
-                    )
-                )
-            }
             
             // Need to fetch existing event to determine if it's all-day
             // This is required for proper date normalization

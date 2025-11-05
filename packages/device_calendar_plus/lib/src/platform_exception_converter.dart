@@ -22,8 +22,6 @@ class PlatformExceptionConverter {
         return DeviceCalendarError.notFound;
       case PlatformExceptionCodes.readOnly:
         return DeviceCalendarError.readOnly;
-      case PlatformExceptionCodes.notSupported:
-        return DeviceCalendarError.notSupported;
       case PlatformExceptionCodes.operationFailed:
         return DeviceCalendarError.operationFailed;
       case PlatformExceptionCodes.calendarUnavailable:

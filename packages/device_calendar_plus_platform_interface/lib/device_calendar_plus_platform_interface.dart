@@ -159,12 +159,12 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// - For non-recurring events: Just the eventId
   /// - For recurring events: "eventId@rawTimestampMillis" format
   ///
-  /// [deleteAllInstances] determines deletion behavior for recurring events:
-  /// - true: Deletes all instances of the recurring event
-  /// - false: Deletes only this specific instance
+  /// **For recurring events**: This will delete the ENTIRE series (all past and
+  /// future occurrences). Single-instance deletion is not supported to maintain
+  /// consistent behavior across platforms.
   ///
   /// Requires calendar write permissions.
-  Future<void> deleteEvent(String instanceId, bool deleteAllInstances);
+  Future<void> deleteEvent(String instanceId);
 
   /// Updates an existing event on the device.
   ///
@@ -172,9 +172,9 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// - For non-recurring events: Just the eventId
   /// - For recurring events: "eventId@rawTimestampMillis" format
   ///
-  /// [updateAllInstances] determines update behavior for recurring events:
-  /// - true: Updates all instances of the recurring event
-  /// - false: Updates only this specific instance
+  /// **For recurring events**: This will update the ENTIRE series (all past and
+  /// future occurrences). Single-instance updates are not supported to maintain
+  /// consistent behavior across platforms.
   ///
   /// All field parameters are optional - only provided fields will be updated:
   /// - [title] - new event title
@@ -188,8 +188,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// At least one field must be provided.
   /// Requires calendar write permissions.
   Future<void> updateEvent(
-    String instanceId,
-    bool updateAllInstances, {
+    String instanceId, {
     String? title,
     DateTime? startDate,
     DateTime? endDate,

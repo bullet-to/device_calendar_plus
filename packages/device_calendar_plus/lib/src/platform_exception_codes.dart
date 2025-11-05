@@ -39,13 +39,6 @@ class PlatformExceptionCodes {
 
   // Operation errors
 
-  /// Operation is not supported on this platform or in this context.
-  ///
-  /// Examples:
-  /// - Single recurring instance updates/deletes (Android limitation)
-  /// - Platform-specific feature not available
-  static const String notSupported = 'NOT_SUPPORTED';
-
   /// Calendar operation failed.
   ///
   /// Save, update, or delete operation failed for reasons other than permissions.

@@ -284,6 +284,68 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<void> _updateEvent(Event event) async {
+    try {
+      // Add an exclamation mark to the title
+      final newTitle = '${event.title}!';
+
+      await DeviceCalendar.instance.updateEvent(
+        eventId: event.instanceId,
+        title: newTitle,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Updated: $newTitle'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+      // Reload events to show the change
+      await _loadEvents();
+    } on DeviceCalendarException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update event: $e')),
+      );
+    }
+  }
+
+  Future<void> _deleteEvent(Event event) async {
+    try {
+      await DeviceCalendar.instance.deleteEvent(eventId: event.instanceId);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Deleted: ${event.title}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+      // Reload events to show the change
+      await _loadEvents();
+    } on DeviceCalendarException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete event: $e')),
+      );
+    }
+  }
+
   Future<void> _showEventDetails(Event event) async {
     try {
       // Fetch the specific event instance using instanceId
@@ -802,8 +864,8 @@ class _MyHomePageState extends State<MyHomePage> {
                                     ),
                                   ],
                                 ),
-                                trailing: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     if (event.isAllDay)
                                       const Icon(Icons.all_inclusive, size: 16),
@@ -812,6 +874,21 @@ class _MyHomePageState extends State<MyHomePage> {
                                     if (event.status == EventStatus.canceled)
                                       const Icon(Icons.cancel_outlined,
                                           size: 16),
+                                    const SizedBox(width: 4),
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, size: 18),
+                                      onPressed: () => _updateEvent(event),
+                                      tooltip: 'Update',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, size: 18),
+                                      onPressed: () => _deleteEvent(event),
+                                      tooltip: 'Delete',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                    ),
                                   ],
                                 ),
                               );

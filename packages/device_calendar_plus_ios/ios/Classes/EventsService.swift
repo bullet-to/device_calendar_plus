@@ -376,7 +376,6 @@ class EventsService {
   
   func deleteEvent(
     instanceId: String,
-    deleteAllInstances: Bool,
     completion: @escaping (Result<Void, CalendarError>) -> Void
   ) {
     // Check permission
@@ -389,40 +388,12 @@ class EventsService {
     }
     
     // Parse instanceId: "eventId" or "eventId@timestamp"
+    // For recurring events, we always delete the entire series, so extract just the eventId
     let parts = instanceId.split(separator: "@", maxSplits: 1)
     let eventId = String(parts[0])
     
-    // Fetch the event
-    let event: EKEvent?
-    
-    if parts.count == 2, let timestampMillis = Int64(parts[1]) {
-      // Recurring event with timestamp
-      let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
-      
-      // Query ±1 second around the exact occurrence time
-      let startDate = occurrenceDate.addingTimeInterval(-1)
-      let endDate = occurrenceDate.addingTimeInterval(1)
-      
-      let predicate = eventStore.predicateForEvents(
-        withStart: startDate,
-        end: endDate,
-        calendars: nil
-      )
-      
-      let events = eventStore.events(matching: predicate)
-      let matchingEvents = events.filter { $0.eventIdentifier == eventId }
-      
-      // Find the closest match
-      event = matchingEvents.min(by: {
-        abs($0.startDate.timeIntervalSince(occurrenceDate)) < abs($1.startDate.timeIntervalSince(occurrenceDate))
-      })
-    } else {
-      // Non-recurring event or master event
-      event = eventStore.event(withIdentifier: eventId)
-    }
-    
-    // Check if event was found
-    guard let foundEvent = event else {
+    // Fetch the master event by eventId
+    guard let event = eventStore.event(withIdentifier: eventId) else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.notFound,
         message: "Event not found with instance ID: \(instanceId)"
@@ -430,12 +401,11 @@ class EventsService {
       return
     }
     
-    // Determine the span for deletion
-    let span: EKSpan = deleteAllInstances ? .futureEvents : .thisEvent
-    
     // Delete the event
+    // For recurring events, .futureEvents on the master event deletes the entire series
+    // For non-recurring events, .futureEvents behaves the same as .thisEvent
     do {
-      try eventStore.remove(foundEvent, span: span)
+      try eventStore.remove(event, span: .futureEvents)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
@@ -447,7 +417,6 @@ class EventsService {
   
   func updateEvent(
     instanceId: String,
-    updateAllInstances: Bool,
     title: String?,
     startDate: Date?,
     endDate: Date?,
@@ -467,40 +436,12 @@ class EventsService {
     }
     
     // Parse instanceId: "eventId" or "eventId@timestamp"
+    // For recurring events, we always update the entire series, so extract just the eventId
     let parts = instanceId.split(separator: "@", maxSplits: 1)
     let eventId = String(parts[0])
     
-    // Fetch the event (use same logic as deleteEvent)
-    let event: EKEvent?
-    
-    if parts.count == 2, let timestampMillis = Int64(parts[1]) {
-      // Recurring event with timestamp
-      let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
-      
-      // Query ±1 second around the exact occurrence time
-      let startDateQuery = occurrenceDate.addingTimeInterval(-1)
-      let endDateQuery = occurrenceDate.addingTimeInterval(1)
-      
-      let predicate = eventStore.predicateForEvents(
-        withStart: startDateQuery,
-        end: endDateQuery,
-        calendars: nil
-      )
-      
-      let events = eventStore.events(matching: predicate)
-      let matchingEvents = events.filter { $0.eventIdentifier == eventId }
-      
-      // Find the closest match
-      event = matchingEvents.min(by: {
-        abs($0.startDate.timeIntervalSince(occurrenceDate)) < abs($1.startDate.timeIntervalSince(occurrenceDate))
-      })
-    } else {
-      // Non-recurring event or master event
-      event = eventStore.event(withIdentifier: eventId)
-    }
-    
-    // Check if event was found
-    guard let foundEvent = event else {
+    // Fetch the master event by eventId
+    guard let foundEvent = eventStore.event(withIdentifier: eventId) else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.notFound,
         message: "Event not found with instance ID: \(instanceId)"
@@ -546,12 +487,11 @@ class EventsService {
       foundEvent.timeZone = TimeZone(identifier: timeZoneIdentifier)
     }
     
-    // Determine the span for update
-    let span: EKSpan = updateAllInstances ? .futureEvents : .thisEvent
-    
     // Save the event
+    // For recurring events, .futureEvents on the master event updates the entire series
+    // For non-recurring events, .futureEvents behaves the same as .thisEvent
     do {
-      try eventStore.save(foundEvent, span: span)
+      try eventStore.save(foundEvent, span: .futureEvents)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(

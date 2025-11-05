@@ -56,12 +56,11 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       'mock-event-id';
 
   @override
-  Future<void> deleteEvent(String instanceId, bool deleteAllInstances) async {}
+  Future<void> deleteEvent(String instanceId) async {}
 
   @override
   Future<void> updateEvent(
-    String instanceId,
-    bool updateAllInstances, {
+    String instanceId, {
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -176,14 +175,15 @@ void main() {
   test('deleteEvent completes', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
-    await DeviceCalendarPlusPlatform.instance.deleteEvent('event-123', false);
+    await DeviceCalendarPlusPlatform.instance.deleteEvent('event-123');
     // Should complete without error
   });
 
-  test('deleteEvent with deleteAllInstances completes', () async {
+  test('deleteEvent for recurring event deletes entire series', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
-    await DeviceCalendarPlusPlatform.instance.deleteEvent('event-123', true);
+    await DeviceCalendarPlusPlatform.instance
+        .deleteEvent('event-123@123456789');
     // Should complete without error
   });
 
@@ -192,7 +192,6 @@ void main() {
     DeviceCalendarPlusPlatform.instance = mock;
     await DeviceCalendarPlusPlatform.instance.updateEvent(
       'event-123',
-      false,
       title: 'Updated Title',
       startDate: DateTime(2024, 3, 20, 10, 0),
       endDate: DateTime(2024, 3, 20, 11, 0),
@@ -209,18 +208,16 @@ void main() {
     DeviceCalendarPlusPlatform.instance = mock;
     await DeviceCalendarPlusPlatform.instance.updateEvent(
       'event-123',
-      false,
       title: 'New Title',
     );
     // Should complete without error
   });
 
-  test('updateEvent with updateAllInstances completes', () async {
+  test('updateEvent for recurring event updates entire series', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
     await DeviceCalendarPlusPlatform.instance.updateEvent(
       'event-123',
-      true,
       title: 'Updated Series',
     );
     // Should complete without error

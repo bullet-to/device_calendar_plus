@@ -424,8 +424,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
     
     // Parse parameters
-    guard let instanceId = args["instanceId"] as? String,
-          let deleteAllInstances = args["deleteAllInstances"] as? Bool else {
+    guard let instanceId = args["instanceId"] as? String else {
       result(FlutterError(
         code: PlatformExceptionCodes.invalidArguments,
         message: "Missing required arguments for deleteEvent",
@@ -435,8 +434,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
     
     eventsService.deleteEvent(
-      instanceId: instanceId,
-      deleteAllInstances: deleteAllInstances
+      instanceId: instanceId
     ) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
@@ -460,8 +458,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
     
     // Parse required parameters
-    guard let instanceId = args["instanceId"] as? String,
-          let updateAllInstances = args["updateAllInstances"] as? Bool else {
+    guard let instanceId = args["instanceId"] as? String else {
       result(FlutterError(
         code: PlatformExceptionCodes.invalidArguments,
         message: "Missing required arguments for updateEvent",
@@ -494,7 +491,6 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     
     eventsService.updateEvent(
       instanceId: instanceId,
-      updateAllInstances: updateAllInstances,
       title: title,
       startDate: startDate,
       endDate: endDate,

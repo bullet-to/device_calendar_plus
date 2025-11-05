@@ -390,14 +390,12 @@ class DeviceCalendar {
     }
   }
 
-  /// Retrieves a single event by instance ID.
+  /// Retrieves a single event by ID.
   ///
-  /// The [instanceId] uniquely identifies the event instance. You should obtain
-  /// this from an Event object via `event.instanceId`, not construct it manually.
+  /// The [id] can be either an event ID or an instance ID:
+  /// - **Event ID**: Returns the master event definition (for recurring events)
+  /// - **Instance ID**: Returns a specific occurrence (for recurring events)
   ///
-  /// **For recurring events:**
-  /// - Use the `instanceId` to get a specific occurrence
-  /// - Use the `eventId` to get the master event definition
   ///
   /// Returns null if no matching event is found.
   ///
@@ -410,10 +408,10 @@ class DeviceCalendar {
   /// // Get master event definition for a recurring event
   /// final masterEvent = await plugin.getEvent(event.eventId);
   /// ```
-  Future<Event?> getEvent(String instanceId) async {
+  Future<Event?> getEvent(String id) async {
     try {
       final Map<String, dynamic>? rawEvent =
-          await DeviceCalendarPlusPlatform.instance.getEvent(instanceId);
+          await DeviceCalendarPlusPlatform.instance.getEvent(id);
 
       if (rawEvent == null) {
         return null;
@@ -432,12 +430,10 @@ class DeviceCalendar {
 
   /// Shows a calendar event in a modal dialog.
   ///
-  /// The [instanceId] uniquely identifies the event instance. You should obtain
-  /// this from an Event object via `event.instanceId`, not construct it manually.
+  /// The [id] can be either an event ID or an instance ID:
+  /// - **Event ID**: Shows the master event definition (for recurring events)
+  /// - **Instance ID**: Shows a specific occurrence (for recurring events)
   ///
-  /// **For recurring events:**
-  /// - Use the `instanceId` to show a specific occurrence
-  /// - Use the `eventId` to show the master event definition
   ///
   /// **Platform Differences:**
   /// - **iOS**: Presents the event in a native modal using EventKit's
@@ -455,9 +451,9 @@ class DeviceCalendar {
   /// // Show master event definition
   /// await plugin.showEventModal(event.eventId);
   /// ```
-  Future<void> showEventModal(String instanceId) async {
+  Future<void> showEventModal(String id) async {
     try {
-      await DeviceCalendarPlusPlatform.instance.showEventModal(instanceId);
+      await DeviceCalendarPlusPlatform.instance.showEventModal(id);
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);
@@ -587,47 +583,38 @@ class DeviceCalendar {
 
   /// Deletes an event from the device.
   ///
-  /// [instanceId] uniquely identifies the event instance to delete.
-  /// You should obtain this from an Event object via `event.instanceId`.
+  /// [eventId] identifies the event to delete. You can pass either:
+  /// - An event ID (e.g., from `event.eventId`)
+  /// - An instance ID (e.g., from `event.instanceId`) - the event ID will be extracted by the platform
   ///
-  /// [deleteAllInstances] determines deletion behavior for recurring events:
-  /// - false (default): Deletes only this specific instance
-  /// - true: Deletes all instances of the recurring event
+  /// **For recurring events**: This will delete the ENTIRE series (all past
+  /// and future occurrences). Single-instance deletion is not supported to
+  /// maintain consistent behavior across platforms.
   ///
-  /// For non-recurring events, [deleteAllInstances] has no effect.
+  /// For non-recurring events, this deletes the single event.
   /// Requires calendar write permissions - call [requestPermissions] first.
-  ///
-  /// **Note**: Deleting single instances of recurring events may not be fully
-  /// supported on all platforms. If unsupported, an error will be thrown.
   ///
   /// Example:
   /// ```dart
   /// final plugin = DeviceCalendar.instance;
   ///
-  /// // Delete a single event
-  /// await plugin.deleteEvent(event.instanceId);
+  /// // Delete using event ID
+  /// await plugin.deleteEvent(eventId: event.eventId);
   ///
-  /// // Delete all instances of a recurring event
-  /// await plugin.deleteEvent(
-  ///   event.instanceId,
-  ///   deleteAllInstances: true,
-  /// );
+  /// // Delete using instance ID (event ID will be extracted by platform)
+  /// await plugin.deleteEvent(eventId: event.instanceId);
   /// ```
-  Future<void> deleteEvent(
-    String instanceId, {
-    bool deleteAllInstances = false,
-  }) async {
-    if (instanceId.trim().isEmpty) {
+  Future<void> deleteEvent({required String eventId}) async {
+    if (eventId.trim().isEmpty) {
       throw ArgumentError.value(
-        instanceId,
-        'instanceId',
-        'Instance ID cannot be empty',
+        eventId,
+        'eventId',
+        'Event ID cannot be empty',
       );
     }
 
     try {
-      await DeviceCalendarPlusPlatform.instance
-          .deleteEvent(instanceId, deleteAllInstances);
+      await DeviceCalendarPlusPlatform.instance.deleteEvent(eventId);
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);
@@ -640,12 +627,13 @@ class DeviceCalendar {
 
   /// Updates an existing event on the device.
   ///
-  /// [instanceId] uniquely identifies the event instance to update (required).
-  /// You should obtain this from an Event object via `event.instanceId`.
+  /// [eventId] identifies the event to update (required). You can pass either:
+  /// - An event ID (e.g., from `event.eventId`)
+  /// - An instance ID (e.g., from `event.instanceId`) - the event ID will be extracted by the platform
   ///
-  /// [updateAllInstances] determines update behavior for recurring events:
-  /// - false (default): Updates only this specific instance
-  /// - true: Updates all instances of the recurring event
+  /// **For recurring events**: This will update the ENTIRE series (all past
+  /// and future occurrences). Single-instance updates are not supported to
+  /// maintain consistent behavior across platforms.
   ///
   /// All field parameters are optional - only provided fields will be updated:
   /// - [title] - new event title
@@ -663,44 +651,33 @@ class DeviceCalendar {
   /// At least one field must be provided.
   /// Requires calendar write permissions - call [requestPermissions] first.
   ///
-  /// **Note**: Updating single instances of recurring events may not be fully
-  /// supported on all platforms. If unsupported, an error will be thrown.
-  ///
   /// Example:
   /// ```dart
   /// final plugin = DeviceCalendar.instance;
   ///
-  /// // Update event title
+  /// // Update event title using event ID (entire series for recurring events)
   /// await plugin.updateEvent(
-  ///   instanceId: event.instanceId,
+  ///   eventId: event.eventId,
   ///   title: 'Updated Meeting Title',
   /// );
   ///
-  /// // Change timed event to all-day
+  /// // Update using instance ID (event ID will be extracted by platform)
   /// await plugin.updateEvent(
-  ///   instanceId: event.instanceId,
+  ///   eventId: event.instanceId,
   ///   isAllDay: true,
   /// );
   ///
   /// // Update multiple fields
   /// await plugin.updateEvent(
-  ///   instanceId: event.instanceId,
+  ///   eventId: event.eventId,
   ///   title: 'Team Sync',
   ///   startDate: DateTime(2024, 3, 20, 10, 0),
   ///   endDate: DateTime(2024, 3, 20, 11, 0),
   ///   location: 'Conference Room B',
   /// );
-  ///
-  /// // Update all instances of recurring event
-  /// await plugin.updateEvent(
-  ///   instanceId: event.instanceId,
-  ///   updateAllInstances: true,
-  ///   title: 'Updated Recurring Event',
-  /// );
   /// ```
   Future<void> updateEvent({
-    required String instanceId,
-    bool updateAllInstances = false,
+    required String eventId,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -709,12 +686,12 @@ class DeviceCalendar {
     bool? isAllDay,
     String? timeZone,
   }) async {
-    // Validate instanceId
-    if (instanceId.trim().isEmpty) {
+    // Validate eventId
+    if (eventId.trim().isEmpty) {
       throw ArgumentError.value(
-        instanceId,
-        'instanceId',
-        'Instance ID cannot be empty',
+        eventId,
+        'eventId',
+        'Event ID cannot be empty',
       );
     }
 
@@ -765,8 +742,7 @@ class DeviceCalendar {
 
     try {
       await DeviceCalendarPlusPlatform.instance.updateEvent(
-        instanceId,
-        updateAllInstances,
+        eventId,
         title: title,
         startDate: normalizedStartDate,
         endDate: normalizedEndDate,
