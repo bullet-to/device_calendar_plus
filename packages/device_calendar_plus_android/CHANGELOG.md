@@ -1,3 +1,8 @@
+## 0.3.1 - 2025-11-07
+
+### Fixed
+- `showEvent()` now uses `startActivityForResult()` to properly await until the calendar activity is dismissed
+
 ## 0.3.0 - 2024-11-05
 
 ### Changed

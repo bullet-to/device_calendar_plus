@@ -1,3 +1,8 @@
+## 0.3.1 - 2025-11-07
+
+### Fixed
+- `showEventModal()` now properly awaits until the modal is dismissed (iOS and Android)
+
 ## 0.3.0 - 2024-11-05
 
 ### Changed

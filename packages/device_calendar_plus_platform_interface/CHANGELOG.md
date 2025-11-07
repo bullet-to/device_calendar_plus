@@ -1,3 +1,7 @@
+## 0.3.1 - 2025-11-07
+
+Version sync with other packages. No functional changes.
+
 ## 0.3.0 - 2024-11-05
 
 ### Changed

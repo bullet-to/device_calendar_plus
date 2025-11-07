@@ -1,3 +1,8 @@
+## 0.3.1 - 2025-11-07
+
+### Fixed
+- `showEvent()` now properly stores result callback and calls it in `eventViewController(_:didCompleteWith:)` delegate method after modal is dismissed
+
 ## 0.3.0 - 2024-11-05
 
 ### Changed
