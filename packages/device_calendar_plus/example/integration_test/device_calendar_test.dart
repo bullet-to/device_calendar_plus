@@ -818,5 +818,45 @@ void main() {
       skip: 'Requires manual creation of recurring event. '
           'Will be automated when recurrence rule support is added.',
     );
+
+    test(
+      '25. Show Event Modal Awaits Until Closed',
+      () async {
+        // This test requires manual verification because it involves system UI:
+        // - iOS: EKEventViewController (requires XCUITest for automation)
+        // - Android: External calendar app (requires Espresso inter-app testing)
+        //
+        // To test manually:
+        // 1. Create an event in a test calendar
+        // 2. Call showEventModal with the event's instanceId
+        // 3. Verify the modal opens
+        // 4. Add logging or UI updates after the await
+        // 5. Dismiss the modal (tap Done/Back)
+        // 6. Verify the Future completes ONLY after modal is dismissed
+        //
+        // Example:
+        // final timestamp = DateTime.now().millisecondsSinceEpoch;
+        // final calendarId = await plugin.createCalendar(
+        //   name: 'Modal Test $timestamp',
+        // );
+        // final eventId = await plugin.createEvent(
+        //   calendarId: calendarId,
+        //   title: 'Modal Test Event',
+        //   startDate: DateTime.now().add(Duration(hours: 1)),
+        //   endDate: DateTime.now().add(Duration(hours: 2)),
+        // );
+        // print('Opening modal...');
+        // await plugin.showEventModal(eventId);
+        // print('Modal closed - Future completed!');
+        //
+        // Expected: Second print statement appears ONLY after modal is dismissed
+
+        fail(
+            'This test requires manual verification. Automated testing of system '
+            'modal UI requires XCUITest (iOS) or Espresso (Android) setup.');
+      },
+      skip: 'Requires manual verification. System modal UI cannot be easily '
+          'automated with integration_test package.',
+    );
   });
 }

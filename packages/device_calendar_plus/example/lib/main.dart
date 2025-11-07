@@ -446,8 +446,10 @@ class _MyHomePageState extends State<MyHomePage> {
             TextButton(
               onPressed: () async {
                 try {
+                  print('opened');
                   await DeviceCalendar.instance
                       .showEventModal(fetchedEvent.instanceId);
+                  print('closed');
                 } on DeviceCalendarException catch (e) {
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(

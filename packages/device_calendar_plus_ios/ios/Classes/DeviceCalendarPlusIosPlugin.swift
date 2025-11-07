@@ -8,6 +8,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   private lazy var permissionService = PermissionService(eventStore: eventStore)
   private lazy var calendarService = CalendarService(eventStore: eventStore, permissionService: permissionService)
   private lazy var eventsService = EventsService(eventStore: eventStore, permissionService: permissionService)
+  private var eventModalResult: FlutterResult?
   
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "device_calendar_plus_ios", binaryMessenger: registrar.messenger())
@@ -339,13 +340,14 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
             // Set the delegate
             viewController.delegate = self
             
+            // Store the result callback to call it when modal is dismissed
+            self.eventModalResult = result
+            
             // Wrap in navigation controller for proper dismissal
             let navigationController = UINavigationController(rootViewController: viewController)
             navigationController.modalPresentationStyle = .pageSheet
             
-            rootViewController.present(navigationController, animated: true) {
-              result(nil)
-            }
+            rootViewController.present(navigationController, animated: true, completion: nil)
           } else {
             // Calendar app was opened
             result(nil)
@@ -514,7 +516,11 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   
   public func eventViewController(_ controller: EKEventViewController, didCompleteWith action: EKEventViewAction) {
     // Dismiss the modal
-    controller.navigationController?.dismiss(animated: true, completion: nil)
+    controller.navigationController?.dismiss(animated: true) {
+      // Call the stored result callback after modal is dismissed
+      self.eventModalResult?(nil)
+      self.eventModalResult = nil
+    }
   }
   
   // MARK: - Helper Methods

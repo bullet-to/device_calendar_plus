@@ -347,7 +347,7 @@ class EventsService(private val activity: Activity) {
     /**
      * Shows a calendar event in a modal dialog.
      */
-    fun showEvent(instanceId: String): Result<Unit> {
+    fun showEvent(activityContext: Activity, instanceId: String, requestCode: Int): Result<Unit> {
         return try {
             // Validate permissions
             if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
@@ -381,9 +381,8 @@ class EventsService(private val activity: Activity) {
                 }
             }
             
-            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            
-            activity.startActivity(intent)
+            // Use startActivityForResult to get a callback when the activity closes
+            activityContext.startActivityForResult(intent, requestCode)
             Result.success(Unit)
         } catch (e: android.content.ActivityNotFoundException) {
             Result.failure(

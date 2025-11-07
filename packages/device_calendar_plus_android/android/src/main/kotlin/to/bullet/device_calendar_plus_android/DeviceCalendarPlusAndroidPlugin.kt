@@ -15,13 +15,19 @@ class DeviceCalendarPlusAndroidPlugin :
     FlutterPlugin,
     MethodCallHandler,
     ActivityAware,
-    PluginRegistry.RequestPermissionsResultListener {
+    PluginRegistry.RequestPermissionsResultListener,
+    PluginRegistry.ActivityResultListener {
 
     private lateinit var channel: MethodChannel
     private var activity: Activity? = null
     private var permissionService: PermissionService? = null
     private var calendarService: CalendarService? = null
     private var eventsService: EventsService? = null
+    private var showEventModalResult: Result? = null
+    
+    companion object {
+        private const val SHOW_EVENT_REQUEST_CODE = 1001
+    }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "device_calendar_plus_android")
@@ -274,6 +280,7 @@ class DeviceCalendarPlusAndroidPlugin :
     
     private fun handleShowEventModal(call: MethodCall, result: Result) {
         val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
+        val currentActivity = activity ?: error("Activity not initialized - plugin lifecycle error")
         
         // Parse arguments
         val instanceId = call.argument<String>("instanceId")
@@ -287,10 +294,15 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        val serviceResult = service.showEvent(instanceId)
+        // Store the result callback to call when activity returns
+        showEventModalResult = result
+        
+        val serviceResult = service.showEvent(currentActivity, instanceId, SHOW_EVENT_REQUEST_CODE)
         serviceResult.fold(
-            onSuccess = { result.success(null) },
+            onSuccess = { /* Result will be sent in onActivityResult */ },
             onFailure = { error ->
+                // Clear stored result on error
+                showEventModalResult = null
                 if (error is CalendarException) {
                     result.error(error.code, error.message, null)
                 } else {
@@ -438,6 +450,16 @@ class DeviceCalendarPlusAndroidPlugin :
     ): Boolean {
         return permissionService?.onRequestPermissionsResult(requestCode, permissions, grantResults) ?: false
     }
+    
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?): Boolean {
+        if (requestCode == SHOW_EVENT_REQUEST_CODE) {
+            // Calendar activity closed, complete the future
+            showEventModalResult?.success(null)
+            showEventModalResult = null
+            return true
+        }
+        return false
+    }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
@@ -449,6 +471,7 @@ class DeviceCalendarPlusAndroidPlugin :
         calendarService = CalendarService(binding.activity)
         eventsService = EventsService(binding.activity)
         binding.addRequestPermissionsResultListener(this)
+        binding.addActivityResultListener(this)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
@@ -456,6 +479,7 @@ class DeviceCalendarPlusAndroidPlugin :
         permissionService = null
         calendarService = null
         eventsService = null
+        showEventModalResult = null
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
@@ -464,6 +488,7 @@ class DeviceCalendarPlusAndroidPlugin :
         calendarService = CalendarService(binding.activity)
         eventsService = EventsService(binding.activity)
         binding.addRequestPermissionsResultListener(this)
+        binding.addActivityResultListener(this)
     }
 
     override fun onDetachedFromActivity() {
@@ -471,5 +496,6 @@ class DeviceCalendarPlusAndroidPlugin :
         permissionService = null
         calendarService = null
         eventsService = null
+        showEventModalResult = null
     }
 }
