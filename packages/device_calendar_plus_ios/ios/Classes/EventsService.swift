@@ -46,6 +46,31 @@ class EventsService {
     self.permissionService = permissionService
   }
   
+  /// Parses an instanceId into its eventId and optional timestamp components.
+  /// The instanceId format is "eventId" for non-recurring events, or "eventId@timestamp" for recurring events.
+  /// Since event IDs (especially from Google Calendar) can contain "@" characters (e.g., "abc123@google.com"),
+  /// we must split from the END of the string, not the beginning.
+  private func parseInstanceId(_ instanceId: String) -> (eventId: String, timestamp: Int64?) {
+    // Find the last "@" in the string
+    guard let lastAtIndex = instanceId.lastIndex(of: "@") else {
+      // No "@" found - the entire string is the eventId
+      return (instanceId, nil)
+    }
+    
+    // Check if the part after the last "@" is a valid timestamp (all digits)
+    let afterAt = String(instanceId[instanceId.index(after: lastAtIndex)...])
+    
+    if let timestamp = Int64(afterAt) {
+      // Valid timestamp found - split here
+      let eventId = String(instanceId[..<lastAtIndex])
+      return (eventId, timestamp)
+    } else {
+      // The part after "@" is not a timestamp (e.g., "@google.com")
+      // The entire string is the eventId
+      return (instanceId, nil)
+    }
+  }
+  
   func retrieveEvents(
     startDate: Date,
     endDate: Date,
@@ -181,10 +206,9 @@ class EventsService {
     }
     
     // Parse instanceId: "eventId" or "eventId@timestamp"
-    let parts = instanceId.split(separator: "@", maxSplits: 1)
-    let eventId = String(parts[0])
+    let (eventId, timestampMillis) = parseInstanceId(instanceId)
     
-    if parts.count == 2, let timestampMillis = Int64(parts[1]) {
+    if let timestampMillis = timestampMillis {
       // Recurring event with timestamp
       let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
       
@@ -236,11 +260,10 @@ class EventsService {
     }
     
     // Parse instanceId: "eventId" or "eventId@timestamp"
-    let parts = instanceId.split(separator: "@", maxSplits: 1)
-    let eventId = String(parts[0])
+    let (eventId, timestampMillis) = parseInstanceId(instanceId)
     let occurrenceDate: Date?
     
-    if parts.count == 2, let timestampMillis = Int64(parts[1]) {
+    if let timestampMillis = timestampMillis {
       occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
     } else {
       occurrenceDate = nil
@@ -389,8 +412,7 @@ class EventsService {
     
     // Parse instanceId: "eventId" or "eventId@timestamp"
     // For recurring events, we always delete the entire series, so extract just the eventId
-    let parts = instanceId.split(separator: "@", maxSplits: 1)
-    let eventId = String(parts[0])
+    let (eventId, _) = parseInstanceId(instanceId)
     
     // Fetch the master event by eventId
     guard let event = eventStore.event(withIdentifier: eventId) else {
@@ -437,8 +459,7 @@ class EventsService {
     
     // Parse instanceId: "eventId" or "eventId@timestamp"
     // For recurring events, we always update the entire series, so extract just the eventId
-    let parts = instanceId.split(separator: "@", maxSplits: 1)
-    let eventId = String(parts[0])
+    let (eventId, _) = parseInstanceId(instanceId)
     
     // Fetch the master event by eventId
     guard let foundEvent = eventStore.event(withIdentifier: eventId) else {

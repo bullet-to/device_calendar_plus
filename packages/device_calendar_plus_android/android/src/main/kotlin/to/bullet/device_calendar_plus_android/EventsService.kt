@@ -8,6 +8,38 @@ import java.util.Date
 
 class EventsService(private val activity: Activity) {
     
+    /**
+     * Parses an instanceId into its eventId and optional timestamp components.
+     * The instanceId format is "eventId" for non-recurring events, or "eventId@timestamp" for recurring events.
+     * Since event IDs (especially from Google Calendar) can contain "@" characters (e.g., "abc123@google.com"),
+     * we must split from the END of the string, not the beginning.
+     * 
+     * @return Pair of (eventId, timestamp) where timestamp is null for non-recurring events
+     */
+    private fun parseInstanceId(instanceId: String): Pair<String, Long?> {
+        // Find the last "@" in the string
+        val lastAtIndex = instanceId.lastIndexOf('@')
+        
+        if (lastAtIndex == -1) {
+            // No "@" found - the entire string is the eventId
+            return Pair(instanceId, null)
+        }
+        
+        // Check if the part after the last "@" is a valid timestamp (all digits)
+        val afterAt = instanceId.substring(lastAtIndex + 1)
+        val timestamp = afterAt.toLongOrNull()
+        
+        return if (timestamp != null) {
+            // Valid timestamp found - split here
+            val eventId = instanceId.substring(0, lastAtIndex)
+            Pair(eventId, timestamp)
+        } else {
+            // The part after "@" is not a timestamp (e.g., "@google.com")
+            // The entire string is the eventId
+            Pair(instanceId, null)
+        }
+    }
+    
     fun retrieveEvents(
         startDate: Date,
         endDate: Date,
@@ -245,17 +277,11 @@ class EventsService(private val activity: Activity) {
     
     fun getEvent(instanceId: String): Result<Map<String, Any>?> {
         // Parse instanceId: "eventId" or "eventId@timestamp"
-        val parts = instanceId.split("@", limit = 2)
-        val eventId = parts[0]
+        val (eventId, timestamp) = parseInstanceId(instanceId)
         
-        if (parts.size == 2) {
+        if (timestamp != null) {
             // Recurring event with timestamp
-            val occurrenceMillis = parts[1].toLongOrNull() ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "Invalid instanceId format: $instanceId"
-                )
-            )
+            val occurrenceMillis = timestamp
             
             // Query ±1 second around the exact occurrence time
             // We use a small window since we have the precise timestamp
@@ -361,8 +387,7 @@ class EventsService(private val activity: Activity) {
             }
 
             // Parse instanceId: "eventId" or "eventId@timestamp"
-            val parts = instanceId.split("@", limit = 2)
-            val eventId = parts[0]
+            val (eventId, timestamp) = parseInstanceId(instanceId)
             
             val intent = Intent(Intent.ACTION_VIEW)
             
@@ -374,11 +399,8 @@ class EventsService(private val activity: Activity) {
             intent.data = eventUri
             
             // Add begin time for specific recurring event instances
-            if (parts.size == 2) {
-                val occurrenceMillis = parts[1].toLongOrNull()
-                if (occurrenceMillis != null) {
-                    intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, occurrenceMillis)
-                }
+            if (timestamp != null) {
+                intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, timestamp)
             }
             
             // Use startActivityForResult to get a callback when the activity closes
@@ -555,8 +577,7 @@ class EventsService(private val activity: Activity) {
         try {
             // Parse instanceId: "eventId" or "eventId@timestamp"
             // For recurring events, we always delete the entire series
-            val parts = instanceId.split("@", limit = 2)
-            val eventId = parts[0]
+            val (eventId, _) = parseInstanceId(instanceId)
             
             // Delete the event (entire series for recurring events)
             val deletedRows = activity.contentResolver.delete(
@@ -616,8 +637,7 @@ class EventsService(private val activity: Activity) {
         try {
             // Parse instanceId: "eventId" or "eventId@timestamp"
             // For recurring events, we always update the entire series
-            val parts = instanceId.split("@", limit = 2)
-            val eventId = parts[0]
+            val (eventId, _) = parseInstanceId(instanceId)
             
             // Need to fetch existing event to determine if it's all-day
             // This is required for proper date normalization
