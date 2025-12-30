@@ -24,6 +24,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? location,
     String? timeZone,
     String availability,
+    String? recurrenceRule,
   )? _createEventCallback;
 
   // Callback to capture updateEvent arguments
@@ -74,6 +75,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       String? location,
       String? timeZone,
       String availability,
+      String? recurrenceRule,
     ) callback,
   ) {
     _createEventCallback = callback;
@@ -193,6 +195,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? location,
     String? timeZone,
     String availability,
+    String? recurrenceRule,
   ) async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
@@ -210,6 +213,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
         location,
         timeZone,
         availability,
+        recurrenceRule,
       );
     }
 
@@ -979,6 +983,7 @@ void main() {
           location,
           timeZone,
           availability,
+          recurrenceRule,
         ) {
           capturedStart = startDate;
           capturedEnd = endDate;
@@ -1034,6 +1039,7 @@ void main() {
           location,
           timeZone,
           availability,
+          recurrenceRule,
         ) {
           capturedStart = startDate;
           capturedEnd = endDate;

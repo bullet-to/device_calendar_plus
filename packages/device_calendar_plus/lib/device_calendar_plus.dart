@@ -6,6 +6,7 @@ import 'src/calendar_permission_status.dart';
 import 'src/event.dart';
 import 'src/event_availability.dart';
 import 'src/platform_exception_converter.dart';
+import 'src/recurrence_rule.dart';
 
 export 'package:device_calendar_plus_android/device_calendar_plus_android.dart'
     show CreateCalendarOptionsAndroid;
@@ -20,6 +21,7 @@ export 'src/event.dart';
 export 'src/event_availability.dart';
 export 'src/event_status.dart';
 export 'src/platform_exception_codes.dart';
+export 'src/recurrence_rule.dart';
 
 /// Main API for accessing device calendar functionality.
 class DeviceCalendar {
@@ -503,6 +505,7 @@ class DeviceCalendar {
   ///   The platform will validate the timezone string.
   /// [url] is optional event URL (supported on both platforms).
   /// [availability] is the availability status (default: EventAvailability.busy).
+  /// [recurrenceRule] is optional recurrence rule for creating recurring events.
   ///
   /// Returns the system-generated event ID.
   /// Requires calendar write permissions - call [requestPermissions] first.
@@ -530,6 +533,19 @@ class DeviceCalendar {
   ///   timeZone: 'America/New_York',
   ///   availability: EventAvailability.busy,
   /// );
+  ///
+  /// // Create a recurring event (weekly on Mondays and Wednesdays)
+  /// final recurringEventId = await plugin.createEvent(
+  ///   calendarId: 'cal-123',
+  ///   title: 'Weekly Standup',
+  ///   startDate: DateTime(2024, 3, 15, 9, 0),
+  ///   endDate: DateTime(2024, 3, 15, 9, 30),
+  ///   recurrenceRule: RecurrenceRule(
+  ///     frequency: RecurrenceFrequency.weekly,
+  ///     daysOfWeek: [DayOfWeek.monday, DayOfWeek.wednesday],
+  ///     occurrences: 10,
+  ///   ),
+  /// );
   /// ```
   Future<String> createEvent({
     required String calendarId,
@@ -541,6 +557,7 @@ class DeviceCalendar {
     String? location,
     String? timeZone,
     EventAvailability availability = EventAvailability.busy,
+    RecurrenceRule? recurrenceRule,
   }) async {
     // Validate required fields
     if (calendarId.trim().isEmpty) {
@@ -595,6 +612,7 @@ class DeviceCalendar {
         location,
         timeZone,
         availability.name,
+        recurrenceRule?.toRruleString(),
       );
       return eventId;
     } on PlatformException catch (e, stackTrace) {

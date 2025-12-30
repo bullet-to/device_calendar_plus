@@ -1,5 +1,6 @@
 import 'event_availability.dart';
 import 'event_status.dart';
+import 'recurrence_rule.dart';
 
 /// Represents a calendar event.
 class Event {
@@ -78,6 +79,12 @@ class Event {
   /// True for recurring events, false for one-time events.
   final bool isRecurring;
 
+  /// The recurrence rule for this event.
+  ///
+  /// Null for non-recurring events.
+  /// For recurring events, this contains the parsed recurrence rule from the native calendar.
+  final RecurrenceRule? recurrenceRule;
+
   Event({
     required this.eventId,
     required this.instanceId,
@@ -92,6 +99,7 @@ class Event {
     required this.status,
     this.timeZone,
     required this.isRecurring,
+    this.recurrenceRule,
   });
 
   /// Creates an Event from a map returned by the platform.
@@ -110,6 +118,9 @@ class Event {
       status: EventStatus.fromName(map['status'] as String),
       timeZone: map['timeZone'] as String?,
       isRecurring: map['isRecurring'] as bool? ?? false,
+      recurrenceRule: map['recurrenceRule'] != null
+          ? RecurrenceRule.fromRruleString(map['recurrenceRule'] as String)
+          : null,
     );
   }
 
@@ -131,6 +142,9 @@ class Event {
     if (description != null) map['description'] = description;
     if (location != null) map['location'] = location;
     if (timeZone != null) map['timeZone'] = timeZone;
+    if (recurrenceRule != null) {
+      map['recurrenceRule'] = recurrenceRule!.toRruleString();
+    }
 
     return map;
   }
@@ -158,7 +172,8 @@ class Event {
         other.availability == availability &&
         other.status == status &&
         other.timeZone == timeZone &&
-        other.isRecurring == isRecurring;
+        other.isRecurring == isRecurring &&
+        other.recurrenceRule == recurrenceRule;
   }
 
   @override
@@ -177,6 +192,7 @@ class Event {
       status,
       timeZone,
       isRecurring,
+      recurrenceRule,
     );
   }
 }

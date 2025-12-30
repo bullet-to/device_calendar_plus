@@ -46,8 +46,6 @@ dependencies:
   device_calendar_plus: <latest version>
 ```
 
-
-
 ### iOS
 
 Add usage descriptions to your app’s **Info.plist**:
@@ -105,7 +103,7 @@ final birthdayEvent = await plugin.getEvent(birthdayId);
 if (birthdayEvent.isAllDay) {
   // ✅ Use the date components directly
   print('Birthday: ${birthdayEvent.startDate.year}-${birthdayEvent.startDate.month}-${birthdayEvent.startDate.day}');
-  
+
   // ❌ Don't convert to UTC - it's a calendar date, not a moment in time
   // final utcDate = birthdayEvent.startDate.toUtc(); // DON'T DO THIS
 }
@@ -115,7 +113,7 @@ final meetingEvent = await plugin.getEvent(meetingId);
 if (!meetingEvent.isAllDay) {
   // ✅ Convert to UTC for storage/comparison
   final utcTime = meetingEvent.startDate.toUtc();
-  
+
   // ✅ Format in local time for display
   print('Meeting at: ${meetingEvent.startDate}');
 }
@@ -134,11 +132,9 @@ enum DeviceCalendarError {
 
 This enum provides stable, descriptive error codes for all exceptions thrown by the plugin.
 
-> **Note on error codes:**
-> `DeviceCalendarError` exists for developer ergonomics and clearer `switch` handling.
+> **Note on error codes:** > `DeviceCalendarError` exists for developer ergonomics and clearer `switch` handling.
 > We may introduce new enum values in future minor versions as new error cases appear.
-We do not consider this a breaking change.
-
+> We do not consider this a breaking change.
 
 ## 🛠️ Usage Examples
 
@@ -296,6 +292,49 @@ final detailedEventId = await plugin.createEvent(
   location: 'Conference Room A',
   timeZone: 'America/New_York',
   availability: EventAvailability.busy,
+);
+```
+
+### Create Recurring Event
+
+You can create recurring events by passing a `RecurrenceRule` object:
+
+```dart
+// Create a daily recurring event (repeats forever)
+await plugin.createEvent(
+  calendarId: 'your-calendar-id',
+  title: 'Daily Standup',
+  startDate: DateTime(2024, 3, 20, 9, 0),
+  endDate: DateTime(2024, 3, 20, 9, 15),
+  recurrenceRule: RecurrenceRule(
+    frequency: RecurrenceFrequency.daily,
+  ),
+);
+
+// Create a weekly event that ends after 10 occurrences
+await plugin.createEvent(
+  calendarId: 'your-calendar-id',
+  title: 'Weekly Sync',
+  startDate: DateTime(2024, 3, 20, 10, 0),
+  endDate: DateTime(2024, 3, 20, 11, 0),
+  recurrenceRule: RecurrenceRule(
+    frequency: RecurrenceFrequency.weekly,
+    interval: 1,
+    occurrences: 10,
+    daysOfWeek: [DayOfWeek.monday, DayOfWeek.wednesday], // repeats on Mon & Wed
+  ),
+);
+
+// Create a monthly event that ends on a specific date
+await plugin.createEvent(
+  calendarId: 'your-calendar-id',
+  title: 'Monthly Review',
+  startDate: DateTime(2024, 3, 1, 14, 0),
+  endDate: DateTime(2024, 3, 1, 15, 0),
+  recurrenceRule: RecurrenceRule(
+    frequency: RecurrenceFrequency.monthly,
+    endDate: DateTime(2024, 12, 31),
+  ),
 );
 ```
 
