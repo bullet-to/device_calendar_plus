@@ -394,6 +394,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let description = args["description"] as? String
     let location = args["location"] as? String
     let timeZone = args["timeZone"] as? String
+    let recurrenceRule = args["recurrenceRule"] as? String
     
     // Convert dates
     let startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
@@ -408,7 +409,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       description: description,
       location: location,
       timeZone: timeZone,
-      availability: availability
+      availability: availability,
+      recurrenceRule: recurrenceRule
     ) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {

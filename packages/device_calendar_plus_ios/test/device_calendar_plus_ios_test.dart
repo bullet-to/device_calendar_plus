@@ -187,6 +187,7 @@ void main() {
         'Conference Room A',
         'America/New_York',
         'busy',
+        null,
       );
 
       expect(log.length, equals(1));
@@ -219,6 +220,7 @@ void main() {
         null,
         null,
         'free',
+        null,
       );
 
       expect(log.length, equals(1));

@@ -58,6 +58,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? location,
     String? timeZone,
     String availability,
+    String? recurrenceRule,
   ) async =>
       'mock-event-id';
 
@@ -173,6 +174,7 @@ void main() {
       'Conference Room A',
       'America/New_York',
       'busy',
+      null,
     );
     expect(eventId, equals('mock-event-id'));
   });

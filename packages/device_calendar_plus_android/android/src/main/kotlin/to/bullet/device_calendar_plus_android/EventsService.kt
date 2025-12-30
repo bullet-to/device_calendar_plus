@@ -401,7 +401,8 @@ class EventsService(private val activity: Activity) {
         description: String?,
         location: String?,
         timeZone: String?,
-        availability: String
+        availability: String,
+        recurrenceRule: String?
     ): Result<String> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
@@ -451,8 +452,19 @@ class EventsService(private val activity: Activity) {
                 put(CalendarContract.Events.CALENDAR_ID, calendarId.toLong())
                 put(CalendarContract.Events.TITLE, title)
                 put(CalendarContract.Events.DTSTART, startMillis)
-                put(CalendarContract.Events.DTEND, endMillis)
                 put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+                
+                // For recurring events, use DURATION instead of DTEND
+                // This is required by Android Calendar Provider for recurring events
+                if (recurrenceRule != null) {
+                    // Calculate duration in RFC2445 format
+                    val durationMillis = endMillis - startMillis
+                    val durationSeconds = durationMillis / 1000
+                    put(CalendarContract.Events.DURATION, "P${durationSeconds}S")
+                    put(CalendarContract.Events.RRULE, recurrenceRule)
+                } else {
+                    put(CalendarContract.Events.DTEND, endMillis)
+                }
                 
                 // Set description if provided
                 if (description != null) {
