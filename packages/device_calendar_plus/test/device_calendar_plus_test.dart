@@ -1072,6 +1072,89 @@ void main() {
         expect(eventId, isNotEmpty);
       });
 
+      test('creates event with recurrence rule', () async {
+        String? capturedRrule;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setCreateEventCallback((
+          calendarId,
+          title,
+          startDate,
+          endDate,
+          isAllDay,
+          description,
+          location,
+          timeZone,
+          availability,
+          recurrenceRule,
+        ) {
+          capturedRrule = recurrenceRule;
+          return Future.value('recurring-event-id');
+        });
+
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        final eventId = await DeviceCalendar.instance.createEvent(
+          calendarId: 'cal-123',
+          title: 'Daily Standup',
+          startDate: DateTime(2024, 3, 15, 9, 0),
+          endDate: DateTime(2024, 3, 15, 9, 15),
+          recurrenceRule: RecurrenceRule(
+            frequency: RecurrenceFrequency.daily,
+            interval: 1,
+            occurrences: 30,
+          ),
+        );
+
+        expect(eventId, equals('recurring-event-id'));
+        expect(capturedRrule, isNotNull);
+        expect(capturedRrule, contains('FREQ=DAILY'));
+        expect(capturedRrule, contains('COUNT=30'));
+      });
+
+      test('creates weekly recurring event with specific days', () async {
+        String? capturedRrule;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setCreateEventCallback((
+          calendarId,
+          title,
+          startDate,
+          endDate,
+          isAllDay,
+          description,
+          location,
+          timeZone,
+          availability,
+          recurrenceRule,
+        ) {
+          capturedRrule = recurrenceRule;
+          return Future.value('weekly-event-id');
+        });
+
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        final eventId = await DeviceCalendar.instance.createEvent(
+          calendarId: 'cal-123',
+          title: 'Weekly Sync',
+          startDate: DateTime(2024, 3, 18, 10, 0),
+          endDate: DateTime(2024, 3, 18, 11, 0),
+          recurrenceRule: RecurrenceRule(
+            frequency: RecurrenceFrequency.weekly,
+            daysOfWeek: [
+              DayOfWeek.monday,
+              DayOfWeek.wednesday,
+              DayOfWeek.friday
+            ],
+          ),
+        );
+
+        expect(eventId, equals('weekly-event-id'));
+        expect(capturedRrule, isNotNull);
+        expect(capturedRrule, contains('FREQ=WEEKLY'));
+        expect(capturedRrule, contains('BYDAY='));
+      });
+
       test('throws ArgumentError when calendar ID is empty', () async {
         expect(
           () => DeviceCalendar.instance.createEvent(
