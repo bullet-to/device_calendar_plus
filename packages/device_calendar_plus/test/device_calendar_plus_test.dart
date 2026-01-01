@@ -25,6 +25,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? timeZone,
     String availability,
     String? recurrenceRule,
+    List<Map<String, dynamic>>? attendees,
   )? _createEventCallback;
 
   // Callback to capture updateEvent arguments
@@ -38,6 +39,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     bool? isAllDay,
     String? timeZone,
     String? availability,
+    List<Map<String, dynamic>>? attendees,
   })? _updateEventCallback;
 
   void setPermissionStatus(CalendarPermissionStatus status) {
@@ -76,6 +78,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       String? timeZone,
       String availability,
       String? recurrenceRule,
+      List<Map<String, dynamic>>? attendees,
     ) callback,
   ) {
     _createEventCallback = callback;
@@ -92,6 +95,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       bool? isAllDay,
       String? timeZone,
       String? availability,
+      List<Map<String, dynamic>>? attendees,
     }) callback,
   ) {
     _updateEventCallback = callback;
@@ -196,6 +200,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? timeZone,
     String availability,
     String? recurrenceRule,
+    List<Map<String, dynamic>>? attendees,
   ) async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
@@ -214,6 +219,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
         timeZone,
         availability,
         recurrenceRule,
+        attendees,
       );
     }
 
@@ -237,6 +243,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? location,
     bool? isAllDay,
     String? timeZone,
+    List<Map<String, dynamic>>? attendees,
   }) async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
@@ -251,6 +258,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
         location: location,
         isAllDay: isAllDay,
         timeZone: timeZone,
+        attendees: attendees,
       );
     }
   }
@@ -984,6 +992,7 @@ void main() {
           timeZone,
           availability,
           recurrenceRule,
+          attendees,
         ) {
           capturedStart = startDate;
           capturedEnd = endDate;
@@ -1040,6 +1049,7 @@ void main() {
           timeZone,
           availability,
           recurrenceRule,
+          attendees,
         ) {
           capturedStart = startDate;
           capturedEnd = endDate;
@@ -1087,6 +1097,7 @@ void main() {
           timeZone,
           availability,
           recurrenceRule,
+          attendees,
         ) {
           capturedRrule = recurrenceRule;
           return Future.value('recurring-event-id');
@@ -1127,6 +1138,7 @@ void main() {
           timeZone,
           availability,
           recurrenceRule,
+          attendees,
         ) {
           capturedRrule = recurrenceRule;
           return Future.value('weekly-event-id');
@@ -1315,6 +1327,7 @@ void main() {
           isAllDay,
           timeZone,
           availability,
+          attendees,
         }) {
           capturedStart = startDate;
           capturedEnd = endDate;
@@ -1366,6 +1379,7 @@ void main() {
           isAllDay,
           timeZone,
           availability,
+          attendees,
         }) {
           capturedStart = startDate;
           capturedEnd = endDate;

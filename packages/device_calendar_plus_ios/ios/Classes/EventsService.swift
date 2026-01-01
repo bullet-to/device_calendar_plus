@@ -164,7 +164,68 @@ class EventsService {
     // Set isRecurring flag
     eventMap["isRecurring"] = event.hasRecurrenceRules
     
+    // Parse attendees/participants
+    if let attendees = event.attendees {
+      var attendeeMaps: [[String: Any]] = []
+      for participant in attendees {
+        var attendeeMap: [String: Any] = [
+          "role": participantRoleToString(participant.participantRole),
+          "status": participantStatusToString(participant.participantStatus),
+          "isOrganizer": participant.participantRole == .chair,
+          "isCurrentUser": participant.isCurrentUser
+        ]
+        
+        // Get email from URL (format: "mailto:email@example.com")
+        let email = participant.url.absoluteString.replacingOccurrences(of: "mailto:", with: "")
+        attendeeMap["emailAddress"] = email
+        
+        // Get name if available
+        if let name = participant.name {
+          attendeeMap["name"] = name
+        }
+        
+        attendeeMaps.append(attendeeMap)
+      }
+      eventMap["attendees"] = attendeeMaps
+    }
+    
     return eventMap
+  }
+  
+  private func participantRoleToString(_ role: EKParticipantRole) -> String {
+    switch role {
+    case .unknown:
+      return "none"
+    case .required:
+      return "required"  
+    case .optional:
+      return "optional"
+    case .chair:
+      return "required"  // Chair is the organizer, treat as required
+    case .nonParticipant:
+      return "resource"
+    @unknown default:
+      return "none"
+    }
+  }
+  
+  private func participantStatusToString(_ status: EKParticipantStatus) -> String {
+    switch status {
+    case .unknown:
+      return "none"
+    case .pending:
+      return "invited"
+    case .accepted:
+      return "accepted"
+    case .declined:
+      return "declined"
+    case .tentative:
+      return "tentative"
+    case .delegated, .completed, .inProcess:
+      return "none"
+    @unknown default:
+      return "none"
+    }
   }
   
   func getEvent(

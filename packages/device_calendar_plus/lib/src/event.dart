@@ -1,3 +1,6 @@
+import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
+    show Attendee;
+
 import 'event_availability.dart';
 import 'event_status.dart';
 import 'recurrence_rule.dart';
@@ -85,6 +88,12 @@ class Event {
   /// For recurring events, this contains the parsed recurrence rule from the native calendar.
   final RecurrenceRule? recurrenceRule;
 
+  /// List of attendees/invitees for this event.
+  ///
+  /// Null if attendees were not fetched or are not supported.
+  /// Empty list if the event has no attendees.
+  final List<Attendee>? attendees;
+
   Event({
     required this.eventId,
     required this.instanceId,
@@ -100,6 +109,7 @@ class Event {
     this.timeZone,
     required this.isRecurring,
     this.recurrenceRule,
+    this.attendees,
   });
 
   /// Creates an Event from a map returned by the platform.
@@ -121,6 +131,9 @@ class Event {
       recurrenceRule: map['recurrenceRule'] != null
           ? RecurrenceRule.fromRruleString(map['recurrenceRule'] as String)
           : null,
+      attendees: (map['attendees'] as List<dynamic>?)
+          ?.map((a) => Attendee.fromMap(Map<String, dynamic>.from(a as Map)))
+          .toList(),
     );
   }
 
@@ -144,6 +157,9 @@ class Event {
     if (timeZone != null) map['timeZone'] = timeZone;
     if (recurrenceRule != null) {
       map['recurrenceRule'] = recurrenceRule!.toRruleString();
+    }
+    if (attendees != null) {
+      map['attendees'] = attendees!.map((a) => a.toMap()).toList();
     }
 
     return map;

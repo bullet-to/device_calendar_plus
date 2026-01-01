@@ -12,7 +12,13 @@ export 'package:device_calendar_plus_android/device_calendar_plus_android.dart'
     show CreateCalendarOptionsAndroid;
 // Platform-specific options
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
-    show CreateCalendarPlatformOptions, InstanceIdParser, ParsedInstanceId;
+    show
+        Attendee,
+        AttendeeRole,
+        AttendeeStatus,
+        CreateCalendarPlatformOptions,
+        InstanceIdParser,
+        ParsedInstanceId;
 
 export 'src/calendar.dart';
 export 'src/calendar_permission_status.dart';
@@ -507,6 +513,8 @@ class DeviceCalendar {
   /// [availability] is the availability status (default: EventAvailability.busy).
   /// [recurrenceRule] is optional recurrence rule for creating recurring events.
   ///
+  /// [attendees] is optional list of attendees/invitees for this event.
+  ///
   /// Returns the system-generated event ID.
   /// Requires calendar write permissions - call [requestPermissions] first.
   ///
@@ -546,6 +554,18 @@ class DeviceCalendar {
   ///     occurrences: 10,
   ///   ),
   /// );
+  ///
+  /// // Create an event with attendees
+  /// final eventWithAttendeesId = await plugin.createEvent(
+  ///   calendarId: 'cal-123',
+  ///   title: 'Team Meeting',
+  ///   startDate: DateTime.now(),
+  ///   endDate: DateTime.now().add(Duration(hours: 1)),
+  ///   attendees: [
+  ///     Attendee(emailAddress: 'colleague@example.com', name: 'John Doe'),
+  ///     Attendee(emailAddress: 'boss@example.com', role: AttendeeRole.required),
+  ///   ],
+  /// );
   /// ```
   Future<String> createEvent({
     required String calendarId,
@@ -558,6 +578,7 @@ class DeviceCalendar {
     String? timeZone,
     EventAvailability availability = EventAvailability.busy,
     RecurrenceRule? recurrenceRule,
+    List<Attendee>? attendees,
   }) async {
     // Validate required fields
     if (calendarId.trim().isEmpty) {
@@ -613,6 +634,7 @@ class DeviceCalendar {
         timeZone,
         availability.name,
         recurrenceRule?.toRruleString(),
+        attendees?.map((a) => a.toMap()).toList(),
       );
       return eventId;
     } on PlatformException catch (e, stackTrace) {
@@ -695,6 +717,8 @@ class DeviceCalendar {
   ///   - Note: This reinterprets the local time, not preserving the instant
   ///   - Example: "3:00 PM EST" → "3:00 PM PST" (different instant in time)
   ///
+  /// - [attendees] - new list of attendees (null = no change, empty = remove all)
+  ///
   /// At least one field must be provided.
   /// Requires calendar write permissions - call [requestPermissions] first.
   ///
@@ -722,6 +746,14 @@ class DeviceCalendar {
   ///   endDate: DateTime(2024, 3, 20, 11, 0),
   ///   location: 'Conference Room B',
   /// );
+  ///
+  /// // Update attendees
+  /// await plugin.updateEvent(
+  ///   eventId: event.eventId,
+  ///   attendees: [
+  ///     Attendee(emailAddress: 'new@example.com'),
+  ///   ],
+  /// );
   /// ```
   Future<void> updateEvent({
     required String eventId,
@@ -732,6 +764,7 @@ class DeviceCalendar {
     String? location,
     bool? isAllDay,
     String? timeZone,
+    List<Attendee>? attendees,
   }) async {
     // Validate eventId
     if (eventId.trim().isEmpty) {
@@ -749,7 +782,8 @@ class DeviceCalendar {
         description == null &&
         location == null &&
         isAllDay == null &&
-        timeZone == null) {
+        timeZone == null &&
+        attendees == null) {
       throw ArgumentError(
         'At least one field must be provided to update',
       );
@@ -800,6 +834,7 @@ class DeviceCalendar {
         location: location,
         isAllDay: isAllDay,
         timeZone: timeZone,
+        attendees: attendees?.map((a) => a.toMap()).toList(),
       );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =

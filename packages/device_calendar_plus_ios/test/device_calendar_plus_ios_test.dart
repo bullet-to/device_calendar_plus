@@ -188,6 +188,7 @@ void main() {
         'America/New_York',
         'busy',
         null,
+        null,
       );
 
       expect(log.length, equals(1));
@@ -220,6 +221,7 @@ void main() {
         null,
         null,
         'free',
+        null,
         null,
       );
 

@@ -7,7 +7,7 @@ import android.provider.CalendarContract
 import java.util.Date
 
 class EventsService(private val activity: Activity) {
-    
+
     fun retrieveEvents(
         startDate: Date,
         endDate: Date,
@@ -15,17 +15,17 @@ class EventsService(private val activity: Activity) {
         eventId: String? = null
     ): Result<List<Map<String, Any>>> {
         val events = mutableListOf<Map<String, Any>>()
-        
+
         // Convert dates to milliseconds
         val startMillis = startDate.time
         val endMillis = endDate.time
-        
+
         // Build URI with date range for Instances API
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
             .appendPath(startMillis.toString())
             .appendPath(endMillis.toString())
             .build()
-        
+
         val projection = arrayOf(
             CalendarContract.Instances.EVENT_ID,
             CalendarContract.Instances.CALENDAR_ID,
@@ -40,25 +40,25 @@ class EventsService(private val activity: Activity) {
             CalendarContract.Instances.EVENT_TIMEZONE,
             CalendarContract.Instances.RRULE
         )
-        
+
         // Build selection clause for calendar and event filtering
         val selections = mutableListOf<String>()
         val args = mutableListOf<String>()
-        
+
         if (calendarIds != null && calendarIds.isNotEmpty()) {
             val placeholders = calendarIds.joinToString(",") { "?" }
             selections.add("${CalendarContract.Instances.CALENDAR_ID} IN ($placeholders)")
             args.addAll(calendarIds)
         }
-        
+
         if (eventId != null) {
             selections.add("${CalendarContract.Instances.EVENT_ID} = ?")
             args.add(eventId)
         }
-        
+
         val selection = if (selections.isNotEmpty()) selections.joinToString(" AND ") else null
         val selectionArgs = if (args.isNotEmpty()) args.toTypedArray() else null
-        
+
         try {
             activity.contentResolver.query(
                 uri,
@@ -101,10 +101,10 @@ class EventsService(private val activity: Activity) {
                 )
             )
         }
-        
+
         return Result.success(events)
     }
-    
+
     private fun availabilityToString(availability: Int): String {
         return when (availability) {
             CalendarContract.Events.AVAILABILITY_BUSY -> "busy"
@@ -113,7 +113,7 @@ class EventsService(private val activity: Activity) {
             else -> "busy"
         }
     }
-    
+
     private fun statusToString(status: Int): String {
         return when (status) {
             CalendarContract.Events.STATUS_CONFIRMED -> "confirmed"
@@ -122,7 +122,7 @@ class EventsService(private val activity: Activity) {
             else -> "none"
         }
     }
-    
+
     private fun buildEventMapFromCursor(
         cursor: android.database.Cursor,
         eventIdColumn: String,
@@ -154,7 +154,7 @@ class EventsService(private val activity: Activity) {
         val recurrenceRuleIndex = cursor.getColumnIndex(recurrenceRuleColumn)
         val createdIndex = if (createdColumn != null) cursor.getColumnIndex(createdColumn) else -1
         val lastModifiedIndex = if (lastModifiedColumn != null) cursor.getColumnIndex(lastModifiedColumn) else -1
-        
+
         val eventId = cursor.getString(eventIdIndex)
         val calendarId = cursor.getString(calendarIdIndex)
         val title = if (!cursor.isNull(titleIndex)) cursor.getString(titleIndex) else ""
@@ -168,20 +168,21 @@ class EventsService(private val activity: Activity) {
         val timeZone = if (!cursor.isNull(timeZoneIndex)) cursor.getString(timeZoneIndex) else null
         val recurrenceRule = if (!cursor.isNull(recurrenceRuleIndex)) cursor.getString(recurrenceRuleIndex) else null
         val createdDate = if (createdIndex >= 0 && !cursor.isNull(createdIndex)) cursor.getLong(createdIndex) else null
-        val lastModifiedDate = if (lastModifiedIndex >= 0 && !cursor.isNull(lastModifiedIndex)) cursor.getLong(lastModifiedIndex) else null
-        
+        val lastModifiedDate =
+            if (lastModifiedIndex >= 0 && !cursor.isNull(lastModifiedIndex)) cursor.getLong(lastModifiedIndex) else null
+
         // Generate instanceId using RAW timestamps before any modifications
         val instanceId: String = if (recurrenceRule != null) {
             "$eventId@$rawStart"
         } else {
             eventId
         }
-        
+
         // For all-day events, Android stores and returns UTC timestamps
         // We need to convert them to local time while preserving the calendar date
         val start: Long
         val end: Long
-        
+
         if (allDay) {
             // Extract date components from UTC timestamp
             val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
@@ -189,18 +190,18 @@ class EventsService(private val activity: Activity) {
             val startYear = utcCal.get(java.util.Calendar.YEAR)
             val startMonth = utcCal.get(java.util.Calendar.MONTH)
             val startDay = utcCal.get(java.util.Calendar.DAY_OF_MONTH)
-            
+
             utcCal.timeInMillis = rawEnd
             val endYear = utcCal.get(java.util.Calendar.YEAR)
             val endMonth = utcCal.get(java.util.Calendar.MONTH)
             val endDay = utcCal.get(java.util.Calendar.DAY_OF_MONTH)
-            
+
             // Create local timestamps with those date components
             val localCal = java.util.Calendar.getInstance()
             localCal.set(startYear, startMonth, startDay, 0, 0, 0)
             localCal.set(java.util.Calendar.MILLISECOND, 0)
             start = localCal.timeInMillis
-            
+
             localCal.set(endYear, endMonth, endDay, 0, 0, 0)
             localCal.set(java.util.Calendar.MILLISECOND, 0)
             end = localCal.timeInMillis
@@ -208,7 +209,7 @@ class EventsService(private val activity: Activity) {
             start = rawStart
             end = rawEnd
         }
-        
+
         val eventMap = mutableMapOf<String, Any>(
             "eventId" to eventId,
             "instanceId" to instanceId,
@@ -220,18 +221,24 @@ class EventsService(private val activity: Activity) {
             "availability" to availabilityToString(availability),
             "status" to statusToString(status)
         )
-        
+
         description?.let { eventMap["description"] = it }
         location?.let { eventMap["location"] = it }
-        
+
         // Add timezone for timed events only
         if (!allDay && timeZone != null) {
             eventMap["timeZone"] = timeZone
         }
-        
+
         // Set isRecurring flag
         eventMap["isRecurring"] = (recurrenceRule != null)
-        
+
+        // Query attendees for this event
+        val attendees = queryAttendees(eventId)
+        if (attendees.isNotEmpty()) {
+            eventMap["attendees"] = attendees
+        }
+
         // Add creation and modification dates if available
         if (createdDate != null) {
             eventMap["createdDate"] = createdDate
@@ -239,26 +246,136 @@ class EventsService(private val activity: Activity) {
         if (lastModifiedDate != null) {
             eventMap["updatedDate"] = lastModifiedDate
         }
-        
+
         return eventMap
     }
-    
+
+    private fun queryAttendees(eventId: String): List<Map<String, Any>> {
+        val attendees = mutableListOf<Map<String, Any>>()
+
+        val projection = arrayOf(
+            CalendarContract.Attendees.ATTENDEE_NAME,
+            CalendarContract.Attendees.ATTENDEE_EMAIL,
+            CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
+            CalendarContract.Attendees.ATTENDEE_TYPE,
+            CalendarContract.Attendees.ATTENDEE_STATUS
+        )
+
+        val selection = "${CalendarContract.Attendees.EVENT_ID} = ?"
+        val selectionArgs = arrayOf(eventId)
+
+        try {
+            activity.contentResolver.query(
+                CalendarContract.Attendees.CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(CalendarContract.Attendees.ATTENDEE_NAME)
+                val emailIndex = cursor.getColumnIndex(CalendarContract.Attendees.ATTENDEE_EMAIL)
+                val relationshipIndex = cursor.getColumnIndex(CalendarContract.Attendees.ATTENDEE_RELATIONSHIP)
+                val typeIndex = cursor.getColumnIndex(CalendarContract.Attendees.ATTENDEE_TYPE)
+                val statusIndex = cursor.getColumnIndex(CalendarContract.Attendees.ATTENDEE_STATUS)
+
+                while (cursor.moveToNext()) {
+                    val attendeeMap = mutableMapOf<String, Any>()
+
+                    // Get name
+                    if (nameIndex >= 0 && !cursor.isNull(nameIndex)) {
+                        attendeeMap["name"] = cursor.getString(nameIndex)
+                    }
+
+                    // Get email
+                    if (emailIndex >= 0 && !cursor.isNull(emailIndex)) {
+                        attendeeMap["emailAddress"] = cursor.getString(emailIndex)
+                    }
+
+                    // Get relationship and map to role
+                    if (relationshipIndex >= 0 && !cursor.isNull(relationshipIndex)) {
+                        val relationship = cursor.getInt(relationshipIndex)
+                        attendeeMap["role"] = attendeeRelationshipToRole(relationship)
+                        attendeeMap["isOrganizer"] = (relationship == CalendarContract.Attendees.RELATIONSHIP_ORGANIZER)
+                    }
+
+                    // Get type (supplements role)
+                    if (typeIndex >= 0 && !cursor.isNull(typeIndex)) {
+                        val type = cursor.getInt(typeIndex)
+                        // Type provides more granular info than relationship
+                        val typeRole = attendeeTypeToRole(type)
+                        if (typeRole != "none" && attendeeMap["role"] == "none") {
+                            attendeeMap["role"] = typeRole
+                        }
+                    }
+
+                    // Get status
+                    if (statusIndex >= 0 && !cursor.isNull(statusIndex)) {
+                        val status = cursor.getInt(statusIndex)
+                        attendeeMap["status"] = attendeeStatusToString(status)
+                    }
+
+                    // Set isCurrentUser to false (Android doesn't provide this directly)
+                    attendeeMap["isCurrentUser"] = false
+
+                    attendees.add(attendeeMap)
+                }
+            }
+        } catch (e: Exception) {
+            // If attendee query fails, just return empty list
+            // Don't fail the entire event query
+        }
+
+        return attendees
+    }
+
+    private fun attendeeRelationshipToRole(relationship: Int): String {
+        return when (relationship) {
+            CalendarContract.Attendees.RELATIONSHIP_ATTENDEE -> "required"
+            CalendarContract.Attendees.RELATIONSHIP_ORGANIZER -> "required"
+            CalendarContract.Attendees.RELATIONSHIP_PERFORMER -> "required"
+            CalendarContract.Attendees.RELATIONSHIP_SPEAKER -> "required"
+            CalendarContract.Attendees.RELATIONSHIP_NONE -> "none"
+            else -> "none"
+        }
+    }
+
+    private fun attendeeTypeToRole(type: Int): String {
+        return when (type) {
+            CalendarContract.Attendees.TYPE_REQUIRED -> "required"
+            CalendarContract.Attendees.TYPE_OPTIONAL -> "optional"
+            CalendarContract.Attendees.TYPE_RESOURCE -> "resource"
+            CalendarContract.Attendees.TYPE_NONE -> "none"
+            else -> "none"
+        }
+    }
+
+    private fun attendeeStatusToString(status: Int): String {
+        return when (status) {
+            CalendarContract.Attendees.ATTENDEE_STATUS_INVITED -> "invited"
+            CalendarContract.Attendees.ATTENDEE_STATUS_ACCEPTED -> "accepted"
+            CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED -> "declined"
+            CalendarContract.Attendees.ATTENDEE_STATUS_TENTATIVE -> "tentative"
+            CalendarContract.Attendees.ATTENDEE_STATUS_NONE -> "none"
+            else -> "none"
+        }
+    }
+
     fun getEvent(eventId: String, timestamp: Long?): Result<Map<String, Any>?> {
         if (timestamp != null) {
             // Recurring event with timestamp
             val occurrenceMillis = timestamp
-            
+
             // Query ±1 second around the exact occurrence time
             // We use a small window since we have the precise timestamp
             val startMillis = occurrenceMillis - 1000
             val endMillis = occurrenceMillis + 1000
-            
+
             val startDate = Date(startMillis)
             val endDate = Date(endMillis)
-            
+
             // Use retrieveEvents with event ID filter
             val eventsResult = retrieveEvents(startDate, endDate, null, eventId)
-            
+
             return eventsResult.mapCatching { events ->
                 // Find closest match to the occurrence time
                 events.minByOrNull { event ->
@@ -282,10 +399,10 @@ class EventsService(private val activity: Activity) {
                 CalendarContract.Events.EVENT_TIMEZONE,
                 CalendarContract.Events.RRULE
             )
-            
+
             val selection = "${CalendarContract.Events._ID} = ?"
             val selectionArgs = arrayOf(eventId)
-            
+
             try {
                 activity.contentResolver.query(
                     CalendarContract.Events.CONTENT_URI,
@@ -315,7 +432,7 @@ class EventsService(private val activity: Activity) {
                         return Result.success(null)
                     }
                 }
-                
+
                 return Result.success(null)
             } catch (e: SecurityException) {
                 return Result.failure(
@@ -341,8 +458,9 @@ class EventsService(private val activity: Activity) {
     fun showEvent(activityContext: Activity, eventId: String, timestamp: Long?, requestCode: Int): Result<Unit> {
         return try {
             // Validate permissions
-            if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
-                activity.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
+            if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+                activity.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)
+            ) {
                 return Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.PERMISSION_DENIED,
@@ -350,21 +468,21 @@ class EventsService(private val activity: Activity) {
                     )
                 )
             }
-            
+
             val intent = Intent(Intent.ACTION_VIEW)
-            
+
             // Build event URI
             val eventUri = android.content.ContentUris.withAppendedId(
                 CalendarContract.Events.CONTENT_URI,
                 eventId.toLong()
             )
             intent.data = eventUri
-            
+
             // Add begin time for specific recurring event instances
             if (timestamp != null) {
                 intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, timestamp)
             }
-            
+
             // Use startActivityForResult to get a callback when the activity closes
             activityContext.startActivityForResult(intent, requestCode)
             Result.success(Unit)
@@ -391,7 +509,7 @@ class EventsService(private val activity: Activity) {
             )
         }
     }
-    
+
     fun createEvent(
         calendarId: String,
         title: String,
@@ -405,8 +523,9 @@ class EventsService(private val activity: Activity) {
         recurrenceRule: String?
     ): Result<String> {
         // Check for write calendar permission
-        if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
-            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)
+        ) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.PERMISSION_DENIED,
@@ -414,13 +533,13 @@ class EventsService(private val activity: Activity) {
                 )
             )
         }
-        
+
         try {
             // For all-day events, Android interprets timestamps as UTC to determine the calendar date
             // We need to convert local date components to UTC midnight to preserve the calendar date
             val startMillis: Long
             val endMillis: Long
-            
+
             if (isAllDay) {
                 // Extract date components from local time
                 val localCal = java.util.Calendar.getInstance()
@@ -428,18 +547,18 @@ class EventsService(private val activity: Activity) {
                 val startYear = localCal.get(java.util.Calendar.YEAR)
                 val startMonth = localCal.get(java.util.Calendar.MONTH)
                 val startDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
-                
+
                 localCal.time = endDate
                 val endYear = localCal.get(java.util.Calendar.YEAR)
                 val endMonth = localCal.get(java.util.Calendar.MONTH)
                 val endDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
-                
+
                 // Create UTC timestamps with those date components
                 val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
                 utcCal.set(startYear, startMonth, startDay, 0, 0, 0)
                 utcCal.set(java.util.Calendar.MILLISECOND, 0)
                 startMillis = utcCal.timeInMillis
-                
+
                 utcCal.set(endYear, endMonth, endDay, 0, 0, 0)
                 utcCal.set(java.util.Calendar.MILLISECOND, 0)
                 endMillis = utcCal.timeInMillis
@@ -447,13 +566,13 @@ class EventsService(private val activity: Activity) {
                 startMillis = startDate.time
                 endMillis = endDate.time
             }
-            
+
             val values = android.content.ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, calendarId.toLong())
                 put(CalendarContract.Events.TITLE, title)
                 put(CalendarContract.Events.DTSTART, startMillis)
                 put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
-                
+
                 // For recurring events, use DURATION instead of DTEND
                 // This is required by Android Calendar Provider for recurring events
                 if (recurrenceRule != null) {
@@ -465,17 +584,17 @@ class EventsService(private val activity: Activity) {
                 } else {
                     put(CalendarContract.Events.DTEND, endMillis)
                 }
-                
+
                 // Set description if provided
                 if (description != null) {
                     put(CalendarContract.Events.DESCRIPTION, description)
                 }
-                
+
                 // Set location if provided
                 if (location != null) {
                     put(CalendarContract.Events.EVENT_LOCATION, location)
                 }
-                
+
                 // Set timezone
                 // For all-day events, use device timezone to make them "floating"
                 // This ensures the date components (year/month/day) stay the same
@@ -487,7 +606,7 @@ class EventsService(private val activity: Activity) {
                     val tz = timeZone ?: java.util.TimeZone.getDefault().id
                     put(CalendarContract.Events.EVENT_TIMEZONE, tz)
                 }
-                
+
                 // Map availability string to Android constant
                 val availabilityValue = when (availability) {
                     "free" -> CalendarContract.Events.AVAILABILITY_FREE
@@ -496,23 +615,23 @@ class EventsService(private val activity: Activity) {
                     else -> CalendarContract.Events.AVAILABILITY_BUSY // "busy" or default
                 }
                 put(CalendarContract.Events.AVAILABILITY, availabilityValue)
-                
+
                 // Set status to confirmed
                 put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
             }
-            
+
             val uri = activity.contentResolver.insert(
                 CalendarContract.Events.CONTENT_URI,
                 values
             )
-            
+
             if (uri != null) {
                 val eventId = uri.lastPathSegment
                 if (eventId != null) {
                     return Result.success(eventId)
                 }
             }
-            
+
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
@@ -535,11 +654,12 @@ class EventsService(private val activity: Activity) {
             )
         }
     }
-    
+
     fun deleteEvent(eventId: String): Result<Unit> {
         // Check for write calendar permission
-        if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
-            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)
+        ) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.PERMISSION_DENIED,
@@ -547,7 +667,7 @@ class EventsService(private val activity: Activity) {
                 )
             )
         }
-        
+
         try {
             // Delete the event (entire series for recurring events)
             val deletedRows = activity.contentResolver.delete(
@@ -555,7 +675,7 @@ class EventsService(private val activity: Activity) {
                 "${CalendarContract.Events._ID} = ?",
                 arrayOf(eventId)
             )
-            
+
             if (deletedRows == 0) {
                 return Result.failure(
                     CalendarException(
@@ -564,7 +684,7 @@ class EventsService(private val activity: Activity) {
                     )
                 )
             }
-            
+
             return Result.success(Unit)
         } catch (e: SecurityException) {
             return Result.failure(
@@ -582,7 +702,7 @@ class EventsService(private val activity: Activity) {
             )
         }
     }
-    
+
     fun updateEvent(
         eventId: String,
         title: String?,
@@ -594,8 +714,9 @@ class EventsService(private val activity: Activity) {
         timeZone: String?
     ): Result<Unit> {
         // Check for write calendar permission
-        if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
-            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)
+        ) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.PERMISSION_DENIED,
@@ -603,54 +724,54 @@ class EventsService(private val activity: Activity) {
                 )
             )
         }
-        
+
         try {
             // Need to fetch existing event to determine if it's all-day
             // This is required for proper date normalization
             val existingEventResult = getEvent(eventId, null)
             val existingEvent = existingEventResult.getOrNull()
             val wasAllDay = existingEvent?.get("isAllDay") as? Boolean ?: false
-            
+
             // Build ContentValues with only provided fields
             val values = android.content.ContentValues()
-            
+
             // Update title if provided
             if (title != null) {
                 values.put(CalendarContract.Events.TITLE, title)
             }
-            
+
             // Update description if provided
             if (description != null) {
                 values.put(CalendarContract.Events.DESCRIPTION, description)
             }
-            
+
             // Update location if provided
             if (location != null) {
                 values.put(CalendarContract.Events.EVENT_LOCATION, location)
             }
-            
+
             // Update isAllDay if provided
             val effectiveIsAllDay = isAllDay ?: wasAllDay
             if (isAllDay != null) {
                 values.put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
             }
-            
+
             // Update dates if provided
             // If event is/becomes all-day, need to normalize to UTC midnight
             if (startDate != null || endDate != null) {
                 val startMillis: Long?
                 val endMillis: Long?
-                
+
                 if (effectiveIsAllDay) {
                     // For all-day events, convert date components to UTC midnight
                     val localCal = java.util.Calendar.getInstance()
-                    
+
                     if (startDate != null) {
                         localCal.time = startDate
                         val startYear = localCal.get(java.util.Calendar.YEAR)
                         val startMonth = localCal.get(java.util.Calendar.MONTH)
                         val startDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
-                        
+
                         val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
                         utcCal.set(startYear, startMonth, startDay, 0, 0, 0)
                         utcCal.set(java.util.Calendar.MILLISECOND, 0)
@@ -658,13 +779,13 @@ class EventsService(private val activity: Activity) {
                     } else {
                         startMillis = null
                     }
-                    
+
                     if (endDate != null) {
                         localCal.time = endDate
                         val endYear = localCal.get(java.util.Calendar.YEAR)
                         val endMonth = localCal.get(java.util.Calendar.MONTH)
                         val endDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
-                        
+
                         val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
                         utcCal.set(endYear, endMonth, endDay, 0, 0, 0)
                         utcCal.set(java.util.Calendar.MILLISECOND, 0)
@@ -677,7 +798,7 @@ class EventsService(private val activity: Activity) {
                     startMillis = startDate?.time
                     endMillis = endDate?.time
                 }
-                
+
                 if (startMillis != null) {
                     values.put(CalendarContract.Events.DTSTART, startMillis)
                 }
@@ -685,7 +806,7 @@ class EventsService(private val activity: Activity) {
                     values.put(CalendarContract.Events.DTEND, endMillis)
                 }
             }
-            
+
             // Update timezone if provided
             // Note: For all-day events, timezone should be set but is less relevant
             if (timeZone != null) {
@@ -694,7 +815,7 @@ class EventsService(private val activity: Activity) {
                 // If changing to all-day, set device timezone
                 values.put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
             }
-            
+
             // Perform the update
             val updatedRows = activity.contentResolver.update(
                 CalendarContract.Events.CONTENT_URI,
@@ -702,7 +823,7 @@ class EventsService(private val activity: Activity) {
                 "${CalendarContract.Events._ID} = ?",
                 arrayOf(eventId)
             )
-            
+
             if (updatedRows == 0) {
                 return Result.failure(
                     CalendarException(
@@ -711,7 +832,7 @@ class EventsService(private val activity: Activity) {
                     )
                 )
             }
-            
+
             return Result.success(Unit)
         } catch (e: SecurityException) {
             return Result.failure(

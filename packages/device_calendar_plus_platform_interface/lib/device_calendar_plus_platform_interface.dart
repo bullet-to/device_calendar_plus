@@ -2,6 +2,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'src/create_calendar_options.dart';
 
+export 'src/attendee.dart';
 export 'src/create_calendar_options.dart';
 export 'src/instance_id_parser.dart';
 
@@ -152,6 +153,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// Returns the ID of the newly created event (system-generated).
   /// Requires calendar write permissions.
+  /// [attendees] is an optional list of attendee data maps for event invitees.
   Future<String> createEvent(
     String calendarId,
     String title,
@@ -163,6 +165,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? timeZone,
     String availability,
     String? recurrenceRule,
+    List<Map<String, dynamic>>? attendees,
   );
 
   /// Deletes an event from the device.
@@ -195,6 +198,10 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions.
+  /// - [attendees] - new list of attendees (null = no change, empty = remove all)
+  ///
+  /// At least one field must be provided.
+  /// Requires calendar write permissions.
   Future<void> updateEvent(
     String eventId, {
     String? title,
@@ -204,5 +211,6 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? location,
     bool? isAllDay,
     String? timeZone,
+    List<Map<String, dynamic>>? attendees,
   });
 }

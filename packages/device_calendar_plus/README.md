@@ -36,6 +36,7 @@ Created by [Bullet](https://bullet.to) — a personal task + notes + calendar ap
 - **All-Day Events**: Proper handling of floating calendar dates
 - **Timezones**: Correct timezone behavior for timed events
 - **Recurring Events**: Read recurring event instances; update/delete entire series
+- **Attendees**: Add, retrieve, and manage event invitees/attendees
 
 ## 🧩 Installation
 
@@ -337,6 +338,70 @@ await plugin.createEvent(
   ),
 );
 ```
+
+### Create Event with Attendees
+
+You can add attendees/invitees when creating an event:
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Create an event with attendees
+final eventId = await plugin.createEvent(
+  calendarId: 'your-calendar-id',
+  title: 'Team Meeting',
+  startDate: DateTime(2024, 3, 20, 14, 0),
+  endDate: DateTime(2024, 3, 20, 15, 0),
+  attendees: [
+    Attendee(
+      name: 'John Doe',
+      emailAddress: 'john.doe@example.com',
+      role: AttendeeRole.required,
+      status: AttendeeStatus.invited,
+    ),
+    Attendee(
+      name: 'Jane Smith',
+      emailAddress: 'jane.smith@example.com',
+      role: AttendeeRole.optional,
+    ),
+  ],
+);
+```
+
+### Retrieve Event Attendees
+
+Attendees are automatically included when retrieving events:
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Get an event
+final event = await plugin.getEvent(eventId);
+
+// Check if the event has attendees
+if (event?.attendees != null && event!.attendees!.isNotEmpty) {
+  for (final attendee in event.attendees!) {
+    print('${attendee.name ?? attendee.emailAddress}');
+    print('  Role: ${attendee.role}');       // required, optional, resource, none
+    print('  Status: ${attendee.status}');   // invited, accepted, declined, tentative, none
+    print('  Organizer: ${attendee.isOrganizer}');
+    print('  Current User: ${attendee.isCurrentUser}');
+  }
+}
+```
+
+### Attendee Model
+
+The `Attendee` class includes:
+
+| Property        | Type             | Description                                               |
+| --------------- | ---------------- | --------------------------------------------------------- |
+| `name`          | `String?`        | Display name of the attendee                              |
+| `emailAddress`  | `String?`        | Email address (primary identifier)                        |
+| `role`          | `AttendeeRole`   | `required`, `optional`, `resource`, or `none`             |
+| `status`        | `AttendeeStatus` | `invited`, `accepted`, `declined`, `tentative`, or `none` |
+| `isOrganizer`   | `bool`           | Whether this attendee is the event organizer              |
+| `isCurrentUser` | `bool`           | Whether this attendee is the current device user          |
 
 ### Update Event
 
