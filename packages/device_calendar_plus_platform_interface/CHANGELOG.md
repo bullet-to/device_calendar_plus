@@ -1,3 +1,11 @@
+## 0.3.5 - 2026-01-01
+
+### Added
+
+- Added `Attendee`, `AttendeeRole`, and `AttendeeStatus` models
+- Added `attendees` parameter to `createEvent()` and `updateEvent()`
+- Added `createOrEditEventModal()` to platform interface
+
 ## 0.3.4 - 2025-12-30
 
 ### Added

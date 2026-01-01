@@ -1,3 +1,16 @@
+## 0.3.5 - 2026-01-01
+
+### Added
+
+- Added support for attendees:
+  - Android: Full support for reading and writing attendees (invitations)
+  - iOS: Support for reading attendees (writing is not supported by iOS SDK)
+- Added `createOrEditEventModal()` method:
+  - Launches native calendar UI for event creation/editing
+  - Allows adding attendees on iOS (via native UI)
+  - Supports pre-filling event data (title, description, location, time, etc.)
+- Added `Attendee` model with roles and status enums
+
 ## 0.3.4 - 2025-12-30
 
 - Added support for recurring events
