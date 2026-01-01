@@ -262,6 +262,17 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       );
     }
   }
+
+  @override
+  Future<String?> createOrEditEventModal({
+    String? eventId,
+    Map<String, dynamic>? eventData,
+  }) async {
+    if (_exceptionToThrow != null) {
+      throw _exceptionToThrow!;
+    }
+    return null;
+  }
 }
 
 void main() {

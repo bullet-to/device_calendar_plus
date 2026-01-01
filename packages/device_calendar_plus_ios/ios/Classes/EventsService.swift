@@ -711,7 +711,7 @@ class EventsService {
               
               // Set Recurrence Rule (if provided)
               if let recurrenceRuleString = eventData["recurrenceRule"] as? String,
-                 let rule = parseRecurrenceRule(recurrenceRuleString) {
+                 let rule = self.parseRecurrenceRule(recurrenceRuleString) {
                   event.addRecurrenceRule(rule)
               }
               

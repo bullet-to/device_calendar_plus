@@ -78,6 +78,13 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? timeZone,
     List<Map<String, dynamic>>? attendees,
   }) async {}
+
+  @override
+  Future<String?> createOrEditEventModal({
+    String? eventId,
+    Map<String, dynamic>? eventData,
+  }) async =>
+      null;
 }
 
 void main() {
