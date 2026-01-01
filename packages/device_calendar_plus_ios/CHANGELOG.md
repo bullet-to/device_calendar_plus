@@ -4,6 +4,7 @@
 
 - Added support for reading attendees (write not supported by iOS SDK)
 - Added `createOrEditEventModal()` implementation using `EKEventEditViewController`
+- Added recurrence rule pre-fill support in `createOrEditEventModal()`
 - Updated `createEvent()` and `updateEvent()` to handle `attendees` (read-only)
 
 ## 0.3.4 - 2025-12-30

@@ -454,21 +454,48 @@ await plugin.updateEvent(
 
 For situations where programmatic event creation is limited (e.g. adding attendees on iOS), you can launch the native calendar editor UI.
 
+**Supported Pre-fill Fields:**
+
+| Field            | iOS | Android |
+| ---------------- | --- | ------- |
+| `title`          | ✅  | ✅      |
+| `description`    | ✅  | ✅      |
+| `location`       | ✅  | ✅      |
+| `startDate`      | ✅  | ✅      |
+| `endDate`        | ✅  | ✅      |
+| `isAllDay`       | ✅  | ✅      |
+| `timeZone`       | ✅  | ✅      |
+| `recurrenceRule` | ✅  | ✅      |
+| `attendees`      | ❌  | ✅      |
+
 **Important**:
 
-- **iOS**: Returns the `eventId` if the user saves the event, or `null` if cancelled. **Note**: Pre-filling `attendees` is NOT supported on iOS; the `attendees` list will be ignored.
-- **Android**: Always returns `null` as the native intent system does not return the created event ID. Supports pre-filling all fields including `attendees`.
+- **iOS**: Returns the `eventId` if the user saves the event, or `null` if cancelled.
+- **Android**: Always returns `null` as the native intent system does not return the created event ID.
 
 ```dart
 final plugin = DeviceCalendar.instance;
 
-// Create a new event with optional pre-filled data
+// Create a new event with pre-filled data
 await plugin.createOrEditEventModal(
   eventData: Event(
-    '1', // calendar ID
-    title: 'New Meeting',
-    start: DateTime.now(),
-    end: DateTime.now().add(Duration(hours: 1)),
+    eventId: '',
+    instanceId: '',
+    calendarId: '1',
+    title: 'Weekly Team Standup',
+    description: 'Discuss project updates and blockers.',
+    location: 'Conference Room A',
+    startDate: DateTime.now(),
+    endDate: DateTime.now().add(Duration(hours: 1)),
+    isAllDay: false,
+    availability: EventAvailability.busy,
+    status: EventStatus.confirmed,
+    isRecurring: true,
+    recurrenceRule: RecurrenceRule(
+      frequency: RecurrenceFrequency.weekly,
+      interval: 1,
+      daysOfWeek: [DayOfWeek.monday],
+    ),
     attendees: [
       Attendee(
         emailAddress: 'colleague@example.com',
