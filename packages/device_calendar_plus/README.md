@@ -368,6 +368,8 @@ final eventId = await plugin.createEvent(
 );
 ```
 
+> [!IMPORTANT] > **iOS Limitation**: Programmatically adding invitees/attendees to an event is **not supported** implementation-wise by Apple's EventKit framework (the `attendees` property is read-only). On iOS, you can only _retrieve_ existing attendees from events. To add attendees on iOS, you must use the native `EKEventEditViewController` UI or Apple's Calendar app. The `attendees` parameter will be ignored on iOS during creation and updates.
+
 ### Retrieve Event Attendees
 
 Attendees are automatically included when retrieving events:

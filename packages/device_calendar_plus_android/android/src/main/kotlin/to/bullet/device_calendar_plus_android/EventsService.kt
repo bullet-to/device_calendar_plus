@@ -520,7 +520,8 @@ class EventsService(private val activity: Activity) {
         location: String?,
         timeZone: String?,
         availability: String,
-        recurrenceRule: String?
+        recurrenceRule: String?,
+        attendees: List<Map<String, Any?>>?
     ): Result<String> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -628,6 +629,10 @@ class EventsService(private val activity: Activity) {
             if (uri != null) {
                 val eventId = uri.lastPathSegment
                 if (eventId != null) {
+                    // Insert attendees if provided
+                    if (attendees != null && attendees.isNotEmpty()) {
+                        insertAttendees(eventId, attendees)
+                    }
                     return Result.success(eventId)
                 }
             }
@@ -652,6 +657,81 @@ class EventsService(private val activity: Activity) {
                     "Failed to create event: ${e.message}"
                 )
             )
+        }
+    }
+
+    private fun insertAttendees(eventId: String, attendees: List<Map<String, Any?>>) {
+        for (attendee in attendees) {
+            val email = attendee["emailAddress"] as? String ?: continue
+
+            val values = android.content.ContentValues().apply {
+                put(CalendarContract.Attendees.EVENT_ID, eventId.toLong())
+                put(CalendarContract.Attendees.ATTENDEE_EMAIL, email)
+
+                // Set name if provided
+                val name = attendee["name"] as? String
+                if (name != null) {
+                    put(CalendarContract.Attendees.ATTENDEE_NAME, name)
+                }
+
+                // Map role to relationship and type
+                val role = attendee["role"] as? String ?: "required"
+                val (relationship, type) = when (role) {
+                    "required" -> Pair(
+                        CalendarContract.Attendees.RELATIONSHIP_ATTENDEE,
+                        CalendarContract.Attendees.TYPE_REQUIRED
+                    )
+
+                    "optional" -> Pair(
+                        CalendarContract.Attendees.RELATIONSHIP_ATTENDEE,
+                        CalendarContract.Attendees.TYPE_OPTIONAL
+                    )
+
+                    "resource" -> Pair(
+                        CalendarContract.Attendees.RELATIONSHIP_NONE,
+                        CalendarContract.Attendees.TYPE_RESOURCE
+                    )
+
+                    else -> Pair(
+                        CalendarContract.Attendees.RELATIONSHIP_ATTENDEE,
+                        CalendarContract.Attendees.TYPE_REQUIRED
+                    )
+                }
+                put(CalendarContract.Attendees.ATTENDEE_RELATIONSHIP, relationship)
+                put(CalendarContract.Attendees.ATTENDEE_TYPE, type)
+
+                // Map status
+                val status = attendee["status"] as? String ?: "invited"
+                val statusValue = when (status) {
+                    "invited" -> CalendarContract.Attendees.ATTENDEE_STATUS_INVITED
+                    "accepted" -> CalendarContract.Attendees.ATTENDEE_STATUS_ACCEPTED
+                    "declined" -> CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED
+                    "tentative" -> CalendarContract.Attendees.ATTENDEE_STATUS_TENTATIVE
+                    else -> CalendarContract.Attendees.ATTENDEE_STATUS_NONE
+                }
+                put(CalendarContract.Attendees.ATTENDEE_STATUS, statusValue)
+            }
+
+            try {
+                activity.contentResolver.insert(
+                    CalendarContract.Attendees.CONTENT_URI,
+                    values
+                )
+            } catch (e: Exception) {
+                // If one attendee fails, continue with the rest
+            }
+        }
+    }
+
+    private fun deleteAttendees(eventId: String) {
+        try {
+            activity.contentResolver.delete(
+                CalendarContract.Attendees.CONTENT_URI,
+                "${CalendarContract.Attendees.EVENT_ID} = ?",
+                arrayOf(eventId)
+            )
+        } catch (e: Exception) {
+            // Ignore errors when deleting attendees
         }
     }
 
@@ -711,7 +791,8 @@ class EventsService(private val activity: Activity) {
         description: String?,
         location: String?,
         isAllDay: Boolean?,
-        timeZone: String?
+        timeZone: String?,
+        attendees: List<Map<String, Any?>>?
     ): Result<Unit> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -831,6 +912,14 @@ class EventsService(private val activity: Activity) {
                         "Event with ID $eventId not found"
                     )
                 )
+            }
+
+            // Update attendees if provided (delete old + insert new)
+            if (attendees != null) {
+                deleteAttendees(eventId)
+                if (attendees.isNotEmpty()) {
+                    insertAttendees(eventId, attendees)
+                }
             }
 
             return Result.success(Unit)
