@@ -709,6 +709,12 @@ class EventsService {
                   event.timeZone = TimeZone(identifier: timeZoneIdentifier)
               }
               
+              // Set Recurrence Rule (if provided)
+              if let recurrenceRuleString = eventData["recurrenceRule"] as? String,
+                 let rule = parseRecurrenceRule(recurrenceRuleString) {
+                  event.addRecurrenceRule(rule)
+              }
+              
               // Note: Attendees (EKParticipant) cannot be created programmatically on iOS.
               // The user must add them manually in the UI.
 
