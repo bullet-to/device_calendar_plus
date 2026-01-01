@@ -673,6 +673,39 @@ class EventsService {
                   return
               }
               
+              // Update properties if eventData provided
+              if let eventData = eventData {
+                  if let title = eventData["title"] as? String { event.title = title }
+                  if let description = eventData["description"] as? String { event.notes = description }
+                  if let location = eventData["location"] as? String { event.location = location }
+                  if let isAllDay = eventData["isAllDay"] as? Bool { event.isAllDay = isAllDay }
+                  
+                  if let startDateMillis = eventData["startDate"] as? Int64 {
+                      event.startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
+                  }
+                  if let endDateMillis = eventData["endDate"] as? Int64 {
+                      event.endDate = Date(timeIntervalSince1970: TimeInterval(endDateMillis) / 1000.0)
+                  }
+                  
+                  if let timeZoneIdentifier = eventData["timeZone"] as? String, !event.isAllDay {
+                      event.timeZone = TimeZone(identifier: timeZoneIdentifier)
+                  }
+                  
+                  // Update recurrence rule
+                  if let recurrenceRuleString = eventData["recurrenceRule"] as? String {
+                      // Clear existing rules
+                      event.recurrenceRules = nil
+                      
+                      // Add new rule
+                      if let rule = self.parseRecurrenceRule(recurrenceRuleString) {
+                          event.addRecurrenceRule(rule)
+                      }
+                  } else if eventData.keys.contains("recurrenceRule") {
+                      // Explicitly null/removed in data map -> clear rule
+                      event.recurrenceRules = nil
+                  }
+              }
+
               let controller = EKEventEditViewController()
               controller.eventStore = self.eventStore
               controller.event = event
