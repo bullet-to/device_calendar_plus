@@ -456,8 +456,8 @@ For situations where programmatic event creation is limited (e.g. adding attende
 
 **Important**:
 
-- **iOS**: Returns the `eventId` if the user saves the event, or `null` if cancelled.
-- **Android**: Always returns `null` as the native intent system does not return the created event ID.
+- **iOS**: Returns the `eventId` if the user saves the event, or `null` if cancelled. **Note**: Pre-filling `attendees` is NOT supported on iOS; the `attendees` list will be ignored.
+- **Android**: Always returns `null` as the native intent system does not return the created event ID. Supports pre-filling all fields including `attendees`.
 
 ```dart
 final plugin = DeviceCalendar.instance;
