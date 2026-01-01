@@ -3,7 +3,7 @@ import UIKit
 import EventKit
 import EventKitUI
 
-public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDelegate {
+public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDelegate, EKEventEditViewDelegate {
   private let eventStore = EKEventStore()
   private lazy var permissionService = PermissionService(eventStore: eventStore)
   private lazy var calendarService = CalendarService(eventStore: eventStore, permissionService: permissionService)
@@ -44,6 +44,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleDeleteEvent(call: call, result: result)
     case "updateEvent":
       handleUpdateEvent(call: call, result: result)
+    case "createOrEditEventModal":
+      handleCreateOrEditEventModal(call: call, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -365,6 +367,50 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
   
+  private func handleCreateOrEditEventModal(call: FlutterMethodCall, result: @escaping FlutterResult) {
+      guard let args = call.arguments as? [String: Any] else {
+        result(FlutterError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "Invalid arguments for createOrEditEventModal",
+          details: nil
+        ))
+        return
+      }
+      
+      let eventId = args["eventId"] as? String
+      let eventData = args["eventData"] as? [String: Any]
+      
+      eventsService.createOrEditEventModal(
+        eventId: eventId,
+        eventData: eventData
+      ) { serviceResult in
+        DispatchQueue.main.async {
+          switch serviceResult {
+          case .success(let viewController):
+            if let viewController = viewController {
+              guard let rootViewController = self.getRootViewController() else {
+                result(FlutterError(
+                    code: PlatformExceptionCodes.unknownError,
+                    message: "Failed to get root view controller",
+                    details: nil
+                ))
+                return
+              }
+              
+              viewController.editViewDelegate = self
+              self.eventModalResult = result
+              
+              rootViewController.present(viewController, animated: true, completion: nil)
+            } else {
+              result(nil)
+            }
+          case .failure(let error):
+            result(FlutterError(code: error.code, message: error.message, details: nil))
+          }
+        }
+      }
+  }
+  
   private func handleCreateEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
     guard let args = call.arguments as? [String: Any] else {
       result(FlutterError(
@@ -527,6 +573,21 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     controller.navigationController?.dismiss(animated: true) {
       // Call the stored result callback after modal is dismissed
       self.eventModalResult?(nil)
+      self.eventModalResult = nil
+    }
+  }
+  
+  public func eventEditViewController(_ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction) {
+    controller.dismiss(animated: true) {
+      if action == .saved {
+        if let event = controller.event {
+             self.eventModalResult?(event.eventIdentifier)
+        } else {
+             self.eventModalResult?(nil)
+        }
+      } else {
+        self.eventModalResult?(nil)
+      }
       self.eventModalResult = nil
     }
   }

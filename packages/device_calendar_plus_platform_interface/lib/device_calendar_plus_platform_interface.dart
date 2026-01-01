@@ -213,4 +213,17 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? timeZone,
     List<Map<String, dynamic>>? attendees,
   });
+
+  /// Opens the native calendar editor to create or edit an event.
+  ///
+  /// [eventId] - If provided, opens the editor for the existing event.
+  /// [eventData] - Data to pre-fill for a new event (if eventId is null).
+  ///
+  /// Returns:
+  /// - iOS: The event ID if the user saved the event, or null if cancelled.
+  /// - Android: Always returns null (Android intents are fire-and-forget).
+  Future<String?> createOrEditEventModal({
+    String? eventId,
+    Map<String, dynamic>? eventData,
+  });
 }

@@ -194,4 +194,18 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
       },
     );
   }
+
+  @override
+  Future<String?> createOrEditEventModal({
+    String? eventId,
+    Map<String, dynamic>? eventData,
+  }) async {
+    return await methodChannel.invokeMethod<String?>(
+      'createOrEditEventModal',
+      <String, dynamic>{
+        'eventId': eventId,
+        'eventData': eventData,
+      },
+    );
+  }
 }

@@ -450,6 +450,40 @@ await plugin.updateEvent(
 
 **Note on Recurring Events**: For recurring events, `updateEvent` will always update the ENTIRE series (all past and future occurrences). Single-instance updates are not supported to maintain consistent behavior across platforms.
 
+### UI Event Editor
+
+For situations where programmatic event creation is limited (e.g. adding attendees on iOS), you can launch the native calendar editor UI.
+
+**Important**:
+
+- **iOS**: Returns the `eventId` if the user saves the event, or `null` if cancelled.
+- **Android**: Always returns `null` as the native intent system does not return the created event ID.
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Create a new event with optional pre-filled data
+await plugin.createOrEditEventModal(
+  eventData: Event(
+    '1', // calendar ID
+    title: 'New Meeting',
+    start: DateTime.now(),
+    end: DateTime.now().add(Duration(hours: 1)),
+    attendees: [
+      Attendee(
+        emailAddress: 'colleague@example.com',
+        role: AttendeeRole.required,
+      ),
+    ],
+  ),
+);
+
+// Edit an existing event
+await plugin.createOrEditEventModal(
+  eventId: 'existing_event_id',
+);
+```
+
 ### Delete Event
 
 ```dart

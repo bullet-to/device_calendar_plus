@@ -647,5 +647,83 @@ class EventsService {
       end: end
     )
   }
+  
+  func createOrEditEventModal(
+      eventId: String?,
+      eventData: [String: Any]?,
+      completion: @escaping (Result<EKEventEditViewController?, CalendarError>) -> Void
+  ) {
+      // Check permission
+      guard permissionService.hasPermission(for: .write) else {
+          completion(.failure(CalendarError(
+              code: PlatformExceptionCodes.permissionDenied,
+              message: "Calendar permission denied. Call requestPermissions() first."
+          )))
+          return
+      }
+
+      DispatchQueue.main.async {
+          if let eventId = eventId {
+              // Edit Mode: Fetch existing event
+              guard let event = self.eventStore.event(withIdentifier: eventId) else {
+                  completion(.failure(CalendarError(
+                      code: PlatformExceptionCodes.notFound,
+                      message: "Event with ID \(eventId) not found"
+                  )))
+                  return
+              }
+              
+              let controller = EKEventEditViewController()
+              controller.eventStore = self.eventStore
+              controller.event = event
+              completion(.success(controller))
+              
+          } else if let eventData = eventData {
+              // Create Mode: New event with pre-filled details
+              let event = EKEvent(eventStore: self.eventStore)
+              
+              // Set calendar (default if not specified)
+              if let calendarId = eventData["calendarId"] as? String,
+                 let calendar = self.eventStore.calendar(withIdentifier: calendarId) {
+                  event.calendar = calendar
+              } else {
+                  event.calendar = self.eventStore.defaultCalendarForNewEvents
+              }
+              
+              // Set basic properties
+              if let title = eventData["title"] as? String { event.title = title }
+              if let description = eventData["description"] as? String { event.notes = description }
+              if let location = eventData["location"] as? String { event.location = location }
+              if let isAllDay = eventData["isAllDay"] as? Bool { event.isAllDay = isAllDay }
+              
+              // Set Dates
+              if let startDateMillis = eventData["startDate"] as? Int64 {
+                  event.startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
+              }
+              if let endDateMillis = eventData["endDate"] as? Int64 {
+                  event.endDate = Date(timeIntervalSince1970: TimeInterval(endDateMillis) / 1000.0)
+              }
+              
+              // Set TimeZone
+              if let timeZoneIdentifier = eventData["timeZone"] as? String, !event.isAllDay {
+                  event.timeZone = TimeZone(identifier: timeZoneIdentifier)
+              }
+              
+              // Note: Attendees (EKParticipant) cannot be created programmatically on iOS.
+              // The user must add them manually in the UI.
+
+              let controller = EKEventEditViewController()
+              controller.eventStore = self.eventStore
+              controller.event = event
+              completion(.success(controller))
+              
+          } else {
+              completion(.failure(CalendarError(
+                  code: PlatformExceptionCodes.invalidArguments,
+                  message: "Either eventId or eventData must be provided"
+              )))
+          }
+      }
+  }
 }
 

@@ -1,4 +1,5 @@
 import 'package:device_calendar_plus/device_calendar_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -223,6 +224,45 @@ void main() {
       expect(AttendeeStatus.values, contains(AttendeeStatus.accepted));
       expect(AttendeeStatus.values, contains(AttendeeStatus.declined));
       expect(AttendeeStatus.values, contains(AttendeeStatus.tentative));
+    });
+    testWidgets(
+        '6. UI Smoke Test: Open Native Editor (Manual Verification Required)',
+        (WidgetTester tester) async {
+      // This test launches the native UI.
+      // On Android, it returns immediately (fire-and-forget).
+      // On iOS, it waits for the user to Dismiss/Save the modal.
+      // This is primarily for visual verification on the simulator/device.
+
+      debugPrint('--- Launching Native Event Editor ---');
+      debugPrint(
+          'Please MANUALLY dismiss the modal if running on iOS to continue/finish the test.');
+
+      // We use a shorter timeout or just invoke it.
+      // To avoid hanging CI forever, we can make this test purely optional or
+      // acknowledge it will block until interaction.
+      // Per user request, we invoke it to see it show up.
+
+      await plugin.createOrEditEventModal(
+        eventData: Event(
+          calendarId: calendarId ?? '1',
+          eventId: '0', // Dummy ID for new event
+          instanceId: '0',
+          title: 'UI Smoke Test Event',
+          startDate: DateTime.now(),
+          endDate: DateTime.now().add(const Duration(hours: 1)),
+          isAllDay: false,
+          availability: EventAvailability.busy,
+          status: EventStatus.confirmed,
+          isRecurring: false,
+          attendees: [
+            Attendee(
+                emailAddress: 'visual.check@example.com',
+                role: AttendeeRole.required)
+          ],
+        ),
+      );
+
+      debugPrint('--- Native Event Editor Closed/Launched ---');
     });
   });
 }

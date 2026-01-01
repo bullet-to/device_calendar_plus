@@ -242,7 +242,7 @@ void main() {
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('deleteEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123'));
+      expect(log[0].arguments['eventId'], equals('event-123'));
     });
 
     test('deleteEvent for recurring event deletes entire series', () async {
@@ -250,7 +250,7 @@ void main() {
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('deleteEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123@123456789'));
+      expect(log[0].arguments['eventId'], equals('event-123@123456789'));
     });
 
     test('updateEvent with all parameters', () async {
@@ -270,7 +270,7 @@ void main() {
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('updateEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123'));
+      expect(log[0].arguments['eventId'], equals('event-123'));
       expect(log[0].arguments['title'], equals('Updated Title'));
       expect(log[0].arguments['startDate'],
           equals(startDate.millisecondsSinceEpoch));
@@ -290,7 +290,7 @@ void main() {
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('updateEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123'));
+      expect(log[0].arguments['eventId'], equals('event-123'));
       expect(log[0].arguments['title'], equals('New Title'));
       expect(log[0].arguments['startDate'], isNull);
       expect(log[0].arguments['endDate'], isNull);
@@ -309,7 +309,7 @@ void main() {
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('updateEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123'));
+      expect(log[0].arguments['eventId'], equals('event-123'));
       expect(log[0].arguments['title'], equals('Updated Series'));
     });
   });

@@ -510,6 +510,92 @@ class EventsService(private val activity: Activity) {
         }
     }
 
+    /**
+     * Creates or edits a calendar event using the native calendar editor.
+     */
+    fun createOrEditEventModal(
+        activityContext: Activity,
+        eventId: String?,
+        eventData: Map<String, Any?>?
+    ): Result<Unit> {
+        return try {
+            // Validate permissions
+            if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+                activityContext.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)
+            ) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.PERMISSION_DENIED,
+                        "Calendar permission denied. Call requestPermissions() first."
+                    )
+                )
+            }
+
+            val intent: Intent
+            if (eventId != null) {
+                // Edit existing event
+                intent = Intent(Intent.ACTION_EDIT)
+                val eventUri = android.content.ContentUris.withAppendedId(
+                    CalendarContract.Events.CONTENT_URI,
+                    eventId.toLong()
+                )
+                intent.data = eventUri
+            } else {
+                // Create new event
+                intent = Intent(Intent.ACTION_INSERT)
+                intent.data = CalendarContract.Events.CONTENT_URI
+
+                if (eventData != null) {
+                    // Pre-fill Title, Description, Location
+                    if (eventData["title"] != null) intent.putExtra(
+                        CalendarContract.Events.TITLE,
+                        eventData["title"] as String
+                    )
+                    if (eventData["description"] != null) intent.putExtra(
+                        CalendarContract.Events.DESCRIPTION,
+                        eventData["description"] as String
+                    )
+                    if (eventData["location"] != null) intent.putExtra(
+                        CalendarContract.Events.EVENT_LOCATION,
+                        eventData["location"] as String
+                    )
+
+                    // Pre-fill Dates
+                    if (eventData["startDate"] != null) intent.putExtra(
+                        CalendarContract.EXTRA_EVENT_BEGIN_TIME,
+                        eventData["startDate"] as Long
+                    )
+                    if (eventData["endDate"] != null) intent.putExtra(
+                        CalendarContract.EXTRA_EVENT_END_TIME,
+                        eventData["endDate"] as Long
+                    )
+                    if (eventData["isAllDay"] == true) intent.putExtra(CalendarContract.Events.ALL_DAY, true)
+
+                    // Pre-fill Attendees (Invitee feature)
+                    val attendees = eventData["attendees"] as? List<Map<String, Any?>>
+                    if (attendees != null && attendees.isNotEmpty()) {
+                        val emails = attendees.mapNotNull { it["emailAddress"] as? String }.joinToString(",")
+                        if (emails.isNotEmpty()) {
+                            intent.putExtra(Intent.EXTRA_EMAIL, emails)
+                        }
+                    }
+                }
+            }
+
+            // Launch activity
+            activityContext.startActivity(intent)
+            Result.success(Unit)
+
+        } catch (e: Exception) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to launch calendar editor: ${e.message}"
+                )
+            )
+        }
+    }
+
     fun createEvent(
         calendarId: String,
         title: String,

@@ -498,6 +498,37 @@ class DeviceCalendar {
     }
   }
 
+  /// Opens the native calendar editor to create or edit an event.
+  ///
+  /// This provides a UI-based alternative to programmatically creating/editing events.
+  /// It is particularly useful on platforms with limitations on programmatic changes
+  /// (like iOS for attendees).
+  ///
+  /// [eventId] - If provided, opens the editor for the existing event.
+  /// [eventData] - Data to pre-fill for a new event (if eventId is null).
+  ///
+  /// Returns:
+  /// - iOS: The event ID if the user saved the event, or null if cancelled/deleted.
+  /// - Android: Always returns null as the native intent does not return a result.
+  Future<String?> createOrEditEventModal({
+    String? eventId,
+    Event? eventData,
+  }) async {
+    try {
+      return await DeviceCalendarPlusPlatform.instance.createOrEditEventModal(
+        eventId: eventId,
+        eventData: eventData?.toMap(),
+      );
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
   /// Creates a new event in the specified calendar.
   ///
   /// [calendarId] is the ID of the calendar to create the event in (required).

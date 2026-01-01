@@ -49,6 +49,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "createEvent" -> handleCreateEvent(call, result)
             "deleteEvent" -> handleDeleteEvent(call, result)
             "updateEvent" -> handleUpdateEvent(call, result)
+            "createOrEditEventModal" -> handleCreateOrEditEventModal(call, result)
             else -> result.notImplemented()
         }
     }
@@ -451,6 +452,19 @@ class DeviceCalendarPlusAndroidPlugin :
                 }
             }
         )
+    }
+
+    private fun handleCreateOrEditEventModal(call: MethodCall, result: Result) {
+        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
+        val currentActivity = activity ?: error("Activity not initialized - plugin lifecycle error")
+
+        // Parse arguments
+        val eventId = call.argument<String>("eventId")
+        val eventData = call.argument<Map<String, Any?>>("eventData")
+
+        service.createOrEditEventModal(currentActivity, eventId, eventData)
+        // Fire and forget - Android Intent doesn't return a result in this context
+        result.success(null)
     }
 
     override fun onRequestPermissionsResult(
