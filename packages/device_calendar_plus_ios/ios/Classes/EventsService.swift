@@ -592,6 +592,7 @@ class EventsService {
     } else if let untilStr = params["UNTIL"] {
       // Parse UNTIL date: YYYYMMDDTHHMMSSZ or YYYYMMDD
       let formatter = DateFormatter()
+      formatter.locale = Locale(identifier: "en_US_POSIX")
       formatter.calendar = Calendar(identifier: .gregorian)
       formatter.timeZone = TimeZone(identifier: "UTC")
       formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
