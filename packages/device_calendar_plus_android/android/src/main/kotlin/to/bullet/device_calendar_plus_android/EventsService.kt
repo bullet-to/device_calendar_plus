@@ -514,8 +514,7 @@ class EventsService(private val activity: Activity) {
                             CalendarContract.Events.AVAILABILITY,
                             CalendarContract.Events.STATUS,
                             CalendarContract.Events.EVENT_TIMEZONE,
-                            CalendarContract.Events.RRULE,
-                            urlColumn = CalendarContract.Events.CUSTOM_APP_URI
+                            CalendarContract.Events.RRULE
                         )
                         return Result.success(eventMap)
                     } else {
