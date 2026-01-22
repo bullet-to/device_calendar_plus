@@ -1,3 +1,9 @@
+## 0.3.6 - 2026-01-22
+
+### Added
+
+- Added `url` property to `Event` model
+
 ## 0.3.5 - 2026-01-01
 
 ### Added
