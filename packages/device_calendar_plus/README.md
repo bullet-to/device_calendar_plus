@@ -37,6 +37,7 @@ Created by [Bullet](https://bullet.to) — a personal task + notes + calendar ap
 - **Timezones**: Correct timezone behavior for timed events
 - **Recurring Events**: Read recurring event instances; update/delete entire series
 - **Attendees**: Add, retrieve, and manage event invitees/attendees
+- **Event URLs**: Read event URLs/links (e.g., meeting links, websites)
 
 ## 🧩 Installation
 
@@ -245,6 +246,39 @@ final instance = await plugin.getEvent(event.instanceId);
 // For recurring events, get the master event definition
 final masterEvent = await plugin.getEvent(event.eventId);
 ```
+
+### Event Model
+
+The `Event` class includes all properties returned when retrieving events:
+
+| Property         | Type                | Description                                                   |
+| ---------------- | ------------------- | ------------------------------------------------------------- |
+| `eventId`        | `String`            | Unique system identifier for this event                       |
+| `instanceId`     | `String`            | Instance identifier for specific occurrences (recurring events) |
+| `calendarId`     | `String`            | ID of the calendar this event belongs to                      |
+| `title`          | `String`            | Title of the event                                            |
+| `description`    | `String?`           | Description/notes of the event                                |
+| `location`       | `String?`           | Location of the event                                         |
+| `url`            | `String?`           | URL associated with the event (e.g., meeting link, website)   |
+| `startDate`      | `DateTime`          | Start date and time                                           |
+| `endDate`        | `DateTime`          | End date and time                                             |
+| `isAllDay`       | `bool`              | Whether this is an all-day event                              |
+| `availability`   | `EventAvailability` | Availability status (busy, free, tentative)                   |
+| `status`         | `EventStatus`       | Event status (confirmed, tentative, canceled)                 |
+| `timeZone`       | `String?`           | Timezone identifier (null for all-day events)                 |
+| `isRecurring`    | `bool`              | Whether this is a recurring event                             |
+| `recurrenceRule` | `RecurrenceRule?`   | The recurrence rule (if recurring)                            |
+| `attendees`      | `List<Attendee>?`   | List of attendees/invitees                                    |
+
+#### URL Field Notes
+
+The `url` field contains event-associated URLs when available:
+
+- **iOS**: Uses `EKEvent.url` - commonly populated by calendar apps for meeting links
+- **Android**: Uses `CUSTOM_APP_URI` - may be populated by some calendar apps
+
+> [!NOTE]
+> The `url` field is read-only. Not all calendar apps populate this field, so it may be `null` even for events that visually display a link in the native calendar app.
 
 ### Show Event in Modal
 

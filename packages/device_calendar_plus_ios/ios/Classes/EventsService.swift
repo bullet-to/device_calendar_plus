@@ -122,6 +122,10 @@ class EventsService {
       eventMap["location"] = location
     }
     
+    if let url = event.url {
+      eventMap["url"] = url.absoluteString
+    }
+    
     // Convert dates to milliseconds since epoch
     var startDate = event.startDate!
     var endDate = event.endDate!
