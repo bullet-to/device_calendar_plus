@@ -37,7 +37,7 @@ Created by [Bullet](https://bullet.to) — a personal task + notes + calendar ap
 - **Timezones**: Correct timezone behavior for timed events
 - **Recurring Events**: Read recurring event instances; update/delete entire series
 - **Attendees**: Add, retrieve, and manage event invitees/attendees
-- **Event URLs**: Read event URLs/links (e.g., meeting links, websites)
+- **Conference Links**: Read meeting URLs from events (Google Meet, Zoom, Teams, etc.)
 
 ## 🧩 Installation
 
@@ -259,7 +259,7 @@ The `Event` class includes all properties returned when retrieving events:
 | `title`          | `String`            | Title of the event                                            |
 | `description`    | `String?`           | Description/notes of the event                                |
 | `location`       | `String?`           | Location of the event                                         |
-| `url`            | `String?`           | URL associated with the event (e.g., meeting link, website)   |
+| `conferenceUrl`  | `String?`           | Conference/meeting link (Google Meet, Zoom, Teams, etc.)      |
 | `startDate`      | `DateTime`          | Start date and time                                           |
 | `endDate`        | `DateTime`          | End date and time                                             |
 | `isAllDay`       | `bool`              | Whether this is an all-day event                              |
@@ -270,15 +270,15 @@ The `Event` class includes all properties returned when retrieving events:
 | `recurrenceRule` | `RecurrenceRule?`   | The recurrence rule (if recurring)                            |
 | `attendees`      | `List<Attendee>?`   | List of attendees/invitees                                    |
 
-#### URL Field Notes
+#### Conference URL Field Notes
 
-The `url` field contains event-associated URLs when available:
+The `conferenceUrl` field extracts meeting links from events:
 
 - **iOS**: Uses `EKEvent.url` - commonly populated by calendar apps for meeting links
-- **Android**: Uses `CUSTOM_APP_URI` - may be populated by some calendar apps
+- **Android**: Queries `ExtendedProperties` table to find Google Meet, Zoom, Teams, WebEx, and GoToMeeting URLs
 
 > [!NOTE]
-> The `url` field is read-only. Not all calendar apps populate this field, so it may be `null` even for events that visually display a link in the native calendar app.
+> The `conferenceUrl` field is read-only. Not all calendar apps populate meeting data, so it may be `null` even for events that display a meeting link in the native calendar app.
 
 ### Show Event in Modal
 

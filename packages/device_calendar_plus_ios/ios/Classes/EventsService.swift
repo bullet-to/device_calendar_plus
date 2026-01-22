@@ -123,7 +123,7 @@ class EventsService {
     }
     
     if let url = event.url {
-      eventMap["url"] = url.absoluteString
+      eventMap["conferenceUrl"] = url.absoluteString
     }
     
     // Convert dates to milliseconds since epoch

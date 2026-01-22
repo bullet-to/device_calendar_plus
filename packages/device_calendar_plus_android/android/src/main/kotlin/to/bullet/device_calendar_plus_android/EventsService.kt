@@ -38,8 +38,7 @@ class EventsService(private val activity: Activity) {
             CalendarContract.Instances.AVAILABILITY,
             CalendarContract.Instances.STATUS,
             CalendarContract.Instances.EVENT_TIMEZONE,
-            CalendarContract.Instances.RRULE,
-            CalendarContract.Instances.CUSTOM_APP_URI
+            CalendarContract.Instances.RRULE
         )
 
         // Build selection clause for calendar and event filtering
@@ -82,8 +81,7 @@ class EventsService(private val activity: Activity) {
                         CalendarContract.Instances.AVAILABILITY,
                         CalendarContract.Instances.STATUS,
                         CalendarContract.Instances.EVENT_TIMEZONE,
-                        CalendarContract.Instances.RRULE,
-                        urlColumn = CalendarContract.Instances.CUSTOM_APP_URI
+                        CalendarContract.Instances.RRULE
                     )
                     events.add(eventMap)
                 }
@@ -140,8 +138,7 @@ class EventsService(private val activity: Activity) {
         timeZoneColumn: String,
         recurrenceRuleColumn: String,
         createdColumn: String? = null,
-        lastModifiedColumn: String? = null,
-        urlColumn: String? = null
+        lastModifiedColumn: String? = null
     ): Map<String, Any> {
         val eventIdIndex = cursor.getColumnIndex(eventIdColumn)
         val calendarIdIndex = cursor.getColumnIndex(calendarIdColumn)
@@ -157,7 +154,6 @@ class EventsService(private val activity: Activity) {
         val recurrenceRuleIndex = cursor.getColumnIndex(recurrenceRuleColumn)
         val createdIndex = if (createdColumn != null) cursor.getColumnIndex(createdColumn) else -1
         val lastModifiedIndex = if (lastModifiedColumn != null) cursor.getColumnIndex(lastModifiedColumn) else -1
-        val urlIndex = if (urlColumn != null) cursor.getColumnIndex(urlColumn) else -1
 
         val eventId = cursor.getString(eventIdIndex)
         val calendarId = cursor.getString(calendarIdIndex)
@@ -174,7 +170,6 @@ class EventsService(private val activity: Activity) {
         val createdDate = if (createdIndex >= 0 && !cursor.isNull(createdIndex)) cursor.getLong(createdIndex) else null
         val lastModifiedDate =
             if (lastModifiedIndex >= 0 && !cursor.isNull(lastModifiedIndex)) cursor.getLong(lastModifiedIndex) else null
-        val url = if (urlIndex >= 0 && !cursor.isNull(urlIndex)) cursor.getString(urlIndex) else null
 
         // Generate instanceId using RAW timestamps before any modifications
         val instanceId: String = if (recurrenceRule != null) {
@@ -229,7 +224,10 @@ class EventsService(private val activity: Activity) {
 
         description?.let { eventMap["description"] = it }
         location?.let { eventMap["location"] = it }
-        url?.let { eventMap["url"] = it }
+
+        // Query conference URL from ExtendedProperties
+        val conferenceUrl = queryConferenceUrl(eventId)
+        conferenceUrl?.let { eventMap["conferenceUrl"] = it }
 
         // Add timezone for timed events only
         if (!allDay && timeZone != null) {
@@ -332,6 +330,90 @@ class EventsService(private val activity: Activity) {
         }
 
         return attendees
+    }
+
+    /**
+     * Query ExtendedProperties table to find conference/meeting URLs for an event.
+     * Google Calendar stores Meet links and other conference data in this table.
+     */
+    private fun queryConferenceUrl(eventId: String): String? {
+        val projection = arrayOf(
+            CalendarContract.ExtendedProperties.NAME,
+            CalendarContract.ExtendedProperties.VALUE
+        )
+        val selection = "${CalendarContract.ExtendedProperties.EVENT_ID} = ?"
+        val selectionArgs = arrayOf(eventId)
+
+        try {
+            activity.contentResolver.query(
+                CalendarContract.ExtendedProperties.CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(CalendarContract.ExtendedProperties.NAME)
+                val valueIndex = cursor.getColumnIndex(CalendarContract.ExtendedProperties.VALUE)
+
+                while (cursor.moveToNext()) {
+                    val value = if (valueIndex >= 0 && !cursor.isNull(valueIndex)) {
+                        cursor.getString(valueIndex)
+                    } else null
+
+                    if (value != null) {
+                        // Try to extract meeting URL from the value
+                        val meetingUrl = extractMeetingUrl(value)
+                        if (meetingUrl != null) {
+                            return meetingUrl
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // If ExtendedProperties query fails, just return null
+            // Don't fail the entire event query
+        }
+
+        return null
+    }
+
+    /**
+     * Extract a meeting URL from a string value.
+     * Handles various formats including plain URLs and JSON-encoded data.
+     */
+    private fun extractMeetingUrl(value: String): String? {
+        // Common meeting URL patterns
+        val meetingPatterns = listOf(
+            "meet\\.google\\.com/[a-zA-Z0-9-]+",
+            "zoom\\.us/j/[0-9]+",
+            "teams\\.microsoft\\.com/l/meetup-join/[^\\s\"]+",
+            "webex\\.com/[^\\s\"]+",
+            "gotomeeting\\.com/[^\\s\"]+"
+        )
+
+        for (pattern in meetingPatterns) {
+            val regex = Regex("https?://[^\\s\"]*$pattern")
+            val match = regex.find(value)
+            if (match != null) {
+                return match.value
+            }
+        }
+
+        // Check if the value itself is a URL
+        if (value.startsWith("http://") || value.startsWith("https://")) {
+            // Verify it's a meeting-related URL
+            val lowerValue = value.lowercase()
+            if (lowerValue.contains("meet.google.com") ||
+                lowerValue.contains("zoom.us") ||
+                lowerValue.contains("teams.microsoft.com") ||
+                lowerValue.contains("webex.com") ||
+                lowerValue.contains("gotomeeting.com")
+            ) {
+                return value
+            }
+        }
+
+        return null
     }
 
     private fun attendeeRelationshipToRole(relationship: Int): String {

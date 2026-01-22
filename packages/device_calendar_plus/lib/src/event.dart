@@ -54,8 +54,10 @@ class Event {
   /// Location of the event.
   final String? location;
 
-  /// URL associated with the event (e.g., meeting link, website).
-  final String? url;
+  /// Conference/meeting link if available (e.g., Google Meet, Zoom, Teams).
+  /// On Android, this is extracted from ExtendedProperties.
+  /// On iOS, this uses EKEvent.url.
+  final String? conferenceUrl;
 
   /// Start date and time of the event.
   ///
@@ -104,7 +106,7 @@ class Event {
     required this.title,
     this.description,
     this.location,
-    this.url,
+    this.conferenceUrl,
     required this.startDate,
     required this.endDate,
     required this.isAllDay,
@@ -125,7 +127,7 @@ class Event {
       title: map['title'] as String,
       description: map['description'] as String?,
       location: map['location'] as String?,
-      url: map['url'] as String?,
+      conferenceUrl: map['conferenceUrl'] as String?,
       startDate: DateTime.fromMillisecondsSinceEpoch(map['startDate'] as int),
       endDate: DateTime.fromMillisecondsSinceEpoch(map['endDate'] as int),
       isAllDay: map['isAllDay'] as bool,
@@ -159,7 +161,7 @@ class Event {
 
     if (description != null) map['description'] = description;
     if (location != null) map['location'] = location;
-    if (url != null) map['url'] = url;
+    if (conferenceUrl != null) map['conferenceUrl'] = conferenceUrl;
     if (timeZone != null) map['timeZone'] = timeZone;
     if (recurrenceRule != null) {
       map['recurrenceRule'] = recurrenceRule!.toRruleString();
@@ -188,7 +190,7 @@ class Event {
         other.title == title &&
         other.description == description &&
         other.location == location &&
-        other.url == url &&
+        other.conferenceUrl == conferenceUrl &&
         other.startDate == startDate &&
         other.endDate == endDate &&
         other.isAllDay == isAllDay &&
@@ -208,7 +210,7 @@ class Event {
       title,
       description,
       location,
-      url,
+      conferenceUrl,
       startDate,
       endDate,
       isAllDay,
