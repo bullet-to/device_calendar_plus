@@ -101,25 +101,7 @@ flutter devices
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please:
-
-1. Open an issue first for major changes
-2. Write tests for new features
-3. Update documentation
-4. Follow the existing code style
-5. Ensure all tests pass before submitting PR
-
-### Commit Messages
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-feat: add support for recurring events
-fix: correct timezone handling for all-day events
-docs: update API documentation
-test: add integration tests for event creation
-refactor: simplify permission handling
-```
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, design philosophy, and development workflow.
 
 ## 📄 License
 
