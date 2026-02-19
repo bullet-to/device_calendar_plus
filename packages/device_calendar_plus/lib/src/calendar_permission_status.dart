@@ -3,7 +3,13 @@ enum CalendarPermissionStatus {
   /// Full read and write access to calendars.
   granted,
 
-  /// Permission has been denied by the user.
+  /// Permission has been permanently denied by the user.
+  ///
+  /// On Android, this means the user selected "Don't ask again" and the
+  /// permission dialog can no longer be shown. Use [DeviceCalendar.openAppSettings]
+  /// to direct the user to the system settings page.
+  ///
+  /// On iOS, this maps to `EKAuthorizationStatus.denied`.
   denied,
 
   /// Write-only access to calendars (iOS 17+ only).
@@ -23,10 +29,17 @@ enum CalendarPermissionStatus {
   /// This status is never returned on Android.
   restricted,
 
-  /// Permission has not been requested yet (iOS only).
+  /// Permission has not been granted yet, but can still be requested.
   ///
-  /// This is the initial state before the app has requested calendar permissions.
+  /// Calling [DeviceCalendar.requestPermissions] while in this state will show
+  /// the system permission dialog.
   ///
-  /// This status is never returned on Android.
+  /// On iOS, this maps directly to the `EKAuthorizationStatus.notDetermined` state.
+  ///
+  /// On Android, this covers both "never asked" and "denied once but can still
+  /// ask again". Android's `checkSelfPermission()` returns `PERMISSION_DENIED`
+  /// in both cases, so a `SharedPreferences` flag combined with
+  /// `shouldShowRequestPermissionRationale()` is used to detect when the
+  /// permission has been permanently denied (which returns [denied] instead).
   notDetermined,
 }
