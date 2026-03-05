@@ -16,93 +16,85 @@ void main() {
       log = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(plugin.methodChannel, (methodCall) async {
-        log.add(methodCall);
-        switch (methodCall.method) {
-          case 'requestPermissions':
-            return 'granted'; // CalendarPermissionStatus.granted
-          case 'hasPermissions':
-            return 'granted'; // CalendarPermissionStatus.granted
-          case 'openAppSettings':
-            return null;
-          case 'listCalendars':
-            return [
-              {
-                'id': '1',
-                'name': 'Work',
-                'readOnly': false,
-                'isPrimary': true,
-                'hidden': false,
-              }
-            ];
-          case 'createCalendar':
-            return 'android-calendar-id-456';
-          case 'updateCalendar':
-            return null;
-          case 'deleteCalendar':
-            return null;
-          case 'listEvents':
-            return [
-              {
-                'eventId': 'event1',
-                'calendarId': 'cal1',
-                'title': 'Test Event',
-                'startDate': DateTime.now().millisecondsSinceEpoch,
-                'endDate': DateTime.now().millisecondsSinceEpoch,
-                'isAllDay': false,
-                'availability': 'busy',
-                'status': 'confirmed',
-              }
-            ];
-          case 'createEvent':
-            return 'android-event-id-789';
-          case 'deleteEvent':
-            return null;
-          case 'updateEvent':
-            return null;
-          default:
-            return null;
-        }
-      });
+            log.add(methodCall);
+            switch (methodCall.method) {
+              case 'requestPermissions':
+                return 'granted'; // CalendarPermissionStatus.granted
+              case 'hasPermissions':
+                return 'granted'; // CalendarPermissionStatus.granted
+              case 'openAppSettings':
+                return null;
+              case 'listCalendars':
+                return [
+                  {
+                    'id': '1',
+                    'name': 'Work',
+                    'readOnly': false,
+                    'isPrimary': true,
+                    'hidden': false,
+                  },
+                ];
+              case 'createCalendar':
+                return 'android-calendar-id-456';
+              case 'updateCalendar':
+                return null;
+              case 'deleteCalendar':
+                return null;
+              case 'listEvents':
+                return [
+                  {
+                    'eventId': 'event1',
+                    'calendarId': 'cal1',
+                    'title': 'Test Event',
+                    'startDate': DateTime.now().millisecondsSinceEpoch,
+                    'endDate': DateTime.now().millisecondsSinceEpoch,
+                    'isAllDay': false,
+                    'availability': 'busy',
+                    'status': 'confirmed',
+                  },
+                ];
+              case 'createEvent':
+                return 'android-event-id-789';
+              case 'deleteEvent':
+                return null;
+              case 'updateEvent':
+                return null;
+              default:
+                return null;
+            }
+          });
     });
 
     test('can be registered', () {
       DeviceCalendarPlusAndroid.registerWith();
-      expect(DeviceCalendarPlusPlatform.instance,
-          isA<DeviceCalendarPlusAndroid>());
+      expect(
+        DeviceCalendarPlusPlatform.instance,
+        isA<DeviceCalendarPlusAndroid>(),
+      );
     });
 
     test('requestPermissions returns granted status', () async {
       final status = await plugin.requestPermissions();
-      expect(
-        log,
-        <Matcher>[isMethodCall('requestPermissions', arguments: null)],
-      );
+      expect(log, <Matcher>[
+        isMethodCall('requestPermissions', arguments: null),
+      ]);
       expect(status, equals('granted')); // CalendarPermissionStatus.granted
     });
 
     test('hasPermissions returns granted status', () async {
       final status = await plugin.hasPermissions();
-      expect(
-        log,
-        <Matcher>[isMethodCall('hasPermissions', arguments: null)],
-      );
+      expect(log, <Matcher>[isMethodCall('hasPermissions', arguments: null)]);
       expect(status, equals('granted')); // CalendarPermissionStatus.granted
     });
 
     test('openAppSettings calls method', () async {
       await plugin.openAppSettings();
-      expect(
-        log,
-        <Matcher>[isMethodCall('openAppSettings', arguments: null)],
-      );
+      expect(log, <Matcher>[isMethodCall('openAppSettings', arguments: null)]);
     });
 
     test('listCalendars returns list of calendars', () async {
       final calendars = await plugin.listCalendars();
-      expect(
-        log,
-        <Matcher>[isMethodCall('listCalendars', arguments: null)],
-      );
+      expect(log, <Matcher>[isMethodCall('listCalendars', arguments: null)]);
       expect(calendars, hasLength(1));
       expect(calendars[0]['id'], equals('1'));
       expect(calendars[0]['name'], equals('Work'));
@@ -120,8 +112,11 @@ void main() {
     });
 
     test('createCalendar with name and color', () async {
-      final calendarId =
-          await plugin.createCalendar('Work Calendar', '#FF5733', null);
+      final calendarId = await plugin.createCalendar(
+        'Work Calendar',
+        '#FF5733',
+        null,
+      );
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('createCalendar'));
@@ -211,10 +206,14 @@ void main() {
       expect(log[0].method, equals('createEvent'));
       expect(log[0].arguments['calendarId'], equals('cal-123'));
       expect(log[0].arguments['title'], equals('Team Meeting'));
-      expect(log[0].arguments['startDate'],
-          equals(startDate.millisecondsSinceEpoch));
       expect(
-          log[0].arguments['endDate'], equals(endDate.millisecondsSinceEpoch));
+        log[0].arguments['startDate'],
+        equals(startDate.millisecondsSinceEpoch),
+      );
+      expect(
+        log[0].arguments['endDate'],
+        equals(endDate.millisecondsSinceEpoch),
+      );
       expect(log[0].arguments['isAllDay'], equals(false));
       expect(log[0].arguments['description'], equals('Weekly sync'));
       expect(log[0].arguments['location'], equals('Conference Room A'));
@@ -286,10 +285,14 @@ void main() {
       expect(log[0].method, equals('updateEvent'));
       expect(log[0].arguments['instanceId'], equals('event-123'));
       expect(log[0].arguments['title'], equals('Updated Title'));
-      expect(log[0].arguments['startDate'],
-          equals(startDate.millisecondsSinceEpoch));
       expect(
-          log[0].arguments['endDate'], equals(endDate.millisecondsSinceEpoch));
+        log[0].arguments['startDate'],
+        equals(startDate.millisecondsSinceEpoch),
+      );
+      expect(
+        log[0].arguments['endDate'],
+        equals(endDate.millisecondsSinceEpoch),
+      );
       expect(log[0].arguments['description'], equals('Updated description'));
       expect(log[0].arguments['location'], equals('Updated location'));
       expect(log[0].arguments['isAllDay'], equals(false));
@@ -297,10 +300,7 @@ void main() {
     });
 
     test('updateEvent with minimal parameters', () async {
-      await plugin.updateEvent(
-        'event-123',
-        title: 'New Title',
-      );
+      await plugin.updateEvent('event-123', title: 'New Title');
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('updateEvent'));
@@ -316,10 +316,7 @@ void main() {
     });
 
     test('updateEvent for recurring event updates entire series', () async {
-      await plugin.updateEvent(
-        'event-123',
-        title: 'Updated Series',
-      );
+      await plugin.updateEvent('event-123', title: 'Updated Series');
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('updateEvent'));

@@ -8,7 +8,32 @@ class CalendarService {
     self.eventStore = eventStore
     self.permissionService = permissionService
   }
-  
+
+  func listSources(completion: @escaping (Result<[[String: Any]], CalendarError>) -> Void) {
+    // Check current permission status - listing sources requires full access (reading)
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+
+    var sourceMaps: [[String: Any]] = []
+
+    for source in eventStore.sources {
+      let sourceMap: [String: Any] = [
+        "id": source.sourceIdentifier,
+        "title": source.title,
+        "type": sourceTypeToString(sourceType: source.sourceType),
+        "allowsCalendarCreation": source.sourceType != .subscribed && source.sourceType != .birthdays
+      ]
+      sourceMaps.append(sourceMap)
+    }
+
+    completion(.success(sourceMaps))
+  }
+
   func listCalendars(completion: @escaping (Result<[[String: Any]], CalendarError>) -> Void) {
     // Check current permission status - listing calendars requires full access (reading)
     guard permissionService.hasPermission(for: .full) else {
@@ -55,7 +80,7 @@ class CalendarService {
     completion(.success(calendarMaps))
   }
   
-  func createCalendar(name: String, colorHex: String?, completion: @escaping (Result<String, CalendarError>) -> Void) {
+  func createCalendar(name: String, colorHex: String?, sourceId: String?, sourceTitle: String?, completion: @escaping (Result<String, CalendarError>) -> Void) {
     // Check current permission status - creating calendars requires full access (writing)
     guard permissionService.hasPermission(for: .full) else {
       completion(.failure(CalendarError(
@@ -64,26 +89,39 @@ class CalendarService {
       )))
       return
     }
-    
-    // Find the local source - this is the only writable source for local calendars
-    guard let localSource = eventStore.sources.first(where: { $0.sourceType == .local }) else {
+
+    // Find the appropriate source
+    let source: EKSource?
+    if let sourceId = sourceId {
+      // Find by source ID
+      source = eventStore.sources.first { $0.sourceIdentifier == sourceId }
+    } else if let sourceTitle = sourceTitle {
+      // Find by source title
+      source = eventStore.sources.first { $0.title == sourceTitle }
+    } else {
+      // Default: try iCloud first, then fall back to local
+      source = eventStore.sources.first { $0.sourceType == .calDAV && $0.title == "iCloud" }
+        ?? eventStore.sources.first { $0.sourceType == .local }
+    }
+
+    guard let calendarSource = source else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.calendarUnavailable,
-        message: "Could not find local calendar source"
+        message: "Could not find calendar source"
       )))
       return
     }
-    
+
     // Create a new calendar
     let calendar = EKCalendar(for: .event, eventStore: eventStore)
-    calendar.source = localSource
+    calendar.source = calendarSource
     calendar.title = name
-    
+
     // Set color if provided
     if let colorHex = colorHex {
       calendar.cgColor = ColorHelper.hexToColor(hex: colorHex)
     }
-    
+
     // Save the calendar
     do {
       try eventStore.saveCalendar(calendar, commit: true)

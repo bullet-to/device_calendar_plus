@@ -14,6 +14,9 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   Future<void> openAppSettings() async {}
 
   @override
+  Future<List<Map<String, dynamic>>> listSources() async => [];
+
+  @override
   Future<List<Map<String, dynamic>>> listCalendars() async => [];
 
   @override
@@ -21,12 +24,14 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String name,
     String? colorHex,
     CreateCalendarPlatformOptions? platformOptions,
-  ) async =>
-      'mock-calendar-id';
+  ) async => 'mock-calendar-id';
 
   @override
   Future<void> updateCalendar(
-      String calendarId, String? name, String? colorHex) async {}
+    String calendarId,
+    String? name,
+    String? colorHex,
+  ) async {}
 
   @override
   Future<void> deleteCalendar(String calendarId) async {}
@@ -36,13 +41,13 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     DateTime startDate,
     DateTime endDate,
     List<String>? calendarIds,
-  ) async =>
-      [];
+  ) async => [];
 
   @override
   Future<Map<String, dynamic>?> getEvent(
-          String eventId, int? timestamp) async =>
-      null;
+    String eventId,
+    int? timestamp,
+  ) async => null;
 
   @override
   Future<void> showEventModal(String eventId, int? timestamp) async {}
@@ -58,8 +63,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? location,
     String? timeZone,
     String availability,
-  ) async =>
-      'mock-event-id';
+  ) async => 'mock-event-id';
 
   @override
   Future<void> deleteEvent(String eventId) async {}
@@ -87,15 +91,19 @@ void main() {
   test('requestPermissions returns expected value', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
-    expect(await DeviceCalendarPlusPlatform.instance.requestPermissions(),
-        'granted');
+    expect(
+      await DeviceCalendarPlusPlatform.instance.requestPermissions(),
+      'granted',
+    );
   });
 
   test('hasPermissions returns expected value', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
     expect(
-        await DeviceCalendarPlusPlatform.instance.hasPermissions(), 'granted');
+      await DeviceCalendarPlusPlatform.instance.hasPermissions(),
+      'granted',
+    );
   });
 
   test('openAppSettings completes successfully', () async {
@@ -114,16 +122,22 @@ void main() {
   test('createCalendar returns expected value', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
-    final calendarId = await DeviceCalendarPlusPlatform.instance
-        .createCalendar('Test Calendar', '#FF5733', null);
+    final calendarId = await DeviceCalendarPlusPlatform.instance.createCalendar(
+      'Test Calendar',
+      '#FF5733',
+      null,
+    );
     expect(calendarId, equals('mock-calendar-id'));
   });
 
   test('updateCalendar completes', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
-    await DeviceCalendarPlusPlatform.instance
-        .updateCalendar('calendar-123', 'New Name', '#00FF00');
+    await DeviceCalendarPlusPlatform.instance.updateCalendar(
+      'calendar-123',
+      'New Name',
+      '#00FF00',
+    );
     // Should complete without error
   });
 
@@ -148,8 +162,10 @@ void main() {
   test('getEvent returns expected value', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
-    final result =
-        await DeviceCalendarPlusPlatform.instance.getEvent('event-123', null);
+    final result = await DeviceCalendarPlusPlatform.instance.getEvent(
+      'event-123',
+      null,
+    );
     expect(result, null);
   });
 
@@ -187,8 +203,9 @@ void main() {
   test('deleteEvent for recurring event deletes entire series', () async {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
-    await DeviceCalendarPlusPlatform.instance
-        .deleteEvent('event-123@123456789');
+    await DeviceCalendarPlusPlatform.instance.deleteEvent(
+      'event-123@123456789',
+    );
     // Should complete without error
   });
 

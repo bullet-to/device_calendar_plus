@@ -24,6 +24,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleHasPermissions(result: result)
     case "openAppSettings":
       handleOpenAppSettings(result: result)
+    case "listSources":
+      handleListSources(result: result)
     case "listCalendars":
       handleListCalendars(result: result)
     case "createCalendar":
@@ -103,6 +105,19 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
   
+  private func handleListSources(result: @escaping FlutterResult) {
+    calendarService.listSources { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success(let sources):
+          result(sources)
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+
   private func handleListCalendars(result: @escaping FlutterResult) {
     calendarService.listCalendars { serviceResult in
       DispatchQueue.main.async {
@@ -115,7 +130,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       }
     }
   }
-  
+
   private func handleCreateCalendar(call: FlutterMethodCall, result: @escaping FlutterResult) {
     guard let args = call.arguments as? [String: Any] else {
       result(FlutterError(
@@ -125,7 +140,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       ))
       return
     }
-    
+
     // Parse name (required)
     guard let name = args["name"] as? String else {
       result(FlutterError(
@@ -135,11 +150,15 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       ))
       return
     }
-    
+
     // Parse colorHex (optional)
     let colorHex = args["colorHex"] as? String
-    
-    calendarService.createCalendar(name: name, colorHex: colorHex) { serviceResult in
+
+    // Parse source params (optional)
+    let sourceId = args["sourceId"] as? String
+    let sourceTitle = args["sourceTitle"] as? String
+
+    calendarService.createCalendar(name: name, colorHex: colorHex, sourceId: sourceId, sourceTitle: sourceTitle) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
         case .success(let calendarId):

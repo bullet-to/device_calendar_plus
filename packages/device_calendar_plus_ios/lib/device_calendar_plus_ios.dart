@@ -2,6 +2,10 @@ import 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'src/create_calendar_options_ios.dart';
+
+export 'src/create_calendar_options_ios.dart';
+
 /// The iOS implementation of [DeviceCalendarPlusPlatform].
 class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   /// The method channel used to interact with the native platform.
@@ -29,9 +33,19 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> listSources() async {
+    final result = await methodChannel.invokeMethod<List<dynamic>>(
+      'listSources',
+    );
+    return result?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ??
+        [];
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> listCalendars() async {
-    final result =
-        await methodChannel.invokeMethod<List<dynamic>>('listCalendars');
+    final result = await methodChannel.invokeMethod<List<dynamic>>(
+      'listCalendars',
+    );
     return result?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ??
         [];
   }
@@ -42,37 +56,41 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     String? colorHex,
     CreateCalendarPlatformOptions? platformOptions,
   ) async {
-    // iOS does not support platform-specific options for calendar creation
-    // platformOptions is ignored
-    final result = await methodChannel.invokeMethod<String>(
-      'createCalendar',
-      <String, dynamic>{
-        'name': name,
-        'colorHex': colorHex,
-      },
-    );
+    String? sourceId;
+    String? sourceTitle;
+    if (platformOptions is CreateCalendarOptionsIos) {
+      sourceId = platformOptions.sourceId;
+      sourceTitle = platformOptions.sourceTitle;
+    }
+
+    final result = await methodChannel
+        .invokeMethod<String>('createCalendar', <String, dynamic>{
+          'name': name,
+          'colorHex': colorHex,
+          'sourceId': sourceId,
+          'sourceTitle': sourceTitle,
+        });
     return result!;
   }
 
   @override
   Future<void> updateCalendar(
-      String calendarId, String? name, String? colorHex) async {
-    await methodChannel.invokeMethod<void>(
-      'updateCalendar',
-      <String, dynamic>{
-        'calendarId': calendarId,
-        'name': name,
-        'colorHex': colorHex,
-      },
-    );
+    String calendarId,
+    String? name,
+    String? colorHex,
+  ) async {
+    await methodChannel.invokeMethod<void>('updateCalendar', <String, dynamic>{
+      'calendarId': calendarId,
+      'name': name,
+      'colorHex': colorHex,
+    });
   }
 
   @override
   Future<void> deleteCalendar(String calendarId) async {
-    await methodChannel.invokeMethod<void>(
-      'deleteCalendar',
-      <String, dynamic>{'calendarId': calendarId},
-    );
+    await methodChannel.invokeMethod<void>('deleteCalendar', <String, dynamic>{
+      'calendarId': calendarId,
+    });
   }
 
   @override
@@ -81,14 +99,12 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     DateTime endDate,
     List<String>? calendarIds,
   ) async {
-    final result = await methodChannel.invokeMethod<List<dynamic>>(
-      'listEvents',
-      <String, dynamic>{
-        'startDate': startDate.millisecondsSinceEpoch,
-        'endDate': endDate.millisecondsSinceEpoch,
-        'calendarIds': calendarIds,
-      },
-    );
+    final result = await methodChannel
+        .invokeMethod<List<dynamic>>('listEvents', <String, dynamic>{
+          'startDate': startDate.millisecondsSinceEpoch,
+          'endDate': endDate.millisecondsSinceEpoch,
+          'calendarIds': calendarIds,
+        });
     return result?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ??
         [];
   }
@@ -97,23 +113,17 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   Future<Map<String, dynamic>?> getEvent(String eventId, int? timestamp) async {
     final result = await methodChannel.invokeMethod<Map<dynamic, dynamic>>(
       'getEvent',
-      <String, dynamic>{
-        'eventId': eventId,
-        'timestamp': timestamp,
-      },
+      <String, dynamic>{'eventId': eventId, 'timestamp': timestamp},
     );
     return result != null ? Map<String, dynamic>.from(result) : null;
   }
 
   @override
   Future<void> showEventModal(String eventId, int? timestamp) async {
-    await methodChannel.invokeMethod<void>(
-      'showEventModal',
-      <String, dynamic>{
-        'eventId': eventId,
-        'timestamp': timestamp,
-      },
-    );
+    await methodChannel.invokeMethod<void>('showEventModal', <String, dynamic>{
+      'eventId': eventId,
+      'timestamp': timestamp,
+    });
   }
 
   @override
@@ -128,31 +138,26 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     String? timeZone,
     String availability,
   ) async {
-    final result = await methodChannel.invokeMethod<String>(
-      'createEvent',
-      <String, dynamic>{
-        'calendarId': calendarId,
-        'title': title,
-        'startDate': startDate.millisecondsSinceEpoch,
-        'endDate': endDate.millisecondsSinceEpoch,
-        'isAllDay': isAllDay,
-        'description': description,
-        'location': location,
-        'timeZone': timeZone,
-        'availability': availability,
-      },
-    );
+    final result = await methodChannel
+        .invokeMethod<String>('createEvent', <String, dynamic>{
+          'calendarId': calendarId,
+          'title': title,
+          'startDate': startDate.millisecondsSinceEpoch,
+          'endDate': endDate.millisecondsSinceEpoch,
+          'isAllDay': isAllDay,
+          'description': description,
+          'location': location,
+          'timeZone': timeZone,
+          'availability': availability,
+        });
     return result!;
   }
 
   @override
   Future<void> deleteEvent(String eventId) async {
-    await methodChannel.invokeMethod<void>(
-      'deleteEvent',
-      <String, dynamic>{
-        'eventId': eventId,
-      },
-    );
+    await methodChannel.invokeMethod<void>('deleteEvent', <String, dynamic>{
+      'eventId': eventId,
+    });
   }
 
   @override
@@ -166,18 +171,15 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     bool? isAllDay,
     String? timeZone,
   }) async {
-    await methodChannel.invokeMethod<void>(
-      'updateEvent',
-      <String, dynamic>{
-        'eventId': eventId,
-        'title': title,
-        'startDate': startDate?.millisecondsSinceEpoch,
-        'endDate': endDate?.millisecondsSinceEpoch,
-        'description': description,
-        'location': location,
-        'isAllDay': isAllDay,
-        'timeZone': timeZone,
-      },
-    );
+    await methodChannel.invokeMethod<void>('updateEvent', <String, dynamic>{
+      'eventId': eventId,
+      'title': title,
+      'startDate': startDate?.millisecondsSinceEpoch,
+      'endDate': endDate?.millisecondsSinceEpoch,
+      'description': description,
+      'location': location,
+      'isAllDay': isAllDay,
+      'timeZone': timeZone,
+    });
   }
 }

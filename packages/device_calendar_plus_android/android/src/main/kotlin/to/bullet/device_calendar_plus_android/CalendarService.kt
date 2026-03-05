@@ -7,7 +7,78 @@ import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 
 class CalendarService(private val activity: Activity) {
-    
+
+    fun listSources(): Result<List<Map<String, Any>>> {
+        val sources = mutableListOf<Map<String, Any>>()
+
+        val projection = arrayOf(
+            CalendarContract.Calendars.ACCOUNT_NAME,
+            CalendarContract.Calendars.ACCOUNT_TYPE,
+            CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL
+        )
+
+        try {
+            // Map to track unique accounts and their max access level
+            val accountMap = mutableMapOf<String, MutableMap<String, Any>>()
+
+            activity.contentResolver.query(
+                CalendarContract.Calendars.CONTENT_URI,
+                projection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val accountNameIndex = cursor.getColumnIndex(CalendarContract.Calendars.ACCOUNT_NAME)
+                val accountTypeIndex = cursor.getColumnIndex(CalendarContract.Calendars.ACCOUNT_TYPE)
+                val accessLevelIndex = cursor.getColumnIndex(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL)
+
+                while (cursor.moveToNext()) {
+                    val accountName = cursor.getString(accountNameIndex) ?: continue
+                    val accountType = cursor.getString(accountTypeIndex) ?: continue
+                    val accessLevel = cursor.getInt(accessLevelIndex)
+
+                    // Create a unique key for each account
+                    val key = "$accountName:$accountType"
+
+                    // Check if this account allows calendar creation (at least contributor level)
+                    val allowsCreation = accessLevel >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR
+
+                    // Update the account map, keeping track of whether any calendar allows creation
+                    if (accountMap.containsKey(key)) {
+                        val existing = accountMap[key]!!
+                        val existingAllows = existing["allowsCalendarCreation"] as Boolean
+                        existing["allowsCalendarCreation"] = existingAllows || allowsCreation
+                    } else {
+                        accountMap[key] = mutableMapOf(
+                            "id" to key,
+                            "title" to accountName,
+                            "type" to accountType,
+                            "allowsCalendarCreation" to allowsCreation
+                        )
+                    }
+                }
+            }
+
+            sources.addAll(accountMap.values)
+        } catch (e: SecurityException) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to query calendar sources: ${e.message}"
+                )
+            )
+        }
+
+        return Result.success(sources)
+    }
+
     fun listCalendars(): Result<List<Map<String, Any>>> {
         val calendars = mutableListOf<Map<String, Any>>()
         
@@ -89,9 +160,9 @@ class CalendarService(private val activity: Activity) {
         return Result.success(calendars)
     }
     
-    fun createCalendar(name: String, colorHex: String?, accountNameParam: String?): Result<String> {
+    fun createCalendar(name: String, colorHex: String?, accountNameParam: String?, accountTypeParam: String?): Result<String> {
         // Check for write calendar permission
-        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_CALENDAR) 
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_CALENDAR)
             != PackageManager.PERMISSION_GRANTED) {
             return Result.failure(
                 CalendarException(
@@ -100,9 +171,9 @@ class CalendarService(private val activity: Activity) {
                 )
             )
         }
-        
+
         val accountName = accountNameParam ?: "local"
-        val accountType = CalendarContract.ACCOUNT_TYPE_LOCAL
+        val accountType = accountTypeParam ?: CalendarContract.ACCOUNT_TYPE_LOCAL
         
         // Android automatically creates the account when inserting the first calendar
         try {

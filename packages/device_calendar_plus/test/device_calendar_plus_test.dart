@@ -24,7 +24,8 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? location,
     String? timeZone,
     String availability,
-  )? _createEventCallback;
+  )?
+  _createEventCallback;
 
   // Callback to capture updateEvent arguments
   Future<void> Function(
@@ -37,7 +38,8 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     bool? isAllDay,
     String? timeZone,
     String? availability,
-  })? _updateEventCallback;
+  })?
+  _updateEventCallback;
 
   void setPermissionStatus(CalendarPermissionStatus status) {
     _permissionStatusCode = status.name;
@@ -74,7 +76,8 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       String? location,
       String? timeZone,
       String availability,
-    ) callback,
+    )
+    callback,
   ) {
     _createEventCallback = callback;
   }
@@ -90,7 +93,8 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       bool? isAllDay,
       String? timeZone,
       String? availability,
-    }) callback,
+    })
+    callback,
   ) {
     _updateEventCallback = callback;
   }
@@ -120,6 +124,14 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
+  Future<List<Map<String, dynamic>>> listSources() async {
+    if (_exceptionToThrow != null) {
+      throw _exceptionToThrow!;
+    }
+    return [];
+  }
+
+  @override
   Future<List<Map<String, dynamic>>> listCalendars() async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
@@ -141,7 +153,10 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   @override
   Future<void> updateCalendar(
-      String calendarId, String? name, String? colorHex) async {
+    String calendarId,
+    String? name,
+    String? colorHex,
+  ) async {
     if (_exceptionToThrow != null) {
       throw _exceptionToThrow!;
     }
@@ -279,26 +294,28 @@ void main() {
       });
 
       group('error handling', () {
-        test('throws DeviceCalendarException when permissions not declared',
-            () async {
-          mockPlatform.throwException(
-            PlatformException(
-              code: 'PERMISSIONS_NOT_DECLARED',
-              message: 'Calendar permissions must be declared',
-            ),
-          );
-
-          expect(
-            () => DeviceCalendar.instance.requestPermissions(),
-            throwsA(
-              isA<DeviceCalendarException>().having(
-                (e) => e.errorCode,
-                'errorCode',
-                DeviceCalendarError.permissionsNotDeclared,
+        test(
+          'throws DeviceCalendarException when permissions not declared',
+          () async {
+            mockPlatform.throwException(
+              PlatformException(
+                code: 'PERMISSIONS_NOT_DECLARED',
+                message: 'Calendar permissions must be declared',
               ),
-            ),
-          );
-        });
+            );
+
+            expect(
+              () => DeviceCalendar.instance.requestPermissions(),
+              throwsA(
+                isA<DeviceCalendarException>().having(
+                  (e) => e.errorCode,
+                  'errorCode',
+                  DeviceCalendarError.permissionsNotDeclared,
+                ),
+              ),
+            );
+          },
+        );
 
         test('rethrows other PlatformExceptions unchanged', () async {
           mockPlatform.throwException(
@@ -340,26 +357,28 @@ void main() {
       });
 
       group('error handling', () {
-        test('throws DeviceCalendarException when permissions not declared',
-            () async {
-          mockPlatform.throwException(
-            PlatformException(
-              code: 'PERMISSIONS_NOT_DECLARED',
-              message: 'Calendar permissions must be declared',
-            ),
-          );
-
-          expect(
-            () => DeviceCalendar.instance.hasPermissions(),
-            throwsA(
-              isA<DeviceCalendarException>().having(
-                (e) => e.errorCode,
-                'errorCode',
-                DeviceCalendarError.permissionsNotDeclared,
+        test(
+          'throws DeviceCalendarException when permissions not declared',
+          () async {
+            mockPlatform.throwException(
+              PlatformException(
+                code: 'PERMISSIONS_NOT_DECLARED',
+                message: 'Calendar permissions must be declared',
               ),
-            ),
-          );
-        });
+            );
+
+            expect(
+              () => DeviceCalendar.instance.hasPermissions(),
+              throwsA(
+                isA<DeviceCalendarException>().having(
+                  (e) => e.errorCode,
+                  'errorCode',
+                  DeviceCalendarError.permissionsNotDeclared,
+                ),
+              ),
+            );
+          },
+        );
 
         test('rethrows other PlatformExceptions unchanged', () async {
           mockPlatform.throwException(
@@ -391,26 +410,28 @@ void main() {
       });
 
       group('error handling', () {
-        test('throws DeviceCalendarException when permissions not declared',
-            () async {
-          mockPlatform.throwException(
-            PlatformException(
-              code: 'PERMISSIONS_NOT_DECLARED',
-              message: 'Calendar permissions must be declared',
-            ),
-          );
-
-          expect(
-            () => DeviceCalendar.instance.openAppSettings(),
-            throwsA(
-              isA<DeviceCalendarException>().having(
-                (e) => e.errorCode,
-                'errorCode',
-                DeviceCalendarError.permissionsNotDeclared,
+        test(
+          'throws DeviceCalendarException when permissions not declared',
+          () async {
+            mockPlatform.throwException(
+              PlatformException(
+                code: 'PERMISSIONS_NOT_DECLARED',
+                message: 'Calendar permissions must be declared',
               ),
-            ),
-          );
-        });
+            );
+
+            expect(
+              () => DeviceCalendar.instance.openAppSettings(),
+              throwsA(
+                isA<DeviceCalendarException>().having(
+                  (e) => e.errorCode,
+                  'errorCode',
+                  DeviceCalendarError.permissionsNotDeclared,
+                ),
+              ),
+            );
+          },
+        );
 
         test('rethrows other PlatformExceptions unchanged', () async {
           mockPlatform.throwException(
@@ -501,8 +522,9 @@ void main() {
 
     group('createCalendar', () {
       test('returns calendar ID when created successfully', () async {
-        final calendarId =
-            await DeviceCalendar.instance.createCalendar(name: 'Test Calendar');
+        final calendarId = await DeviceCalendar.instance.createCalendar(
+          name: 'Test Calendar',
+        );
 
         expect(calendarId, isNotEmpty);
         expect(calendarId, isA<String>());
@@ -510,8 +532,9 @@ void main() {
       });
 
       test('creates calendar with name only', () async {
-        final calendarId =
-            await DeviceCalendar.instance.createCalendar(name: 'Work Calendar');
+        final calendarId = await DeviceCalendar.instance.createCalendar(
+          name: 'Work Calendar',
+        );
 
         expect(calendarId, isNotEmpty);
       });
@@ -647,8 +670,10 @@ void main() {
 
       test('throws ArgumentError when name is whitespace only', () async {
         expect(
-          () => DeviceCalendar.instance
-              .updateCalendar('calendar-123', name: '   '),
+          () => DeviceCalendar.instance.updateCalendar(
+            'calendar-123',
+            name: '   ',
+          ),
           throwsA(
             isA<ArgumentError>().having(
               (e) => e.message,
@@ -662,12 +687,16 @@ void main() {
       test('converts permissionDenied PlatformException', () async {
         mockPlatform.throwException(
           PlatformException(
-              code: 'PERMISSION_DENIED', message: 'Permission denied'),
+            code: 'PERMISSION_DENIED',
+            message: 'Permission denied',
+          ),
         );
 
         expect(
-          () => DeviceCalendar.instance
-              .updateCalendar('calendar-123', name: 'New Name'),
+          () => DeviceCalendar.instance.updateCalendar(
+            'calendar-123',
+            name: 'New Name',
+          ),
           throwsA(
             isA<DeviceCalendarException>().having(
               (e) => e.errorCode,
@@ -686,8 +715,10 @@ void main() {
         );
 
         expect(
-          () => DeviceCalendar.instance
-              .updateCalendar('calendar-123', name: 'New Name'),
+          () => DeviceCalendar.instance.updateCalendar(
+            'calendar-123',
+            name: 'New Name',
+          ),
           throwsA(
             isA<PlatformException>().having(
               (e) => e.code,
@@ -840,7 +871,9 @@ void main() {
         expect(event, isNotNull);
         expect(event!.eventId, 'event1');
         expect(
-            event.instanceId, 'event1'); // Non-recurring: instanceId == eventId
+          event.instanceId,
+          'event1',
+        ); // Non-recurring: instanceId == eventId
         expect(event.title, 'Team Meeting');
         expect(event.description, 'Weekly sync');
       });
@@ -855,8 +888,9 @@ void main() {
           'calendarId': 'cal1',
           'title': 'Daily Standup',
           'startDate': eventStart.millisecondsSinceEpoch,
-          'endDate':
-              eventStart.add(Duration(minutes: 30)).millisecondsSinceEpoch,
+          'endDate': eventStart
+              .add(Duration(minutes: 30))
+              .millisecondsSinceEpoch,
           'isAllDay': false,
           'availability': 'busy',
           'status': 'confirmed',
@@ -958,63 +992,65 @@ void main() {
         expect(eventId, isNotEmpty);
       });
 
-      test('normalizes dates for all-day events (strips time components)',
-          () async {
-        // Create an all-day event with time components
-        final startWithTime = DateTime(2024, 3, 15, 14, 30, 45);
-        final endWithTime = DateTime(2024, 3, 16, 18, 15, 30);
+      test(
+        'normalizes dates for all-day events (strips time components)',
+        () async {
+          // Create an all-day event with time components
+          final startWithTime = DateTime(2024, 3, 15, 14, 30, 45);
+          final endWithTime = DateTime(2024, 3, 16, 18, 15, 30);
 
-        // Mock to capture what was actually passed to the platform
-        DateTime? capturedStart;
-        DateTime? capturedEnd;
+          // Mock to capture what was actually passed to the platform
+          DateTime? capturedStart;
+          DateTime? capturedEnd;
 
-        final mock = MockDeviceCalendarPlusPlatform();
-        mock.setCreateEventCallback((
-          calendarId,
-          title,
-          startDate,
-          endDate,
-          isAllDay,
-          description,
-          location,
-          timeZone,
-          availability,
-        ) {
-          capturedStart = startDate;
-          capturedEnd = endDate;
-          return Future.value('event-id');
-        });
+          final mock = MockDeviceCalendarPlusPlatform();
+          mock.setCreateEventCallback((
+            calendarId,
+            title,
+            startDate,
+            endDate,
+            isAllDay,
+            description,
+            location,
+            timeZone,
+            availability,
+          ) {
+            capturedStart = startDate;
+            capturedEnd = endDate;
+            return Future.value('event-id');
+          });
 
-        DeviceCalendarPlusPlatform.instance = mock;
+          DeviceCalendarPlusPlatform.instance = mock;
 
-        await DeviceCalendar.instance.createEvent(
-          calendarId: 'cal-123',
-          title: 'All Day Event',
-          startDate: startWithTime,
-          endDate: endWithTime,
-          isAllDay: true,
-        );
+          await DeviceCalendar.instance.createEvent(
+            calendarId: 'cal-123',
+            title: 'All Day Event',
+            startDate: startWithTime,
+            endDate: endWithTime,
+            isAllDay: true,
+          );
 
-        // Verify dates were normalized to midnight
-        expect(capturedStart, isNotNull);
-        expect(capturedEnd, isNotNull);
-        expect(capturedStart!.hour, 0);
-        expect(capturedStart!.minute, 0);
-        expect(capturedStart!.second, 0);
-        expect(capturedStart!.millisecond, 0);
-        expect(capturedEnd!.hour, 0);
-        expect(capturedEnd!.minute, 0);
-        expect(capturedEnd!.second, 0);
-        expect(capturedEnd!.millisecond, 0);
+          // Verify dates were normalized to midnight
+          expect(capturedStart, isNotNull);
+          expect(capturedEnd, isNotNull);
+          expect(capturedStart!.hour, 0);
+          expect(capturedStart!.minute, 0);
+          expect(capturedStart!.second, 0);
+          expect(capturedStart!.millisecond, 0);
+          expect(capturedEnd!.hour, 0);
+          expect(capturedEnd!.minute, 0);
+          expect(capturedEnd!.second, 0);
+          expect(capturedEnd!.millisecond, 0);
 
-        // Verify dates preserved the day
-        expect(capturedStart!.year, 2024);
-        expect(capturedStart!.month, 3);
-        expect(capturedStart!.day, 15);
-        expect(capturedEnd!.year, 2024);
-        expect(capturedEnd!.month, 3);
-        expect(capturedEnd!.day, 16);
-      });
+          // Verify dates preserved the day
+          expect(capturedStart!.year, 2024);
+          expect(capturedStart!.month, 3);
+          expect(capturedStart!.day, 15);
+          expect(capturedEnd!.year, 2024);
+          expect(capturedEnd!.month, 3);
+          expect(capturedEnd!.day, 16);
+        },
+      );
 
       test('preserves exact time for non-all-day events', () async {
         final startWithTime = DateTime(2024, 3, 15, 14, 30, 45);
@@ -1307,9 +1343,7 @@ void main() {
 
       test('throws ArgumentError when no fields provided', () async {
         expect(
-          () => DeviceCalendar.instance.updateEvent(
-            eventId: 'event-123',
-          ),
+          () => DeviceCalendar.instance.updateEvent(eventId: 'event-123'),
           throwsArgumentError,
         );
       });

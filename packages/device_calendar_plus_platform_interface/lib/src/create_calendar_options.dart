@@ -5,7 +5,7 @@
 ///
 /// Platform-specific implementations append the platform name:
 /// - Android: [CreateCalendarOptionsAndroid]
-/// - iOS: (not yet implemented)
+/// - iOS: [CreateCalendarOptionsIos]
 ///
 /// Example:
 /// ```dart

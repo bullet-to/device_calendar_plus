@@ -67,6 +67,16 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// On Android, opens the app info page where users can navigate to permissions.
   Future<void> openAppSettings();
 
+  /// Lists all calendar sources/accounts available on the device.
+  ///
+  /// Returns a list of source data as maps. The main API layer
+  /// converts these to [CalendarSource] objects.
+  ///
+  /// On iOS, returns `EKSource` objects from EventKit.
+  /// On Android, returns unique account name + account type combinations
+  /// from the Calendar Provider.
+  Future<List<Map<String, dynamic>>> listSources();
+
   /// Lists all calendars available on the device.
   ///
   /// Returns a list of calendar data as maps. The main API layer
@@ -100,7 +110,10 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// At least one of [name] or [colorHex] must be provided.
   /// Requires calendar write permissions.
   Future<void> updateCalendar(
-      String calendarId, String? name, String? colorHex);
+    String calendarId,
+    String? name,
+    String? colorHex,
+  );
 
   /// Deletes a calendar from the device.
   ///

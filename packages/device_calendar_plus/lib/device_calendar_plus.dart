@@ -3,18 +3,22 @@ import 'package:flutter/services.dart';
 
 import 'src/calendar.dart';
 import 'src/calendar_permission_status.dart';
+import 'src/calendar_source.dart';
 import 'src/event.dart';
 import 'src/event_availability.dart';
 import 'src/platform_exception_converter.dart';
 
+// Platform-specific options
 export 'package:device_calendar_plus_android/device_calendar_plus_android.dart'
     show CreateCalendarOptionsAndroid;
-// Platform-specific options
+export 'package:device_calendar_plus_ios/device_calendar_plus_ios.dart'
+    show CreateCalendarOptionsIos;
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
     show CreateCalendarPlatformOptions, InstanceIdParser, ParsedInstanceId;
 
 export 'src/calendar.dart';
 export 'src/calendar_permission_status.dart';
+export 'src/calendar_source.dart';
 export 'src/device_calendar_error.dart';
 export 'src/event.dart';
 export 'src/event_availability.dart';
@@ -163,6 +167,51 @@ class DeviceCalendar {
     }
   }
 
+  /// Lists all calendar sources/accounts available on the device.
+  ///
+  /// Returns a list of [CalendarSource] objects representing each source.
+  /// Use this to discover available accounts before creating calendars that
+  /// sync to cloud services.
+  ///
+  /// On iOS, sources include iCloud, local, subscribed calendars, etc.
+  /// On Android, sources are account name + account type combinations.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  /// final sources = await plugin.listSources();
+  /// for (final source in sources) {
+  ///   print('${source.title} (${source.type})');
+  ///   print('  Can create calendars: ${source.allowsCalendarCreation}');
+  /// }
+  ///
+  /// // Find iCloud source on iOS
+  /// final icloud = sources.firstWhere(
+  ///   (s) => s.title == 'iCloud',
+  ///   orElse: () => sources.first,
+  /// );
+  ///
+  /// // Create a calendar in that source
+  /// await plugin.createCalendar(
+  ///   name: 'My Calendar',
+  ///   platformOptions: CreateCalendarOptionsIos(sourceId: icloud.id),
+  /// );
+  /// ```
+  Future<List<CalendarSource>> listSources() async {
+    try {
+      final List<Map<String, dynamic>> rawSources =
+          await DeviceCalendarPlusPlatform.instance.listSources();
+      return rawSources.map((map) => CalendarSource.fromMap(map)).toList();
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
   /// Lists all calendars available on the device.
   ///
   /// Returns a list of [Calendar] objects representing each calendar.
@@ -229,11 +278,7 @@ class DeviceCalendar {
     CreateCalendarPlatformOptions? platformOptions,
   }) async {
     if (name.trim().isEmpty) {
-      throw ArgumentError.value(
-        name,
-        'name',
-        'Calendar name cannot be empty',
-      );
+      throw ArgumentError.value(name, 'name', 'Calendar name cannot be empty');
     }
 
     try {
@@ -283,23 +328,20 @@ class DeviceCalendar {
   }) async {
     // Validate that at least one parameter is provided
     if (name == null && colorHex == null) {
-      throw ArgumentError(
-        'At least one of name or colorHex must be provided',
-      );
+      throw ArgumentError('At least one of name or colorHex must be provided');
     }
 
     // Validate name if provided
     if (name != null && name.trim().isEmpty) {
-      throw ArgumentError.value(
-        name,
-        'name',
-        'Calendar name cannot be empty',
-      );
+      throw ArgumentError.value(name, 'name', 'Calendar name cannot be empty');
     }
 
     try {
-      await DeviceCalendarPlusPlatform.instance
-          .updateCalendar(calendarId, name, colorHex);
+      await DeviceCalendarPlusPlatform.instance.updateCalendar(
+        calendarId,
+        name,
+        colorHex,
+      );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);
@@ -389,10 +431,10 @@ class DeviceCalendar {
     try {
       final List<Map<String, dynamic>> rawEvents =
           await DeviceCalendarPlusPlatform.instance.listEvents(
-        startDate,
-        endDate,
-        calendarIds,
-      );
+            startDate,
+            endDate,
+            calendarIds,
+          );
       return rawEvents.map((map) => Event.fromMap(map)).toList();
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
@@ -427,11 +469,9 @@ class DeviceCalendar {
       // Parse the ID to extract eventId and optional timestamp
       final parsed = InstanceIdParser.parse(id);
 
-      final Map<String, dynamic>? rawEvent =
-          await DeviceCalendarPlusPlatform.instance.getEvent(
-        parsed.eventId,
-        parsed.timestamp,
-      );
+      final Map<String, dynamic>? rawEvent = await DeviceCalendarPlusPlatform
+          .instance
+          .getEvent(parsed.eventId, parsed.timestamp);
 
       if (rawEvent == null) {
         return null;
@@ -552,17 +592,11 @@ class DeviceCalendar {
     }
 
     if (title.trim().isEmpty) {
-      throw ArgumentError.value(
-        title,
-        'title',
-        'Event title cannot be empty',
-      );
+      throw ArgumentError.value(title, 'title', 'Event title cannot be empty');
     }
 
     if (endDate.isBefore(startDate)) {
-      throw ArgumentError(
-        'End date must be after start date',
-      );
+      throw ArgumentError('End date must be after start date');
     }
 
     // Normalize dates for all-day events
@@ -576,26 +610,22 @@ class DeviceCalendar {
         startDate.month,
         startDate.day,
       );
-      normalizedEndDate = DateTime(
-        endDate.year,
-        endDate.month,
-        endDate.day,
-      );
+      normalizedEndDate = DateTime(endDate.year, endDate.month, endDate.day);
     }
 
     try {
-      final String eventId =
-          await DeviceCalendarPlusPlatform.instance.createEvent(
-        calendarId,
-        title,
-        normalizedStartDate,
-        normalizedEndDate,
-        isAllDay,
-        description,
-        location,
-        timeZone,
-        availability.name,
-      );
+      final String eventId = await DeviceCalendarPlusPlatform.instance
+          .createEvent(
+            calendarId,
+            title,
+            normalizedStartDate,
+            normalizedEndDate,
+            isAllDay,
+            description,
+            location,
+            timeZone,
+            availability.name,
+          );
       return eventId;
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
@@ -632,11 +662,7 @@ class DeviceCalendar {
   /// ```
   Future<void> deleteEvent({required String eventId}) async {
     if (eventId.trim().isEmpty) {
-      throw ArgumentError.value(
-        eventId,
-        'eventId',
-        'Event ID cannot be empty',
-      );
+      throw ArgumentError.value(eventId, 'eventId', 'Event ID cannot be empty');
     }
 
     try {
@@ -717,11 +743,7 @@ class DeviceCalendar {
   }) async {
     // Validate eventId
     if (eventId.trim().isEmpty) {
-      throw ArgumentError.value(
-        eventId,
-        'eventId',
-        'Event ID cannot be empty',
-      );
+      throw ArgumentError.value(eventId, 'eventId', 'Event ID cannot be empty');
     }
 
     // Validate at least one field is provided
@@ -732,16 +754,12 @@ class DeviceCalendar {
         location == null &&
         isAllDay == null &&
         timeZone == null) {
-      throw ArgumentError(
-        'At least one field must be provided to update',
-      );
+      throw ArgumentError('At least one field must be provided to update');
     }
 
     // Validate dates if both are provided
     if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
-      throw ArgumentError(
-        'End date must be after start date',
-      );
+      throw ArgumentError('End date must be after start date');
     }
 
     // Normalize dates for all-day events
@@ -761,11 +779,7 @@ class DeviceCalendar {
         );
       }
       if (endDate != null) {
-        normalizedEndDate = DateTime(
-          endDate.year,
-          endDate.month,
-          endDate.day,
-        );
+        normalizedEndDate = DateTime(endDate.year, endDate.month, endDate.day);
       }
     }
 
