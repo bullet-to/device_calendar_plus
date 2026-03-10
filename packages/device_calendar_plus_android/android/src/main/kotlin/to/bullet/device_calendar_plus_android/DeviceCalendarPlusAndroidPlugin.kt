@@ -335,7 +335,7 @@ class DeviceCalendarPlusAndroidPlugin :
     
     private fun handleCreateEvent(call: MethodCall, result: Result) {
         val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
-        
+
         // Parse arguments
         val calendarId = call.argument<String>("calendarId")
         val title = call.argument<String>("title")
@@ -344,11 +344,12 @@ class DeviceCalendarPlusAndroidPlugin :
         val isAllDay = call.argument<Boolean>("isAllDay")
         val description = call.argument<String>("description")
         val location = call.argument<String>("location")
+        val url = call.argument<String>("url")
         val timeZone = call.argument<String>("timeZone")
         val availability = call.argument<String>("availability")
-        
+
         // Validate required arguments
-        if (calendarId == null || title == null || startDateMillis == null || 
+        if (calendarId == null || title == null || startDateMillis == null ||
             endDateMillis == null || isAllDay == null || availability == null) {
             result.error(
                 PlatformExceptionCodes.INVALID_ARGUMENTS,
@@ -357,10 +358,10 @@ class DeviceCalendarPlusAndroidPlugin :
             )
             return
         }
-        
+
         val startDate = java.util.Date(startDateMillis)
         val endDate = java.util.Date(endDateMillis)
-        
+
         val serviceResult = service.createEvent(
             calendarId,
             title,
@@ -369,6 +370,7 @@ class DeviceCalendarPlusAndroidPlugin :
             isAllDay,
             description,
             location,
+            url,
             timeZone,
             availability
         )

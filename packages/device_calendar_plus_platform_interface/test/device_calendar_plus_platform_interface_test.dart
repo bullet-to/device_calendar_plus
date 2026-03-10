@@ -61,6 +61,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     bool isAllDay,
     String? description,
     String? location,
+    String? url,
     String? timeZone,
     String availability,
   ) async => 'mock-event-id';
@@ -187,6 +188,7 @@ void main() {
       false,
       'Weekly team sync',
       'Conference Room A',
+      'https://example.com/meeting',
       'America/New_York',
       'busy',
     );

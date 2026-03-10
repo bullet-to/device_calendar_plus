@@ -22,6 +22,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     bool isAllDay,
     String? description,
     String? location,
+    String? url,
     String? timeZone,
     String availability,
   )?
@@ -74,6 +75,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       bool isAllDay,
       String? description,
       String? location,
+      String? url,
       String? timeZone,
       String availability,
     )
@@ -206,6 +208,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     bool isAllDay,
     String? description,
     String? location,
+    String? url,
     String? timeZone,
     String availability,
   ) async {
@@ -223,6 +226,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
         isAllDay,
         description,
         location,
+        url,
         timeZone,
         availability,
       );
@@ -1012,6 +1016,7 @@ void main() {
             isAllDay,
             description,
             location,
+            url,
             timeZone,
             availability,
           ) {
@@ -1068,6 +1073,7 @@ void main() {
           isAllDay,
           description,
           location,
+          url,
           timeZone,
           availability,
         ) {

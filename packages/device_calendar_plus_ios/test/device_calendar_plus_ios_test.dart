@@ -178,6 +178,7 @@ void main() {
         false,
         'Weekly sync',
         'Conference Room A',
+        'https://example.com/meeting',
         'America/New_York',
         'busy',
       );
@@ -197,6 +198,7 @@ void main() {
       expect(log[0].arguments['isAllDay'], equals(false));
       expect(log[0].arguments['description'], equals('Weekly sync'));
       expect(log[0].arguments['location'], equals('Conference Room A'));
+      expect(log[0].arguments['url'], equals('https://example.com/meeting'));
       expect(log[0].arguments['timeZone'], equals('America/New_York'));
       expect(log[0].arguments['availability'], equals('busy'));
       expect(eventId, equals('ios-event-id-456'));
@@ -215,6 +217,7 @@ void main() {
         null,
         null,
         null,
+        null,
         'free',
       );
 
@@ -225,6 +228,7 @@ void main() {
       expect(log[0].arguments['isAllDay'], equals(true));
       expect(log[0].arguments['description'], isNull);
       expect(log[0].arguments['location'], isNull);
+      expect(log[0].arguments['url'], isNull);
       expect(log[0].arguments['timeZone'], isNull);
       expect(log[0].arguments['availability'], equals('free'));
       expect(eventId, equals('ios-event-id-456'));

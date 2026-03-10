@@ -159,6 +159,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// [isAllDay] indicates if this is an all-day event.
   /// [description] is optional event notes/description.
   /// [location] is optional event location.
+  /// [url] is optional URL associated with the event.
   /// [timeZone] is optional timezone identifier (null for all-day events).
   /// [availability] is the availability status (busy, free, tentative, unavailable).
   ///
@@ -172,6 +173,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     bool isAllDay,
     String? description,
     String? location,
+    String? url,
     String? timeZone,
     String availability,
   );

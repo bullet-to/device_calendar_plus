@@ -539,9 +539,10 @@ class DeviceCalendar {
   /// [isAllDay] indicates if this is an all-day event (default: false).
   /// [description] is optional event notes/description.
   /// [location] is optional event location.
+  /// [url] is optional URL associated with the event. Can be used to link to
+  ///   app content or identify app-created events (e.g., `myapp://event/123`).
   /// [timeZone] is optional timezone identifier (null for all-day events).
   ///   The platform will validate the timezone string.
-  /// [url] is optional event URL (supported on both platforms).
   /// [availability] is the availability status (default: EventAvailability.busy).
   ///
   /// Returns the system-generated event ID.
@@ -567,6 +568,7 @@ class DeviceCalendar {
   ///   endDate: DateTime(2024, 3, 15, 15, 0),
   ///   description: 'Q1 project review meeting',
   ///   location: 'Conference Room A',
+  ///   url: 'myapp://event/project-review',
   ///   timeZone: 'America/New_York',
   ///   availability: EventAvailability.busy,
   /// );
@@ -579,6 +581,7 @@ class DeviceCalendar {
     bool isAllDay = false,
     String? description,
     String? location,
+    String? url,
     String? timeZone,
     EventAvailability availability = EventAvailability.busy,
   }) async {
@@ -623,6 +626,7 @@ class DeviceCalendar {
             isAllDay,
             description,
             location,
+            url,
             timeZone,
             availability.name,
           );

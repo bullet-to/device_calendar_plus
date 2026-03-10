@@ -78,6 +78,10 @@ class Event {
   /// True for recurring events, false for one-time events.
   final bool isRecurring;
 
+  /// URL associated with this event.
+  /// Can be used to link to app content or identify app-created events.
+  final String? url;
+
   Event({
     required this.eventId,
     required this.instanceId,
@@ -92,6 +96,7 @@ class Event {
     required this.status,
     this.timeZone,
     required this.isRecurring,
+    this.url,
   });
 
   /// Creates an Event from a map returned by the platform.
@@ -110,6 +115,7 @@ class Event {
       status: EventStatus.fromName(map['status'] as String),
       timeZone: map['timeZone'] as String?,
       isRecurring: map['isRecurring'] as bool? ?? false,
+      url: map['url'] as String?,
     );
   }
 
@@ -131,6 +137,7 @@ class Event {
     if (description != null) map['description'] = description;
     if (location != null) map['location'] = location;
     if (timeZone != null) map['timeZone'] = timeZone;
+    if (url != null) map['url'] = url;
 
     return map;
   }
@@ -138,7 +145,7 @@ class Event {
   @override
   String toString() {
     return 'Event(eventId: $eventId, instanceId: $instanceId, calendarId: $calendarId, title: $title, '
-        'startDate: $startDate, endDate: $endDate, isAllDay: $isAllDay)';
+        'startDate: $startDate, endDate: $endDate, isAllDay: $isAllDay, url: $url)';
   }
 
   @override
@@ -158,7 +165,8 @@ class Event {
         other.availability == availability &&
         other.status == status &&
         other.timeZone == timeZone &&
-        other.isRecurring == isRecurring;
+        other.isRecurring == isRecurring &&
+        other.url == url;
   }
 
   @override
@@ -177,6 +185,7 @@ class Event {
       status,
       timeZone,
       isRecurring,
+      url,
     );
   }
 }

@@ -135,6 +135,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     bool isAllDay,
     String? description,
     String? location,
+    String? url,
     String? timeZone,
     String availability,
   ) async {
@@ -147,6 +148,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
           'isAllDay': isAllDay,
           'description': description,
           'location': location,
+          'url': url,
           'timeZone': timeZone,
           'availability': availability,
         });
