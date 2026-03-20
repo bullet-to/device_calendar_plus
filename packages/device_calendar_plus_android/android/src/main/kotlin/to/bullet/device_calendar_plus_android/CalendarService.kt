@@ -1,12 +1,12 @@
 package to.bullet.device_calendar_plus_android
 
 import android.Manifest
-import android.app.Activity
+import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 
-class CalendarService(private val activity: Activity) {
+class CalendarService(private val context: Context) {
     
     fun listCalendars(): Result<List<Map<String, Any>>> {
         val calendars = mutableListOf<Map<String, Any>>()
@@ -23,7 +23,7 @@ class CalendarService(private val activity: Activity) {
         )
         
         try {
-            activity.contentResolver.query(
+            context.contentResolver.query(
                 CalendarContract.Calendars.CONTENT_URI,
                 projection,
                 null,
@@ -91,7 +91,7 @@ class CalendarService(private val activity: Activity) {
     
     fun createCalendar(name: String, colorHex: String?, accountNameParam: String?): Result<String> {
         // Check for write calendar permission
-        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_CALENDAR) 
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR)
             != PackageManager.PERMISSION_GRANTED) {
             return Result.failure(
                 CalendarException(
@@ -123,7 +123,7 @@ class CalendarService(private val activity: Activity) {
                 }
             }
             
-            val uri = activity.contentResolver.insert(
+            val uri = context.contentResolver.insert(
                 CalendarContract.Calendars.CONTENT_URI
                     .buildUpon()
                     .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
@@ -165,7 +165,7 @@ class CalendarService(private val activity: Activity) {
     
     fun updateCalendar(calendarId: String, name: String?, colorHex: String?): Result<Unit> {
         // Check for write calendar permission
-        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_CALENDAR) 
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR)
             != PackageManager.PERMISSION_GRANTED) {
             return Result.failure(
                 CalendarException(
@@ -192,7 +192,7 @@ class CalendarService(private val activity: Activity) {
             }
             
             // Update the calendar
-            val updatedRows = activity.contentResolver.update(
+            val updatedRows = context.contentResolver.update(
                 CalendarContract.Calendars.CONTENT_URI,
                 values,
                 "${CalendarContract.Calendars._ID} = ?",
@@ -228,7 +228,7 @@ class CalendarService(private val activity: Activity) {
     
     fun deleteCalendar(calendarId: String): Result<Unit> {
         // Check for write calendar permission
-        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_CALENDAR) 
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR)
             != PackageManager.PERMISSION_GRANTED) {
             return Result.failure(
                 CalendarException(
@@ -239,7 +239,7 @@ class CalendarService(private val activity: Activity) {
         }
         
         try {
-            val deletedRows = activity.contentResolver.delete(
+            val deletedRows = context.contentResolver.delete(
                 CalendarContract.Calendars.CONTENT_URI,
                 "${CalendarContract.Calendars._ID} = ?",
                 arrayOf(calendarId)
