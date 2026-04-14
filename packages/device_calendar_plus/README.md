@@ -299,6 +299,96 @@ final detailedEventId = await plugin.createEvent(
 );
 ```
 
+### Recurring Events
+
+Create recurring events by passing a `RecurrenceRule` to `createEvent`. The rule types are sealed classes, so the compiler ensures you handle all cases.
+
+```dart
+// Every day for 30 days
+await plugin.createEvent(
+  calendarId: calendarId,
+  title: 'Daily Standup',
+  startDate: DateTime(2024, 3, 20, 9, 0),
+  endDate: DateTime(2024, 3, 20, 9, 15),
+  recurrenceRule: DailyRecurrence(end: CountEnd(30)),
+);
+
+// Every 2 weeks on Monday and Friday
+await plugin.createEvent(
+  calendarId: calendarId,
+  title: 'Sprint Review',
+  startDate: DateTime(2024, 3, 20, 14, 0),
+  endDate: DateTime(2024, 3, 20, 15, 0),
+  recurrenceRule: WeeklyRecurrence(
+    interval: 2,
+    daysOfWeek: [DayOfWeek.monday, DayOfWeek.friday],
+  ),
+);
+```
+
+Monthly and yearly recurrences use `byDayOfMonth` or `byWeekday` — they're sealed subtypes so you can't accidentally mix them:
+
+```dart
+// Monthly on the 1st and 15th
+MonthlyRecurrence.byDayOfMonth(daysOfMonth: [1, 15])
+
+// Monthly on the 2nd Tuesday
+MonthlyRecurrence.byWeekday(
+  daysOfWeek: [RecurrenceDay(DayOfWeek.tuesday, position: 2)],
+)
+
+// Monthly on the last Friday
+MonthlyRecurrence.byWeekday(
+  daysOfWeek: [RecurrenceDay(DayOfWeek.friday, position: -1)],
+)
+
+// Yearly on Christmas
+YearlyRecurrence.byDayOfMonth(months: [12], daysOfMonth: [25])
+
+// Yearly on the 4th Thursday of November (Thanksgiving)
+YearlyRecurrence.byWeekday(
+  months: [11],
+  daysOfWeek: [RecurrenceDay(DayOfWeek.thursday, position: 4)],
+)
+
+// Last weekday of every month (uses BYSETPOS)
+MonthlyRecurrence.byWeekday(
+  daysOfWeek: [
+    RecurrenceDay(DayOfWeek.monday),
+    RecurrenceDay(DayOfWeek.tuesday),
+    RecurrenceDay(DayOfWeek.wednesday),
+    RecurrenceDay(DayOfWeek.thursday),
+    RecurrenceDay(DayOfWeek.friday),
+  ],
+  setPositions: [-1],
+)
+```
+
+End conditions are either a count or a date — or omit for forever:
+
+```dart
+DailyRecurrence(end: CountEnd(10))           // after 10 occurrences
+DailyRecurrence(end: UntilEnd(DateTime.utc(2025, 12, 31)))  // until a date
+DailyRecurrence()                            // forever
+```
+
+When reading events back, `event.recurrenceRule` gives you the typed model. For RRULE properties the typed model doesn't cover, use the `rruleString` escape hatch — it preserves the original platform string:
+
+```dart
+final event = await plugin.getEvent(eventId);
+final rule = event?.recurrenceRule;
+
+// Typed access
+if (rule is MonthlyByWeekday) {
+  print(rule.daysOfWeek);
+  print(rule.setPositions);
+}
+
+// Raw RRULE string — preserves platform-specific properties
+// like BYHOUR or BYSETPOS combinations the typed model doesn't cover
+print(rule?.rruleString); // e.g. "FREQ=MONTHLY;BYDAY=2TU;COUNT=12"
+```
+
 ### Update Event
 
 ```dart
