@@ -6,6 +6,7 @@ import 'src/calendar_permission_status.dart';
 import 'src/event.dart';
 import 'src/event_availability.dart';
 import 'src/platform_exception_converter.dart';
+import 'src/recurrence_rule.dart';
 
 export 'package:device_calendar_plus_android/device_calendar_plus_android.dart'
     show CreateCalendarOptionsAndroid;
@@ -20,6 +21,7 @@ export 'src/event.dart';
 export 'src/event_availability.dart';
 export 'src/event_status.dart';
 export 'src/platform_exception_codes.dart';
+export 'src/recurrence_rule.dart';
 
 /// Main API for accessing device calendar functionality.
 class DeviceCalendar {
@@ -501,8 +503,8 @@ class DeviceCalendar {
   /// [location] is optional event location.
   /// [timeZone] is optional timezone identifier (null for all-day events).
   ///   The platform will validate the timezone string.
-  /// [url] is optional event URL (supported on both platforms).
   /// [availability] is the availability status (default: EventAvailability.busy).
+  /// [recurrenceRule] is an optional recurrence rule for repeating events.
   ///
   /// Returns the system-generated event ID.
   /// Requires calendar write permissions - call [requestPermissions] first.
@@ -519,16 +521,13 @@ class DeviceCalendar {
   ///   endDate: DateTime.now().add(Duration(hours: 1)),
   /// );
   ///
-  /// // Create an event with all options
-  /// final detailedEventId = await plugin.createEvent(
+  /// // Create a recurring event
+  /// final recurringId = await plugin.createEvent(
   ///   calendarId: 'cal-123',
-  ///   title: 'Project Review',
-  ///   startDate: DateTime(2024, 3, 15, 14, 0),
-  ///   endDate: DateTime(2024, 3, 15, 15, 0),
-  ///   description: 'Q1 project review meeting',
-  ///   location: 'Conference Room A',
-  ///   timeZone: 'America/New_York',
-  ///   availability: EventAvailability.busy,
+  ///   title: 'Daily Standup',
+  ///   startDate: DateTime(2024, 3, 15, 9, 0),
+  ///   endDate: DateTime(2024, 3, 15, 9, 15),
+  ///   recurrenceRule: DailyRecurrence(end: CountEnd(30)),
   /// );
   /// ```
   Future<String> createEvent({
@@ -541,6 +540,7 @@ class DeviceCalendar {
     String? location,
     String? timeZone,
     EventAvailability availability = EventAvailability.busy,
+    RecurrenceRule? recurrenceRule,
   }) async {
     // Validate required fields
     if (calendarId.trim().isEmpty) {
@@ -595,6 +595,7 @@ class DeviceCalendar {
         location,
         timeZone,
         availability.name,
+        recurrenceRule?.toRruleString(),
       );
       return eventId;
     } on PlatformException catch (e, stackTrace) {

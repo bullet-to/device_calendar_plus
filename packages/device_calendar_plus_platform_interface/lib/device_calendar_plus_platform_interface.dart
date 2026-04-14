@@ -149,6 +149,8 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// [timeZone] is optional timezone identifier (null for all-day events).
   /// [availability] is the availability status (busy, free, tentative, unavailable).
   ///
+  /// [recurrenceRule] is an optional RRULE string for recurring events.
+  ///
   /// Returns the ID of the newly created event (system-generated).
   /// Requires calendar write permissions.
   Future<String> createEvent(
@@ -161,6 +163,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? location,
     String? timeZone,
     String availability,
+    String? recurrenceRule,
   );
 
   /// Deletes an event from the device.

@@ -164,6 +164,11 @@ class EventsService {
     // Set isRecurring flag
     eventMap["isRecurring"] = event.hasRecurrenceRules
     
+    // Serialize recurrence rule to RRULE string
+    if event.hasRecurrenceRules, let rule = event.recurrenceRules?.first {
+      eventMap["recurrenceRule"] = ekRecurrenceRuleToRruleString(rule)
+    }
+    
     return eventMap
   }
   
@@ -293,6 +298,7 @@ class EventsService {
     location: String?,
     timeZone: String?,
     availability: String,
+    recurrenceRule: String?,
     completion: @escaping (Result<String, CalendarError>) -> Void
   ) {
     // Check permission - creating events only requires write access
@@ -347,6 +353,11 @@ class EventsService {
       event.availability = .busy
     }
     
+    // Set recurrence rule if provided
+    if let rruleString = recurrenceRule, let rule = parseRecurrenceRule(rruleString) {
+      event.recurrenceRules = [rule]
+    }
+    
     // Save the event
     do {
       try eventStore.save(event, span: .thisEvent)
@@ -366,6 +377,232 @@ class EventsService {
         message: "Failed to save event: \(error.localizedDescription)"
       )))
     }
+  }
+  
+  // MARK: - RRULE <-> EKRecurrenceRule conversion
+  
+  /// Parses an RRULE string into an EKRecurrenceRule.
+  private func parseRecurrenceRule(_ rrule: String) -> EKRecurrenceRule? {
+    var params: [String: String] = [:]
+    let ruleStr = rrule.hasPrefix("RRULE:") ? String(rrule.dropFirst(6)) : rrule
+    
+    for part in ruleStr.components(separatedBy: ";") {
+      let kv = part.components(separatedBy: "=")
+      if kv.count == 2 {
+        params[kv[0].uppercased()] = kv[1]
+      }
+    }
+    
+    guard let freqStr = params["FREQ"] else { return nil }
+    
+    let frequency: EKRecurrenceFrequency
+    switch freqStr {
+    case "DAILY": frequency = .daily
+    case "WEEKLY": frequency = .weekly
+    case "MONTHLY": frequency = .monthly
+    case "YEARLY": frequency = .yearly
+    default: return nil
+    }
+    
+    let interval = Int(params["INTERVAL"] ?? "1") ?? 1
+    
+    // Parse end condition
+    var end: EKRecurrenceEnd? = nil
+    if let countStr = params["COUNT"], let count = Int(countStr) {
+      end = EKRecurrenceEnd(occurrenceCount: count)
+    } else if let untilStr = params["UNTIL"] {
+      if let date = parseRruleDate(untilStr) {
+        end = EKRecurrenceEnd(end: date)
+      }
+    }
+    
+    // Parse BYDAY (supports plain codes like "TU" and positional like "2TU", "-1FR")
+    var daysOfTheWeek: [EKRecurrenceDayOfWeek]? = nil
+    if let byDayStr = params["BYDAY"] {
+      daysOfTheWeek = byDayStr.components(separatedBy: ",").compactMap { dayStr in
+        parseByDayValue(dayStr.trimmingCharacters(in: .whitespaces))
+      }
+      if daysOfTheWeek?.isEmpty ?? true { daysOfTheWeek = nil }
+    }
+    
+    // Parse BYMONTHDAY (supports comma-separated values)
+    var daysOfTheMonth: [NSNumber]? = nil
+    if let str = params["BYMONTHDAY"] {
+      let days = str.components(separatedBy: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+      if !days.isEmpty { daysOfTheMonth = days.map { NSNumber(value: $0) } }
+    }
+
+    // Parse BYMONTH (supports comma-separated values)
+    var monthsOfTheYear: [NSNumber]? = nil
+    if let str = params["BYMONTH"] {
+      let months = str.components(separatedBy: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+      if !months.isEmpty { monthsOfTheYear = months.map { NSNumber(value: $0) } }
+    }
+    
+    // Parse BYSETPOS (supports comma-separated values)
+    var setPositions: [NSNumber]? = nil
+    if let str = params["BYSETPOS"] {
+      let positions = str.components(separatedBy: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+      if !positions.isEmpty { setPositions = positions.map { NSNumber(value: $0) } }
+    }
+
+    return EKRecurrenceRule(
+      recurrenceWith: frequency,
+      interval: interval,
+      daysOfTheWeek: daysOfTheWeek,
+      daysOfTheMonth: daysOfTheMonth,
+      monthsOfTheYear: monthsOfTheYear,
+      weeksOfTheYear: nil,
+      daysOfTheYear: nil,
+      setPositions: setPositions,
+      end: end
+    )
+  }
+  
+  /// Parses a single BYDAY value like "TU", "2TU", or "-1FR".
+  private func parseByDayValue(_ value: String) -> EKRecurrenceDayOfWeek? {
+    let dayMap: [String: EKWeekday] = [
+      "SU": .sunday, "MO": .monday, "TU": .tuesday, "WE": .wednesday,
+      "TH": .thursday, "FR": .friday, "SA": .saturday,
+    ]
+
+    // Try positional format first (e.g., "2TU", "-1FR")
+    if value.count > 2 {
+      let dayCode = String(value.suffix(2))
+      let numStr = String(value.dropLast(2))
+      if let weekday = dayMap[dayCode], let weekNumber = Int(numStr), weekNumber != 0 {
+        return EKRecurrenceDayOfWeek(weekday, weekNumber: weekNumber)
+      }
+    }
+
+    // Plain day code (e.g., "TU")
+    if let weekday = dayMap[value] {
+      return EKRecurrenceDayOfWeek(weekday)
+    }
+
+    return nil
+  }
+
+  /// Parses RRULE date: YYYYMMDD or YYYYMMDDTHHMMSSZ.
+  private func parseRruleDate(_ dateStr: String) -> Date? {
+    let clean = dateStr.replacingOccurrences(of: "Z", with: "")
+    guard clean.count >= 8 else { return nil }
+    
+    let year = Int(clean.prefix(4)) ?? 0
+    let month = Int(clean.dropFirst(4).prefix(2)) ?? 0
+    let day = Int(clean.dropFirst(6).prefix(2)) ?? 0
+    
+    var components = DateComponents()
+    components.year = year
+    components.month = month
+    components.day = day
+    components.timeZone = TimeZone(identifier: "UTC")
+    
+    if clean.count >= 15, clean.dropFirst(8).first == "T" {
+      let timeStr = clean.dropFirst(9)
+      components.hour = Int(timeStr.prefix(2)) ?? 0
+      components.minute = Int(timeStr.dropFirst(2).prefix(2)) ?? 0
+      components.second = Int(timeStr.dropFirst(4).prefix(2)) ?? 0
+    } else {
+      components.hour = 0
+      components.minute = 0
+      components.second = 0
+    }
+    
+    return Calendar(identifier: .gregorian).date(from: components)
+  }
+  
+  /// Serializes an EKRecurrenceRule back to an RRULE string.
+  private func ekRecurrenceRuleToRruleString(_ rule: EKRecurrenceRule) -> String {
+    var parts: [String] = []
+    
+    // Frequency
+    switch rule.frequency {
+    case .daily: parts.append("FREQ=DAILY")
+    case .weekly: parts.append("FREQ=WEEKLY")
+    case .monthly: parts.append("FREQ=MONTHLY")
+    case .yearly: parts.append("FREQ=YEARLY")
+    @unknown default: parts.append("FREQ=DAILY")
+    }
+    
+    // Interval
+    if rule.interval > 1 {
+      parts.append("INTERVAL=\(rule.interval)")
+    }
+    
+    // BYDAY
+    if let daysOfWeek = rule.daysOfTheWeek, !daysOfWeek.isEmpty {
+      let dayStrs = daysOfWeek.map { dow -> String in
+        let code: String
+        switch dow.dayOfTheWeek {
+        case .sunday: code = "SU"
+        case .monday: code = "MO"
+        case .tuesday: code = "TU"
+        case .wednesday: code = "WE"
+        case .thursday: code = "TH"
+        case .friday: code = "FR"
+        case .saturday: code = "SA"
+        @unknown default: code = "MO"
+        }
+        if dow.weekNumber != 0 {
+          return "\(dow.weekNumber)\(code)"
+        }
+        return code
+      }
+      parts.append("BYDAY=\(dayStrs.joined(separator: ","))")
+    }
+    
+    // BYMONTHDAY
+    if let daysOfMonth = rule.daysOfTheMonth, !daysOfMonth.isEmpty {
+      let dayStrs = daysOfMonth.map { $0.stringValue }
+      parts.append("BYMONTHDAY=\(dayStrs.joined(separator: ","))")
+    }
+    
+    // BYMONTH
+    if let months = rule.monthsOfTheYear, !months.isEmpty {
+      let monthStrs = months.map { $0.stringValue }
+      parts.append("BYMONTH=\(monthStrs.joined(separator: ","))")
+    }
+    
+    // BYSETPOS
+    if let setPositions = rule.setPositions, !setPositions.isEmpty {
+      let posStrs = setPositions.map { $0.stringValue }
+      parts.append("BYSETPOS=\(posStrs.joined(separator: ","))")
+    }
+
+    // WKST (week start day)
+    if rule.firstDayOfTheWeek != 0 {
+      let wkstMap: [Int: String] = [
+        1: "SU", 2: "MO", 3: "TU", 4: "WE", 5: "TH", 6: "FR", 7: "SA",
+      ]
+      if let wkst = wkstMap[rule.firstDayOfTheWeek] {
+        parts.append("WKST=\(wkst)")
+      }
+    }
+
+    // End condition
+    if let end = rule.recurrenceEnd {
+      if end.occurrenceCount > 0 {
+        parts.append("COUNT=\(end.occurrenceCount)")
+      } else if let endDate = end.endDate {
+        let cal = Calendar(identifier: .gregorian)
+        let utc = TimeZone(identifier: "UTC")!
+        var comps = cal.dateComponents(in: utc, from: endDate)
+        let y = String(format: "%04d", comps.year ?? 0)
+        let m = String(format: "%02d", comps.month ?? 0)
+        let d = String(format: "%02d", comps.day ?? 0)
+        let h = comps.hour ?? 0
+        let min = comps.minute ?? 0
+        let s = comps.second ?? 0
+        if h == 0 && min == 0 && s == 0 {
+          parts.append("UNTIL=\(y)\(m)\(d)")
+        } else {
+          parts.append("UNTIL=\(y)\(m)\(d)T\(String(format: "%02d", h))\(String(format: "%02d", min))\(String(format: "%02d", s))Z")
+        }
+      }
+    }
+    
+    return parts.joined(separator: ";")
   }
   
   func deleteEvent(

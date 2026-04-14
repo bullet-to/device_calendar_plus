@@ -328,6 +328,7 @@ class DeviceCalendarPlusAndroidPlugin :
         val location = call.argument<String>("location")
         val timeZone = call.argument<String>("timeZone")
         val availability = call.argument<String>("availability")
+        val recurrenceRule = call.argument<String>("recurrenceRule")
         
         // Validate required arguments
         if (calendarId == null || title == null || startDateMillis == null || 
@@ -352,7 +353,8 @@ class DeviceCalendarPlusAndroidPlugin :
             description,
             location,
             timeZone,
-            availability
+            availability,
+            recurrenceRule
         )
         
         serviceResult.fold(

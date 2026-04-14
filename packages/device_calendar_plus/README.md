@@ -35,7 +35,7 @@ Created by [Bullet](https://bullet.to) — a personal task + notes + calendar ap
 - **Native UI**: Open native event modal for viewing/editing in both android and iOS
 - **All-Day Events**: Proper handling of floating calendar dates
 - **Timezones**: Correct timezone behavior for timed events
-- **Recurring Events**: Read recurring event instances; update/delete entire series
+- **Recurring Events**: Create, read, and delete recurring events (daily, weekly, monthly, yearly) with full RRULE support
 
 ## 🧩 Installation
 
@@ -355,6 +355,19 @@ await plugin.deleteEvent(event.instanceId);
 // For recurring events, this deletes the ENTIRE series (all occurrences)
 await plugin.deleteEvent(event.instanceId);
 ```
+
+## 📋 Roadmap
+
+- [x] **Permissions** — request, check, and open settings
+- [x] **Calendars** — create, read, update, delete
+- [x] **Events** — create, read, update, delete
+- [x] **All-day events** — proper floating date handling across timezones
+- [x] **Native UI** — show event modal on both platforms
+- [x] **Recurring events** — create and read with sealed RecurrenceRule model (daily, weekly, monthly, yearly)
+- [ ] **Update recurrence rules** — change/add/remove recurrence rule via `updateEvent`
+- [ ] **Attendees** — read on both platforms; write on Android (iOS EventKit is read-only for participants)
+- [ ] **Reminders / alarms** — read/write on both platforms
+- [ ] **Platform-specific extras** — event URL, organizer, and other platform-native fields exposed where supported
 
 ## 🤝 Contributing
 
