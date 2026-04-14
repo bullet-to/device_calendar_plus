@@ -326,11 +326,11 @@ await plugin.createEvent(
 );
 ```
 
-Monthly and yearly recurrences use `byDayOfMonth` or `byWeekday` — they're sealed subtypes so you can't accidentally mix them:
+Monthly and yearly have sealed subtypes — the default constructor is by day of month, use `.byWeekday` for weekday patterns:
 
 ```dart
 // Monthly on the 1st and 15th
-MonthlyRecurrence.byDayOfMonth(daysOfMonth: [1, 15])
+MonthlyRecurrence(daysOfMonth: [1, 15])
 
 // Monthly on the 2nd Tuesday
 MonthlyRecurrence.byWeekday(
@@ -343,7 +343,7 @@ MonthlyRecurrence.byWeekday(
 )
 
 // Yearly on Christmas
-YearlyRecurrence.byDayOfMonth(months: [12], daysOfMonth: [25])
+YearlyRecurrence(months: [12], daysOfMonth: [25])
 
 // Yearly on the 4th Thursday of November (Thanksgiving)
 YearlyRecurrence.byWeekday(

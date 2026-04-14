@@ -240,8 +240,8 @@ class WeeklyRecurrence extends RecurrenceRule {
 /// Event repeats every N months.
 ///
 /// ```dart
-/// MonthlyRecurrence.byDayOfMonth()                        // same day as event start
-/// MonthlyRecurrence.byDayOfMonth(daysOfMonth: [1, 15])    // 1st and 15th
+/// MonthlyRecurrence()                                     // same day as event start
+/// MonthlyRecurrence(daysOfMonth: [1, 15])                 // 1st and 15th
 /// MonthlyRecurrence.byWeekday(daysOfWeek: [               // 2nd Tuesday
 ///   RecurrenceDay(DayOfWeek.tuesday, position: 2),
 /// ])
@@ -278,7 +278,7 @@ sealed class MonthlyRecurrence extends RecurrenceRule {
   /// Creates a monthly recurrence on specific days of the month (BYMONTHDAY).
   ///
   /// If [daysOfMonth] is null, the event recurs on the same day as the start date.
-  factory MonthlyRecurrence.byDayOfMonth({
+  factory MonthlyRecurrence({
     List<int>? daysOfMonth,
     List<int>? setPositions,
     int interval,
@@ -408,9 +408,9 @@ class MonthlyByWeekday extends MonthlyRecurrence {
 /// Event repeats every N years.
 ///
 /// ```dart
-/// YearlyRecurrence.byDayOfMonth()                                    // same date as event start
-/// YearlyRecurrence.byDayOfMonth(months: [12], daysOfMonth: [25])     // Christmas
-/// YearlyRecurrence.byDayOfMonth(months: [6, 12], daysOfMonth: [15])  // 15th of June and December
+/// YearlyRecurrence()                                                 // same date as event start
+/// YearlyRecurrence(months: [12], daysOfMonth: [25])                  // Christmas
+/// YearlyRecurrence(months: [6, 12], daysOfMonth: [15])               // 15th of June and December
 /// YearlyRecurrence.byWeekday(                                        // last Monday of May
 ///   months: [5],
 ///   daysOfWeek: [RecurrenceDay(DayOfWeek.monday, position: -1)],
@@ -432,7 +432,7 @@ sealed class YearlyRecurrence extends RecurrenceRule {
   /// Creates a yearly recurrence on specific months and days of month (BYMONTH + BYMONTHDAY).
   ///
   /// If both are null, the event recurs on the same date as the start date.
-  factory YearlyRecurrence.byDayOfMonth({
+  factory YearlyRecurrence({
     List<int>? months,
     List<int>? daysOfMonth,
     List<int>? setPositions,
@@ -772,7 +772,7 @@ class _RruleParser {
         rawRrule: rrule,
       );
     }
-    return MonthlyRecurrence.byDayOfMonth(
+    return MonthlyRecurrence(
       daysOfMonth: _parseDaysOfMonth(params['BYMONTHDAY']),
       setPositions: setPositions,
       interval: interval,
@@ -810,7 +810,7 @@ class _RruleParser {
         rawRrule: rrule,
       );
     }
-    return YearlyRecurrence.byDayOfMonth(
+    return YearlyRecurrence(
       months: months,
       daysOfMonth: _parseIntList(params['BYMONTHDAY']),
       setPositions: setPositions,

@@ -158,22 +158,22 @@ void main() {
 
     group('MonthlyRecurrence', () {
       test('basic monthly by date', () {
-        final rule = MonthlyRecurrence.byDayOfMonth();
+        final rule = MonthlyRecurrence();
         expect(rule.toRruleString(), 'FREQ=MONTHLY');
       });
 
       test('monthly on day 15', () {
-        final rule = MonthlyRecurrence.byDayOfMonth(daysOfMonth: [15]);
+        final rule = MonthlyRecurrence(daysOfMonth: [15]);
         expect(rule.toRruleString(), 'FREQ=MONTHLY;BYMONTHDAY=15');
       });
 
       test('monthly on multiple days', () {
-        final rule = MonthlyRecurrence.byDayOfMonth(daysOfMonth: [1, 15]);
+        final rule = MonthlyRecurrence(daysOfMonth: [1, 15]);
         expect(rule.toRruleString(), 'FREQ=MONTHLY;BYMONTHDAY=1,15');
       });
 
       test('monthly with interval and until', () {
-        final rule = MonthlyRecurrence.byDayOfMonth(
+        final rule = MonthlyRecurrence(
           interval: 3,
           daysOfMonth: [1],
           end: UntilEnd(DateTime.utc(2026, 12, 31)),
@@ -216,31 +216,31 @@ void main() {
 
     group('YearlyRecurrence', () {
       test('basic yearly by date', () {
-        final rule = YearlyRecurrence.byDayOfMonth();
+        final rule = YearlyRecurrence();
         expect(rule.toRruleString(), 'FREQ=YEARLY');
       });
 
       test('yearly with month and day', () {
         final rule =
-            YearlyRecurrence.byDayOfMonth(months: [3], daysOfMonth: [15]);
+            YearlyRecurrence(months: [3], daysOfMonth: [15]);
         expect(rule.toRruleString(), 'FREQ=YEARLY;BYMONTH=3;BYMONTHDAY=15');
       });
 
       test('yearly with multiple months', () {
         final rule =
-            YearlyRecurrence.byDayOfMonth(months: [6, 12], daysOfMonth: [15]);
+            YearlyRecurrence(months: [6, 12], daysOfMonth: [15]);
         expect(rule.toRruleString(), 'FREQ=YEARLY;BYMONTH=6,12;BYMONTHDAY=15');
       });
 
       test('yearly with multiple months and days', () {
-        final rule = YearlyRecurrence.byDayOfMonth(
+        final rule = YearlyRecurrence(
             months: [6, 12], daysOfMonth: [1, 15]);
         expect(
             rule.toRruleString(), 'FREQ=YEARLY;BYMONTH=6,12;BYMONTHDAY=1,15');
       });
 
       test('yearly with count', () {
-        final rule = YearlyRecurrence.byDayOfMonth(end: CountEnd(5));
+        final rule = YearlyRecurrence(end: CountEnd(5));
         expect(rule.toRruleString(), 'FREQ=YEARLY;COUNT=5');
       });
 
@@ -491,14 +491,14 @@ void main() {
 
     test('monthly by date roundtrip', () {
       final original =
-          MonthlyRecurrence.byDayOfMonth(daysOfMonth: [28], end: CountEnd(12));
+          MonthlyRecurrence(daysOfMonth: [28], end: CountEnd(12));
       final parsed = RecurrenceRule.fromRruleString(original.toRruleString());
       expect(parsed, isA<MonthlyByDate>());
       expect((parsed as MonthlyByDate).daysOfMonth, [28]);
     });
 
     test('monthly by date roundtrip with multiple days', () {
-      final original = MonthlyRecurrence.byDayOfMonth(
+      final original = MonthlyRecurrence(
           daysOfMonth: [1, 15], end: CountEnd(12));
       final parsed = RecurrenceRule.fromRruleString(original.toRruleString());
       expect(parsed, isA<MonthlyByDate>());
@@ -541,7 +541,7 @@ void main() {
     });
 
     test('yearly by date roundtrip', () {
-      final original = YearlyRecurrence.byDayOfMonth(
+      final original = YearlyRecurrence(
           months: [12], daysOfMonth: [25], end: CountEnd(5));
       final parsed = RecurrenceRule.fromRruleString(original.toRruleString());
       expect(parsed, isA<YearlyByDate>());
@@ -552,7 +552,7 @@ void main() {
 
     test('yearly by date roundtrip with multiple months', () {
       final original =
-          YearlyRecurrence.byDayOfMonth(months: [6, 12], daysOfMonth: [1, 15]);
+          YearlyRecurrence(months: [6, 12], daysOfMonth: [1, 15]);
       final parsed = RecurrenceRule.fromRruleString(original.toRruleString());
       expect(parsed, isA<YearlyByDate>());
       final yearly = parsed as YearlyByDate;
@@ -644,8 +644,8 @@ void main() {
     });
 
     test('MonthlyByDate with different daysOfMonth are not equal', () {
-      final a = MonthlyRecurrence.byDayOfMonth(daysOfMonth: [1]);
-      final b = MonthlyRecurrence.byDayOfMonth(daysOfMonth: [15]);
+      final a = MonthlyRecurrence(daysOfMonth: [1]);
+      final b = MonthlyRecurrence(daysOfMonth: [15]);
       expect(a, isNot(equals(b)));
     });
 
@@ -660,7 +660,7 @@ void main() {
     });
 
     test('MonthlyByDate and MonthlyByWeekday are not equal', () {
-      final a = MonthlyRecurrence.byDayOfMonth(daysOfMonth: [15]);
+      final a = MonthlyRecurrence(daysOfMonth: [15]);
       final b = MonthlyRecurrence.byWeekday(
         daysOfWeek: [RecurrenceDay(DayOfWeek.tuesday, position: 2)],
       );
@@ -830,41 +830,41 @@ void main() {
 
     test('MonthlyByDate daysOfMonth range', () {
       expect(
-        () => MonthlyRecurrence.byDayOfMonth(daysOfMonth: [0]),
+        () => MonthlyRecurrence(daysOfMonth: [0]),
         throwsA(isA<AssertionError>()),
       );
       expect(
-        () => MonthlyRecurrence.byDayOfMonth(daysOfMonth: [32]),
+        () => MonthlyRecurrence(daysOfMonth: [32]),
         throwsA(isA<AssertionError>()),
       );
       expect(
-        () => MonthlyRecurrence.byDayOfMonth(daysOfMonth: [1, 15, 31]),
+        () => MonthlyRecurrence(daysOfMonth: [1, 15, 31]),
         returnsNormally,
       );
     });
 
     test('YearlyByDate months range', () {
       expect(
-        () => YearlyRecurrence.byDayOfMonth(months: [0]),
+        () => YearlyRecurrence(months: [0]),
         throwsA(isA<AssertionError>()),
       );
       expect(
-        () => YearlyRecurrence.byDayOfMonth(months: [13]),
+        () => YearlyRecurrence(months: [13]),
         throwsA(isA<AssertionError>()),
       );
       expect(
-        () => YearlyRecurrence.byDayOfMonth(months: [1, 6, 12]),
+        () => YearlyRecurrence(months: [1, 6, 12]),
         returnsNormally,
       );
     });
 
     test('YearlyByDate daysOfMonth range', () {
       expect(
-        () => YearlyRecurrence.byDayOfMonth(daysOfMonth: [0]),
+        () => YearlyRecurrence(daysOfMonth: [0]),
         throwsA(isA<AssertionError>()),
       );
       expect(
-        () => YearlyRecurrence.byDayOfMonth(daysOfMonth: [32]),
+        () => YearlyRecurrence(daysOfMonth: [32]),
         throwsA(isA<AssertionError>()),
       );
     });

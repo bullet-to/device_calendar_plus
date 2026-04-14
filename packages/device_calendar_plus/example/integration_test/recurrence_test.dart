@@ -100,7 +100,7 @@ void main() {
     test('Monthly recurrence with BYMONTHDAY roundtrip', () async {
       if (calendarId == null) return;
 
-      final result = await roundtrip(MonthlyRecurrence.byDayOfMonth(
+      final result = await roundtrip(MonthlyRecurrence(
         daysOfMonth: [15],
         end: CountEnd(12),
       ));
@@ -115,7 +115,7 @@ void main() {
     test('Yearly recurrence roundtrip', () async {
       if (calendarId == null) return;
 
-      final result = await roundtrip(YearlyRecurrence.byDayOfMonth(
+      final result = await roundtrip(YearlyRecurrence(
         end: CountEnd(5),
       ));
 
@@ -159,7 +159,7 @@ void main() {
     test('Monthly with multiple BYMONTHDAY roundtrip', () async {
       if (calendarId == null) return;
 
-      final result = await roundtrip(MonthlyRecurrence.byDayOfMonth(
+      final result = await roundtrip(MonthlyRecurrence(
         daysOfMonth: [1, 15],
         end: CountEnd(12),
       ));
@@ -211,7 +211,7 @@ void main() {
     test('Yearly with multiple months roundtrip', () async {
       if (calendarId == null) return;
 
-      final result = await roundtrip(YearlyRecurrence.byDayOfMonth(
+      final result = await roundtrip(YearlyRecurrence(
         months: [6, 12],
         daysOfMonth: [15],
         end: CountEnd(10),
