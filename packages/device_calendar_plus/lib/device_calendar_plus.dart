@@ -631,6 +631,8 @@ class DeviceCalendar {
   /// // Delete using instance ID (event ID will be extracted)
   /// await plugin.deleteEvent(eventId: event.instanceId);
   /// ```
+  // TODO(breaking): rename param to `id` and stop discarding the parsed
+  // timestamp so per-instance delete works (matching getEvent/showEventModal).
   Future<void> deleteEvent({required String eventId}) async {
     if (eventId.trim().isEmpty) {
       throw ArgumentError.value(
@@ -706,6 +708,8 @@ class DeviceCalendar {
   ///   location: 'Conference Room B',
   /// );
   /// ```
+  // TODO(breaking): rename param to `id` and stop discarding the parsed
+  // timestamp so per-instance update works (matching getEvent/showEventModal).
   Future<void> updateEvent({
     required String eventId,
     String? title,
