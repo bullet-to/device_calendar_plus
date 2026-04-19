@@ -906,7 +906,38 @@ class _MyHomePageState extends State<MyHomePage> {
           ],
         ),
       ),
-      // This trailing comma makes auto-formatting nicer for build methods.
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showCreateEventModal(context),
+        tooltip: 'Create Event',
+        child: const Icon(Icons.add),
+      ),
     );
+  }
+
+  Future<void> _showCreateEventModal(BuildContext context) async {
+    try {
+      await DeviceCalendar.instance.showCreateEventModal(
+        title: 'Pre-filled Event',
+        startDate: DateTime.now().add(const Duration(hours: 1)),
+        endDate: DateTime.now().add(const Duration(hours: 2)),
+        location: 'Conference Room A',
+        description: 'Testing showCreateEventModal',
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Create modal dismissed')),
+      );
+    } on DeviceCalendarException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.message}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed: $e')),
+      );
+    }
   }
 }

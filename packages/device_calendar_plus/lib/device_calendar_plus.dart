@@ -566,22 +566,8 @@ class DeviceCalendar {
     }
 
     // Normalize dates for all-day events
-    // All-day events should use midnight (00:00:00) and ignore time components
-    DateTime normalizedStartDate = startDate;
-    DateTime normalizedEndDate = endDate;
-
-    if (isAllDay) {
-      normalizedStartDate = DateTime(
-        startDate.year,
-        startDate.month,
-        startDate.day,
-      );
-      normalizedEndDate = DateTime(
-        endDate.year,
-        endDate.month,
-        endDate.day,
-      );
-    }
+    final normalizedStartDate = isAllDay ? _stripTime(startDate) : startDate;
+    final normalizedEndDate = isAllDay ? _stripTime(endDate) : endDate;
 
     try {
       final String eventId =
@@ -750,29 +736,11 @@ class DeviceCalendar {
     }
 
     // Normalize dates for all-day events
-    // We need to check if the event is becoming all-day or if we're updating dates on an existing all-day event
-    // Since we don't have access to the existing event here, we'll let the platform handle it
-    // But if isAllDay is being set to true, we should normalize the dates
-    DateTime? normalizedStartDate = startDate;
-    DateTime? normalizedEndDate = endDate;
-
-    if (isAllDay == true) {
-      // Event is becoming all-day, normalize dates to midnight
-      if (startDate != null) {
-        normalizedStartDate = DateTime(
-          startDate.year,
-          startDate.month,
-          startDate.day,
-        );
-      }
-      if (endDate != null) {
-        normalizedEndDate = DateTime(
-          endDate.year,
-          endDate.month,
-          endDate.day,
-        );
-      }
-    }
+    final normalizedStartDate = (isAllDay == true && startDate != null)
+        ? _stripTime(startDate)
+        : startDate;
+    final normalizedEndDate =
+        (isAllDay == true && endDate != null) ? _stripTime(endDate) : endDate;
 
     try {
       // Parse the ID to extract eventId (timestamp is ignored for update)
@@ -797,4 +765,82 @@ class DeviceCalendar {
       rethrow;
     }
   }
+
+  /// Opens the native platform calendar editor in create mode.
+  ///
+  /// All parameters are optional pre-fill values. The native editor opens
+  /// with these fields populated (or blank if not provided). The user can
+  /// modify any field before saving or cancelling.
+  ///
+  /// The returned [Future] completes when the modal is dismissed (whether
+  /// the user saved or cancelled).
+  ///
+  /// If [isAllDay] is true, any provided dates are normalized to midnight.
+  /// If neither date is provided, the native editor uses its own defaults.
+  ///
+  /// **Platform APIs:**
+  /// - **iOS**: `EKEventEditViewController`
+  /// - **Android**: `Intent.ACTION_INSERT`
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  ///
+  /// // Open blank editor
+  /// await plugin.showCreateEventModal();
+  ///
+  /// // Open with pre-filled data
+  /// await plugin.showCreateEventModal(
+  ///   title: 'Team Meeting',
+  ///   startDate: DateTime.now().add(Duration(hours: 1)),
+  ///   endDate: DateTime.now().add(Duration(hours: 2)),
+  ///   location: 'Conference Room A',
+  /// );
+  /// ```
+  Future<void> showCreateEventModal({
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    RecurrenceRule? recurrenceRule,
+    EventAvailability? availability,
+  }) async {
+    // Validate dates if both are provided
+    if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
+      throw ArgumentError('End date must be after start date');
+    }
+
+    // Normalize dates for all-day events
+    final normalizedStart = (isAllDay == true && startDate != null)
+        ? _stripTime(startDate)
+        : startDate;
+    final normalizedEnd =
+        (isAllDay == true && endDate != null) ? _stripTime(endDate) : endDate;
+
+    try {
+      await DeviceCalendarPlusPlatform.instance.showCreateEventModal(
+        title: title,
+        startDate: normalizedStart?.millisecondsSinceEpoch,
+        endDate: normalizedEnd?.millisecondsSinceEpoch,
+        description: description,
+        location: location,
+        isAllDay: isAllDay,
+        recurrenceRule: recurrenceRule?.toRruleString(),
+        availability: availability?.name,
+      );
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  /// Strips time components from a DateTime, returning midnight of the same day.
+  static DateTime _stripTime(DateTime dt) =>
+      DateTime(dt.year, dt.month, dt.day);
 }

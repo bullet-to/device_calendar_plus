@@ -3,12 +3,13 @@ import UIKit
 import EventKit
 import EventKitUI
 
-public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDelegate {
+public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDelegate, EKEventEditViewDelegate {
   private let eventStore = EKEventStore()
   private lazy var permissionService = PermissionService(eventStore: eventStore)
   private lazy var calendarService = CalendarService(eventStore: eventStore, permissionService: permissionService)
   private lazy var eventsService = EventsService(eventStore: eventStore, permissionService: permissionService)
   private var eventModalResult: FlutterResult?
+  private var createEventModalResult: FlutterResult?
   
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "device_calendar_plus_ios", binaryMessenger: registrar.messenger())
@@ -38,6 +39,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleGetEvent(call: call, result: result)
     case "showEventModal":
       handleShowEventModal(call: call, result: result)
+    case "showCreateEventModal":
+      handleShowCreateEventModal(call: call, result: result)
     case "createEvent":
       handleCreateEvent(call: call, result: result)
     case "deleteEvent":
@@ -365,6 +368,41 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
   
+  private func handleShowCreateEventModal(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let args = call.arguments as? [String: Any] ?? [:]
+
+    eventsService.createEventForModal(
+      title: args["title"] as? String,
+      startDate: args["startDate"] as? Int64,
+      endDate: args["endDate"] as? Int64,
+      description: args["description"] as? String,
+      location: args["location"] as? String,
+      isAllDay: args["isAllDay"] as? Bool,
+      recurrenceRule: args["recurrenceRule"] as? String,
+      availability: args["availability"] as? String
+    ) { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success(let event):
+          guard let rootViewController = self.getRootViewController() else {
+            fatalError("Failed to get root view controller - plugin lifecycle error")
+          }
+
+          let editViewController = EKEventEditViewController()
+          editViewController.eventStore = self.eventStore
+          editViewController.event = event // nil = blank editor
+          editViewController.editViewDelegate = self
+
+          self.createEventModalResult = result
+          rootViewController.present(editViewController, animated: true, completion: nil)
+
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+
   private func handleCreateEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
     guard let args = call.arguments as? [String: Any] else {
       result(FlutterError(
@@ -531,6 +569,15 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
   
+  // MARK: - EKEventEditViewDelegate
+
+  public func eventEditViewController(_ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction) {
+    controller.dismiss(animated: true) {
+      self.createEventModalResult?(nil)
+      self.createEventModalResult = nil
+    }
+  }
+
   // MARK: - Helper Methods
   
   private func getRootViewController() -> UIViewController? {

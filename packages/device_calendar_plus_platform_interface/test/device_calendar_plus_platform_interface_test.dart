@@ -76,6 +76,18 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     bool? isAllDay,
     String? timeZone,
   }) async {}
+
+  @override
+  Future<void> showCreateEventModal({
+    String? title,
+    int? startDate,
+    int? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? recurrenceRule,
+    String? availability,
+  }) async {}
 }
 
 void main() {

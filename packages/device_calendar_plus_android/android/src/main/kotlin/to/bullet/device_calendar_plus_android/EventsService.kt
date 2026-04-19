@@ -395,6 +395,76 @@ class EventsService(private val activity: Activity) {
         }
     }
     
+    /**
+     * Opens native calendar editor in create mode with optional pre-fill.
+     */
+    fun showCreateEvent(
+        activityContext: Activity,
+        title: String?,
+        startDate: Long?,
+        endDate: Long?,
+        description: String?,
+        location: String?,
+        isAllDay: Boolean?,
+        recurrenceRule: String?,
+        availability: String?,
+        requestCode: Int,
+    ): Result<Unit> {
+        return try {
+            if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+                activity.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.PERMISSION_DENIED,
+                        "Calendar permission denied. Call requestPermissions() first."
+                    )
+                )
+            }
+
+            val intent = Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)
+
+            if (title != null) intent.putExtra(CalendarContract.Events.TITLE, title)
+            if (description != null) intent.putExtra(CalendarContract.Events.DESCRIPTION, description)
+            if (location != null) intent.putExtra(CalendarContract.Events.EVENT_LOCATION, location)
+            if (startDate != null) intent.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startDate)
+            if (endDate != null) intent.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endDate)
+            if (isAllDay != null) intent.putExtra(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+            if (recurrenceRule != null) intent.putExtra(CalendarContract.Events.RRULE, recurrenceRule)
+            if (availability != null) {
+                val availabilityValue = when (availability) {
+                    "free" -> CalendarContract.Events.AVAILABILITY_FREE
+                    "tentative" -> CalendarContract.Events.AVAILABILITY_TENTATIVE
+                    else -> CalendarContract.Events.AVAILABILITY_BUSY
+                }
+                intent.putExtra(CalendarContract.Events.AVAILABILITY, availabilityValue)
+            }
+
+            activityContext.startActivityForResult(intent, requestCode)
+            Result.success(Unit)
+        } catch (e: android.content.ActivityNotFoundException) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.CALENDAR_UNAVAILABLE,
+                    "Calendar app not found"
+                )
+            )
+        } catch (e: SecurityException) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to open create event modal: ${e.message}"
+                )
+            )
+        }
+    }
+
     fun createEvent(
         calendarId: String,
         title: String,

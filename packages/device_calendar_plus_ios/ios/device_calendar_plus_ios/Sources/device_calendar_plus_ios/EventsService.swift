@@ -379,6 +379,65 @@ class EventsService {
     }
   }
   
+  // MARK: - Create Event for Modal
+
+  /// Creates an EKEvent with optional pre-fill properties for the native editor.
+  /// Returns nil if no pre-fill params are provided (caller uses nil for blank editor).
+  func createEventForModal(
+    title: String?,
+    startDate: Int64?,
+    endDate: Int64?,
+    description: String?,
+    location: String?,
+    isAllDay: Bool?,
+    recurrenceRule: String?,
+    availability: String?,
+    completion: @escaping (Result<EKEvent?, CalendarError>) -> Void
+  ) {
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+
+    // If all params are nil, return nil so the editor opens blank
+    if title == nil && startDate == nil && endDate == nil && description == nil &&
+       location == nil && isAllDay == nil && recurrenceRule == nil && availability == nil {
+      completion(.success(nil))
+      return
+    }
+
+    let event = EKEvent(eventStore: eventStore)
+
+    if let title = title { event.title = title }
+    if let startMillis = startDate {
+      event.startDate = Date(timeIntervalSince1970: TimeInterval(startMillis) / 1000.0)
+    }
+    if let endMillis = endDate {
+      event.endDate = Date(timeIntervalSince1970: TimeInterval(endMillis) / 1000.0)
+    }
+    if let description = description { event.notes = description }
+    if let location = location { event.location = location }
+    if let isAllDay = isAllDay { event.isAllDay = isAllDay }
+
+    if let availability = availability {
+      switch availability {
+      case "free": event.availability = .free
+      case "tentative": event.availability = .tentative
+      case "unavailable": event.availability = .unavailable
+      default: event.availability = .busy
+      }
+    }
+
+    if let rruleString = recurrenceRule, let rule = parseRecurrenceRule(rruleString) {
+      event.recurrenceRules = [rule]
+    }
+
+    completion(.success(event))
+  }
+
   // MARK: - RRULE <-> EKRecurrenceRule conversion
   
   /// Parses an RRULE string into an EKRecurrenceRule.

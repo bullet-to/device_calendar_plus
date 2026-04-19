@@ -24,9 +24,11 @@ class DeviceCalendarPlusAndroidPlugin :
     private var calendarService: CalendarService? = null
     private var eventsService: EventsService? = null
     private var showEventModalResult: Result? = null
-    
+    private var createEventModalResult: Result? = null
+
     companion object {
         private const val SHOW_EVENT_REQUEST_CODE = 1001
+        private const val CREATE_EVENT_REQUEST_CODE = 1002
     }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -46,6 +48,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "listEvents" -> handleListEvents(call, result)
             "getEvent" -> handleGetEvent(call, result)
             "showEventModal" -> handleShowEventModal(call, result)
+            "showCreateEventModal" -> handleShowCreateEventModal(call, result)
             "createEvent" -> handleCreateEvent(call, result)
             "deleteEvent" -> handleDeleteEvent(call, result)
             "updateEvent" -> handleUpdateEvent(call, result)
@@ -315,6 +318,39 @@ class DeviceCalendarPlusAndroidPlugin :
         )
     }
     
+    private fun handleShowCreateEventModal(call: MethodCall, result: Result) {
+        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
+        val currentActivity = activity ?: error("Activity not initialized - plugin lifecycle error")
+
+        val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+
+        createEventModalResult = result
+
+        val serviceResult = service.showCreateEvent(
+            activityContext = currentActivity,
+            title = args["title"] as? String,
+            startDate = args["startDate"] as? Long,
+            endDate = args["endDate"] as? Long,
+            description = args["description"] as? String,
+            location = args["location"] as? String,
+            isAllDay = args["isAllDay"] as? Boolean,
+            recurrenceRule = args["recurrenceRule"] as? String,
+            availability = args["availability"] as? String,
+            requestCode = CREATE_EVENT_REQUEST_CODE,
+        )
+        serviceResult.fold(
+            onSuccess = { /* Result will be sent in onActivityResult */ },
+            onFailure = { error ->
+                createEventModalResult = null
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+
     private fun handleCreateEvent(call: MethodCall, result: Result) {
         val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
         
@@ -458,9 +494,13 @@ class DeviceCalendarPlusAndroidPlugin :
     
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?): Boolean {
         if (requestCode == SHOW_EVENT_REQUEST_CODE) {
-            // Calendar activity closed, complete the future
             showEventModalResult?.success(null)
             showEventModalResult = null
+            return true
+        }
+        if (requestCode == CREATE_EVENT_REQUEST_CODE) {
+            createEventModalResult?.success(null)
+            createEventModalResult = null
             return true
         }
         return false
@@ -485,6 +525,7 @@ class DeviceCalendarPlusAndroidPlugin :
         calendarService = null
         eventsService = null
         showEventModalResult = null
+        createEventModalResult = null
     }
 
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
@@ -502,5 +543,6 @@ class DeviceCalendarPlusAndroidPlugin :
         calendarService = null
         eventsService = null
         showEventModalResult = null
+        createEventModalResult = null
     }
 }
