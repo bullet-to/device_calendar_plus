@@ -46,6 +46,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "hasPermissions" -> handleHasPermissions(result)
             "openAppSettings" -> handleOpenAppSettings(result)
             "listCalendars" -> handleListCalendars(result)
+            "listSources" -> handleListSources(result)
             "createCalendar" -> handleCreateCalendar(call, result)
             "updateCalendar" -> handleUpdateCalendar(call, result)
             "deleteCalendar" -> handleDeleteCalendar(call, result)
@@ -137,13 +138,30 @@ class DeviceCalendarPlusAndroidPlugin :
         )
     }
     
+    private fun handleListSources(result: Result) {
+        val service = calendarService!!
+
+        val serviceResult = service.listSources()
+        serviceResult.fold(
+            onSuccess = { sources -> result.success(sources) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+
     private fun handleCreateCalendar(call: MethodCall, result: Result) {
         val service = calendarService ?: error("CalendarService not initialized - plugin lifecycle error")
-        
+
         // Parse arguments
         val name = call.argument<String>("name")
         val colorHex = call.argument<String>("colorHex")
         val accountName = call.argument<String>("accountName")
+        val accountType = call.argument<String>("accountType")
         
         if (name == null) {
             result.error(
@@ -154,7 +172,7 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        val serviceResult = service.createCalendar(name, colorHex, accountName)
+        val serviceResult = service.createCalendar(name, colorHex, accountName, accountType)
         serviceResult.fold(
             onSuccess = { calendarId -> result.success(calendarId) },
             onFailure = { error ->

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'src/calendar.dart';
 import 'src/calendar_permission_status.dart';
+import 'src/calendar_source.dart';
 import 'src/event.dart';
 import 'src/event_availability.dart';
 import 'src/platform_exception_converter.dart';
@@ -10,12 +11,15 @@ import 'src/recurrence_rule.dart';
 
 export 'package:device_calendar_plus_android/device_calendar_plus_android.dart'
     show CreateCalendarOptionsAndroid;
+export 'package:device_calendar_plus_ios/device_calendar_plus_ios.dart'
+    show CreateCalendarOptionsIos;
 // Platform-specific options
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
     show CreateCalendarPlatformOptions, InstanceIdParser, ParsedInstanceId;
 
 export 'src/attendee.dart';
 export 'src/calendar.dart';
+export 'src/calendar_source.dart';
 export 'src/calendar_permission_status.dart';
 export 'src/device_calendar_error.dart';
 export 'src/event.dart';
@@ -186,6 +190,40 @@ class DeviceCalendar {
       final List<Map<String, dynamic>> rawCalendars =
           await DeviceCalendarPlusPlatform.instance.listCalendars();
       return rawCalendars.map((map) => Calendar.fromMap(map)).toList();
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  /// Lists available calendar sources/accounts on the device.
+  ///
+  /// Returns the sources that calendars can be created under. Use a source's
+  /// [CalendarSource.id] with [CreateCalendarOptionsIos], or
+  /// [CalendarSource.accountName] + [CalendarSource.accountType] with
+  /// [CreateCalendarOptionsAndroid] to create calendars under a specific account.
+  ///
+  /// **Note:** On Android, only sources that already have calendars are returned.
+  /// A freshly-added account with no calendars will not appear until its first
+  /// calendar is created.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  /// final sources = await plugin.listSources();
+  /// for (final source in sources) {
+  ///   print('${source.accountName} (${source.type})');
+  /// }
+  /// ```
+  Future<List<CalendarSource>> listSources() async {
+    try {
+      final List<Map<String, dynamic>> rawSources =
+          await DeviceCalendarPlusPlatform.instance.listSources();
+      return rawSources.map((map) => CalendarSource.fromMap(map)).toList();
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);

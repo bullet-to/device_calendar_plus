@@ -3,6 +3,7 @@ package to.bullet.device_calendar_plus_android
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 
@@ -89,7 +90,61 @@ class CalendarService(private val context: Context) {
         return Result.success(calendars)
     }
     
-    fun createCalendar(name: String, colorHex: String?, accountNameParam: String?): Result<String> {
+    fun listSources(): Result<List<Map<String, Any>>> {
+        val sources = mutableListOf<Map<String, Any>>()
+        val seen = mutableSetOf<String>()
+
+        try {
+            activity.contentResolver.query(
+                CalendarContract.Calendars.CONTENT_URI,
+                arrayOf(
+                    CalendarContract.Calendars.ACCOUNT_NAME,
+                    CalendarContract.Calendars.ACCOUNT_TYPE,
+                ),
+                null, null, null
+            )?.use { cursor ->
+                val nameIdx = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_NAME)
+                val typeIdx = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_TYPE)
+
+                while (cursor.moveToNext()) {
+                    val accountName = cursor.getString(nameIdx) ?: continue
+                    val accountType = cursor.getString(typeIdx) ?: continue
+                    val key = "${Uri.encode(accountName)}:${Uri.encode(accountType)}"
+
+                    if (seen.add(key)) {
+                        sources.add(mapOf(
+                            "id" to key,
+                            "accountName" to accountName,
+                            "accountType" to accountType,
+                            "type" to accountTypeToSourceType(accountType),
+                            "supportsCalendarCreation" to (accountType == CalendarContract.ACCOUNT_TYPE_LOCAL),
+                        ))
+                    }
+                }
+            }
+        } catch (e: SecurityException) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        }
+
+        return Result.success(sources)
+    }
+
+    private fun accountTypeToSourceType(accountType: String): String {
+        return when (accountType) {
+            CalendarContract.ACCOUNT_TYPE_LOCAL -> "local"
+            "com.google" -> "calDav"
+            "com.android.exchange" -> "exchange"
+            "com.samsung.android.exchange" -> "exchange"
+            else -> "other"
+        }
+    }
+
+    fun createCalendar(name: String, colorHex: String?, accountNameParam: String?, accountTypeParam: String?): Result<String> {
         // Check for write calendar permission
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR)
             != PackageManager.PERMISSION_GRANTED) {
@@ -102,7 +157,7 @@ class CalendarService(private val context: Context) {
         }
         
         val accountName = accountNameParam ?: "local"
-        val accountType = CalendarContract.ACCOUNT_TYPE_LOCAL
+        val accountType = accountTypeParam ?: CalendarContract.ACCOUNT_TYPE_LOCAL
         
         // Android automatically creates the account when inserting the first calendar
         try {

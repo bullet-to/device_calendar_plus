@@ -55,7 +55,7 @@ class CalendarService {
     completion(.success(calendarMaps))
   }
   
-  func createCalendar(name: String, colorHex: String?, completion: @escaping (Result<String, CalendarError>) -> Void) {
+  func createCalendar(name: String, colorHex: String?, sourceId: String?, completion: @escaping (Result<String, CalendarError>) -> Void) {
     // Check current permission status - creating calendars requires full access (writing)
     guard permissionService.hasPermission(for: .full) else {
       completion(.failure(CalendarError(
@@ -64,20 +64,31 @@ class CalendarService {
       )))
       return
     }
-    
-    // Use the best available writable source:
-    // 1. Default calendar's source (usually iCloud on most devices)
-    // 2. First CalDAV source (iCloud, Google, etc.)
-    // 3. Local source (simulator or devices with no cloud accounts)
-    guard let source = eventStore.defaultCalendarForNewEvents?.source
-        ?? eventStore.sources.first(where: { $0.sourceType == .calDAV })
-        ?? eventStore.sources.first(where: { $0.sourceType == .local })
-    else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.calendarUnavailable,
-        message: "Could not find a writable calendar source"
-      )))
-      return
+
+    let source: EKSource
+    if let sourceId = sourceId {
+      // Find source by identifier
+      guard let found = eventStore.sources.first(where: { $0.sourceIdentifier == sourceId }) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.notFound,
+          message: "Source not found with identifier: \(sourceId)"
+        )))
+        return
+      }
+      source = found
+    } else {
+      // Use the best available writable source (tiered fallback)
+      guard let fallback = eventStore.defaultCalendarForNewEvents?.source
+          ?? eventStore.sources.first(where: { $0.sourceType == .calDAV })
+          ?? eventStore.sources.first(where: { $0.sourceType == .local })
+      else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.calendarUnavailable,
+          message: "Could not find a writable calendar source"
+        )))
+        return
+      }
+      source = fallback
     }
 
     // Create a new calendar
@@ -183,6 +194,46 @@ class CalendarService {
     }
   }
   
+  func listSources(completion: @escaping (Result<[[String: Any]], CalendarError>) -> Void) {
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+
+    let sources = eventStore.sources.map { source -> [String: Any] in
+      return [
+        "id": source.sourceIdentifier,
+        "accountName": source.title,
+        "accountType": sourceTypeToString(sourceType: source.sourceType),
+        "type": sourceTypeToCalendarSourceType(source.sourceType),
+        "supportsCalendarCreation": sourceSupportsCreation(source.sourceType),
+      ]
+    }
+
+    completion(.success(sources))
+  }
+
+  private func sourceTypeToCalendarSourceType(_ type: EKSourceType) -> String {
+    switch type {
+    case .local: return "local"
+    case .calDAV: return "calDav"
+    case .exchange: return "exchange"
+    case .subscribed: return "subscribed"
+    case .birthdays: return "birthdays"
+    default: return "other"
+    }
+  }
+
+  private func sourceSupportsCreation(_ type: EKSourceType) -> Bool {
+    switch type {
+    case .local, .calDAV, .exchange: return true
+    default: return false
+    }
+  }
+
   private func sourceTypeToString(sourceType: EKSourceType) -> String {
     switch sourceType {
     case .local:

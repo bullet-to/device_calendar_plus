@@ -17,6 +17,9 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   Future<List<Map<String, dynamic>>> listCalendars() async => [];
 
   @override
+  Future<List<Map<String, dynamic>>> listSources() async => [];
+
+  @override
   Future<String> createCalendar(
     String name,
     String? colorHex,
