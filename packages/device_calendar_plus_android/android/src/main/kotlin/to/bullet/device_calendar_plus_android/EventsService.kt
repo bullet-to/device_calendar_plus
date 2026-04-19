@@ -16,46 +16,18 @@ class EventsService(private val context: Context) {
     ): Result<List<Map<String, Any>>> {
         val events = mutableListOf<Map<String, Any>>()
 
-        // Convert dates to milliseconds
         val startMillis = startDate.time
         val endMillis = endDate.time
 
-        // Issue #20 fix: All-day events are stored at UTC midnight boundaries,
-        // but the caller passes local-midnight millis. To ensure the Instances API
-        // returns all-day events for the intended calendar dates regardless of
-        // timezone, we widen the query range to UTC midnight boundaries of the
-        // local dates, then post-filter all-day events by date.
-        val localCal = java.util.Calendar.getInstance()
-        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        // All-day events are stored at UTC midnight boundaries, but the caller
+        // passes local-midnight millis. We widen the Instances query to cover
+        // UTC midnight boundaries too, then post-filter by date. (issue #20)
+        val queryStartUtcMidnight = localMillisToUtcMidnight(startMillis)
+        val queryEndUtcMidnight = localMillisToUtcMidnight(endMillis)
 
-        // Extract local date from query start → compute UTC midnight for that date
-        localCal.timeInMillis = startMillis
-        utcCal.set(
-            localCal.get(java.util.Calendar.YEAR),
-            localCal.get(java.util.Calendar.MONTH),
-            localCal.get(java.util.Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        utcCal.set(java.util.Calendar.MILLISECOND, 0)
-        val queryStartUtcMidnight = utcCal.timeInMillis
-
-        // Extract local date from query end → compute UTC midnight for that date
-        localCal.timeInMillis = endMillis
-        utcCal.set(
-            localCal.get(java.util.Calendar.YEAR),
-            localCal.get(java.util.Calendar.MONTH),
-            localCal.get(java.util.Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        utcCal.set(java.util.Calendar.MILLISECOND, 0)
-        val queryEndUtcMidnight = utcCal.timeInMillis
-
-        // Widen the Instances query to cover both the original range AND the UTC
-        // midnight range, so we never miss all-day events due to offset.
         val effectiveStart = minOf(startMillis, queryStartUtcMidnight)
         val effectiveEnd = maxOf(endMillis, queryEndUtcMidnight)
 
-        // Build URI with widened date range for Instances API
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
             .appendPath(effectiveStart.toString())
             .appendPath(effectiveEnd.toString())
@@ -76,7 +48,6 @@ class EventsService(private val context: Context) {
             CalendarContract.Instances.RRULE
         )
 
-        // Build selection clause for calendar and event filtering
         val selections = mutableListOf<String>()
         val args = mutableListOf<String>()
 
@@ -102,35 +73,18 @@ class EventsService(private val context: Context) {
                 selectionArgs,
                 "${CalendarContract.Instances.BEGIN} ASC"
             )?.use { cursor ->
-                val allDayIdx = cursor.getColumnIndex(CalendarContract.Instances.ALL_DAY)
+                val beginIdx = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)
                 val endIdx = cursor.getColumnIndex(CalendarContract.Instances.END)
+                val allDayIdx = cursor.getColumnIndex(CalendarContract.Instances.ALL_DAY)
 
                 while (cursor.moveToNext()) {
+                    val eventBeginMillis = cursor.getLong(beginIdx)
+                    val eventEndMillis = cursor.getLong(endIdx)
                     val isAllDay = cursor.getInt(allDayIdx) == 1
-                    if (isAllDay) {
-                        // Post-filter all-day events using UTC date comparison.
-                        // All-day BEGIN/END are UTC midnights representing calendar dates.
-                        val beginIdx = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)
-                        val eventBeginMillis = cursor.getLong(beginIdx)
-                        val eventEndMillis = cursor.getLong(endIdx)
-                        // Normalize: if end <= start, treat as 1-day event (end = start + 1 day)
-                        val effectiveEnd = if (eventEndMillis <= eventBeginMillis) {
-                            eventBeginMillis + 86_400_000L
-                        } else {
-                            eventEndMillis
-                        }
-                        // Event must overlap [queryStartUtcMidnight, queryEndUtcMidnight)
-                        if (effectiveEnd <= queryStartUtcMidnight || eventBeginMillis >= queryEndUtcMidnight) {
-                            continue
-                        }
-                    } else {
-                        // Timed events: filter out any pulled in by the widened query range
-                        val beginIdx = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)
-                        val eventBeginMillis = cursor.getLong(beginIdx)
-                        val eventEndMillis = cursor.getLong(endIdx)
-                        if (eventEndMillis <= startMillis || eventBeginMillis >= endMillis) {
-                            continue
-                        }
+
+                    if (!isInRange(isAllDay, eventBeginMillis, eventEndMillis,
+                            startMillis, endMillis, queryStartUtcMidnight, queryEndUtcMidnight)) {
+                        continue
                     }
 
                     val eventMap = buildEventMapFromCursor(
@@ -170,6 +124,47 @@ class EventsService(private val context: Context) {
         return Result.success(events)
     }
     
+    /**
+     * Converts local millis to UTC midnight of the same local calendar date.
+     * E.g. Dec 25 00:00 AEDT (UTC+11) → Dec 25 00:00 UTC.
+     */
+    private fun localMillisToUtcMidnight(millis: Long): Long {
+        val local = java.util.Calendar.getInstance()
+        local.timeInMillis = millis
+        val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        utc.set(
+            local.get(java.util.Calendar.YEAR),
+            local.get(java.util.Calendar.MONTH),
+            local.get(java.util.Calendar.DAY_OF_MONTH),
+            0, 0, 0
+        )
+        utc.set(java.util.Calendar.MILLISECOND, 0)
+        return utc.timeInMillis
+    }
+
+    /**
+     * Checks whether an event (all-day or timed) falls within the query range.
+     * All-day events are compared by UTC calendar date; timed events by millis.
+     */
+    private fun isInRange(
+        isAllDay: Boolean,
+        eventBegin: Long,
+        eventEnd: Long,
+        startMillis: Long,
+        endMillis: Long,
+        startUtcMidnight: Long,
+        endUtcMidnight: Long
+    ): Boolean {
+        if (isAllDay) {
+            // All-day BEGIN/END are UTC midnights. If end <= begin, it's a
+            // single-day event stored without the +1 day convention.
+            val effectiveEnd = if (eventEnd <= eventBegin) eventBegin + 86_400_000L else eventEnd
+            return effectiveEnd > startUtcMidnight && eventBegin < endUtcMidnight
+        }
+        // Timed events: standard overlap check against original query range
+        return eventEnd > startMillis && eventBegin < endMillis
+    }
+
     private fun availabilityToString(availability: Int): String {
         return when (availability) {
             CalendarContract.Events.AVAILABILITY_BUSY -> "busy"
