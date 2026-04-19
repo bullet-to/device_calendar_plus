@@ -242,8 +242,85 @@ class EventsService(private val activity: Activity) {
         if (lastModifiedDate != null) {
             eventMap["updatedDate"] = lastModifiedDate
         }
-        
+
+        // Query attendees
+        val attendees = queryAttendees(eventId.toLong())
+        if (attendees.isNotEmpty()) {
+            eventMap["attendees"] = attendees
+        }
+
         return eventMap
+    }
+
+    private fun queryAttendees(eventId: Long): List<Map<String, Any?>> {
+        val attendees = mutableListOf<Map<String, Any?>>()
+
+        try {
+            activity.contentResolver.query(
+                CalendarContract.Attendees.CONTENT_URI,
+                arrayOf(
+                    CalendarContract.Attendees.ATTENDEE_NAME,
+                    CalendarContract.Attendees.ATTENDEE_EMAIL,
+                    CalendarContract.Attendees.ATTENDEE_TYPE,
+                    CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
+                    CalendarContract.Attendees.ATTENDEE_STATUS,
+                ),
+                "${CalendarContract.Attendees.EVENT_ID} = ?",
+                arrayOf(eventId.toString()),
+                null
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val relationship = cursor.getInt(
+                        cursor.getColumnIndexOrThrow(CalendarContract.Attendees.ATTENDEE_RELATIONSHIP)
+                    )
+                    // Skip the organizer
+                    if (relationship == CalendarContract.Attendees.RELATIONSHIP_ORGANIZER) continue
+
+                    val name = cursor.getString(
+                        cursor.getColumnIndexOrThrow(CalendarContract.Attendees.ATTENDEE_NAME)
+                    )
+                    val email = cursor.getString(
+                        cursor.getColumnIndexOrThrow(CalendarContract.Attendees.ATTENDEE_EMAIL)
+                    )
+                    val type = cursor.getInt(
+                        cursor.getColumnIndexOrThrow(CalendarContract.Attendees.ATTENDEE_TYPE)
+                    )
+                    val status = cursor.getInt(
+                        cursor.getColumnIndexOrThrow(CalendarContract.Attendees.ATTENDEE_STATUS)
+                    )
+
+                    attendees.add(mapOf(
+                        "name" to name,
+                        "emailAddress" to email,
+                        "role" to attendeeTypeToRole(type),
+                        "status" to attendeeStatusToString(status),
+                    ))
+                }
+            }
+        } catch (_: Exception) {
+            // Silently return empty if attendee query fails
+        }
+
+        return attendees
+    }
+
+    private fun attendeeTypeToRole(type: Int): String {
+        return when (type) {
+            CalendarContract.Attendees.TYPE_REQUIRED -> "required"
+            CalendarContract.Attendees.TYPE_OPTIONAL -> "optional"
+            CalendarContract.Attendees.TYPE_RESOURCE -> "nonParticipant"
+            else -> "required"
+        }
+    }
+
+    private fun attendeeStatusToString(status: Int): String {
+        return when (status) {
+            CalendarContract.Attendees.ATTENDEE_STATUS_ACCEPTED -> "accepted"
+            CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED -> "declined"
+            CalendarContract.Attendees.ATTENDEE_STATUS_TENTATIVE -> "tentative"
+            CalendarContract.Attendees.ATTENDEE_STATUS_INVITED -> "pending"
+            else -> "none"
+        }
     }
     
     fun getEvent(eventId: String, timestamp: Long?): Result<Map<String, Any>?> {
