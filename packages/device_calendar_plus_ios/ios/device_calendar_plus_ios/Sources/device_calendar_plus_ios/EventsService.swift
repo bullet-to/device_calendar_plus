@@ -187,11 +187,9 @@ class EventsService {
         }
 
         // Email is embedded in the URL property as mailto:
-        if let url = participant.url {
-          let urlString = url.absoluteString
-          if urlString.hasPrefix("mailto:") {
-            attendeeMap["emailAddress"] = String(urlString.dropFirst(7))
-          }
+        let urlString = participant.url.absoluteString
+        if urlString.hasPrefix("mailto:") {
+          attendeeMap["emailAddress"] = String(urlString.dropFirst(7))
         }
 
         return attendeeMap
