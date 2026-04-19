@@ -775,12 +775,8 @@ class DeviceCalendar {
   /// The returned [Future] completes when the modal is dismissed (whether
   /// the user saved or cancelled).
   ///
-  /// **Date defaulting** (cross-platform consistency):
-  /// - If only [startDate] is provided, [endDate] defaults to +1 hour
-  ///   (+1 day if [isAllDay] is true)
-  /// - If only [endDate] is provided, [startDate] defaults to -1 hour
-  ///   (-1 day if [isAllDay] is true)
-  /// - If neither date is provided, the native editor uses its own defaults
+  /// If [isAllDay] is true, any provided dates are normalized to midnight.
+  /// If neither date is provided, the native editor uses its own defaults.
   ///
   /// **Platform APIs:**
   /// - **iOS**: `EKEventEditViewController`
@@ -811,36 +807,17 @@ class DeviceCalendar {
     RecurrenceRule? recurrenceRule,
     EventAvailability? availability,
   }) async {
-    // Default missing dates for cross-platform consistency
-    var normalizedStart = startDate;
-    var normalizedEnd = endDate;
-
-    if (startDate != null && endDate == null) {
-      normalizedEnd = isAllDay == true
-          ? startDate.add(const Duration(days: 1))
-          : startDate.add(const Duration(hours: 1));
-    } else if (endDate != null && startDate == null) {
-      normalizedStart = isAllDay == true
-          ? endDate.subtract(const Duration(days: 1))
-          : endDate.subtract(const Duration(hours: 1));
-    }
-
     // Validate dates if both are provided
-    if (normalizedStart != null &&
-        normalizedEnd != null &&
-        normalizedEnd.isBefore(normalizedStart)) {
+    if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
       throw ArgumentError('End date must be after start date');
     }
 
     // Normalize dates for all-day events
-    if (isAllDay == true) {
-      if (normalizedStart != null) {
-        normalizedStart = _stripTime(normalizedStart);
-      }
-      if (normalizedEnd != null) {
-        normalizedEnd = _stripTime(normalizedEnd);
-      }
-    }
+    final normalizedStart = (isAllDay == true && startDate != null)
+        ? _stripTime(startDate)
+        : startDate;
+    final normalizedEnd =
+        (isAllDay == true && endDate != null) ? _stripTime(endDate) : endDate;
 
     try {
       await DeviceCalendarPlusPlatform.instance.showCreateEventModal(
