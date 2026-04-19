@@ -11,6 +11,8 @@ import 'src/recurrence_rule.dart';
 
 export 'package:device_calendar_plus_android/device_calendar_plus_android.dart'
     show CreateCalendarOptionsAndroid;
+export 'package:device_calendar_plus_ios/device_calendar_plus_ios.dart'
+    show CreateCalendarOptionsIos;
 // Platform-specific options
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
     show CreateCalendarPlatformOptions, InstanceIdParser, ParsedInstanceId;

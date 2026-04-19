@@ -2,6 +2,9 @@ import 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'src/create_calendar_options_ios.dart';
+export 'src/create_calendar_options_ios.dart';
+
 /// The iOS implementation of [DeviceCalendarPlusPlatform].
 class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   /// The method channel used to interact with the native platform.
@@ -50,13 +53,17 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     String? colorHex,
     CreateCalendarPlatformOptions? platformOptions,
   ) async {
-    // iOS does not support platform-specific options for calendar creation
-    // platformOptions is ignored
+    String? sourceId;
+    if (platformOptions is CreateCalendarOptionsIos) {
+      sourceId = platformOptions.sourceId;
+    }
+
     final result = await methodChannel.invokeMethod<String>(
       'createCalendar',
       <String, dynamic>{
         'name': name,
         'colorHex': colorHex,
+        'sourceId': sourceId,
       },
     );
     return result!;

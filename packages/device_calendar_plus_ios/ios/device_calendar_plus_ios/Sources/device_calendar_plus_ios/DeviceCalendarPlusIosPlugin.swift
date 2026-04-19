@@ -27,6 +27,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleOpenAppSettings(result: result)
     case "listCalendars":
       handleListCalendars(result: result)
+    case "listSources":
+      handleListSources(result: result)
     case "createCalendar":
       handleCreateCalendar(call: call, result: result)
     case "updateCalendar":
@@ -119,6 +121,19 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
   
+  private func handleListSources(result: @escaping FlutterResult) {
+    calendarService.listSources { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success(let sources):
+          result(sources)
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+
   private func handleCreateCalendar(call: FlutterMethodCall, result: @escaping FlutterResult) {
     guard let args = call.arguments as? [String: Any] else {
       result(FlutterError(
@@ -128,7 +143,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       ))
       return
     }
-    
+
     // Parse name (required)
     guard let name = args["name"] as? String else {
       result(FlutterError(
@@ -138,11 +153,14 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       ))
       return
     }
-    
+
     // Parse colorHex (optional)
     let colorHex = args["colorHex"] as? String
-    
-    calendarService.createCalendar(name: name, colorHex: colorHex) { serviceResult in
+
+    // Parse sourceId (optional — if nil, uses tiered fallback)
+    let sourceId = args["sourceId"] as? String
+
+    calendarService.createCalendar(name: name, colorHex: colorHex, sourceId: sourceId) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
         case .success(let calendarId):
