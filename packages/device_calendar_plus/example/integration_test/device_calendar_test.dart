@@ -887,5 +887,39 @@ void main() {
       skip: 'Requires manual verification. System modal UI cannot be easily '
           'automated with integration_test package.',
     );
+    test(
+      '26. Show Create Event Modal',
+      () async {
+        // This test requires manual verification because it involves system UI:
+        // - iOS: EKEventEditViewController (requires XCUITest for automation)
+        // - Android: Calendar app via Intent.ACTION_INSERT (requires Espresso)
+        //
+        // To test manually:
+        // 1. Call showCreateEventModal with pre-fill params
+        // 2. Verify the native editor opens with fields populated
+        // 3. Dismiss the modal (save or cancel)
+        // 4. Verify the Future completes ONLY after modal is dismissed
+        //
+        // Example:
+        // print('Opening create modal...');
+        // await plugin.showCreateEventModal(
+        //   title: 'Pre-filled Event',
+        //   startDate: DateTime.now().add(Duration(hours: 1)),
+        //   endDate: DateTime.now().add(Duration(hours: 2)),
+        //   location: 'Conference Room',
+        //   description: 'Test pre-fill',
+        // );
+        // print('Modal closed - Future completed!');
+        //
+        // Also test with no params (blank editor):
+        // await plugin.showCreateEventModal();
+
+        fail(
+            'This test requires manual verification. Automated testing of system '
+            'modal UI requires XCUITest (iOS) or Espresso (Android) setup.');
+      },
+      skip: 'Requires manual verification. System modal UI cannot be easily '
+          'automated with integration_test package.',
+    );
   });
 }

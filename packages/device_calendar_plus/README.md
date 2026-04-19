@@ -281,6 +281,37 @@ await plugin.showEventModal(event.instanceId);
 await plugin.showEventModal(event.eventId);
 ```
 
+### Create Event via Native Editor
+
+Opens the platform's native calendar editor in create mode. Useful when you want
+the user to review/edit before saving, or as the iOS workaround for adding
+attendees (which can't be done programmatically).
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Open blank editor
+await plugin.showCreateEventModal();
+
+// Open with pre-filled data
+await plugin.showCreateEventModal(
+  title: 'Team Meeting',
+  startDate: DateTime.now().add(Duration(hours: 1)),
+  endDate: DateTime.now().add(Duration(hours: 2)),
+  location: 'Conference Room A',
+  description: 'Weekly sync',
+  recurrenceRule: WeeklyRecurrence(
+    daysOfWeek: [DayOfWeek.tuesday],
+  ),
+);
+```
+
+All parameters are optional. The Future completes when the modal is dismissed
+(whether the user saved or cancelled).
+
+**Platform APIs:** iOS uses `EKEventEditViewController`, Android uses
+`Intent.ACTION_INSERT`.
+
 ### Create Event
 
 ```dart
