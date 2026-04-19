@@ -91,6 +91,12 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     CreateCalendarPlatformOptions? platformOptions,
   );
 
+  /// Lists available calendar sources/accounts on the device.
+  ///
+  /// Returns a list of maps with keys: id, accountName, accountType, type.
+  /// Requires calendar read permissions.
+  Future<List<Map<String, dynamic>>> listSources();
+
   /// Updates an existing calendar on the device.
   ///
   /// [calendarId] is the ID of the calendar to update.

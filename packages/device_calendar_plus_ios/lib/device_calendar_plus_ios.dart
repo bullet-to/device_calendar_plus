@@ -37,6 +37,14 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> listSources() async {
+    final result =
+        await methodChannel.invokeMethod<List<dynamic>>('listSources');
+    return result?.map((e) => Map<String, dynamic>.from(e as Map)).toList() ??
+        [];
+  }
+
+  @override
   Future<String> createCalendar(
     String name,
     String? colorHex,
