@@ -14,6 +14,7 @@ export 'package:device_calendar_plus_android/device_calendar_plus_android.dart'
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
     show CreateCalendarPlatformOptions, InstanceIdParser, ParsedInstanceId;
 
+export 'src/attendee.dart';
 export 'src/calendar.dart';
 export 'src/calendar_permission_status.dart';
 export 'src/device_calendar_error.dart';

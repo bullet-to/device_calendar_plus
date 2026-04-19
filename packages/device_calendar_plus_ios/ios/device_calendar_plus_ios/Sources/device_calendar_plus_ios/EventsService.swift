@@ -163,13 +163,69 @@ class EventsService {
     
     // Set isRecurring flag
     eventMap["isRecurring"] = event.hasRecurrenceRules
-    
+
     // Serialize recurrence rule to RRULE string
     if event.hasRecurrenceRules, let rule = event.recurrenceRules?.first {
       eventMap["recurrenceRule"] = ekRecurrenceRuleToRruleString(rule)
     }
-    
+
+    // Serialize attendees
+    if let participants = event.attendees, !participants.isEmpty {
+      let attendees: [[String: Any]] = participants.compactMap { participant in
+        // Skip the organizer
+        if participant.participantRole == .chair {
+          return nil
+        }
+
+        var attendeeMap: [String: Any] = [
+          "role": participantRoleToString(participant.participantRole),
+          "status": participantStatusToString(participant.participantStatus),
+        ]
+
+        if let name = participant.name {
+          attendeeMap["name"] = name
+        }
+
+        // Email is embedded in the URL property as mailto:
+        let urlString = participant.url.absoluteString
+        if urlString.hasPrefix("mailto:") {
+          attendeeMap["emailAddress"] = String(urlString.dropFirst(7))
+        }
+
+        return attendeeMap
+      }
+
+      if !attendees.isEmpty {
+        eventMap["attendees"] = attendees
+      }
+    }
+
     return eventMap
+  }
+
+  private func participantRoleToString(_ role: EKParticipantRole) -> String {
+    switch role {
+    case .required: return "required"
+    case .optional: return "optional"
+    case .chair: return "chair"
+    case .nonParticipant: return "nonParticipant"
+    case .unknown: return "required"
+    @unknown default: return "required"
+    }
+  }
+
+  private func participantStatusToString(_ status: EKParticipantStatus) -> String {
+    switch status {
+    case .accepted: return "accepted"
+    case .declined: return "declined"
+    case .tentative: return "tentative"
+    case .pending: return "pending"
+    case .delegated: return "delegated"
+    case .completed: return "completed"
+    case .inProcess: return "inProcess"
+    case .unknown: return "none"
+    @unknown default: return "none"
+    }
   }
   
   func getEvent(

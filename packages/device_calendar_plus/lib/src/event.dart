@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+
+import 'attendee.dart';
 import 'event_availability.dart';
 import 'event_status.dart';
 import 'recurrence_rule.dart';
@@ -88,6 +91,13 @@ class Event {
   /// the original platform string.
   final RecurrenceRule? recurrenceRule;
 
+  /// Attendees of this event (read-only).
+  ///
+  /// Null if the event has no attendees or attendees are not available.
+  /// iOS and Android both support reading attendees but neither platform
+  /// supports programmatic write via this plugin.
+  final List<Attendee>? attendees;
+
   Event({
     required this.eventId,
     required this.instanceId,
@@ -103,11 +113,13 @@ class Event {
     this.timeZone,
     required this.isRecurring,
     this.recurrenceRule,
+    this.attendees,
   });
 
   /// Creates an Event from a map returned by the platform.
   factory Event.fromMap(Map<String, dynamic> map) {
     final rruleString = map['recurrenceRule'] as String?;
+    final attendeesList = map['attendees'] as List<dynamic>?;
     return Event(
       eventId: map['eventId'] as String,
       instanceId: map['instanceId'] as String,
@@ -125,6 +137,9 @@ class Event {
       recurrenceRule: rruleString != null
           ? RecurrenceRule.fromRruleString(rruleString)
           : null,
+      attendees: attendeesList
+          ?.map((a) => Attendee.fromMap(Map<String, dynamic>.from(a as Map)))
+          .toList(),
     );
   }
 
@@ -148,6 +163,9 @@ class Event {
     if (timeZone != null) map['timeZone'] = timeZone;
     if (recurrenceRule != null) {
       map['recurrenceRule'] = recurrenceRule!.rruleString;
+    }
+    if (attendees != null) {
+      map['attendees'] = attendees!.map((a) => a.toMap()).toList();
     }
 
     return map;
@@ -177,7 +195,8 @@ class Event {
         other.status == status &&
         other.timeZone == timeZone &&
         other.isRecurring == isRecurring &&
-        other.recurrenceRule == recurrenceRule;
+        other.recurrenceRule == recurrenceRule &&
+        listEquals(other.attendees, attendees);
   }
 
   @override
@@ -197,6 +216,7 @@ class Event {
       timeZone,
       isRecurring,
       recurrenceRule,
+      attendees != null ? Object.hashAll(attendees!) : null,
     );
   }
 }
