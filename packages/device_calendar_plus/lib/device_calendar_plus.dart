@@ -380,8 +380,9 @@ class DeviceCalendar {
 
   /// Lists events within the specified date range.
   ///
-  /// [startDate] and [endDate] are required parameters that define the time
-  /// window for fetching events.
+  /// [startDate] and [endDate] define a half-open interval `[start, end)` —
+  /// events that overlap this range are returned, but an event starting
+  /// exactly at [endDate] is excluded.
   ///
   /// **Important iOS Limitation**: iOS automatically limits event queries to a
   /// maximum span of 4 years. If you specify a range exceeding 4 years, iOS

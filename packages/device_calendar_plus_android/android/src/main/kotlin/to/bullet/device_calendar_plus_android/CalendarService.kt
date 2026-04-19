@@ -95,7 +95,7 @@ class CalendarService(private val context: Context) {
         val seen = mutableSetOf<String>()
 
         try {
-            activity.contentResolver.query(
+            context.contentResolver.query(
                 CalendarContract.Calendars.CONTENT_URI,
                 arrayOf(
                     CalendarContract.Calendars.ACCOUNT_NAME,

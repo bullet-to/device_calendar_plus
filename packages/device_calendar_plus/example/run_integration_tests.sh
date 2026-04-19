@@ -128,19 +128,46 @@ echo "🚀 Running integration tests on $DEVICE_ID..."
 echo ""
 
 # Run all integration tests in a single app launch
-if [ "$PLATFORM" == "android" ]; then
-    # Use custom driver that grants permissions via adb
-    if flutter drive \
-        --driver=integration_test/integration_test_driver.dart \
-        --target=integration_test/all_tests.dart \
-        -d "$DEVICE_ID"; then
-        EXIT_CODE=0
+run_tests() {
+    if [ "$PLATFORM" == "android" ]; then
+        flutter drive \
+            --driver=integration_test/integration_test_driver.dart \
+            --target=integration_test/all_tests.dart \
+            -d "$DEVICE_ID"
     else
-        EXIT_CODE=1
+        flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
     fi
+}
+
+# Timezones to cycle through on Android (covers positive, negative, and zero offsets).
+# All-day event boundary logic depends on correct UTC date extraction regardless of offset.
+ANDROID_TIMEZONES=("America/Los_Angeles" "UTC" "Australia/Sydney")
+
+if [ "$PLATFORM" == "android" ]; then
+    # Save original timezone
+    ORIGINAL_TZ=$(adb -s "$DEVICE_ID" shell getprop persist.sys.timezone | tr -d '\r')
+    EXIT_CODE=0
+
+    for TZ in "${ANDROID_TIMEZONES[@]}"; do
+        echo -e "${CYAN}🕐 Setting timezone: $TZ${NC}"
+        adb -s "$DEVICE_ID" shell "service call alarm 3 s16 $TZ" > /dev/null 2>&1
+        sleep 1
+
+        if ! run_tests; then
+            echo -e "${RED}❌ Tests failed at timezone: $TZ${NC}"
+            EXIT_CODE=1
+            break
+        fi
+        echo -e "${GREEN}✓ Passed at $TZ${NC}"
+        echo ""
+    done
+
+    # Restore original timezone
+    echo -e "${CYAN}🕐 Restoring timezone: $ORIGINAL_TZ${NC}"
+    adb -s "$DEVICE_ID" shell "service call alarm 3 s16 $ORIGINAL_TZ" > /dev/null 2>&1
 else
-    # iOS: Use regular flutter test
-    if flutter test integration_test/all_tests.dart -d "$DEVICE_ID"; then
+    # iOS: run once (timezone issues are Android-specific)
+    if run_tests; then
         EXIT_CODE=0
     else
         EXIT_CODE=1
