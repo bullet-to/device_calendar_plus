@@ -209,6 +209,7 @@ class CalendarService {
         "accountName": source.title,
         "accountType": sourceTypeToString(sourceType: source.sourceType),
         "type": sourceTypeToCalendarSourceType(source.sourceType),
+        "supportsCalendarCreation": sourceSupportsCreation(source.sourceType),
       ]
     }
 
@@ -223,6 +224,13 @@ class CalendarService {
     case .subscribed: return "subscribed"
     case .birthdays: return "birthdays"
     default: return "other"
+    }
+  }
+
+  private func sourceSupportsCreation(_ type: EKSourceType) -> Bool {
+    switch type {
+    case .local, .calDAV, .exchange: return true
+    default: return false
     }
   }
 

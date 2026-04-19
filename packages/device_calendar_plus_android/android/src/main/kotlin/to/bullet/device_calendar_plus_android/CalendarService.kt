@@ -116,6 +116,7 @@ class CalendarService(private val activity: Activity) {
                             "accountName" to accountName,
                             "accountType" to accountType,
                             "type" to accountTypeToSourceType(accountType),
+                            "supportsCalendarCreation" to (accountType == CalendarContract.ACCOUNT_TYPE_LOCAL),
                         ))
                     }
                 }

@@ -74,11 +74,19 @@ class CalendarSource {
   /// Normalized source type.
   final CalendarSourceType type;
 
+  /// Whether this source supports calendar creation from this app.
+  ///
+  /// - **iOS**: true for local, CalDAV, and Exchange sources
+  /// - **Android**: true only for local accounts (other account types are
+  ///   managed by their sync adapters and may reject third-party calendars)
+  final bool supportsCalendarCreation;
+
   const CalendarSource({
     required this.id,
     required this.accountName,
     required this.accountType,
     required this.type,
+    required this.supportsCalendarCreation,
   });
 
   factory CalendarSource.fromMap(Map<String, dynamic> map) {
@@ -87,6 +95,8 @@ class CalendarSource {
       accountName: map['accountName'] as String,
       accountType: map['accountType'] as String,
       type: CalendarSourceType.fromName(map['type'] as String? ?? 'other'),
+      supportsCalendarCreation:
+          map['supportsCalendarCreation'] as bool? ?? false,
     );
   }
 
@@ -96,6 +106,7 @@ class CalendarSource {
       'accountName': accountName,
       'accountType': accountType,
       'type': type.name,
+      'supportsCalendarCreation': supportsCalendarCreation,
     };
   }
 
@@ -106,11 +117,13 @@ class CalendarSource {
         other.id == id &&
         other.accountName == accountName &&
         other.accountType == accountType &&
-        other.type == type;
+        other.type == type &&
+        other.supportsCalendarCreation == supportsCalendarCreation;
   }
 
   @override
-  int get hashCode => Object.hash(id, accountName, accountType, type);
+  int get hashCode =>
+      Object.hash(id, accountName, accountType, type, supportsCalendarCreation);
 
   @override
   String toString() =>
