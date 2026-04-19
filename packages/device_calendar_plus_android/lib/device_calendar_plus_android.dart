@@ -190,4 +190,30 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
       },
     );
   }
+
+  @override
+  Future<void> showCreateEventModal({
+    String? title,
+    int? startDate,
+    int? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? recurrenceRule,
+    String? availability,
+  }) async {
+    await methodChannel.invokeMethod<void>(
+      'showCreateEventModal',
+      <String, dynamic>{
+        if (title != null) 'title': title,
+        if (startDate != null) 'startDate': startDate,
+        if (endDate != null) 'endDate': endDate,
+        if (description != null) 'description': description,
+        if (location != null) 'location': location,
+        if (isAllDay != null) 'isAllDay': isAllDay,
+        if (recurrenceRule != null) 'recurrenceRule': recurrenceRule,
+        if (availability != null) 'availability': availability,
+      },
+    );
+  }
 }

@@ -121,23 +121,40 @@ if (!meetingEvent.isAllDay) {
 }
 ```
 
-## 🧱 Exception model
+## 🧱 Error Handling
 
-Each `DeviceCalendarException` uses an enum code to describe the error type:
+The plugin throws two categories of errors:
+
+**Runtime errors** — `DeviceCalendarException` with a `DeviceCalendarError` enum code. These represent conditions your app should handle (permission denied, event not found, calendar read-only, etc.):
 
 ```dart
-enum DeviceCalendarError {
-  permissionDenied,
-  ...
+try {
+  await plugin.createEvent(...);
+} on DeviceCalendarException catch (e) {
+  switch (e.errorCode) {
+    case DeviceCalendarError.permissionDenied:
+      // Ask user to grant permission
+    case DeviceCalendarError.notFound:
+      // Calendar or event doesn't exist
+    default:
+      // Handle other cases
+  }
 }
 ```
 
-This enum provides stable, descriptive error codes for all exceptions thrown by the plugin.
+**Programmer errors** — standard Dart errors (`ArgumentError`, etc.) for invalid arguments. These indicate bugs in your code, not runtime conditions to handle:
+
+```dart
+// These throw ArgumentError — fix your code, don't catch them:
+plugin.createEvent(calendarId: '', ...);  // empty ID
+plugin.createEvent(..., endDate: beforeStart);  // end before start
+plugin.updateEvent(eventId: 'x');  // no fields to update
+```
 
 > **Note on error codes:**
 > `DeviceCalendarError` exists for developer ergonomics and clearer `switch` handling.
 > We may introduce new enum values in future minor versions as new error cases appear.
-We do not consider this a breaking change.
+> We do not consider this a breaking change.
 
 
 ## 🛠️ Usage Examples

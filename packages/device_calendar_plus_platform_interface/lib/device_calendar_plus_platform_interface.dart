@@ -206,4 +206,22 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     bool? isAllDay,
     String? timeZone,
   });
+
+  /// Opens the native calendar editor in create mode with optional pre-fill.
+  ///
+  /// All parameters are optional. Dates are in milliseconds since epoch.
+  /// [recurrenceRule] is an RRULE string. [availability] is an enum name string.
+  ///
+  /// On iOS, presents EKEventEditViewController.
+  /// On Android, launches Intent.ACTION_INSERT.
+  Future<void> showCreateEventModal({
+    String? title,
+    int? startDate,
+    int? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? recurrenceRule,
+    String? availability,
+  });
 }

@@ -217,6 +217,59 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       );
     }
   }
+
+  // Callback to capture showCreateEventModal arguments
+  Future<void> Function({
+    String? title,
+    int? startDate,
+    int? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? recurrenceRule,
+    String? availability,
+  })? _showCreateEventModalCallback;
+
+  void setShowCreateEventModalCallback(
+    Future<void> Function({
+      String? title,
+      int? startDate,
+      int? endDate,
+      String? description,
+      String? location,
+      bool? isAllDay,
+      String? recurrenceRule,
+      String? availability,
+    }) callback,
+  ) {
+    _showCreateEventModalCallback = callback;
+  }
+
+  @override
+  Future<void> showCreateEventModal({
+    String? title,
+    int? startDate,
+    int? endDate,
+    String? description,
+    String? location,
+    bool? isAllDay,
+    String? recurrenceRule,
+    String? availability,
+  }) async {
+    if (_exceptionToThrow != null) throw _exceptionToThrow!;
+    if (_showCreateEventModalCallback != null) {
+      return _showCreateEventModalCallback!(
+        title: title,
+        startDate: startDate,
+        endDate: endDate,
+        description: description,
+        location: location,
+        isAllDay: isAllDay,
+        recurrenceRule: recurrenceRule,
+        availability: availability,
+      );
+    }
+  }
 }
 
 void main() {
@@ -649,6 +702,164 @@ void main() {
         expect(
           () => DeviceCalendar.instance.deleteEvent(eventId: ''),
           throwsArgumentError,
+        );
+      });
+    });
+
+    group('showCreateEventModal', () {
+      test('defaults endDate to startDate + 1hr when only startDate given',
+          () async {
+        final start = DateTime(2024, 3, 15, 14, 0);
+        int? capturedStart;
+        int? capturedEnd;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setShowCreateEventModalCallback(({
+          title,
+          startDate,
+          endDate,
+          description,
+          location,
+          isAllDay,
+          recurrenceRule,
+          availability,
+        }) {
+          capturedStart = startDate;
+          capturedEnd = endDate;
+          return Future.value();
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.showCreateEventModal(startDate: start);
+
+        expect(capturedStart, start.millisecondsSinceEpoch);
+        expect(
+            capturedEnd, start.add(Duration(hours: 1)).millisecondsSinceEpoch);
+      });
+
+      test('defaults startDate to endDate - 1hr when only endDate given',
+          () async {
+        final end = DateTime(2024, 3, 15, 15, 0);
+        int? capturedStart;
+        int? capturedEnd;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setShowCreateEventModalCallback(({
+          title,
+          startDate,
+          endDate,
+          description,
+          location,
+          isAllDay,
+          recurrenceRule,
+          availability,
+        }) {
+          capturedStart = startDate;
+          capturedEnd = endDate;
+          return Future.value();
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.showCreateEventModal(endDate: end);
+
+        expect(capturedStart,
+            end.subtract(Duration(hours: 1)).millisecondsSinceEpoch);
+        expect(capturedEnd, end.millisecondsSinceEpoch);
+      });
+
+      test('defaults endDate to startDate + 1day when isAllDay', () async {
+        final start = DateTime(2024, 3, 15, 14, 30);
+        int? capturedStart;
+        int? capturedEnd;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setShowCreateEventModalCallback(({
+          title,
+          startDate,
+          endDate,
+          description,
+          location,
+          isAllDay,
+          recurrenceRule,
+          availability,
+        }) {
+          capturedStart = startDate;
+          capturedEnd = endDate;
+          return Future.value();
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.showCreateEventModal(
+          startDate: start,
+          isAllDay: true,
+        );
+
+        // Both dates should be stripped to midnight
+        expect(capturedStart, DateTime(2024, 3, 15).millisecondsSinceEpoch);
+        expect(capturedEnd, DateTime(2024, 3, 16).millisecondsSinceEpoch);
+      });
+
+      test('strips time components when isAllDay is true', () async {
+        final start = DateTime(2024, 3, 15, 14, 30, 45);
+        final end = DateTime(2024, 3, 16, 18, 15, 30);
+        int? capturedStart;
+        int? capturedEnd;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setShowCreateEventModalCallback(({
+          title,
+          startDate,
+          endDate,
+          description,
+          location,
+          isAllDay,
+          recurrenceRule,
+          availability,
+        }) {
+          capturedStart = startDate;
+          capturedEnd = endDate;
+          return Future.value();
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.showCreateEventModal(
+          startDate: start,
+          endDate: end,
+          isAllDay: true,
+        );
+
+        expect(capturedStart, DateTime(2024, 3, 15).millisecondsSinceEpoch);
+        expect(capturedEnd, DateTime(2024, 3, 16).millisecondsSinceEpoch);
+      });
+
+      test('throws ArgumentError when endDate before startDate', () async {
+        final now = DateTime.now();
+        expect(
+          () => DeviceCalendar.instance.showCreateEventModal(
+            startDate: now,
+            endDate: now.subtract(Duration(hours: 1)),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('converts PERMISSION_DENIED to DeviceCalendarException', () async {
+        mockPlatform.throwException(
+          PlatformException(
+            code: 'PERMISSION_DENIED',
+            message: 'Calendar permission denied',
+          ),
+        );
+
+        expect(
+          () => DeviceCalendar.instance.showCreateEventModal(),
+          throwsA(
+            isA<DeviceCalendarException>().having(
+              (e) => e.errorCode,
+              'errorCode',
+              DeviceCalendarError.permissionDenied,
+            ),
+          ),
         );
       });
     });
