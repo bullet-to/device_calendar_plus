@@ -1,12 +1,12 @@
 package to.bullet.device_calendar_plus_android
 
 import android.app.Activity
-import android.content.ContentUris
+import android.content.Context
 import android.content.Intent
 import android.provider.CalendarContract
 import java.util.Date
 
-class EventsService(private val activity: Activity) {
+class EventsService(private val context: Context) {
     
     fun retrieveEvents(
         startDate: Date,
@@ -60,7 +60,7 @@ class EventsService(private val activity: Activity) {
         val selectionArgs = if (args.isNotEmpty()) args.toTypedArray() else null
         
         try {
-            activity.contentResolver.query(
+            context.contentResolver.query(
                 uri,
                 projection,
                 selection,
@@ -367,7 +367,7 @@ class EventsService(private val activity: Activity) {
             val selectionArgs = arrayOf(eventId)
             
             try {
-                activity.contentResolver.query(
+                context.contentResolver.query(
                     CalendarContract.Events.CONTENT_URI,
                     projection,
                     selection,
@@ -421,8 +421,8 @@ class EventsService(private val activity: Activity) {
     fun showEvent(activityContext: Activity, eventId: String, timestamp: Long?, requestCode: Int): Result<Unit> {
         return try {
             // Validate permissions
-            if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
-                activity.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
+            if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+                context.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
                 return Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.PERMISSION_DENIED,
@@ -489,7 +489,7 @@ class EventsService(private val activity: Activity) {
     ): Result<Unit> {
         return try {
             if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
-                activity.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
+                context.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
                 return Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.PERMISSION_DENIED,
@@ -555,8 +555,8 @@ class EventsService(private val activity: Activity) {
         recurrenceRule: String?
     ): Result<String> {
         // Check for write calendar permission
-        if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
-            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+            context.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.PERMISSION_DENIED,
@@ -649,7 +649,7 @@ class EventsService(private val activity: Activity) {
                 put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
             }
             
-            val uri = activity.contentResolver.insert(
+            val uri = context.contentResolver.insert(
                 CalendarContract.Events.CONTENT_URI,
                 values
             )
@@ -686,8 +686,8 @@ class EventsService(private val activity: Activity) {
     
     fun deleteEvent(eventId: String): Result<Unit> {
         // Check for write calendar permission
-        if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
-            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+            context.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.PERMISSION_DENIED,
@@ -698,7 +698,7 @@ class EventsService(private val activity: Activity) {
         
         try {
             // Delete the event (entire series for recurring events)
-            val deletedRows = activity.contentResolver.delete(
+            val deletedRows = context.contentResolver.delete(
                 CalendarContract.Events.CONTENT_URI,
                 "${CalendarContract.Events._ID} = ?",
                 arrayOf(eventId)
@@ -742,8 +742,8 @@ class EventsService(private val activity: Activity) {
         timeZone: String?
     ): Result<Unit> {
         // Check for write calendar permission
-        if (android.content.pm.PackageManager.PERMISSION_GRANTED != 
-            activity.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+            context.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.PERMISSION_DENIED,
@@ -844,7 +844,7 @@ class EventsService(private val activity: Activity) {
             }
             
             // Perform the update
-            val updatedRows = activity.contentResolver.update(
+            val updatedRows = context.contentResolver.update(
                 CalendarContract.Events.CONTENT_URI,
                 values,
                 "${CalendarContract.Events._ID} = ?",
