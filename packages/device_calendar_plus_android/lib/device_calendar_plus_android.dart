@@ -55,8 +55,10 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     CreateCalendarPlatformOptions? platformOptions,
   ) async {
     String? accountName;
+    String? accountType;
     if (platformOptions is CreateCalendarOptionsAndroid) {
       accountName = platformOptions.accountName;
+      accountType = platformOptions.accountType;
     }
 
     final result = await methodChannel.invokeMethod<String>(
@@ -65,6 +67,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
         'name': name,
         'colorHex': colorHex,
         'accountName': accountName,
+        'accountType': accountType,
       },
     );
     return result!;
