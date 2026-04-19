@@ -412,7 +412,7 @@ class EventsService(private val context: Context) {
     ): Result<Unit> {
         return try {
             if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
-                activity.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
+                context.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
                 return Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.PERMISSION_DENIED,
