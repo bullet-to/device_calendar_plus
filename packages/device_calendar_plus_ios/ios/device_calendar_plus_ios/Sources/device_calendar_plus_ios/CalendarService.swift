@@ -65,18 +65,24 @@ class CalendarService {
       return
     }
     
-    // Find the local source - this is the only writable source for local calendars
-    guard let localSource = eventStore.sources.first(where: { $0.sourceType == .local }) else {
+    // Use the best available writable source:
+    // 1. Default calendar's source (usually iCloud on most devices)
+    // 2. First CalDAV source (iCloud, Google, etc.)
+    // 3. Local source (simulator or devices with no cloud accounts)
+    guard let source = eventStore.defaultCalendarForNewEvents?.source
+        ?? eventStore.sources.first(where: { $0.sourceType == .calDAV })
+        ?? eventStore.sources.first(where: { $0.sourceType == .local })
+    else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.calendarUnavailable,
-        message: "Could not find local calendar source"
+        message: "Could not find a writable calendar source"
       )))
       return
     }
-    
+
     // Create a new calendar
     let calendar = EKCalendar(for: .event, eventStore: eventStore)
-    calendar.source = localSource
+    calendar.source = source
     calendar.title = name
     
     // Set color if provided
