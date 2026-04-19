@@ -15,17 +15,52 @@ class EventsService(private val context: Context) {
         eventId: String? = null
     ): Result<List<Map<String, Any>>> {
         val events = mutableListOf<Map<String, Any>>()
-        
+
         // Convert dates to milliseconds
         val startMillis = startDate.time
         val endMillis = endDate.time
-        
-        // Build URI with date range for Instances API
+
+        // Issue #20 fix: All-day events are stored at UTC midnight boundaries,
+        // but the caller passes local-midnight millis. To ensure the Instances API
+        // returns all-day events for the intended calendar dates regardless of
+        // timezone, we widen the query range to UTC midnight boundaries of the
+        // local dates, then post-filter all-day events by date.
+        val localCal = java.util.Calendar.getInstance()
+        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+
+        // Extract local date from query start → compute UTC midnight for that date
+        localCal.timeInMillis = startMillis
+        utcCal.set(
+            localCal.get(java.util.Calendar.YEAR),
+            localCal.get(java.util.Calendar.MONTH),
+            localCal.get(java.util.Calendar.DAY_OF_MONTH),
+            0, 0, 0
+        )
+        utcCal.set(java.util.Calendar.MILLISECOND, 0)
+        val queryStartUtcMidnight = utcCal.timeInMillis
+
+        // Extract local date from query end → compute UTC midnight for that date
+        localCal.timeInMillis = endMillis
+        utcCal.set(
+            localCal.get(java.util.Calendar.YEAR),
+            localCal.get(java.util.Calendar.MONTH),
+            localCal.get(java.util.Calendar.DAY_OF_MONTH),
+            0, 0, 0
+        )
+        utcCal.set(java.util.Calendar.MILLISECOND, 0)
+        val queryEndUtcMidnight = utcCal.timeInMillis
+
+        // Widen the Instances query to cover both the original range AND the UTC
+        // midnight range, so we never miss all-day events due to offset.
+        val effectiveStart = minOf(startMillis, queryStartUtcMidnight)
+        val effectiveEnd = maxOf(endMillis, queryEndUtcMidnight)
+
+        // Build URI with widened date range for Instances API
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            .appendPath(startMillis.toString())
-            .appendPath(endMillis.toString())
+            .appendPath(effectiveStart.toString())
+            .appendPath(effectiveEnd.toString())
             .build()
-        
+
         val projection = arrayOf(
             CalendarContract.Instances.EVENT_ID,
             CalendarContract.Instances.CALENDAR_ID,
@@ -40,25 +75,25 @@ class EventsService(private val context: Context) {
             CalendarContract.Instances.EVENT_TIMEZONE,
             CalendarContract.Instances.RRULE
         )
-        
+
         // Build selection clause for calendar and event filtering
         val selections = mutableListOf<String>()
         val args = mutableListOf<String>()
-        
+
         if (calendarIds != null && calendarIds.isNotEmpty()) {
             val placeholders = calendarIds.joinToString(",") { "?" }
             selections.add("${CalendarContract.Instances.CALENDAR_ID} IN ($placeholders)")
             args.addAll(calendarIds)
         }
-        
+
         if (eventId != null) {
             selections.add("${CalendarContract.Instances.EVENT_ID} = ?")
             args.add(eventId)
         }
-        
+
         val selection = if (selections.isNotEmpty()) selections.joinToString(" AND ") else null
         val selectionArgs = if (args.isNotEmpty()) args.toTypedArray() else null
-        
+
         try {
             context.contentResolver.query(
                 uri,
@@ -67,7 +102,37 @@ class EventsService(private val context: Context) {
                 selectionArgs,
                 "${CalendarContract.Instances.BEGIN} ASC"
             )?.use { cursor ->
+                val allDayIdx = cursor.getColumnIndex(CalendarContract.Instances.ALL_DAY)
+                val endIdx = cursor.getColumnIndex(CalendarContract.Instances.END)
+
                 while (cursor.moveToNext()) {
+                    val isAllDay = cursor.getInt(allDayIdx) == 1
+                    if (isAllDay) {
+                        // Post-filter all-day events using UTC date comparison.
+                        // All-day BEGIN/END are UTC midnights representing calendar dates.
+                        val beginIdx = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)
+                        val eventBeginMillis = cursor.getLong(beginIdx)
+                        val eventEndMillis = cursor.getLong(endIdx)
+                        // Normalize: if end <= start, treat as 1-day event (end = start + 1 day)
+                        val effectiveEnd = if (eventEndMillis <= eventBeginMillis) {
+                            eventBeginMillis + 86_400_000L
+                        } else {
+                            eventEndMillis
+                        }
+                        // Event must overlap [queryStartUtcMidnight, queryEndUtcMidnight)
+                        if (effectiveEnd <= queryStartUtcMidnight || eventBeginMillis >= queryEndUtcMidnight) {
+                            continue
+                        }
+                    } else {
+                        // Timed events: filter out any pulled in by the widened query range
+                        val beginIdx = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)
+                        val eventBeginMillis = cursor.getLong(beginIdx)
+                        val eventEndMillis = cursor.getLong(endIdx)
+                        if (eventEndMillis <= startMillis || eventBeginMillis >= endMillis) {
+                            continue
+                        }
+                    }
+
                     val eventMap = buildEventMapFromCursor(
                         cursor,
                         CalendarContract.Instances.EVENT_ID,
@@ -256,7 +321,7 @@ class EventsService(private val context: Context) {
         val attendees = mutableListOf<Map<String, Any?>>()
 
         try {
-            activity.contentResolver.query(
+            context.contentResolver.query(
                 CalendarContract.Attendees.CONTENT_URI,
                 arrayOf(
                     CalendarContract.Attendees.ATTENDEE_NAME,

@@ -922,4 +922,143 @@ void main() {
           'automated with integration_test package.',
     );
   });
+
+  group('All-day event boundary (issue #20)', () {
+    late DeviceCalendar plugin;
+    late String calendarId;
+
+    setUpAll(() async {
+      plugin = DeviceCalendar.instance;
+      await plugin.requestPermissions();
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      calendarId = await plugin.createCalendar(
+        name: 'AllDay Boundary Test $timestamp',
+      );
+    });
+
+    tearDownAll(() async {
+      try {
+        await plugin.deleteCalendar(calendarId);
+      } catch (_) {}
+    });
+
+    test('all-day event on day X does not appear in query for day X+1',
+        () async {
+      // Create an all-day event for a specific date (e.g. Dec 24)
+      final eventDate = DateTime(2025, 12, 24);
+      await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Christmas Eve',
+        startDate: eventDate,
+        endDate: eventDate,
+        isAllDay: true,
+      );
+
+      // Query for the NEXT day (Dec 25) — should NOT include Dec 24's event
+      final nextDayStart = DateTime(2025, 12, 25);
+      final nextDayEnd = DateTime(2025, 12, 26);
+
+      final events = await plugin.listEvents(
+        nextDayStart,
+        nextDayEnd,
+        calendarIds: [calendarId],
+      );
+
+      final christmasEveEvents =
+          events.where((e) => e.title == 'Christmas Eve').toList();
+
+      expect(christmasEveEvents, isEmpty,
+          reason: 'All-day event on Dec 24 should NOT appear in Dec 25 query');
+    });
+
+    test('all-day event on day X DOES appear in query for day X', () async {
+      // Query for the same day — should include it
+      final queryStart = DateTime(2025, 12, 24);
+      final queryEnd = DateTime(2025, 12, 25);
+
+      final events = await plugin.listEvents(
+        queryStart,
+        queryEnd,
+        calendarIds: [calendarId],
+      );
+
+      final christmasEveEvents =
+          events.where((e) => e.title == 'Christmas Eve').toList();
+
+      expect(christmasEveEvents, isNotEmpty,
+          reason: 'All-day event on Dec 24 SHOULD appear in Dec 24 query');
+    });
+
+    test('multi-day all-day event appears on intermediate days', () async {
+      // Create a 3-day all-day event (Dec 26-28)
+      final startDate = DateTime(2025, 12, 26);
+      final endDate = DateTime(2025, 12, 28);
+      await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Holiday Trip',
+        startDate: startDate,
+        endDate: endDate,
+        isAllDay: true,
+      );
+
+      // Query for Dec 27 — should include it (middle of the event)
+      final events = await plugin.listEvents(
+        DateTime(2025, 12, 27),
+        DateTime(2025, 12, 28),
+        calendarIds: [calendarId],
+      );
+
+      final tripEvents =
+          events.where((e) => e.title == 'Holiday Trip').toList();
+
+      expect(tripEvents, isNotEmpty,
+          reason: 'Multi-day event should appear on intermediate day');
+    });
+
+    test('all-day event with end=next day does not appear in query for day X+1',
+        () async {
+      // Simulates how Google Calendar stores all-day events:
+      // Dec 24 all-day → start=Dec24, end=Dec25
+      final eventStart = DateTime(2025, 12, 22);
+      final eventEnd = DateTime(2025, 12, 23); // next day = "1 day event"
+      await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Winter Solstice',
+        startDate: eventStart,
+        endDate: eventEnd,
+        isAllDay: true,
+      );
+
+      // Query for Dec 23 — should NOT include the Dec 22 event
+      final events = await plugin.listEvents(
+        DateTime(2025, 12, 23),
+        DateTime(2025, 12, 24),
+        calendarIds: [calendarId],
+      );
+
+      final solsticeEvents =
+          events.where((e) => e.title == 'Winter Solstice').toList();
+
+      expect(solsticeEvents, isEmpty,
+          reason:
+              'All-day event (start=Dec22, end=Dec23) should NOT appear in Dec 23 query');
+    });
+
+    test('multi-day all-day event does NOT appear after last day', () async {
+      // Query for Dec 29 — should NOT include the Dec 26-28 event
+      final events = await plugin.listEvents(
+        DateTime(2025, 12, 29),
+        DateTime(2025, 12, 30),
+        calendarIds: [calendarId],
+      );
+
+      final tripEvents =
+          events.where((e) => e.title == 'Holiday Trip').toList();
+
+      expect(tripEvents, isEmpty,
+          reason:
+              'Multi-day event ending Dec 28 should NOT appear in Dec 29 query');
+    });
+  });
 }
