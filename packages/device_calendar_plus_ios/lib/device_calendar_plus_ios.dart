@@ -127,6 +127,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     String? location,
     String? timeZone,
     String availability,
+    String? recurrenceRule,
   ) async {
     final result = await methodChannel.invokeMethod<String>(
       'createEvent',
@@ -140,6 +141,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
         'location': location,
         'timeZone': timeZone,
         'availability': availability,
+        'recurrenceRule': recurrenceRule,
       },
     );
     return result!;

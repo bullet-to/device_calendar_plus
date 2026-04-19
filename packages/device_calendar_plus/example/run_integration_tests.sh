@@ -122,18 +122,17 @@ elif [ "$PLATFORM" == "android" ]; then
     echo ""
 fi
 
-# Run the integration tests
+cd "$(dirname "$0")"
+
 echo "🚀 Running integration tests on $DEVICE_ID..."
 echo ""
 
-cd "$(dirname "$0")"
-
-# Build test command based on platform
+# Run all integration tests in a single app launch
 if [ "$PLATFORM" == "android" ]; then
     # Use custom driver that grants permissions via adb
     if flutter drive \
         --driver=integration_test/integration_test_driver.dart \
-        --target=integration_test/device_calendar_test.dart \
+        --target=integration_test/all_tests.dart \
         -d "$DEVICE_ID"; then
         EXIT_CODE=0
     else
@@ -141,21 +140,20 @@ if [ "$PLATFORM" == "android" ]; then
     fi
 else
     # iOS: Use regular flutter test
-    if flutter test integration_test/device_calendar_test.dart -d "$DEVICE_ID"; then
+    if flutter test integration_test/all_tests.dart -d "$DEVICE_ID"; then
         EXIT_CODE=0
     else
         EXIT_CODE=1
     fi
 fi
 
-echo ""
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
 if [ $EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}✅ All integration tests passed!${NC}"
 else
     echo -e "${RED}❌ Some tests failed${NC}"
-    
+
     if [ "$PLATFORM" == "ios" ]; then
         echo ""
         echo "If tests failed due to permissions:"

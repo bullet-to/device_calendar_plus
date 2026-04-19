@@ -35,7 +35,7 @@ Created by [Bullet](https://bullet.to) — a personal task + notes + calendar ap
 - **Native UI**: Open native event modal for viewing/editing in both android and iOS
 - **All-Day Events**: Proper handling of floating calendar dates
 - **Timezones**: Correct timezone behavior for timed events
-- **Recurring Events**: Read recurring event instances; update/delete entire series
+- **Recurring Events**: Create, read, and delete recurring events (daily, weekly, monthly, yearly) with full RRULE support
 
 ## 🧩 Installation
 
@@ -299,6 +299,96 @@ final detailedEventId = await plugin.createEvent(
 );
 ```
 
+### Recurring Events
+
+Create recurring events by passing a `RecurrenceRule` to `createEvent`. The rule types are sealed classes, so the compiler ensures you handle all cases.
+
+```dart
+// Every day for 30 days
+await plugin.createEvent(
+  calendarId: calendarId,
+  title: 'Daily Standup',
+  startDate: DateTime(2024, 3, 20, 9, 0),
+  endDate: DateTime(2024, 3, 20, 9, 15),
+  recurrenceRule: DailyRecurrence(end: CountEnd(30)),
+);
+
+// Every 2 weeks on Monday and Friday
+await plugin.createEvent(
+  calendarId: calendarId,
+  title: 'Sprint Review',
+  startDate: DateTime(2024, 3, 20, 14, 0),
+  endDate: DateTime(2024, 3, 20, 15, 0),
+  recurrenceRule: WeeklyRecurrence(
+    interval: 2,
+    daysOfWeek: [DayOfWeek.monday, DayOfWeek.friday],
+  ),
+);
+```
+
+Monthly and yearly have sealed subtypes — the default constructor is by day of month, use `.byWeekday` for weekday patterns:
+
+```dart
+// Monthly on the 1st and 15th
+MonthlyRecurrence(daysOfMonth: [1, 15])
+
+// Monthly on the 2nd Tuesday
+MonthlyRecurrence.byWeekday(
+  daysOfWeek: [RecurrenceDay(DayOfWeek.tuesday, position: 2)],
+)
+
+// Monthly on the last Friday
+MonthlyRecurrence.byWeekday(
+  daysOfWeek: [RecurrenceDay(DayOfWeek.friday, position: -1)],
+)
+
+// Yearly on Christmas
+YearlyRecurrence(months: [12], daysOfMonth: [25])
+
+// Yearly on the 4th Thursday of November (Thanksgiving)
+YearlyRecurrence.byWeekday(
+  months: [11],
+  daysOfWeek: [RecurrenceDay(DayOfWeek.thursday, position: 4)],
+)
+
+// Last weekday of every month (uses BYSETPOS)
+MonthlyRecurrence.byWeekday(
+  daysOfWeek: [
+    RecurrenceDay(DayOfWeek.monday),
+    RecurrenceDay(DayOfWeek.tuesday),
+    RecurrenceDay(DayOfWeek.wednesday),
+    RecurrenceDay(DayOfWeek.thursday),
+    RecurrenceDay(DayOfWeek.friday),
+  ],
+  setPositions: [-1],
+)
+```
+
+End conditions are either a count or a date — or omit for forever:
+
+```dart
+DailyRecurrence(end: CountEnd(10))           // after 10 occurrences
+DailyRecurrence(end: UntilEnd(DateTime.utc(2025, 12, 31)))  // until a date
+DailyRecurrence()                            // forever
+```
+
+When reading events back, `event.recurrenceRule` gives you the typed model. For RRULE properties the typed model doesn't cover, use the `rruleString` escape hatch — it preserves the original platform string:
+
+```dart
+final event = await plugin.getEvent(eventId);
+final rule = event?.recurrenceRule;
+
+// Typed access
+if (rule is MonthlyByWeekday) {
+  print(rule.daysOfWeek);
+  print(rule.setPositions);
+}
+
+// Raw RRULE string — preserves platform-specific properties
+// like BYHOUR or BYSETPOS combinations the typed model doesn't cover
+print(rule?.rruleString); // e.g. "FREQ=MONTHLY;BYDAY=2TU;COUNT=12"
+```
+
 ### Update Event
 
 ```dart
@@ -355,6 +445,19 @@ await plugin.deleteEvent(event.instanceId);
 // For recurring events, this deletes the ENTIRE series (all occurrences)
 await plugin.deleteEvent(event.instanceId);
 ```
+
+## 📋 Roadmap
+
+- [x] **Permissions** — request, check, and open settings
+- [x] **Calendars** — create, read, update, delete
+- [x] **Events** — create, read, update, delete
+- [x] **All-day events** — proper floating date handling across timezones
+- [x] **Native UI** — show event modal on both platforms
+- [x] **Recurring events** — create and read with sealed RecurrenceRule model (daily, weekly, monthly, yearly)
+- [ ] **Update recurrence rules** — change/add/remove recurrence rule via `updateEvent`
+- [ ] **Attendees** — read on both platforms; write on Android (iOS EventKit is read-only for participants)
+- [ ] **Reminders / alarms** — read/write on both platforms
+- [ ] **Platform-specific extras** — event URL, organizer, and other platform-native fields exposed where supported
 
 ## 🤝 Contributing
 
