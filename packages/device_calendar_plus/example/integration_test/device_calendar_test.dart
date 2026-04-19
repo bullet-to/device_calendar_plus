@@ -566,7 +566,57 @@ void main() {
         );
 
         expect(eventId, isNotEmpty);
+
+        // Verify availability was saved correctly
+        final event = await plugin.getEvent(eventId);
+        expect(event?.availability, availability);
       }
+    });
+
+    test('14b. Update Event Availability', () async {
+      // Create a test calendar
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Update Availability Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day, 10, 0);
+      final endDate = DateTime(now.year, now.month, now.day, 11, 0);
+
+      // 1. Create event as 'busy'
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Availability Update Test',
+        startDate: startDate,
+        endDate: endDate,
+        availability: EventAvailability.busy,
+      );
+
+      // 2. Verify it's 'busy'
+      var event = await plugin.getEvent(eventId);
+      expect(event?.availability, EventAvailability.busy);
+
+      // 3. Update to 'free'
+      await plugin.updateEvent(
+        eventId: eventId,
+        availability: EventAvailability.free,
+      );
+
+      // 4. Verify it's now 'free'
+      event = await plugin.getEvent(eventId);
+      expect(event?.availability, EventAvailability.free);
+
+      // 5. Update to 'tentative'
+      await plugin.updateEvent(
+        eventId: eventId,
+        availability: EventAvailability.tentative,
+      );
+
+      // 6. Verify it's now 'tentative'
+      event = await plugin.getEvent(eventId);
+      expect(event?.availability, EventAvailability.tentative);
     });
 
     test(

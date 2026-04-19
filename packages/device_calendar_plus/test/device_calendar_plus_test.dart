@@ -208,6 +208,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? location,
     bool? isAllDay,
     String? timeZone,
+    String? availability,
   }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
     if (_updateEventCallback != null) {
@@ -220,6 +221,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
         location: location,
         isAllDay: isAllDay,
         timeZone: timeZone,
+        availability: availability,
       );
     }
   }
@@ -450,6 +452,39 @@ void main() {
     });
 
     group('createEvent', () {
+      test('creates event with all parameters', () async {
+        final calendarId = 'cal-123';
+        final title = 'Team Meeting';
+        final startDate = DateTime(2024, 3, 15, 14, 0);
+        final endDate = DateTime(2024, 3, 15, 15, 0);
+
+        final eventId = await DeviceCalendar.instance.createEvent(
+          calendarId: calendarId,
+          title: title,
+          startDate: startDate,
+          endDate: endDate,
+          description: 'Weekly sync',
+          location: 'Conference Room A',
+          timeZone: 'America/New_York',
+          availability: EventAvailability.tentative,
+        );
+
+        expect(eventId, isNotEmpty);
+        expect(eventId, startsWith('mock-event-id-'));
+      });
+
+      test('creates all-day event', () async {
+        final eventId = await DeviceCalendar.instance.createEvent(
+          calendarId: 'cal-123',
+          title: 'All Day Event',
+          startDate: DateTime(2024, 3, 15),
+          endDate: DateTime(2024, 3, 16),
+          isAllDay: true,
+        );
+
+        expect(eventId, isNotEmpty);
+      });
+
       test('normalizes dates for all-day events (strips time components)',
           () async {
         final startWithTime = DateTime(2024, 3, 15, 14, 30, 45);
@@ -634,6 +669,38 @@ void main() {
     });
 
     group('updateEvent', () {
+
+      test('updates event with all parameters', () async {
+        await DeviceCalendar.instance.updateEvent(
+          eventId: 'event-123',
+          title: 'Updated Title',
+          startDate: DateTime(2024, 3, 20, 10, 0),
+          endDate: DateTime(2024, 3, 20, 11, 0),
+          description: 'Updated description',
+          location: 'Updated location',
+          isAllDay: false,
+          timeZone: 'America/New_York',
+          availability: EventAvailability.free,
+        );
+        // Should complete without error
+      });
+
+      test('updates event with single field', () async {
+        await DeviceCalendar.instance.updateEvent(
+          eventId: 'event-123',
+          title: 'New Title',
+        );
+        // Should complete without error
+      });
+
+      test('updates entire series for recurring event', () async {
+        await DeviceCalendar.instance.updateEvent(
+          eventId: 'event-123',
+          title: 'Updated Series',
+        );
+        // Should complete without error (updates entire series automatically)
+      });
+
       test('normalizes dates when isAllDay is true', () async {
         final startWithTime = DateTime(2024, 3, 15, 14, 30, 45);
         final endWithTime = DateTime(2024, 3, 16, 18, 15, 30);

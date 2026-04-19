@@ -199,6 +199,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// - [location] - new event location
   /// - [isAllDay] - change between all-day and timed event
   /// - [timeZone] - new timezone identifier
+  /// - [availability] - new availability identifier
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions.
@@ -211,6 +212,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? location,
     bool? isAllDay,
     String? timeZone,
+    String? availability,
   });
 
   /// Opens the native calendar editor in create mode with optional pre-fill.

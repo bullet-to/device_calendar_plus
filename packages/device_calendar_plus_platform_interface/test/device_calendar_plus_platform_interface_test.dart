@@ -78,6 +78,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? location,
     bool? isAllDay,
     String? timeZone,
+    String? availability,
   }) async {}
 
   @override
@@ -99,4 +100,152 @@ void main() {
     DeviceCalendarPlusPlatform.instance = mock;
     expect(DeviceCalendarPlusPlatform.instance, mock);
   });
+<<<<<<< HEAD
+=======
+
+  test('requestPermissions returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    expect(await DeviceCalendarPlusPlatform.instance.requestPermissions(),
+        'granted');
+  });
+
+  test('hasPermissions returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    expect(
+        await DeviceCalendarPlusPlatform.instance.hasPermissions(), 'granted');
+  });
+
+  test('openAppSettings completes successfully', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.openAppSettings();
+    // Should complete without error
+  });
+
+  test('listCalendars returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    expect(await DeviceCalendarPlusPlatform.instance.listCalendars(), []);
+  });
+
+  test('createCalendar returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    final calendarId = await DeviceCalendarPlusPlatform.instance
+        .createCalendar('Test Calendar', '#FF5733', null);
+    expect(calendarId, equals('mock-calendar-id'));
+  });
+
+  test('updateCalendar completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance
+        .updateCalendar('calendar-123', 'New Name', '#00FF00');
+    // Should complete without error
+  });
+
+  test('deleteCalendar completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.deleteCalendar('calendar-123');
+    // Should complete without error
+  });
+
+  test('listEvents returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    final result = await DeviceCalendarPlusPlatform.instance.listEvents(
+      DateTime.now(),
+      DateTime.now().add(Duration(days: 7)),
+      null,
+    );
+    expect(result, []);
+  });
+
+  test('getEvent returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    final result =
+        await DeviceCalendarPlusPlatform.instance.getEvent('event-123', null);
+    expect(result, null);
+  });
+
+  test('showEventModal completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.showEventModal('event-123', null);
+    // Should complete without error
+  });
+
+  test('createEvent returns expected value', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    final eventId = await DeviceCalendarPlusPlatform.instance.createEvent(
+      'calendar-123',
+      'Team Meeting',
+      DateTime(2024, 3, 15, 14, 0),
+      DateTime(2024, 3, 15, 15, 0),
+      false,
+      'Weekly team sync',
+      'Conference Room A',
+      'America/New_York',
+      'busy',
+    );
+    expect(eventId, equals('mock-event-id'));
+  });
+
+  test('deleteEvent completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.deleteEvent('event-123');
+    // Should complete without error
+  });
+
+  test('deleteEvent for recurring event deletes entire series', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance
+        .deleteEvent('event-123@123456789');
+    // Should complete without error
+  });
+
+  test('updateEvent with all parameters completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.updateEvent(
+      'event-123',
+      title: 'Updated Title',
+      startDate: DateTime(2024, 3, 20, 10, 0),
+      endDate: DateTime(2024, 3, 20, 11, 0),
+      description: 'Updated description',
+      location: 'Updated location',
+      isAllDay: false,
+      timeZone: 'America/New_York',
+      availability: 'free',
+    );
+    // Should complete without error
+  });
+
+  test('updateEvent with minimal parameters completes', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.updateEvent(
+      'event-123',
+      title: 'New Title',
+    );
+    // Should complete without error
+  });
+
+  test('updateEvent for recurring event updates entire series', () async {
+    final mock = MockDeviceCalendarPlusPlatform();
+    DeviceCalendarPlusPlatform.instance = mock;
+    await DeviceCalendarPlusPlatform.instance.updateEvent(
+      'event-123',
+      title: 'Updated Series',
+    );
+    // Should complete without error
+  });
+>>>>>>> f27a039... Fix availability persistence across platforms
 }
