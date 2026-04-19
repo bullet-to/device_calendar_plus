@@ -1,6 +1,10 @@
 # Contributing to device_calendar_plus
 
-Contributions are welcome! Please open an issue first for larger features or breaking changes so we can align on approach before code is written.
+Contributions are welcome!
+
+**Bug fixes** that don't change the public API can go straight to a PR.
+
+**New features or API changes** — please open an issue first. The maintainer defines the API surface to ensure cross-platform consistency, so PRs that add new methods, parameters, or models without prior discussion will likely need significant rework. An issue lets us align on the design before you write code.
 
 ## Design Philosophy
 
@@ -43,18 +47,10 @@ If you're adding a new field to an existing model, you need to handle both the *
 
 ### What to test
 
-- **Unit tests** for any Dart-side logic (parsing, serialization, validation). These live in each package's `test/` directory.
-- **Mock-based tests** for the public API layer, verifying arguments are passed correctly to the platform and results are converted correctly from it.
-- **Integration tests** for end-to-end behaviour on real devices. These live in `example/integration_test/`.
+- **Integration tests** are the backbone. They exercise the full Dart → platform channel → native API roundtrip on real devices. These live in `example/integration_test/`.
+- **Unit tests** for Dart-side logic with enough branches that you can't read it and immediately know it's correct (parsing, serialization, validation). These live in each package's `test/` directory.
 
-### Write and read paths
-
-When adding a new feature or field, test both directions:
-
-- **Write path:** Verify the value is passed from the Dart API through to the platform call with correct serialization.
-- **Read path:** Verify the value returned by the platform is correctly deserialized into the Dart model.
-
-A field that is written but never read back (or vice versa) is a bug.
+Don't write unit tests that just assert a mock returns what you told it to return, or that verify method channel passthrough serialization in isolation — the integration tests cover those paths.
 
 ### Running tests
 
@@ -95,3 +91,7 @@ refactor: simplify permission handling
 - Use `const` constructors and immutable models where possible.
 - Enums should have safe factory methods with fallback defaults for unrecognised values.
 - Validate inputs with `ArgumentError` at the Dart API boundary, before calling into the platform.
+
+## Project Rules
+
+There are Claude rules in `.claude/rules/` that document project conventions for API design, error handling, and testing. If you use Claude Code, these are loaded automatically. Otherwise, they're still worth reading — they capture decisions that apply to all contributions.
