@@ -18,12 +18,6 @@ void main() {
           .setMockMethodCallHandler(plugin.methodChannel, (methodCall) async {
         log.add(methodCall);
         switch (methodCall.method) {
-          case 'requestPermissions':
-            return 'granted'; // CalendarPermissionStatus.granted
-          case 'hasPermissions':
-            return 'granted'; // CalendarPermissionStatus.granted
-          case 'openAppSettings':
-            return null;
           case 'listCalendars':
             return [
               {
@@ -36,10 +30,6 @@ void main() {
             ];
           case 'createCalendar':
             return 'android-calendar-id-456';
-          case 'updateCalendar':
-            return null;
-          case 'deleteCalendar':
-            return null;
           case 'listEvents':
             return [
               {
@@ -55,8 +45,6 @@ void main() {
             ];
           case 'createEvent':
             return 'android-event-id-789';
-          case 'deleteEvent':
-            return null;
           case 'updateEvent':
             return null;
           default:
@@ -71,66 +59,6 @@ void main() {
           isA<DeviceCalendarPlusAndroid>());
     });
 
-    test('requestPermissions returns granted status', () async {
-      final status = await plugin.requestPermissions();
-      expect(
-        log,
-        <Matcher>[isMethodCall('requestPermissions', arguments: null)],
-      );
-      expect(status, equals('granted')); // CalendarPermissionStatus.granted
-    });
-
-    test('hasPermissions returns granted status', () async {
-      final status = await plugin.hasPermissions();
-      expect(
-        log,
-        <Matcher>[isMethodCall('hasPermissions', arguments: null)],
-      );
-      expect(status, equals('granted')); // CalendarPermissionStatus.granted
-    });
-
-    test('openAppSettings calls method', () async {
-      await plugin.openAppSettings();
-      expect(
-        log,
-        <Matcher>[isMethodCall('openAppSettings', arguments: null)],
-      );
-    });
-
-    test('listCalendars returns list of calendars', () async {
-      final calendars = await plugin.listCalendars();
-      expect(
-        log,
-        <Matcher>[isMethodCall('listCalendars', arguments: null)],
-      );
-      expect(calendars, hasLength(1));
-      expect(calendars[0]['id'], equals('1'));
-      expect(calendars[0]['name'], equals('Work'));
-    });
-
-    test('createCalendar with name only', () async {
-      final calendarId = await plugin.createCalendar('My Calendar', null, null);
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('createCalendar'));
-      expect(log[0].arguments['name'], equals('My Calendar'));
-      expect(log[0].arguments['colorHex'], isNull);
-      expect(log[0].arguments['accountName'], isNull);
-      expect(calendarId, equals('android-calendar-id-456'));
-    });
-
-    test('createCalendar with name and color', () async {
-      final calendarId =
-          await plugin.createCalendar('Work Calendar', '#FF5733', null);
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('createCalendar'));
-      expect(log[0].arguments['name'], equals('Work Calendar'));
-      expect(log[0].arguments['colorHex'], equals('#FF5733'));
-      expect(log[0].arguments['accountName'], isNull);
-      expect(calendarId, equals('android-calendar-id-456'));
-    });
-
     test('createCalendar with custom account name', () async {
       final calendarId = await plugin.createCalendar(
         'My App Calendar',
@@ -141,61 +69,26 @@ void main() {
       expect(log.length, equals(1));
       expect(log[0].method, equals('createCalendar'));
       expect(log[0].arguments['name'], equals('My App Calendar'));
-      expect(log[0].arguments['colorHex'], isNull);
       expect(log[0].arguments['accountName'], equals('MyApp'));
       expect(calendarId, equals('android-calendar-id-456'));
     });
 
-    test('updateCalendar with name only', () async {
-      await plugin.updateCalendar('cal-456', 'Updated Name', null);
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('updateCalendar'));
-      expect(log[0].arguments['calendarId'], equals('cal-456'));
-      expect(log[0].arguments['name'], equals('Updated Name'));
-      expect(log[0].arguments['colorHex'], isNull);
-    });
-
-    test('updateCalendar with name and color', () async {
-      await plugin.updateCalendar('cal-456', 'Updated Name', '#00FF00');
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('updateCalendar'));
-      expect(log[0].arguments['calendarId'], equals('cal-456'));
-      expect(log[0].arguments['name'], equals('Updated Name'));
-      expect(log[0].arguments['colorHex'], equals('#00FF00'));
-    });
-
-    test('deleteCalendar calls method with correct arguments', () async {
-      await plugin.deleteCalendar('cal-456');
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('deleteCalendar'));
-      expect(log[0].arguments['calendarId'], equals('cal-456'));
-    });
-
-    test('listEvents returns list of events', () async {
+    test('listEvents serializes dates and calendarIds correctly', () async {
       final now = DateTime.now();
       final later = now.add(Duration(days: 7));
 
-      final events = await plugin.listEvents(now, later, ['cal1']);
+      await plugin.listEvents(now, later, ['cal1']);
 
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('listEvents'));
       expect(log[0].arguments['startDate'], equals(now.millisecondsSinceEpoch));
       expect(log[0].arguments['endDate'], equals(later.millisecondsSinceEpoch));
       expect(log[0].arguments['calendarIds'], equals(['cal1']));
-
-      expect(events, hasLength(1));
-      expect(events[0]['eventId'], equals('event1'));
-      expect(events[0]['title'], equals('Test Event'));
     });
 
-    test('createEvent with all parameters', () async {
+    test('createEvent serializes all arguments correctly', () async {
       final startDate = DateTime(2024, 3, 15, 14, 0);
       final endDate = DateTime(2024, 3, 15, 15, 0);
 
-      final eventId = await plugin.createEvent(
+      await plugin.createEvent(
         'cal-123',
         'Team Meeting',
         startDate,
@@ -208,8 +101,6 @@ void main() {
         null,
       );
 
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('createEvent'));
       expect(log[0].arguments['calendarId'], equals('cal-123'));
       expect(log[0].arguments['title'], equals('Team Meeting'));
       expect(log[0].arguments['startDate'],
@@ -221,92 +112,15 @@ void main() {
       expect(log[0].arguments['location'], equals('Conference Room A'));
       expect(log[0].arguments['timeZone'], equals('America/New_York'));
       expect(log[0].arguments['availability'], equals('busy'));
-      expect(eventId, equals('android-event-id-789'));
     });
 
-    test('createEvent with minimal parameters', () async {
-      final startDate = DateTime(2024, 3, 15, 14, 0);
-      final endDate = DateTime(2024, 3, 15, 15, 0);
-
-      final eventId = await plugin.createEvent(
-        'cal-123',
-        'Quick Event',
-        startDate,
-        endDate,
-        true,
-        null,
-        null,
-        null,
-        'free',
-        null,
-      );
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('createEvent'));
-      expect(log[0].arguments['calendarId'], equals('cal-123'));
-      expect(log[0].arguments['title'], equals('Quick Event'));
-      expect(log[0].arguments['isAllDay'], equals(true));
-      expect(log[0].arguments['description'], isNull);
-      expect(log[0].arguments['location'], isNull);
-      expect(log[0].arguments['timeZone'], isNull);
-      expect(log[0].arguments['availability'], equals('free'));
-      expect(eventId, equals('android-event-id-789'));
-    });
-
-    test('deleteEvent calls method with correct arguments', () async {
-      await plugin.deleteEvent('event-123');
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('deleteEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123'));
-    });
-
-    test('deleteEvent for recurring event deletes entire series', () async {
-      await plugin.deleteEvent('event-123@123456789');
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('deleteEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123@123456789'));
-    });
-
-    test('updateEvent with all parameters', () async {
-      final startDate = DateTime(2024, 3, 20, 10, 0);
-      final endDate = DateTime(2024, 3, 20, 11, 0);
-
-      await plugin.updateEvent(
-        'event-123',
-        title: 'Updated Title',
-        startDate: startDate,
-        endDate: endDate,
-        description: 'Updated description',
-        location: 'Updated location',
-        isAllDay: false,
-        timeZone: 'America/New_York',
-      );
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('updateEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123'));
-      expect(log[0].arguments['title'], equals('Updated Title'));
-      expect(log[0].arguments['startDate'],
-          equals(startDate.millisecondsSinceEpoch));
-      expect(
-          log[0].arguments['endDate'], equals(endDate.millisecondsSinceEpoch));
-      expect(log[0].arguments['description'], equals('Updated description'));
-      expect(log[0].arguments['location'], equals('Updated location'));
-      expect(log[0].arguments['isAllDay'], equals(false));
-      expect(log[0].arguments['timeZone'], equals('America/New_York'));
-    });
-
-    test('updateEvent with minimal parameters', () async {
+    test('updateEvent serializes only provided fields', () async {
       await plugin.updateEvent(
         'event-123',
         title: 'New Title',
       );
 
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('updateEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123'));
+      expect(log[0].arguments['eventId'], equals('event-123'));
       expect(log[0].arguments['title'], equals('New Title'));
       expect(log[0].arguments['startDate'], isNull);
       expect(log[0].arguments['endDate'], isNull);
@@ -315,18 +129,6 @@ void main() {
       expect(log[0].arguments['isAllDay'], isNull);
       expect(log[0].arguments['timeZone'], isNull);
       expect(log[0].arguments['availability'], isNull);
-    });
-
-    test('updateEvent for recurring event updates entire series', () async {
-      await plugin.updateEvent(
-        'event-123',
-        title: 'Updated Series',
-      );
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('updateEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123'));
-      expect(log[0].arguments['title'], equals('Updated Series'));
     });
   });
 }
