@@ -3,6 +3,7 @@ package to.bullet.device_calendar_plus_android
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
 
@@ -108,7 +109,7 @@ class CalendarService(private val activity: Activity) {
                 while (cursor.moveToNext()) {
                     val accountName = cursor.getString(nameIdx) ?: continue
                     val accountType = cursor.getString(typeIdx) ?: continue
-                    val key = "$accountName|$accountType"
+                    val key = "${Uri.encode(accountName)}:${Uri.encode(accountType)}"
 
                     if (seen.add(key)) {
                         sources.add(mapOf(

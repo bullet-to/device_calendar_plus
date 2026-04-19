@@ -50,9 +50,9 @@ class CalendarSource {
   /// Stable identifier for this source.
   ///
   /// - **iOS**: `EKSource.sourceIdentifier` — use with [CreateCalendarOptionsIos]
-  /// - **Android**: Synthetic `"accountName|accountType"` — informational only,
-  ///   not used for creation. Use [accountName] + [accountType] with
-  ///   [CreateCalendarOptionsAndroid] instead.
+  /// - **Android**: Synthetic `"encodedAccountName:encodedAccountType"` (URI-encoded)
+  ///   — informational only, not used for creation. Use [accountName] + [accountType]
+  ///   with [CreateCalendarOptionsAndroid] instead.
   final String id;
 
   /// Display name or account identifier for this source.
