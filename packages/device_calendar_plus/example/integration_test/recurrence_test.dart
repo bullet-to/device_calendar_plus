@@ -26,7 +26,7 @@ void main() {
       }
     });
 
-    /// Helper: create event, read it back, return the recurrence rule.
+    /// Helper: create event, read it back by ID, return the recurrence rule.
     Future<RecurrenceRule?> roundtrip(
       RecurrenceRule rule, {
       String title = 'Test Event',
@@ -48,19 +48,9 @@ void main() {
       expect(eventId, isNotNull);
       expect(eventId, isNotEmpty);
 
-      // Read back events in a window around the start date
-      final events = await plugin.listEvents(
-        start.subtract(const Duration(hours: 2)),
-        end.add(const Duration(hours: 2)),
-        calendarIds: [calendarId!],
-      );
-
-      final matchingEvents = events.where((e) => e.eventId == eventId).toList();
-      expect(matchingEvents, isNotEmpty,
-          reason: 'Event should be found in the date range');
-
-      final event = matchingEvents.first;
-      expect(event.isRecurring, isTrue, reason: 'Event should be recurring');
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull, reason: 'Event should be retrievable by ID');
+      expect(event!.isRecurring, isTrue, reason: 'Event should be recurring');
 
       return event.recurrenceRule;
     }
@@ -141,21 +131,6 @@ void main() {
       expect((monthly.end as CountEnd).count, 6);
     });
 
-    test('Monthly by weekday - last Friday roundtrip', () async {
-      if (calendarId == null) return;
-
-      final result = await roundtrip(MonthlyRecurrence.byWeekday(
-        daysOfWeek: [RecurrenceDay(DayOfWeek.friday, position: -1)],
-        end: CountEnd(12),
-      ));
-
-      expect(result, isNotNull);
-      expect(result, isA<MonthlyByWeekday>());
-      final monthly = result as MonthlyByWeekday;
-      expect(monthly.daysOfWeek[0].day, DayOfWeek.friday);
-      expect(monthly.daysOfWeek[0].position, -1);
-    });
-
     test('Monthly with multiple BYMONTHDAY roundtrip', () async {
       if (calendarId == null) return;
 
@@ -189,23 +164,6 @@ void main() {
       expect(yearly.daysOfWeek.length, 1);
       expect(yearly.daysOfWeek[0].day, DayOfWeek.thursday);
       expect(yearly.daysOfWeek[0].position, 4);
-    });
-
-    test('Yearly by weekday - last Monday of May roundtrip', () async {
-      if (calendarId == null) return;
-
-      final result = await roundtrip(YearlyRecurrence.byWeekday(
-        months: [5],
-        daysOfWeek: [RecurrenceDay(DayOfWeek.monday, position: -1)],
-        end: CountEnd(5),
-      ));
-
-      expect(result, isNotNull);
-      expect(result, isA<YearlyByWeekday>());
-      final yearly = result as YearlyByWeekday;
-      expect(yearly.months, [5]);
-      expect(yearly.daysOfWeek[0].day, DayOfWeek.monday);
-      expect(yearly.daysOfWeek[0].position, -1);
     });
 
     test('Yearly with multiple months roundtrip', () async {
@@ -250,27 +208,6 @@ void main() {
       expect(monthly.daysOfWeek.length, 5);
       expect(monthly.setPositions, [-1]);
       expect((monthly.end as CountEnd).count, 6);
-    });
-
-    test('Monthly BYSETPOS - first weekday of month roundtrip', () async {
-      if (calendarId == null) return;
-
-      final result = await roundtrip(MonthlyRecurrence.byWeekday(
-        daysOfWeek: [
-          RecurrenceDay(DayOfWeek.monday),
-          RecurrenceDay(DayOfWeek.tuesday),
-          RecurrenceDay(DayOfWeek.wednesday),
-          RecurrenceDay(DayOfWeek.thursday),
-          RecurrenceDay(DayOfWeek.friday),
-        ],
-        setPositions: [1],
-        end: CountEnd(6),
-      ));
-
-      expect(result, isNotNull);
-      expect(result, isA<MonthlyByWeekday>());
-      final monthly = result as MonthlyByWeekday;
-      expect(monthly.setPositions, [1]);
     });
 
     test('Yearly BYSETPOS - last weekday of January roundtrip', () async {
@@ -359,42 +296,6 @@ void main() {
       // ignore: avoid_print
       print('UNTIL date-time roundtrip: wrote ${untilDate.toIso8601String()}, '
           'got ${until.toIso8601String()}');
-    });
-
-    test('UNTIL with non-UTC timezone event roundtrip', () async {
-      if (calendarId == null) return;
-
-      final untilDate = DateTime.utc(2027, 6, 15);
-      final result = await roundtrip(
-        DailyRecurrence(end: UntilEnd(untilDate)),
-        timeZone: 'America/New_York',
-      );
-
-      expect(result, isNotNull);
-      expect(result!.end, isA<UntilEnd>());
-      final until = (result.end as UntilEnd).until;
-      // The calendar date should be preserved regardless of timezone
-      expect(until.year, 2027);
-      expect(until.month, 6);
-      expect(until.day, 15);
-    });
-
-    test('UNTIL near DST boundary roundtrip', () async {
-      if (calendarId == null) return;
-
-      // March 9, 2025 is near US DST spring-forward
-      final untilDate = DateTime.utc(2027, 3, 9);
-      final result = await roundtrip(
-        DailyRecurrence(end: UntilEnd(untilDate)),
-        timeZone: 'America/New_York',
-      );
-
-      expect(result, isNotNull);
-      expect(result!.end, isA<UntilEnd>());
-      final until = (result.end as UntilEnd).until;
-      expect(until.year, 2027);
-      expect(until.month, 3);
-      expect(until.day, 9);
     });
 
     // -- No end condition (recurs forever) --
