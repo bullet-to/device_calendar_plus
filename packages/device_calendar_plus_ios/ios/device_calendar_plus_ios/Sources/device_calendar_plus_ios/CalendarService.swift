@@ -77,11 +77,12 @@ class CalendarService {
       }
       source = found
     } else {
-      // Use the best available writable source (tiered fallback)
-      guard let fallback = eventStore.defaultCalendarForNewEvents?.source
-          ?? eventStore.sources.first(where: { $0.sourceType == .calDAV })
-          ?? eventStore.sources.first(where: { $0.sourceType == .local })
-      else {
+      // No sourceId provided — prefer iCloud (syncs across devices), then local.
+      let icloud = eventStore.sources.first(where: {
+        $0.sourceType == .calDAV && $0.title.lowercased() == "icloud"
+      })
+      let local = eventStore.sources.first(where: { $0.sourceType == .local })
+      guard let fallback = icloud ?? local else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.calendarUnavailable,
           message: "Could not find a writable calendar source"
@@ -209,7 +210,7 @@ class CalendarService {
         "accountName": source.title,
         "accountType": sourceTypeToString(sourceType: source.sourceType),
         "type": sourceTypeToCalendarSourceType(source.sourceType),
-        "supportsCalendarCreation": sourceSupportsCreation(source.sourceType),
+        "supportsCalendarCreation": sourceSupportsCreation(source),
       ]
     }
 
@@ -227,9 +228,10 @@ class CalendarService {
     }
   }
 
-  private func sourceSupportsCreation(_ type: EKSourceType) -> Bool {
-    switch type {
-    case .local, .calDAV, .exchange: return true
+  private func sourceSupportsCreation(_ source: EKSource) -> Bool {
+    switch source.sourceType {
+    case .local: return true
+    case .calDAV: return source.title.lowercased() == "icloud"
     default: return false
     }
   }
