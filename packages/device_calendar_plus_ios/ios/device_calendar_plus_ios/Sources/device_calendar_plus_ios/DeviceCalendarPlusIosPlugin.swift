@@ -541,7 +541,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let location = args["location"] as? String
     let isAllDay = args["isAllDay"] as? Bool
     let timeZone = args["timeZone"] as? String
-    
+    let availability = args["availability"] as? String
+
     // Parse dates if provided
     let startDate: Date?
     if let startDateMillis = args["startDate"] as? Int64 {
@@ -565,7 +566,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       description: description,
       location: location,
       isAllDay: isAllDay,
-      timeZone: timeZone
+      timeZone: timeZone,
+      availability: availability
     ) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {

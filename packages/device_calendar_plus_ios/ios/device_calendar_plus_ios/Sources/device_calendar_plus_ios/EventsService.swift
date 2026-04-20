@@ -421,7 +421,9 @@ class EventsService {
       event.availability = .tentative
     case "unavailable":
       event.availability = .unavailable
-    default: // "busy" or default
+    case "busy":
+      event.availability = .busy
+    default: // fallback for unknown strings
       event.availability = .busy
     }
     
@@ -771,7 +773,7 @@ class EventsService {
       )))
     }
   }
-  
+
   func updateEvent(
     eventId: String,
     title: String?,
@@ -781,9 +783,10 @@ class EventsService {
     location: String?,
     isAllDay: Bool?,
     timeZone: String?,
-    completion: @escaping (Result<Void, CalendarError>) -> Void
-  ) {
-    // Check permission
+    availability: String?,
+    completion: @escaping (Result<Void, CalendarError>) -> Void)
+  {
+    // Permission Check
     guard permissionService.hasPermission(for: .full) else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.permissionDenied,
@@ -791,8 +794,8 @@ class EventsService {
       )))
       return
     }
-    
-    // Fetch the master event by eventId
+
+    // Fetch Event
     guard let foundEvent = eventStore.event(withIdentifier: eventId) else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.notFound,
@@ -800,50 +803,38 @@ class EventsService {
       )))
       return
     }
-    
-    // Update only provided fields
-    if let title = title {
-      foundEvent.title = title
-    }
-    
-    if let description = description {
-      foundEvent.notes = description
-    }
-    
-    if let location = location {
-      foundEvent.location = location
-    }
-    
-    // Determine if event is/will be all-day
-    let effectiveIsAllDay = isAllDay ?? foundEvent.isAllDay
-    
-    // Update isAllDay if provided
-    if let isAllDay = isAllDay {
-      foundEvent.isAllDay = isAllDay
-    }
-    
-    // Update dates if provided
-    if let startDate = startDate {
-      foundEvent.startDate = startDate
-    }
-    if let endDate = endDate {
-      foundEvent.endDate = endDate
-    }
-    
-    // Update timezone
-    // For all-day events, timezone should be nil
-    // For timed events, set the timezone if provided
-    if effectiveIsAllDay {
+
+    // Get new data into event
+    if let title = title { foundEvent.title = title }
+    if let description = description { foundEvent.notes = description }
+    if let location = location { foundEvent.location = location }
+    if let isAllDay = isAllDay { foundEvent.isAllDay = isAllDay }
+    if let startDate = startDate { foundEvent.startDate = startDate }
+    if let endDate = endDate { foundEvent.endDate = endDate }
+
+    if foundEvent.isAllDay {
       foundEvent.timeZone = nil
     } else if let timeZoneIdentifier = timeZone {
       foundEvent.timeZone = TimeZone(identifier: timeZoneIdentifier)
     }
-    
-    // Save the event
-    // For recurring events, .futureEvents on the master event updates the entire series
-    // For non-recurring events, .futureEvents behaves the same as .thisEvent
+
+    if let availabilityStr = availability {
+      switch availabilityStr {
+      case "free": foundEvent.availability = .free
+      case "tentative": foundEvent.availability = .tentative
+      case "unavailable": foundEvent.availability = .unavailable
+      case "busy": foundEvent.availability = .busy
+      default: break
+      }
+    }
+
+    // Check if recurring or single event
+    let isRecurring = foundEvent.hasRecurrenceRules
+    let span: EKSpan = isRecurring ? .futureEvents : .thisEvent
+
+    // Save updated event
     do {
-      try eventStore.save(foundEvent, span: .futureEvents)
+      try eventStore.save(foundEvent, span: span, commit: true)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
@@ -853,4 +844,3 @@ class EventsService {
     }
   }
 }
-

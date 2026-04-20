@@ -188,6 +188,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     String? location,
     bool? isAllDay,
     String? timeZone,
+    String? availability,
   }) async {
     await methodChannel.invokeMethod<void>(
       'updateEvent',
@@ -200,6 +201,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
         'location': location,
         'isAllDay': isAllDay,
         'timeZone': timeZone,
+        'availability': availability,
       },
     );
   }

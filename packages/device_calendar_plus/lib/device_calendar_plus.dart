@@ -712,6 +712,7 @@ class DeviceCalendar {
   /// - [timeZone] - new timezone identifier
   ///   - Note: This reinterprets the local time, not preserving the instant
   ///   - Example: "3:00 PM EST" → "3:00 PM PST" (different instant in time)
+  /// - [availability] - new availability status
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions - call [requestPermissions] first.
@@ -739,6 +740,7 @@ class DeviceCalendar {
   ///   startDate: DateTime(2024, 3, 20, 10, 0),
   ///   endDate: DateTime(2024, 3, 20, 11, 0),
   ///   location: 'Conference Room B',
+  ///   availability: EventAvailability.free,
   /// );
   /// ```
   // TODO(breaking): rename param to `id` and stop discarding the parsed
@@ -752,6 +754,7 @@ class DeviceCalendar {
     String? location,
     bool? isAllDay,
     String? timeZone,
+    EventAvailability? availability,
   }) async {
     // Validate eventId
     if (eventId.trim().isEmpty) {
@@ -769,7 +772,8 @@ class DeviceCalendar {
         description == null &&
         location == null &&
         isAllDay == null &&
-        timeZone == null) {
+        timeZone == null &&
+        availability == null) {
       throw ArgumentError(
         'At least one field must be provided to update',
       );
@@ -802,6 +806,7 @@ class DeviceCalendar {
         location: location,
         isAllDay: isAllDay,
         timeZone: timeZone,
+        availability: availability?.name,
       );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =

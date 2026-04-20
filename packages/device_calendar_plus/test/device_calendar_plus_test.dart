@@ -212,6 +212,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? location,
     bool? isAllDay,
     String? timeZone,
+    String? availability,
   }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
     if (_updateEventCallback != null) {
@@ -224,6 +225,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
         location: location,
         isAllDay: isAllDay,
         timeZone: timeZone,
+        availability: availability,
       );
     }
   }

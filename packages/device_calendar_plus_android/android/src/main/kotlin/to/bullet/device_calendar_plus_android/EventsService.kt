@@ -817,7 +817,8 @@ class EventsService(private val context: Context) {
         description: String?,
         location: String?,
         isAllDay: Boolean?,
-        timeZone: String?
+        timeZone: String?,
+        availability: String?
     ): Result<Unit> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -921,6 +922,17 @@ class EventsService(private val context: Context) {
                 values.put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
             }
             
+            // Update availability if provided
+            if (availability != null) {
+                val availabilityValue = when (availability) {
+                    "free" -> CalendarContract.Events.AVAILABILITY_FREE
+                    "tentative" -> CalendarContract.Events.AVAILABILITY_TENTATIVE
+                    "unavailable" -> CalendarContract.Events.AVAILABILITY_BUSY
+                    else -> CalendarContract.Events.AVAILABILITY_BUSY // "busy" or default
+                }
+                values.put(CalendarContract.Events.AVAILABILITY, availabilityValue)
+            }
+            
             // Perform the update
             val updatedRows = context.contentResolver.update(
                 CalendarContract.Events.CONTENT_URI,
@@ -956,4 +968,3 @@ class EventsService(private val context: Context) {
         }
     }
 }
-
