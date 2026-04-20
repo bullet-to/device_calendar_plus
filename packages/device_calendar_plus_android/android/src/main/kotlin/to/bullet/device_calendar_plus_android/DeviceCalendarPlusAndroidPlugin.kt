@@ -1,6 +1,7 @@
 package to.bullet.device_calendar_plus_android
 
 import android.app.Activity
+import android.content.Context
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -19,6 +20,7 @@ class DeviceCalendarPlusAndroidPlugin :
     PluginRegistry.ActivityResultListener {
 
     private lateinit var channel: MethodChannel
+    private var appContext: Context? = null
     private var activity: Activity? = null
     private var permissionService: PermissionService? = null
     private var calendarService: CalendarService? = null
@@ -35,9 +37,11 @@ class DeviceCalendarPlusAndroidPlugin :
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "device_calendar_plus_android")
         channel.setMethodCallHandler(this)
 
-        val appContext = flutterPluginBinding.applicationContext
-        calendarService = CalendarService(appContext)
-        eventsService = EventsService(appContext)
+        val context = flutterPluginBinding.applicationContext
+        appContext = context
+        calendarService = CalendarService(context)
+        eventsService = EventsService(context)
+        permissionService = PermissionService(context)
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -532,8 +536,10 @@ class DeviceCalendarPlusAndroidPlugin :
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        appContext = null
         calendarService = null
         eventsService = null
+        permissionService = null
     }
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -545,7 +551,8 @@ class DeviceCalendarPlusAndroidPlugin :
 
     override fun onDetachedFromActivityForConfigChanges() {
         activity = null
-        permissionService = null
+        // Downgrade to app context — hasPermissions() still works
+        permissionService = appContext?.let { PermissionService(it) }
         showEventModalResult = null
         createEventModalResult = null
     }
@@ -559,7 +566,8 @@ class DeviceCalendarPlusAndroidPlugin :
 
     override fun onDetachedFromActivity() {
         activity = null
-        permissionService = null
+        // Downgrade to app context — hasPermissions() still works
+        permissionService = appContext?.let { PermissionService(it) }
         showEventModalResult = null
         createEventModalResult = null
     }

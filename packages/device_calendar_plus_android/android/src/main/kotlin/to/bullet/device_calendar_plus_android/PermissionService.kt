@@ -7,7 +7,10 @@ import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
-class PermissionService(private val activity: Activity) {
+class PermissionService(private val context: Context) {
+
+    private val activity: Activity?
+        get() = context as? Activity
     
     companion object {
         const val CALENDAR_PERMISSION_REQUEST_CODE = 2024
@@ -26,9 +29,9 @@ class PermissionService(private val activity: Activity) {
     private fun checkPermissionsDeclared(): PermissionException? {
         val readPermission = Manifest.permission.READ_CALENDAR
         val writePermission = Manifest.permission.WRITE_CALENDAR
-        
-        val packageInfo = activity.packageManager.getPackageInfo(
-            activity.packageName,
+
+        val packageInfo = context.packageManager.getPackageInfo(
+            context.packageName,
             PackageManager.GET_PERMISSIONS
         )
         
@@ -74,26 +77,30 @@ class PermissionService(private val activity: Activity) {
     private fun getCurrentPermissionStatus(): String {
         val readPermission = Manifest.permission.READ_CALENDAR
         val writePermission = Manifest.permission.WRITE_CALENDAR
-        
+
         val readGranted = ContextCompat.checkSelfPermission(
-            activity,
+            context,
             readPermission
         ) == PackageManager.PERMISSION_GRANTED
-        
+
         val writeGranted = ContextCompat.checkSelfPermission(
-            activity,
+            context,
             writePermission
         ) == PackageManager.PERMISSION_GRANTED
-        
+
         if (readGranted && writeGranted) return STATUS_GRANTED
 
         val deniedPermissions = mutableListOf<String>()
         if (!readGranted) deniedPermissions.add(readPermission)
         if (!writeGranted) deniedPermissions.add(writePermission)
 
+        // Without an Activity we can't check shouldShowRequestPermissionRationale,
+        // so fall back to NOT_DETERMINED (safe default — caller can still request).
+        val currentActivity = activity ?: return STATUS_NOT_DETERMINED
+
         val permanentlyDenied = deniedPermissions.any { wasPermissionDeniedBefore(it) } &&
             deniedPermissions.none {
-                ActivityCompat.shouldShowRequestPermissionRationale(activity, it)
+                ActivityCompat.shouldShowRequestPermissionRationale(currentActivity, it)
             }
 
         if (permanentlyDenied) return STATUS_DENIED
@@ -102,12 +109,12 @@ class PermissionService(private val activity: Activity) {
     }
 
     private fun wasPermissionDeniedBefore(permissionName: String): Boolean {
-        val prefs = activity.getSharedPreferences(permissionName, Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences(permissionName, Context.MODE_PRIVATE)
         return prefs.getBoolean(PREFS_PERMISSION_WAS_DENIED_BEFORE, false)
     }
 
     private fun setPermissionDenied(permissionName: String) {
-        val prefs = activity.getSharedPreferences(permissionName, Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences(permissionName, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(PREFS_PERMISSION_WAS_DENIED_BEFORE, true).apply()
     }
     
@@ -126,21 +133,31 @@ class PermissionService(private val activity: Activity) {
             callback(Result.failure(error))
             return
         }
-        
+
         val currentStatus = getCurrentPermissionStatus()
         if (currentStatus == STATUS_GRANTED) {
             callback(Result.success(STATUS_GRANTED))
             return
         }
-        
+
+        val currentActivity = activity
+        if (currentActivity == null) {
+            callback(Result.failure(PermissionException(
+                PlatformExceptionCodes.OPERATION_FAILED,
+                "Cannot request permissions without an Activity. " +
+                    "Use hasPermissions() to check status from a background context."
+            )))
+            return
+        }
+
         // Store the callback to be completed when permission result is received
         pendingCallback = callback
-        
+
         // Request both permissions
         val readPermission = Manifest.permission.READ_CALENDAR
         val writePermission = Manifest.permission.WRITE_CALENDAR
         ActivityCompat.requestPermissions(
-            activity,
+            currentActivity,
             arrayOf(readPermission, writePermission),
             CALENDAR_PERMISSION_REQUEST_CODE
         )
