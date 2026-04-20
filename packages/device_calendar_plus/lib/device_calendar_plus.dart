@@ -541,6 +541,10 @@ class DeviceCalendar {
   /// [isAllDay] indicates if this is an all-day event (default: false).
   /// [description] is optional event notes/description.
   /// [location] is optional event location.
+  /// [url] is an optional URL associated with the event. Round-trips through
+  ///   [Event.url]. On iOS this maps to `EKEvent.url` (visible in the native
+  ///   Calendar UI); on Android it maps to
+  ///   `CalendarContract.Events.CUSTOM_APP_URI`.
   /// [timeZone] is optional timezone identifier (null for all-day events).
   ///   The platform will validate the timezone string.
   /// [availability] is the availability status (default: EventAvailability.busy).
@@ -559,6 +563,7 @@ class DeviceCalendar {
   ///   title: 'Team Meeting',
   ///   startDate: DateTime.now(),
   ///   endDate: DateTime.now().add(Duration(hours: 1)),
+  ///   url: 'https://example.com/meeting/123',
   /// );
   ///
   /// // Create a recurring event
@@ -578,6 +583,7 @@ class DeviceCalendar {
     bool isAllDay = false,
     String? description,
     String? location,
+    String? url,
     String? timeZone,
     EventAvailability availability = EventAvailability.busy,
     RecurrenceRule? recurrenceRule,
@@ -619,6 +625,7 @@ class DeviceCalendar {
         isAllDay,
         description,
         location,
+        url,
         timeZone,
         availability.name,
         recurrenceRule?.toRruleString(),

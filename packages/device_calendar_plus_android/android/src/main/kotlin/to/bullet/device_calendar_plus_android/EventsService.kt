@@ -45,7 +45,8 @@ class EventsService(private val context: Context) {
             CalendarContract.Instances.AVAILABILITY,
             CalendarContract.Instances.STATUS,
             CalendarContract.Instances.EVENT_TIMEZONE,
-            CalendarContract.Instances.RRULE
+            CalendarContract.Instances.RRULE,
+            CalendarContract.Instances.CUSTOM_APP_URI
         )
 
         val selections = mutableListOf<String>()
@@ -100,7 +101,8 @@ class EventsService(private val context: Context) {
                         CalendarContract.Instances.AVAILABILITY,
                         CalendarContract.Instances.STATUS,
                         CalendarContract.Instances.EVENT_TIMEZONE,
-                        CalendarContract.Instances.RRULE
+                        CalendarContract.Instances.RRULE,
+                        urlColumn = CalendarContract.Instances.CUSTOM_APP_URI
                     )
                     events.add(eventMap)
                 }
@@ -198,7 +200,8 @@ class EventsService(private val context: Context) {
         timeZoneColumn: String,
         recurrenceRuleColumn: String,
         createdColumn: String? = null,
-        lastModifiedColumn: String? = null
+        lastModifiedColumn: String? = null,
+        urlColumn: String? = null
     ): Map<String, Any> {
         val eventIdIndex = cursor.getColumnIndex(eventIdColumn)
         val calendarIdIndex = cursor.getColumnIndex(calendarIdColumn)
@@ -214,6 +217,7 @@ class EventsService(private val context: Context) {
         val recurrenceRuleIndex = cursor.getColumnIndex(recurrenceRuleColumn)
         val createdIndex = if (createdColumn != null) cursor.getColumnIndex(createdColumn) else -1
         val lastModifiedIndex = if (lastModifiedColumn != null) cursor.getColumnIndex(lastModifiedColumn) else -1
+        val urlIndex = if (urlColumn != null) cursor.getColumnIndex(urlColumn) else -1
         
         val eventId = cursor.getString(eventIdIndex)
         val calendarId = cursor.getString(calendarIdIndex)
@@ -229,6 +233,7 @@ class EventsService(private val context: Context) {
         val recurrenceRule = if (!cursor.isNull(recurrenceRuleIndex)) cursor.getString(recurrenceRuleIndex) else null
         val createdDate = if (createdIndex >= 0 && !cursor.isNull(createdIndex)) cursor.getLong(createdIndex) else null
         val lastModifiedDate = if (lastModifiedIndex >= 0 && !cursor.isNull(lastModifiedIndex)) cursor.getLong(lastModifiedIndex) else null
+        val url = if (urlIndex >= 0 && !cursor.isNull(urlIndex)) cursor.getString(urlIndex) else null
         
         // Generate instanceId using RAW timestamps before any modifications
         val instanceId: String = if (recurrenceRule != null) {
@@ -301,6 +306,11 @@ class EventsService(private val context: Context) {
         }
         if (lastModifiedDate != null) {
             eventMap["updatedDate"] = lastModifiedDate
+        }
+
+        // Add URL if available (Android: CUSTOM_APP_URI)
+        if (url != null) {
+            eventMap["url"] = url
         }
 
         // Query attendees
@@ -420,7 +430,8 @@ class EventsService(private val context: Context) {
                 CalendarContract.Events.AVAILABILITY,
                 CalendarContract.Events.STATUS,
                 CalendarContract.Events.EVENT_TIMEZONE,
-                CalendarContract.Events.RRULE
+                CalendarContract.Events.RRULE,
+                CalendarContract.Events.CUSTOM_APP_URI
             )
             
             val selection = "${CalendarContract.Events._ID} = ?"
@@ -448,7 +459,8 @@ class EventsService(private val context: Context) {
                             CalendarContract.Events.AVAILABILITY,
                             CalendarContract.Events.STATUS,
                             CalendarContract.Events.EVENT_TIMEZONE,
-                            CalendarContract.Events.RRULE
+                            CalendarContract.Events.RRULE,
+                            urlColumn = CalendarContract.Events.CUSTOM_APP_URI
                         )
                         return Result.success(eventMap)
                     } else {
@@ -610,6 +622,7 @@ class EventsService(private val context: Context) {
         isAllDay: Boolean,
         description: String?,
         location: String?,
+        url: String?,
         timeZone: String?,
         availability: String,
         recurrenceRule: String?
@@ -683,7 +696,12 @@ class EventsService(private val context: Context) {
                 if (location != null) {
                     put(CalendarContract.Events.EVENT_LOCATION, location)
                 }
-                
+
+                // Set URL if provided (Android stores it in CUSTOM_APP_URI)
+                if (url != null) {
+                    put(CalendarContract.Events.CUSTOM_APP_URI, url)
+                }
+
                 // Set timezone
                 // For all-day events, use device timezone to make them "floating"
                 // This ensures the date components (year/month/day) stay the same
