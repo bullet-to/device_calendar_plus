@@ -1,3 +1,9 @@
+## 0.3.5 - 2026-04-20
+
+### Fixed
+- All-day events appearing in wrong day's query in non-UTC timezones (#20)
+- `PermissionService` accepts `Context` — `hasPermissions()` works without an Activity (#31)
+
 ## 0.3.4 - 2026-02-08
 
 Version sync with other packages. No functional changes.

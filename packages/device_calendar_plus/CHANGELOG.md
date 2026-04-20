@@ -1,3 +1,22 @@
+## 0.3.5 - 2026-04-20
+
+### Added
+- `listSources()` to discover calendar accounts/sources — based on @magic-fit (#14)
+- Source selection on `createCalendar` — iOS via `CreateCalendarOptionsIos(sourceId:)`, Android via optional `accountType`
+- `supportsCalendarCreation` on `CalendarSource`
+- `availability` parameter on `updateEvent()` — thanks @SuperKrallan (#29)
+- `url` field on events (iOS: `EKEvent.url`, Android: `CUSTOM_APP_URI`) — thanks @magic-fit (#32)
+- `showCreateEventModal()` with optional pre-fill (title, dates, location, description)
+- Read-only `attendees` on events (name, email, role, status)
+
+### Fixed
+- Android: all-day events appearing in wrong day's query in non-UTC timezones (#20)
+- Android: `hasPermissions()` now works from background services without an Activity (#31)
+- Android: calendar/event queries use application context for background compatibility — thanks @vitalii-vov (#26)
+- Android: `notDetermined` permission status correctly distinguished from `denied` — thanks @Albert221 (#12)
+- iOS: calendar source lookup fallback when default source is unavailable — thanks @zaqwery (#13)
+- iOS: `createCalendar` default fallback now picks iCloud over Gmail CalDAV (#33)
+
 ## 0.3.4 - 2026-02-08
 
 ### Added

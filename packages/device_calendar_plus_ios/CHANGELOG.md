@@ -1,3 +1,9 @@
+## 0.3.5 - 2026-04-20
+
+### Fixed
+- Calendar source lookup fallback when default source is unavailable (#13)
+- `createCalendar` default fallback prefers iCloud over other CalDAV sources (#33)
+
 ## 0.3.4 - 2026-02-08
 
 ### Added
