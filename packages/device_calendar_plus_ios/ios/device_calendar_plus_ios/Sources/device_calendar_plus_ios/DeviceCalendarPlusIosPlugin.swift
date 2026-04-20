@@ -449,13 +449,14 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     // Parse optional parameters
     let description = args["description"] as? String
     let location = args["location"] as? String
+    let url = args["url"] as? String
     let timeZone = args["timeZone"] as? String
     let recurrenceRule = args["recurrenceRule"] as? String
-    
+
     // Convert dates
     let startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
     let endDate = Date(timeIntervalSince1970: TimeInterval(endDateMillis) / 1000.0)
-    
+
     eventsService.createEvent(
       calendarId: calendarId,
       title: title,
@@ -464,6 +465,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       isAllDay: isAllDay,
       description: description,
       location: location,
+      url: url,
       timeZone: timeZone,
       availability: availability,
       recurrenceRule: recurrenceRule

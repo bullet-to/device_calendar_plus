@@ -98,6 +98,19 @@ class Event {
   /// supports programmatic write via this plugin.
   final List<Attendee>? attendees;
 
+  /// Optional URL associated with this event.
+  ///
+  /// A typical use is a meeting link, a ticket page, or a deep link into the
+  /// app that created the event.
+  ///
+  /// **Platform mapping:**
+  /// - **iOS**: stored on `EKEvent.url`. Visible as the URL field in the
+  ///   native Calendar app and editable there.
+  /// - **Android**: stored on `CalendarContract.Events.CUSTOM_APP_URI`. Not
+  ///   surfaced in the default Calendar UI, but round-trips correctly through
+  ///   the plugin and is available to other apps reading the calendar.
+  final String? url;
+
   Event({
     required this.eventId,
     required this.instanceId,
@@ -114,6 +127,7 @@ class Event {
     required this.isRecurring,
     this.recurrenceRule,
     this.attendees,
+    this.url,
   });
 
   /// Creates an Event from a map returned by the platform.
@@ -140,6 +154,7 @@ class Event {
       attendees: attendeesList
           ?.map((a) => Attendee.fromMap(Map<String, dynamic>.from(a as Map)))
           .toList(),
+      url: map['url'] as String?,
     );
   }
 
@@ -161,6 +176,7 @@ class Event {
     if (description != null) map['description'] = description;
     if (location != null) map['location'] = location;
     if (timeZone != null) map['timeZone'] = timeZone;
+    if (url != null) map['url'] = url;
     if (recurrenceRule != null) {
       map['recurrenceRule'] = recurrenceRule!.rruleString;
     }
@@ -174,7 +190,7 @@ class Event {
   @override
   String toString() {
     return 'Event(eventId: $eventId, instanceId: $instanceId, calendarId: $calendarId, title: $title, '
-        'startDate: $startDate, endDate: $endDate, isAllDay: $isAllDay)';
+        'startDate: $startDate, endDate: $endDate, isAllDay: $isAllDay, url: $url)';
   }
 
   @override
@@ -196,7 +212,8 @@ class Event {
         other.timeZone == timeZone &&
         other.isRecurring == isRecurring &&
         other.recurrenceRule == recurrenceRule &&
-        listEquals(other.attendees, attendees);
+        listEquals(other.attendees, attendees) &&
+        other.url == url;
   }
 
   @override
@@ -217,6 +234,7 @@ class Event {
       isRecurring,
       recurrenceRule,
       attendees != null ? Object.hashAll(attendees!) : null,
+      url,
     );
   }
 }

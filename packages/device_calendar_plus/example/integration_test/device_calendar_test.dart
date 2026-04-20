@@ -404,6 +404,73 @@ void main() {
       expect(createdEvent.location, 'Test Location');
     });
 
+    test('11b. Create Event with URL', () async {
+      // Verifies the url field round-trips through the plugin on both
+      // platforms. iOS maps to EKEvent.url; Android maps to CUSTOM_APP_URI.
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'URL Event Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day, 9, 0);
+      final endDate = DateTime(now.year, now.month, now.day, 10, 0);
+      final eventUrl = 'https://example.com/event/$timestamp';
+
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Event With URL',
+        startDate: startDate,
+        endDate: endDate,
+        url: eventUrl,
+      );
+
+      expect(eventId, isNotEmpty);
+
+      final events = await plugin.listEvents(
+        startDate.subtract(Duration(hours: 1)),
+        endDate.add(Duration(hours: 1)),
+        calendarIds: [calendarId],
+      );
+
+      final createdEvent = events.firstWhere((e) => e.eventId == eventId);
+      expect(createdEvent.url, eventUrl);
+
+      // getEvent should also return the url
+      final fetched = await plugin.getEvent(eventId);
+      expect(fetched?.url, eventUrl);
+    });
+
+    test('11c. Create Event without URL leaves url null', () async {
+      // Sanity check: omitting url must not accidentally populate the field.
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'URL Null Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day, 11, 0);
+      final endDate = DateTime(now.year, now.month, now.day, 12, 0);
+
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Event Without URL',
+        startDate: startDate,
+        endDate: endDate,
+      );
+
+      final events = await plugin.listEvents(
+        startDate.subtract(Duration(hours: 1)),
+        endDate.add(Duration(hours: 1)),
+        calendarIds: [calendarId],
+      );
+
+      final createdEvent = events.firstWhere((e) => e.eventId == eventId);
+      expect(createdEvent.url, isNull);
+    });
+
     test('12. Create All-Day Event', () async {
       // Create a test calendar
       final timestamp = DateTime.now().millisecondsSinceEpoch;

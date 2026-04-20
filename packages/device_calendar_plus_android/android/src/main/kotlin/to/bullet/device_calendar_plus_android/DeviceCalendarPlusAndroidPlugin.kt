@@ -384,6 +384,7 @@ class DeviceCalendarPlusAndroidPlugin :
         val isAllDay = call.argument<Boolean>("isAllDay")
         val description = call.argument<String>("description")
         val location = call.argument<String>("location")
+        val url = call.argument<String>("url")
         val timeZone = call.argument<String>("timeZone")
         val availability = call.argument<String>("availability")
         val recurrenceRule = call.argument<String>("recurrenceRule")
@@ -410,6 +411,7 @@ class DeviceCalendarPlusAndroidPlugin :
             isAllDay,
             description,
             location,
+            url,
             timeZone,
             availability,
             recurrenceRule

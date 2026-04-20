@@ -121,7 +121,11 @@ class EventsService {
     if let location = event.location {
       eventMap["location"] = location
     }
-    
+
+    if let url = event.url {
+      eventMap["url"] = url.absoluteString
+    }
+
     // Convert dates to milliseconds since epoch
     var startDate = event.startDate!
     var endDate = event.endDate!
@@ -352,6 +356,7 @@ class EventsService {
     isAllDay: Bool,
     description: String?,
     location: String?,
+    url: String?,
     timeZone: String?,
     availability: String,
     recurrenceRule: String?,
@@ -391,7 +396,18 @@ class EventsService {
     if let location = location {
       event.location = location
     }
-    
+
+    if let urlString = url {
+      guard let eventUrl = URL(string: urlString) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "Invalid URL string: \(urlString)"
+        )))
+        return
+      }
+      event.url = eventUrl
+    }
+
     // Set timezone (nil for all-day events)
     if !isAllDay, let timeZoneIdentifier = timeZone {
       event.timeZone = TimeZone(identifier: timeZoneIdentifier)

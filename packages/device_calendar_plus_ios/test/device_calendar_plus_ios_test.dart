@@ -81,6 +81,7 @@ void main() {
         false,
         'Weekly sync',
         'Conference Room A',
+        'https://example.com/event/123',
         'America/New_York',
         'busy',
         null,
@@ -95,6 +96,7 @@ void main() {
       expect(log[0].arguments['isAllDay'], equals(false));
       expect(log[0].arguments['description'], equals('Weekly sync'));
       expect(log[0].arguments['location'], equals('Conference Room A'));
+      expect(log[0].arguments['url'], equals('https://example.com/event/123'));
       expect(log[0].arguments['timeZone'], equals('America/New_York'));
       expect(log[0].arguments['availability'], equals('busy'));
     });
