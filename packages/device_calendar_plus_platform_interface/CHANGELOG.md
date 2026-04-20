@@ -1,3 +1,7 @@
+## 0.3.5 - 2026-04-20
+
+Version sync with other packages. No functional changes.
+
 ## 0.3.4 - 2026-02-08
 
 Version sync with other packages. No functional changes.
