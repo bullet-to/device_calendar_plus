@@ -772,13 +772,19 @@ class EventsService {
   {
     // Permission Check
     guard permissionService.hasPermission(for: .full) else {
-      completion(.failure(CalendarError(code: PlatformExceptionCodes.permissionDenied, message: "Permission denied")))
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
       return
     }
 
     // Fetch Event
     guard let foundEvent = eventStore.event(withIdentifier: eventId) else {
-      completion(.failure(CalendarError(code: PlatformExceptionCodes.notFound, message: "Event not found")))
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.notFound,
+        message: "Event not found with event ID: \(eventId)"
+      )))
       return
     }
 

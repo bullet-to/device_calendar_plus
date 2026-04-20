@@ -96,6 +96,7 @@ void main() {
         false,
         'Weekly sync',
         'Conference Room A',
+        'https://example.com/event/123',
         'America/New_York',
         'busy',
         null,
@@ -110,90 +111,12 @@ void main() {
       expect(log[0].arguments['isAllDay'], equals(false));
       expect(log[0].arguments['description'], equals('Weekly sync'));
       expect(log[0].arguments['location'], equals('Conference Room A'));
+      expect(log[0].arguments['url'], equals('https://example.com/event/123'));
       expect(log[0].arguments['timeZone'], equals('America/New_York'));
       expect(log[0].arguments['availability'], equals('busy'));
     });
 
-<<<<<<< HEAD
     test('updateEvent serializes only provided fields', () async {
-=======
-    test('createEvent with minimal parameters', () async {
-      final startDate = DateTime(2024, 3, 15, 14, 0);
-      final endDate = DateTime(2024, 3, 15, 15, 0);
-
-      final eventId = await plugin.createEvent(
-        'cal-123',
-        'Quick Event',
-        startDate,
-        endDate,
-        true,
-        null,
-        null,
-        null,
-        'free',
-      );
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('createEvent'));
-      expect(log[0].arguments['calendarId'], equals('cal-123'));
-      expect(log[0].arguments['title'], equals('Quick Event'));
-      expect(log[0].arguments['isAllDay'], equals(true));
-      expect(log[0].arguments['description'], isNull);
-      expect(log[0].arguments['location'], isNull);
-      expect(log[0].arguments['timeZone'], isNull);
-      expect(log[0].arguments['availability'], equals('free'));
-      expect(eventId, equals('android-event-id-789'));
-    });
-
-    test('deleteEvent calls method with correct arguments', () async {
-      await plugin.deleteEvent('event-123');
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('deleteEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123'));
-    });
-
-    test('deleteEvent for recurring event deletes entire series', () async {
-      await plugin.deleteEvent('event-123@123456789');
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('deleteEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123@123456789'));
-    });
-
-    test('updateEvent with all parameters', () async {
-      final startDate = DateTime(2024, 3, 20, 10, 0);
-      final endDate = DateTime(2024, 3, 20, 11, 0);
-
-      await plugin.updateEvent(
-        'event-123',
-        title: 'Updated Title',
-        startDate: startDate,
-        endDate: endDate,
-        description: 'Updated description',
-        location: 'Updated location',
-        isAllDay: false,
-        timeZone: 'America/New_York',
-        availability: 'free',
-      );
-
-      expect(log.length, equals(1));
-      expect(log[0].method, equals('updateEvent'));
-      expect(log[0].arguments['instanceId'], equals('event-123'));
-      expect(log[0].arguments['title'], equals('Updated Title'));
-      expect(log[0].arguments['startDate'],
-          equals(startDate.millisecondsSinceEpoch));
-      expect(
-          log[0].arguments['endDate'], equals(endDate.millisecondsSinceEpoch));
-      expect(log[0].arguments['description'], equals('Updated description'));
-      expect(log[0].arguments['location'], equals('Updated location'));
-      expect(log[0].arguments['isAllDay'], equals(false));
-      expect(log[0].arguments['timeZone'], equals('America/New_York'));
-      expect(log[0].arguments['availability'], equals('free'));
-    });
-
-    test('updateEvent with minimal parameters', () async {
->>>>>>> f27a039... Fix availability persistence across platforms
       await plugin.updateEvent(
         'event-123',
         title: 'New Title',
