@@ -196,27 +196,33 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// consistent behavior across platforms.
   ///
   /// All field parameters are optional - only provided fields will be updated:
+  /// - [calendarId] - new calendar ID
   /// - [title] - new event title
   /// - [startDate] - new start date/time
   /// - [endDate] - new end date/time
   /// - [description] - new event description
   /// - [location] - new event location
+  /// - [url] - new URL
   /// - [isAllDay] - change between all-day and timed event
   /// - [timeZone] - new timezone identifier
   /// - [availability] - new availability identifier
+  /// - [recurrenceRule] - new RRULE string
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions.
   Future<void> updateEvent(
     String eventId, {
+    String? calendarId,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
     String? description,
     String? location,
+    String? url,
     bool? isAllDay,
     String? timeZone,
     String? availability,
+    String? recurrenceRule,
   });
 
   /// Opens the native calendar editor in create mode with optional pre-fill.

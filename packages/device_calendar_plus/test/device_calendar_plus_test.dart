@@ -29,14 +29,17 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   // Callback to capture updateEvent arguments
   Future<void> Function(
     String eventId, {
+    String? calendarId,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
     String? description,
     String? location,
+    String? url,
     bool? isAllDay,
     String? timeZone,
     String? availability,
+    String? recurrenceRule,
   })? _updateEventCallback;
 
   void setPermissionStatus(CalendarPermissionStatus status) {
@@ -80,14 +83,17 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   void setUpdateEventCallback(
     Future<void> Function(
       String eventId, {
+      String? calendarId,
       String? title,
       DateTime? startDate,
       DateTime? endDate,
       String? description,
       String? location,
+      String? url,
       bool? isAllDay,
       String? timeZone,
       String? availability,
+      String? recurrenceRule,
     }) callback,
   ) {
     _updateEventCallback = callback;
@@ -205,27 +211,33 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   @override
   Future<void> updateEvent(
     String eventId, {
+    String? calendarId,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
     String? description,
     String? location,
+    String? url,
     bool? isAllDay,
     String? timeZone,
     String? availability,
+    String? recurrenceRule,
   }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
     if (_updateEventCallback != null) {
       return _updateEventCallback!(
         eventId,
+        calendarId: calendarId,
         title: title,
         startDate: startDate,
         endDate: endDate,
         description: description,
         location: location,
+        url: url,
         isAllDay: isAllDay,
         timeZone: timeZone,
         availability: availability,
+        recurrenceRule: recurrenceRule,
       );
     }
   }
@@ -652,14 +664,17 @@ void main() {
         final mock = MockDeviceCalendarPlusPlatform();
         mock.setUpdateEventCallback((
           instanceId, {
+          calendarId,
           title,
           startDate,
           endDate,
           description,
           location,
+          url,
           isAllDay,
           timeZone,
           availability,
+          recurrenceRule,
         }) {
           capturedStart = startDate;
           capturedEnd = endDate;

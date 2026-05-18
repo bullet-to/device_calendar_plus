@@ -123,14 +123,17 @@ void main() {
       );
 
       expect(log[0].arguments['eventId'], equals('event-123'));
+      expect(log[0].arguments['calendarId'], isNull);
       expect(log[0].arguments['title'], equals('New Title'));
       expect(log[0].arguments['startDate'], isNull);
       expect(log[0].arguments['endDate'], isNull);
       expect(log[0].arguments['description'], isNull);
       expect(log[0].arguments['location'], isNull);
+      expect(log[0].arguments['url'], isNull);
       expect(log[0].arguments['isAllDay'], isNull);
       expect(log[0].arguments['timeZone'], isNull);
       expect(log[0].arguments['availability'], isNull);
+      expect(log[0].arguments['recurrenceRule'], isNull);
     });
   });
 }

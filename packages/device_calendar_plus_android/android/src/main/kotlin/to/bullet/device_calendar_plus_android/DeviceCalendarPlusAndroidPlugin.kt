@@ -477,14 +477,18 @@ class DeviceCalendarPlusAndroidPlugin :
         }
         
         // Parse optional arguments (all can be null)
+
+        val calendarId = call.argument<String>("calendarId")
         val title = call.argument<String>("title")
         val startDateMillis = call.argument<Long>("startDate")
         val endDateMillis = call.argument<Long>("endDate")
         val description = call.argument<String>("description")
         val location = call.argument<String>("location")
+        val url = call.argument<String>("url")
         val isAllDay = call.argument<Boolean>("isAllDay")
         val timeZone = call.argument<String>("timeZone")
         val availability = call.argument<String>("availability")
+        val recurrenceRule = call.argument<String>("recurrenceRule")
         
         // Convert dates if provided
         val startDate = startDateMillis?.let { java.util.Date(it) }
@@ -492,14 +496,17 @@ class DeviceCalendarPlusAndroidPlugin :
         
         val serviceResult = service.updateEvent(
             eventId,
+            calendarId,
             title,
             startDate,
             endDate,
             description,
             location,
+            url,
             isAllDay,
             timeZone,
-            availability
+            availability,
+            recurrenceRule
         )
         
         serviceResult.fold(

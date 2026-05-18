@@ -536,12 +536,15 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
     
     // Parse optional parameters
+    let calendarId = args["calendarId"] as? String
     let title = args["title"] as? String
     let description = args["description"] as? String
     let location = args["location"] as? String
+    let url = args["url"] as? String
     let isAllDay = args["isAllDay"] as? Bool
     let timeZone = args["timeZone"] as? String
     let availability = args["availability"] as? String
+    let recurrenceRule = args["recurrenceRule"] as? String
 
     // Parse dates if provided
     let startDate: Date?
@@ -560,14 +563,17 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     
     eventsService.updateEvent(
       eventId: eventId,
+      calendarId: calendarId,
       title: title,
       startDate: startDate,
       endDate: endDate,
       description: description,
       location: location,
+      url: url,
       isAllDay: isAllDay,
       timeZone: timeZone,
-      availability: availability
+      availability: availability,
+      recurrenceRule: recurrenceRule
     ) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {

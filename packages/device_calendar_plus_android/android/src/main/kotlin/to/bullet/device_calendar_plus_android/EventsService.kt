@@ -811,14 +811,17 @@ class EventsService(private val context: Context) {
     
     fun updateEvent(
         eventId: String,
+        calendarId: String?,
         title: String?,
         startDate: java.util.Date?,
         endDate: java.util.Date?,
         description: String?,
         location: String?,
+        url: String?,
         isAllDay: Boolean?,
         timeZone: String?,
-        availability: String?
+        availability: String?,
+        recurrenceRule: String?
     ): Result<Unit> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -840,7 +843,12 @@ class EventsService(private val context: Context) {
             
             // Build ContentValues with only provided fields
             val values = android.content.ContentValues()
-            
+
+            // Update calendar ID if provided
+            if (calendarId != null) {
+                values.put(CalendarContract.Events.CALENDAR_ID, calendarId.toLong())
+            }
+
             // Update title if provided
             if (title != null) {
                 values.put(CalendarContract.Events.TITLE, title)
@@ -854,6 +862,11 @@ class EventsService(private val context: Context) {
             // Update location if provided
             if (location != null) {
                 values.put(CalendarContract.Events.EVENT_LOCATION, location)
+            }
+
+            // Update URL if provided
+            if (url != null) {
+                values.put(CalendarContract.Events.CUSTOM_APP_URI, url)
             }
             
             // Update isAllDay if provided
@@ -931,6 +944,11 @@ class EventsService(private val context: Context) {
                     else -> CalendarContract.Events.AVAILABILITY_BUSY // "busy" or default
                 }
                 values.put(CalendarContract.Events.AVAILABILITY, availabilityValue)
+            }
+
+            // Update recurrence rule if provided
+            if (recurrenceRule != null) {
+                values.put(CalendarContract.Events.RRULE, recurrenceRule)
             }
             
             // Perform the update

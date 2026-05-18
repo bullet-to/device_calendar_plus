@@ -701,11 +701,13 @@ class DeviceCalendar {
   /// maintain consistent behavior across platforms.
   ///
   /// All field parameters are optional - only provided fields will be updated:
+  /// - [calendarId] - new calendar ID to move the event to
   /// - [title] - new event title
   /// - [startDate] - new start date/time
   /// - [endDate] - new end date/time
   /// - [description] - new event description
   /// - [location] - new event location
+  /// - [url] - new URL associated with the event
   /// - [isAllDay] - change between all-day and timed event
   ///   - Changing timed → all-day: Time components are stripped to midnight
   ///   - Changing all-day → timed: Midnight time is used
@@ -713,6 +715,7 @@ class DeviceCalendar {
   ///   - Note: This reinterprets the local time, not preserving the instant
   ///   - Example: "3:00 PM EST" → "3:00 PM PST" (different instant in time)
   /// - [availability] - new availability status
+  /// - [recurrenceRule] - new recurrence rule
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions - call [requestPermissions] first.
@@ -747,14 +750,17 @@ class DeviceCalendar {
   // timestamp so per-instance update works (matching getEvent/showEventModal).
   Future<void> updateEvent({
     required String eventId,
+    String? calendarId,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
     String? description,
     String? location,
+    String? url,
     bool? isAllDay,
     String? timeZone,
     EventAvailability? availability,
+    RecurrenceRule? recurrenceRule,
   }) async {
     // Validate eventId
     if (eventId.trim().isEmpty) {
@@ -766,14 +772,17 @@ class DeviceCalendar {
     }
 
     // Validate at least one field is provided
-    if (title == null &&
+    if (calendarId == null &&
+        title == null &&
         startDate == null &&
         endDate == null &&
         description == null &&
         location == null &&
+        url == null &&
         isAllDay == null &&
         timeZone == null &&
-        availability == null) {
+        availability == null &&
+        recurrenceRule == null) {
       throw ArgumentError(
         'At least one field must be provided to update',
       );
@@ -799,14 +808,17 @@ class DeviceCalendar {
 
       await DeviceCalendarPlusPlatform.instance.updateEvent(
         parsed.eventId,
+        calendarId: calendarId,
         title: title,
         startDate: normalizedStartDate,
         endDate: normalizedEndDate,
         description: description,
         location: location,
+        url: url,
         isAllDay: isAllDay,
         timeZone: timeZone,
         availability: availability?.name,
+        recurrenceRule: recurrenceRule?.rruleString,
       );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =

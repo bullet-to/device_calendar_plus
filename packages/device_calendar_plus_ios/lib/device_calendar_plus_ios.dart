@@ -177,27 +177,33 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   @override
   Future<void> updateEvent(
     String eventId, {
+    String? calendarId,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
     String? description,
     String? location,
+    String? url,
     bool? isAllDay,
     String? timeZone,
     String? availability,
+    String? recurrenceRule,
   }) async {
     await methodChannel.invokeMethod<void>(
       'updateEvent',
       <String, dynamic>{
         'eventId': eventId,
+        'calendarId': calendarId,
         'title': title,
         'startDate': startDate?.millisecondsSinceEpoch,
         'endDate': endDate?.millisecondsSinceEpoch,
         'description': description,
         'location': location,
+        'url': url,
         'isAllDay': isAllDay,
         'timeZone': timeZone,
         'availability': availability,
+        'recurrenceRule': recurrenceRule,
       },
     );
   }

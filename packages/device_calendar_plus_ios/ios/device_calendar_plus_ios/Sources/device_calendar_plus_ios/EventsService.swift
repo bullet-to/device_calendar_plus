@@ -776,14 +776,17 @@ class EventsService {
 
   func updateEvent(
     eventId: String,
+    calendarId: String?,
     title: String?,
     startDate: Date?,
     endDate: Date?,
     description: String?,
     location: String?,
+    url: String?,
     isAllDay: Bool?,
     timeZone: String?,
     availability: String?,
+    recurrenceRule: String?,
     completion: @escaping (Result<Void, CalendarError>) -> Void)
   {
     // Permission Check
@@ -805,9 +808,21 @@ class EventsService {
     }
 
     // Get new data into event
+    // Update the calendar if a calendarId was provided
+    if let calendarId = calendarId {
+      guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.notFound,
+          message: "Calendar with ID \(calendarId) not found"
+        )))
+        return
+      }
+      foundEvent.calendar = calendar
+    }
     if let title = title { foundEvent.title = title }
     if let description = description { foundEvent.notes = description }
     if let location = location { foundEvent.location = location }
+    if let url = url { foundEvent.url = URL(string: url) }
     if let isAllDay = isAllDay { foundEvent.isAllDay = isAllDay }
     if let startDate = startDate { foundEvent.startDate = startDate }
     if let endDate = endDate { foundEvent.endDate = endDate }
@@ -826,6 +841,10 @@ class EventsService {
       case "busy": foundEvent.availability = .busy
       default: break
       }
+    }
+
+    if let rruleString = recurrenceRule, let rule = parseRecurrenceRule(rruleString) {
+      foundEvent.recurrenceRules = [rule]
     }
 
     // Check if recurring or single event

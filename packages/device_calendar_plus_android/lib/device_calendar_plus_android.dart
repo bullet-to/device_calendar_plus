@@ -181,27 +181,44 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   @override
   Future<void> updateEvent(
     String eventId, {
+    String? calendarId,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
     String? description,
     String? location,
+    String? url,
     bool? isAllDay,
     String? timeZone,
     String? availability,
+    String? recurrenceRule,
   }) async {
+    String? formattedRule = recurrenceRule;
+    // Remove the RRULE: prefix if it exists
+    // Android's CalendarContract.Events.RRULE column expects the rule string without the RRULE: prefix.
+    if (formattedRule != null && formattedRule.startsWith('RRULE:')) {
+      formattedRule = formattedRule.replaceFirst('RRULE:', '');
+    }
+    if (formattedRule != null && formattedRule.isNotEmpty) {}
     await methodChannel.invokeMethod<void>(
       'updateEvent',
       <String, dynamic>{
         'eventId': eventId,
+        'calendarId': calendarId,
         'title': title,
         'startDate': startDate?.millisecondsSinceEpoch,
-        'endDate': endDate?.millisecondsSinceEpoch,
+        // Android allows DTEND for single events, but for recurring events,
+        // it strictly prefers DTSTART + DURATION
+        'endDate': (formattedRule != null && formattedRule.isNotEmpty)
+            ? null
+            : endDate?.millisecondsSinceEpoch,
         'description': description,
         'location': location,
+        'url': url,
         'isAllDay': isAllDay,
         'timeZone': timeZone,
         'availability': availability,
+        'recurrenceRule': formattedRule,
       },
     );
   }
