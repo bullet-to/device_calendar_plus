@@ -201,6 +201,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// - [endDate] - new end date/time
   /// - [description] - new event description
   /// - [location] - new event location
+  /// - [url] - new URL for the event
   /// - [isAllDay] - change between all-day and timed event
   /// - [timeZone] - new timezone identifier
   /// - [availability] - new availability identifier
@@ -214,6 +215,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     DateTime? endDate,
     String? description,
     String? location,
+    String? url,
     bool? isAllDay,
     String? timeZone,
     String? availability,

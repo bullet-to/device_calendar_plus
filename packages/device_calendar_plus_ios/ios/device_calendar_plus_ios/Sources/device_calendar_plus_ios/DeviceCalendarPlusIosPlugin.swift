@@ -539,6 +539,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let title = args["title"] as? String
     let description = args["description"] as? String
     let location = args["location"] as? String
+    let url = args["url"] as? String
     let isAllDay = args["isAllDay"] as? Bool
     let timeZone = args["timeZone"] as? String
     let availability = args["availability"] as? String
@@ -565,6 +566,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       endDate: endDate,
       description: description,
       location: location,
+      url: url,
       isAllDay: isAllDay,
       timeZone: timeZone,
       availability: availability

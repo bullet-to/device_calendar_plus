@@ -456,6 +456,7 @@ await plugin.updateEvent(
   endDate: DateTime(2024, 3, 21, 16, 0),
   location: 'Conference Room B',
   description: 'Updated description',
+  url: 'https://example.com/meeting/456',
 );
 
 // Change a timed event to all-day

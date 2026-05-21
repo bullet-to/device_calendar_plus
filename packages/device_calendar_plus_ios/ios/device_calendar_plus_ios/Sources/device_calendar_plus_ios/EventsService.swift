@@ -781,6 +781,7 @@ class EventsService {
     endDate: Date?,
     description: String?,
     location: String?,
+    url: String?,
     isAllDay: Bool?,
     timeZone: String?,
     availability: String?,
@@ -808,6 +809,7 @@ class EventsService {
     if let title = title { foundEvent.title = title }
     if let description = description { foundEvent.notes = description }
     if let location = location { foundEvent.location = location }
+    if let url = url { foundEvent.url = URL(string: url) }
     if let isAllDay = isAllDay { foundEvent.isAllDay = isAllDay }
     if let startDate = startDate { foundEvent.startDate = startDate }
     if let endDate = endDate { foundEvent.endDate = endDate }
