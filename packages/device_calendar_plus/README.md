@@ -509,14 +509,7 @@ await plugin.deleteEvent(event.instanceId);
 
 ## 🤝 Contributing
 
-Contributions, PRs and issue reports welcome.
-Open an issue first for larger features or breaking changes.
-
-- Code style: `dart format .`
-- Run tests: `flutter test`
-- Federated layout: platform code lives in
-  `/packages/device_calendar_plus_android` and `/packages/device_calendar_plus_ios`;
-  shared contracts in `/packages/device_calendar_plus_platform_interface`.
+This project is closed to outside pull requests. Bug reports and feature requests are welcome - please open an issue. The maintainer handles implementation to keep the API surface and platform-parity decisions consistent.
 
 ## 🧪 Testing Status
 

@@ -1,10 +1,12 @@
 # Contributing to device_calendar_plus
 
-Contributions are welcome!
+**This project is closed to outside pull requests.**
 
-**Bug fixes** that don't change the public API can go straight to a PR.
+Bug reports and feature requests are welcome - please open an issue. I'll handle the implementation myself to keep the API surface and platform-parity decisions consistent.
 
-**New features or API changes** — please open an issue first. The maintainer defines the API surface to ensure cross-platform consistency, so PRs that add new methods, parameters, or models without prior discussion will likely need significant rework. An issue lets us align on the design before you write code.
+If you've already started on a fix, share your approach in the issue. It's useful context and I'll credit you in the changelog when the fix ships.
+
+The rest of this document describes the design philosophy and conventions that guide implementation decisions. It's still worth reading if you want to understand why the API looks the way it does.
 
 ## Design Philosophy
 
