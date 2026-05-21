@@ -101,7 +101,7 @@ flutter devices
 
 ## 🤝 Contributing
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, design philosophy, and development workflow.
+This project is closed to outside pull requests. Bug reports and feature requests are welcome - please open an issue. See [CONTRIBUTING.md](CONTRIBUTING.md) for the design philosophy and conventions.
 
 ## 📄 License
 
