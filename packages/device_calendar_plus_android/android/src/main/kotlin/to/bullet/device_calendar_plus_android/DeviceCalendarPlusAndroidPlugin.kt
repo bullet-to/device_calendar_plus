@@ -486,11 +486,11 @@ class DeviceCalendarPlusAndroidPlugin :
         val isAllDay = call.argument<Boolean>("isAllDay")
         val timeZone = call.argument<String>("timeZone")
         val availability = call.argument<String>("availability")
-
+        
         // Convert dates if provided
         val startDate = startDateMillis?.let { java.util.Date(it) }
         val endDate = endDateMillis?.let { java.util.Date(it) }
-
+        
         val serviceResult = service.updateEvent(
             eventId,
             title,
