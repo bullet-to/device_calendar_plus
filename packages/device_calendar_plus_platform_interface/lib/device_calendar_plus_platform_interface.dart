@@ -226,6 +226,37 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? availability,
   });
 
+  /// Updates a recurring event, choosing which occurrences the edit affects.
+  ///
+  /// [eventId] is the event identifier. [timestamp] is the occurrence
+  /// timestamp in milliseconds — required for every [span] except `allEvents`.
+  ///
+  /// [span] is the [EventUpdateSpan] name: `allEvents` updates the whole
+  /// series; `thisAndFollowing` splits it at [timestamp]; `thisInstance`
+  /// detaches and edits only that occurrence.
+  ///
+  /// [description], [location] and [url] take a [Patch] of the field value.
+  /// [recurrenceRule] takes a [Patch] of the RRULE string: [Patch.set]
+  /// changes the rule, [Patch.clear] removes it (the event stops recurring).
+  ///
+  /// Returns the event ID for the affected scope — the same ID for
+  /// `allEvents`, the new series' ID for `thisAndFollowing`.
+  Future<String> updateRecurring(
+    String eventId,
+    int? timestamp,
+    String span, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    Patch<String>? description,
+    Patch<String>? location,
+    Patch<String>? url,
+    bool? isAllDay,
+    String? timeZone,
+    String? availability,
+    Patch<String>? recurrenceRule,
+  });
+
   /// Opens the native calendar editor in create mode with optional pre-fill.
   ///
   /// All parameters are optional. Dates are in milliseconds since epoch.

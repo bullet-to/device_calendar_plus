@@ -328,4 +328,183 @@ void main() {
       expect(rrule, contains('COUNT=5'));
     });
   });
+
+  group('Recurrence Update Tests', () {
+    late DeviceCalendar plugin;
+    String? calendarId;
+
+    setUpAll(() async {
+      plugin = DeviceCalendar.instance;
+      await plugin.requestPermissions();
+
+      calendarId = await plugin.createCalendar(
+        name: 'Recurrence Update Test ${DateTime.now().millisecondsSinceEpoch}',
+        colorHex: '#00FF00',
+      );
+    });
+
+    tearDownAll(() async {
+      if (calendarId != null) {
+        await plugin.deleteCalendar(calendarId!);
+      }
+    });
+
+    /// Creates a daily recurring event, returning its ID and start date.
+    Future<({String eventId, DateTime start})> createDailySeries({
+      int count = 10,
+    }) async {
+      final start = DateTime.now().add(const Duration(hours: 1));
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId!,
+        title: 'Daily Series',
+        startDate: start,
+        endDate: start.add(const Duration(hours: 1)),
+        recurrenceRule: DailyRecurrence(end: CountEnd(count)),
+        timeZone: 'UTC',
+      );
+      return (eventId: eventId, start: start);
+    }
+
+    /// Lists the occurrences of [eventId] around [start], in date order.
+    Future<List<Event>> occurrencesOf(String eventId, DateTime start) async {
+      final events = await plugin.listEvents(
+        start.subtract(const Duration(days: 1)),
+        start.add(const Duration(days: 14)),
+        calendarIds: [calendarId!],
+      );
+      return events.where((e) => e.eventId == eventId).toList();
+    }
+
+    test('allEvents changes the recurrence rule for the whole series',
+        () async {
+      if (calendarId == null) return;
+      final series = await createDailySeries();
+
+      final result = await plugin.updateRecurring(
+        series.eventId,
+        EventUpdateSpan.allEvents,
+        recurrenceRule: Patch.set(const WeeklyRecurrence(
+          daysOfWeek: [DayOfWeek.monday],
+          end: CountEnd(5),
+        )),
+      );
+
+      expect(result, series.eventId,
+          reason: 'allEvents returns the same event ID');
+      final updated = await plugin.getEvent(series.eventId);
+      expect(updated, isNotNull);
+      expect(updated!.isRecurring, isTrue);
+      expect(updated.recurrenceRule, isA<WeeklyRecurrence>());
+    });
+
+    test('allEvents with Patch.clear removes recurrence', () async {
+      if (calendarId == null) return;
+      final series = await createDailySeries();
+
+      await plugin.updateRecurring(
+        series.eventId,
+        EventUpdateSpan.allEvents,
+        recurrenceRule: const Patch.clear(),
+      );
+
+      final updated = await plugin.getEvent(series.eventId);
+      expect(updated, isNotNull);
+      expect(updated!.isRecurring, isFalse);
+      expect(updated.recurrenceRule, isNull);
+    });
+
+    test('thisAndFollowing splits so the anchor occurrence carries the change',
+        () async {
+      if (calendarId == null) return;
+      final series = await createDailySeries(count: 10);
+
+      final occurrences = await occurrencesOf(series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(6),
+          reason: 'the daily series should have expanded into occurrences');
+      final splitPoint = occurrences[4];
+      final splitMillis = splitPoint.startDate.millisecondsSinceEpoch;
+
+      await plugin.updateRecurring(
+        splitPoint.instanceId,
+        EventUpdateSpan.thisAndFollowing,
+        title: 'Split Tail',
+      );
+
+      final after = await plugin.listEvents(
+        series.start.subtract(const Duration(days: 1)),
+        series.start.add(const Duration(days: 14)),
+        calendarIds: [calendarId!],
+      );
+
+      // The anchor occurrence itself must carry the change — "this and
+      // following" includes the named occurrence.
+      final atSplit = after
+          .where((e) => e.startDate.millisecondsSinceEpoch == splitMillis)
+          .toList();
+      expect(atSplit, isNotEmpty,
+          reason: 'an occurrence should still exist at the split point');
+      expect(atSplit.first.title, 'Split Tail',
+          reason: 'the anchor occurrence must receive the change');
+
+      // Occurrences before the split keep the original title.
+      final before =
+          after.where((e) => e.startDate.millisecondsSinceEpoch < splitMillis);
+      expect(before, isNotEmpty);
+      expect(before.every((e) => e.title == 'Daily Series'), isTrue,
+          reason: 'occurrences before the split must be untouched');
+    });
+
+    test('thisAndFollowing can change the rule from the split point onward',
+        () async {
+      if (calendarId == null) return;
+      final series = await createDailySeries(count: 10);
+
+      final occurrences = await occurrencesOf(series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final splitPoint = occurrences[4];
+
+      final newSeriesId = await plugin.updateRecurring(
+        splitPoint.instanceId,
+        EventUpdateSpan.thisAndFollowing,
+        recurrenceRule: Patch.set(const WeeklyRecurrence(end: CountEnd(3))),
+      );
+
+      final newSeries = await plugin.getEvent(newSeriesId);
+      expect(newSeries, isNotNull);
+      expect(newSeries!.recurrenceRule, isA<WeeklyRecurrence>());
+    });
+
+    test('thisInstance edits only the one occurrence', () async {
+      if (calendarId == null) return;
+      final series = await createDailySeries(count: 10);
+
+      final occurrences = await occurrencesOf(series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final target = occurrences[4];
+      final targetMillis = target.startDate.millisecondsSinceEpoch;
+
+      await plugin.updateRecurring(
+        target.instanceId,
+        EventUpdateSpan.thisInstance,
+        title: 'Just this one',
+      );
+
+      final after = await plugin.listEvents(
+        series.start.subtract(const Duration(days: 1)),
+        series.start.add(const Duration(days: 14)),
+        calendarIds: [calendarId!],
+      );
+
+      // Exactly one occurrence changed — the one at the target time.
+      final changed = after.where((e) => e.title == 'Just this one').toList();
+      expect(changed.length, 1,
+          reason: 'only the targeted occurrence should change');
+      expect(changed.first.startDate.millisecondsSinceEpoch, targetMillis);
+
+      // The rest of the series keeps the original title.
+      final unchanged = after.where((e) => e.title == 'Daily Series').toList();
+      expect(unchanged.length, greaterThanOrEqualTo(8),
+          reason: 'the rest of the series must be untouched');
+    });
+  });
 }

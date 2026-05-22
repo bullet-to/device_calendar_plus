@@ -858,4 +858,146 @@ class EventsService {
       )))
     }
   }
+
+  // MARK: - updateRecurring (issue #36)
+
+  /// Updates a recurring event, choosing which occurrences the edit affects.
+  ///
+  /// `span` is "allEvents" (the whole series) or "thisAndFollowing" (split the
+  /// series at `timestamp`). On success returns the event ID for the affected
+  /// scope — the same ID for "allEvents", the new series' ID for
+  /// "thisAndFollowing".
+  func updateRecurring(
+    eventId: String,
+    timestamp: Int64?,
+    span: String,
+    title: String?,
+    startDate: Date?,
+    endDate: Date?,
+    description: String?,
+    location: String?,
+    url: String?,
+    isAllDay: Bool?,
+    timeZone: String?,
+    availability: String?,
+    recurrenceRule: String?,
+    clearedFields: [String],
+    completion: @escaping (Result<String, CalendarError>) -> Void
+  ) {
+    // Permission Check
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+
+    // Resolve the event to act on. "allEvents" works from the master (the
+    // whole series); "thisAndFollowing" and "thisInstance" work from the
+    // specific occurrence at `timestamp`.
+    let needsOccurrence = (span == "thisAndFollowing" || span == "thisInstance")
+    let targetEvent: EKEvent?
+    if needsOccurrence {
+      guard let timestamp = timestamp else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "\(span) requires an occurrence timestamp"
+        )))
+        return
+      }
+      let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
+      let predicate = eventStore.predicateForEvents(
+        withStart: occurrenceDate.addingTimeInterval(-1),
+        end: occurrenceDate.addingTimeInterval(1),
+        calendars: nil
+      )
+      let matches = eventStore.events(matching: predicate)
+        .filter { $0.eventIdentifier == eventId }
+      targetEvent = matches.min(by: {
+        abs($0.startDate.timeIntervalSince(occurrenceDate)) <
+          abs($1.startDate.timeIntervalSince(occurrenceDate))
+      })
+    } else {
+      targetEvent = eventStore.event(withIdentifier: eventId)
+    }
+
+    guard let foundEvent = targetEvent else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.notFound,
+        message: "Event not found with event ID: \(eventId)"
+      )))
+      return
+    }
+
+    // Apply field changes.
+    if let title = title { foundEvent.title = title }
+    if clearedFields.contains("description") {
+      foundEvent.notes = nil
+    } else if let description = description {
+      foundEvent.notes = description
+    }
+    if clearedFields.contains("location") {
+      foundEvent.location = nil
+    } else if let location = location {
+      foundEvent.location = location
+    }
+    if clearedFields.contains("url") {
+      foundEvent.url = nil
+    } else if let url = url {
+      foundEvent.url = URL(string: url)
+    }
+    if let isAllDay = isAllDay { foundEvent.isAllDay = isAllDay }
+    if let startDate = startDate { foundEvent.startDate = startDate }
+    if let endDate = endDate { foundEvent.endDate = endDate }
+
+    if foundEvent.isAllDay {
+      foundEvent.timeZone = nil
+    } else if let timeZoneIdentifier = timeZone {
+      foundEvent.timeZone = TimeZone(identifier: timeZoneIdentifier)
+    }
+
+    if let availabilityStr = availability {
+      switch availabilityStr {
+      case "free": foundEvent.availability = .free
+      case "tentative": foundEvent.availability = .tentative
+      case "unavailable": foundEvent.availability = .unavailable
+      case "busy": foundEvent.availability = .busy
+      default: break
+      }
+    }
+
+    // Apply the recurrence-rule patch.
+    if clearedFields.contains("recurrenceRule") {
+      foundEvent.recurrenceRules = nil
+    } else if let rruleString = recurrenceRule {
+      guard let rule = parseRecurrenceRule(rruleString) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "Invalid recurrence rule: \(rruleString)"
+        )))
+        return
+      }
+      foundEvent.recurrenceRules = [rule]
+    }
+
+    // "thisInstance" detaches only the fetched occurrence (.thisEvent).
+    // "allEvents" and "thisAndFollowing" use .futureEvents: from the master
+    // that is the whole series; from an occurrence it splits the series so
+    // that occurrence onward becomes the new series. .futureEvents is also
+    // what drops recurrence across a whole series — .thisEvent would only
+    // detach one occurrence. (.futureEvents on a non-recurring event behaves
+    // like .thisEvent.)
+    let saveSpan: EKSpan = (span == "thisInstance") ? .thisEvent : .futureEvents
+
+    do {
+      try eventStore.save(foundEvent, span: saveSpan, commit: true)
+      completion(.success(foundEvent.eventIdentifier ?? eventId))
+    } catch {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "Failed to update recurring event: \(error.localizedDescription)"
+      )))
+    }
+  }
 }

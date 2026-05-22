@@ -61,6 +61,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "createEvent" -> handleCreateEvent(call, result)
             "deleteEvent" -> handleDeleteEvent(call, result)
             "updateEvent" -> handleUpdateEvent(call, result)
+            "updateRecurring" -> handleUpdateRecurring(call, result)
             else -> result.notImplemented()
         }
     }
@@ -508,6 +509,75 @@ class DeviceCalendarPlusAndroidPlugin :
         
         serviceResult.fold(
             onSuccess = { result.success(null) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+
+    private fun handleUpdateRecurring(call: MethodCall, result: Result) {
+        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
+
+        val eventId = call.argument<String>("eventId")
+        if (eventId == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing or invalid eventId",
+                null
+            )
+            return
+        }
+
+        val span = call.argument<String>("span")
+        if (span == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing or invalid span",
+                null
+            )
+            return
+        }
+
+        // Parse optional arguments (all can be null)
+        val timestamp = call.argument<Long>("timestamp")
+        val title = call.argument<String>("title")
+        val startDateMillis = call.argument<Long>("startDate")
+        val endDateMillis = call.argument<Long>("endDate")
+        val description = call.argument<String>("description")
+        val location = call.argument<String>("location")
+        val url = call.argument<String>("url")
+        val isAllDay = call.argument<Boolean>("isAllDay")
+        val timeZone = call.argument<String>("timeZone")
+        val availability = call.argument<String>("availability")
+        val recurrenceRule = call.argument<String>("recurrenceRule")
+        val clearedFields = call.argument<List<String>>("clearedFields") ?: emptyList()
+
+        val startDate = startDateMillis?.let { java.util.Date(it) }
+        val endDate = endDateMillis?.let { java.util.Date(it) }
+
+        val serviceResult = service.updateRecurring(
+            eventId,
+            timestamp,
+            span,
+            title,
+            startDate,
+            endDate,
+            description,
+            location,
+            url,
+            isAllDay,
+            timeZone,
+            availability,
+            recurrenceRule,
+            clearedFields
+        )
+
+        serviceResult.fold(
+            onSuccess = { affectedEventId -> result.success(affectedEventId) },
             onFailure = { error ->
                 if (error is CalendarException) {
                     result.error(error.code, error.message, null)
