@@ -229,11 +229,11 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// Updates a recurring event, choosing which occurrences the edit affects.
   ///
   /// [eventId] is the event identifier. [timestamp] is the occurrence
-  /// timestamp in milliseconds — it is the split point and is required when
-  /// [span] is `thisAndFollowing`.
+  /// timestamp in milliseconds — required for every [span] except `allEvents`.
   ///
   /// [span] is the [EventUpdateSpan] name: `allEvents` updates the whole
-  /// series; `thisAndFollowing` splits the series at [timestamp].
+  /// series; `thisAndFollowing` splits it at [timestamp]; `thisInstance`
+  /// detaches and edits only that occurrence.
   ///
   /// [description], [location] and [url] take a [Patch] of the field value.
   /// [recurrenceRule] takes a [Patch] of the RRULE string: [Patch.set]

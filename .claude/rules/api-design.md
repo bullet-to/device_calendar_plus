@@ -11,9 +11,9 @@ conform Android to iOS. iOS is the priority platform — it has most of the
 users and revenue — so its default behaviour sets the contract. This is
 usually also the practical direction: Android's Calendar Provider is
 low-level and malleable, while iOS EventKit is opinionated and hard to
-change. For example, `updateRecurring`'s "this and following" split has an
-off-by-one in which occurrence is the boundary; iOS EventKit decides it
-natively, and Android's manual split is bent to match.
+change. For example, `updateRecurring`'s `thisAndFollowing` split: iOS's
+`EKSpan.futureEvents` decides where the series divides, and Android's manual
+`UNTIL`-truncate split is built to match it.
 
 ## Typed APIs with raw escape hatch
 

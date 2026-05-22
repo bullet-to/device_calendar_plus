@@ -847,16 +847,19 @@ class DeviceCalendar {
   /// series. For non-recurring events, keep using [updateEvent].
   ///
   /// [instanceId] identifies the occurrence to act on — pass an instance ID
-  /// (`event.instanceId`). For [EventUpdateSpan.thisAndFollowing] it must
-  /// carry an occurrence timestamp (`eventId@timestamp`), which is the split
-  /// point; a bare event ID throws [ArgumentError].
+  /// (`event.instanceId`). For every [span] except [EventUpdateSpan.allEvents]
+  /// it must carry an occurrence timestamp (`eventId@timestamp`); a bare event
+  /// ID throws [ArgumentError].
   ///
   /// [span] chooses the scope:
   /// - [EventUpdateSpan.allEvents] — the whole series follows the change.
   ///   Clearing [recurrenceRule] collapses the series into a single event.
   /// - [EventUpdateSpan.thisAndFollowing] — the series is split at the
-  ///   occurrence timestamp. The named occurrence stays on the original
-  ///   series; the new rule and fields apply from the next occurrence on.
+  ///   occurrence timestamp: that occurrence and every later one carry the
+  ///   edit; earlier occurrences are untouched.
+  /// - [EventUpdateSpan.thisInstance] — only that occurrence is edited, as a
+  ///   detached exception; the rest of the series is untouched.
+  ///   [recurrenceRule] cannot be used with this span.
   ///
   /// Field parameters behave as in [updateEvent]. [recurrenceRule] takes a
   /// [Patch]: omit it to leave recurrence unchanged, [Patch.set] to change
@@ -873,7 +876,8 @@ class DeviceCalendar {
   /// deleted occurrence may reappear if the new rule regenerates that date.
   ///
   /// Returns the event ID for the affected scope — the same ID for
-  /// `allEvents`, the new series' ID for `thisAndFollowing`.
+  /// `allEvents`, the new series' ID for `thisAndFollowing`, the detached
+  /// occurrence's ID for `thisInstance`.
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions - call [requestPermissions] first.
@@ -896,12 +900,19 @@ class DeviceCalendar {
   ///   recurrenceRule: Patch.clear(),
   /// );
   ///
-  /// // Split: this occurrence onwards moves to a new time
+  /// // Split: this occurrence and every later one move to a new time
   /// final newSeriesId = await plugin.updateRecurring(
   ///   event.instanceId,
   ///   EventUpdateSpan.thisAndFollowing,
   ///   startDate: DateTime(2024, 3, 21, 15, 0),
   ///   endDate: DateTime(2024, 3, 21, 16, 0),
+  /// );
+  ///
+  /// // Edit only this one occurrence, leaving the rest of the series alone
+  /// await plugin.updateRecurring(
+  ///   event.instanceId,
+  ///   EventUpdateSpan.thisInstance,
+  ///   title: 'Moved this week only',
   /// );
   /// ```
   Future<String> updateRecurring(
@@ -927,14 +938,24 @@ class DeviceCalendar {
       );
     }
 
-    // Parse the ID — thisAndFollowing needs an occurrence timestamp to split on
+    // Parse the ID — every span except allEvents acts on a specific
+    // occurrence, so it needs an occurrence timestamp.
     final parsed = InstanceIdParser.parse(instanceId);
-    if (span == EventUpdateSpan.thisAndFollowing && parsed.timestamp == null) {
+    if (span != EventUpdateSpan.allEvents && parsed.timestamp == null) {
       throw ArgumentError.value(
         instanceId,
         'instanceId',
-        'EventUpdateSpan.thisAndFollowing requires an instance ID with an '
+        'EventUpdateSpan.${span.name} requires an instance ID with an '
             'occurrence timestamp (eventId@timestamp)',
+      );
+    }
+
+    // A single occurrence has no recurrence rule of its own.
+    if (span == EventUpdateSpan.thisInstance && recurrenceRule != null) {
+      throw ArgumentError.value(
+        recurrenceRule,
+        'recurrenceRule',
+        'recurrenceRule cannot be set with EventUpdateSpan.thisInstance',
       );
     }
 

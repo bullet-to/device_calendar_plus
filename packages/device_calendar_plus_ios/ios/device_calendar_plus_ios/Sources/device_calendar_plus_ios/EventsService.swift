@@ -893,17 +893,16 @@ class EventsService {
       return
     }
 
-    let isThisAndFollowing = (span == "thisAndFollowing")
-
-    // Resolve the event to act on. For "allEvents" the master event stands in
-    // for the whole series; for "thisAndFollowing" the specific occurrence is
-    // the split point.
+    // Resolve the event to act on. "allEvents" works from the master (the
+    // whole series); "thisAndFollowing" and "thisInstance" work from the
+    // specific occurrence at `timestamp`.
+    let needsOccurrence = (span == "thisAndFollowing" || span == "thisInstance")
     let targetEvent: EKEvent?
-    if isThisAndFollowing {
+    if needsOccurrence {
       guard let timestamp = timestamp else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
-          message: "thisAndFollowing requires an occurrence timestamp"
+          message: "\(span) requires an occurrence timestamp"
         )))
         return
       }
@@ -982,13 +981,17 @@ class EventsService {
       foundEvent.recurrenceRules = [rule]
     }
 
-    // .futureEvents applies the change from the fetched event onward: from the
-    // master that means the whole series; from a specific occurrence it splits
-    // the series. It is also required to drop recurrence across a whole series
-    // — .thisEvent would only detach the fetched occurrence. (.futureEvents on
-    // a non-recurring event behaves like .thisEvent.)
+    // "thisInstance" detaches only the fetched occurrence (.thisEvent).
+    // "allEvents" and "thisAndFollowing" use .futureEvents: from the master
+    // that is the whole series; from an occurrence it splits the series so
+    // that occurrence onward becomes the new series. .futureEvents is also
+    // what drops recurrence across a whole series — .thisEvent would only
+    // detach one occurrence. (.futureEvents on a non-recurring event behaves
+    // like .thisEvent.)
+    let saveSpan: EKSpan = (span == "thisInstance") ? .thisEvent : .futureEvents
+
     do {
-      try eventStore.save(foundEvent, span: .futureEvents, commit: true)
+      try eventStore.save(foundEvent, span: saveSpan, commit: true)
       completion(.success(foundEvent.eventIdentifier ?? eventId))
     } catch {
       completion(.failure(CalendarError(

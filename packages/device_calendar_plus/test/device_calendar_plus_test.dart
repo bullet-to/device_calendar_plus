@@ -824,6 +824,29 @@ void main() {
         );
       });
 
+      test('throws ArgumentError when thisInstance given a bare event ID', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventUpdateSpan.thisInstance,
+            title: 'New Title',
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when recurrenceRule is set with thisInstance',
+          () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123@1700000000000',
+            EventUpdateSpan.thisInstance,
+            recurrenceRule: Patch.set(const DailyRecurrence()),
+          ),
+          throwsArgumentError,
+        );
+      });
+
       test('throws ArgumentError when endDate is before startDate', () {
         expect(
           () => DeviceCalendar.instance.updateRecurring(

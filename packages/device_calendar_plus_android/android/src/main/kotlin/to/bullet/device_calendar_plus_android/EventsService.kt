@@ -986,9 +986,10 @@ class EventsService(private val context: Context) {
     /**
      * Updates a recurring event, choosing which occurrences the edit affects.
      *
-     * [span] is "allEvents" (the whole series) or "thisAndFollowing" (split the
-     * series at [timestamp]). Returns the event ID for the affected scope —
-     * the same ID for "allEvents", the new series' ID for "thisAndFollowing".
+     * [span] is "allEvents" (the whole series), "thisAndFollowing" (split the
+     * series at [timestamp], that occurrence onward forming the new series), or
+     * "thisInstance" (detach and edit only that occurrence). Returns the event
+     * ID for the affected scope.
      */
     fun updateRecurring(
         eventId: String,
@@ -1022,6 +1023,11 @@ class EventsService(private val context: Context) {
                     eventId, timestamp, title, startDate, endDate,
                     description, location, url, isAllDay, timeZone, availability,
                     recurrenceRule, clearedFields
+                )
+                "thisInstance" -> updateRecurringThisInstance(
+                    eventId, timestamp, title, startDate, endDate,
+                    description, location, url, isAllDay, timeZone, availability,
+                    clearedFields
                 )
                 "allEvents" -> updateRecurringAllEvents(
                     eventId, title, startDate, endDate,
@@ -1231,26 +1237,29 @@ class EventsService(private val context: Context) {
         val effectiveRrule = when {
             "recurrenceRule" in clearedFields -> null
             recurrenceRule != null -> recurrenceRule
-            else -> row.rrule
+            else -> {
+                // Rule unchanged: the new series inherits the original rule. A
+                // COUNT must drop by the occurrences left on the old series,
+                // or the new series would over-generate.
+                val originalCount = rruleCount(row.rrule)
+                if (originalCount != null) {
+                    val before = countInstancesBefore(eventId, timestamp)
+                    setRruleCount(row.rrule, maxOf(1, originalCount - before))
+                } else {
+                    row.rrule
+                }
+            }
         }
 
-        // The new series starts at the explicit start date when given,
-        // otherwise at the first occurrence after the split point. iOS's
-        // .futureEvents leaves the anchor occurrence on the original series;
-        // matching that here keeps the two platforms consistent.
+        // The new series starts at the explicit start date, or at the anchor
+        // occurrence itself — "this and following" includes the named
+        // occurrence.
         val duration = eventDurationMillis(row)
         val newStart = if (startDate != null) {
             toStorageMillis(startDate, effectiveIsAllDay)
         } else {
-            queryNextInstanceBegin(eventId, timestamp)
+            timestamp
         }
-
-        // No explicit start and nothing after the anchor — there is no tail to
-        // split off, so the series is left unchanged.
-        if (newStart == null) {
-            return Result.success(eventId)
-        }
-
         val newEnd = if (endDate != null) {
             toStorageMillis(endDate, effectiveIsAllDay)
         } else {
@@ -1274,9 +1283,10 @@ class EventsService(private val context: Context) {
         )
         val newEventId = insertResult.getOrElse { return Result.failure(it) }
 
-        // Truncate the original series. UNTIL is inclusive, so anchoring it at
-        // the split point keeps that occurrence on the original series.
-        val truncatedRrule = setRruleUntil(row.rrule, timestamp, row.allDay)
+        // Truncate the original series to end just before the anchor. UNTIL is
+        // inclusive, so cutting it one second early keeps the anchor occurrence
+        // off the old series — it belongs to the new one.
+        val truncatedRrule = setRruleUntil(row.rrule, timestamp - 1000, row.allDay)
         val truncateValues = android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, truncatedRrule)
         }
@@ -1302,6 +1312,111 @@ class EventsService(private val context: Context) {
         }
 
         return Result.success(newEventId)
+    }
+
+    private fun updateRecurringThisInstance(
+        eventId: String,
+        timestamp: Long?,
+        title: String?,
+        startDate: java.util.Date?,
+        endDate: java.util.Date?,
+        description: String?,
+        location: String?,
+        url: String?,
+        isAllDay: Boolean?,
+        timeZone: String?,
+        availability: String?,
+        clearedFields: List<String>
+    ): Result<String> {
+        if (timestamp == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "thisInstance requires an occurrence timestamp"
+                )
+            )
+        }
+
+        val row = readEventRow(eventId)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+
+        if (row.rrule == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "Event $eventId is not recurring; use updateEvent instead"
+                )
+            )
+        }
+
+        val effectiveIsAllDay = isAllDay ?: row.allDay
+        val duration = eventDurationMillis(row)
+        val newStart = if (startDate != null) {
+            toStorageMillis(startDate, effectiveIsAllDay)
+        } else {
+            timestamp
+        }
+        val newEnd = if (endDate != null) {
+            toStorageMillis(endDate, effectiveIsAllDay)
+        } else {
+            newStart + duration
+        }
+
+        // Insert an exception overriding this single occurrence. The provider
+        // expects DURATION (not DTEND) on an exception of a recurring parent.
+        val values = android.content.ContentValues().apply {
+            put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
+            put(CalendarContract.Events.DTSTART, newStart)
+            put(CalendarContract.Events.DURATION, "P${(newEnd - newStart) / 1000}S")
+            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
+
+            if (title != null) {
+                put(CalendarContract.Events.TITLE, title)
+            }
+            if ("description" in clearedFields) {
+                putNull(CalendarContract.Events.DESCRIPTION)
+            } else if (description != null) {
+                put(CalendarContract.Events.DESCRIPTION, description)
+            }
+            if ("location" in clearedFields) {
+                putNull(CalendarContract.Events.EVENT_LOCATION)
+            } else if (location != null) {
+                put(CalendarContract.Events.EVENT_LOCATION, location)
+            }
+            if ("url" in clearedFields) {
+                putNull(CalendarContract.Events.CUSTOM_APP_URI)
+            } else if (url != null) {
+                put(CalendarContract.Events.CUSTOM_APP_URI, url)
+            }
+            if (isAllDay != null) {
+                put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+            }
+            if (timeZone != null) {
+                put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
+            }
+            if (availability != null) {
+                put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
+            }
+        }
+
+        val exceptionUri = android.content.ContentUris.withAppendedId(
+            CalendarContract.Events.CONTENT_EXCEPTION_URI,
+            eventId.toLong()
+        )
+        val uri = context.contentResolver.insert(exceptionUri, values)
+        val exceptionId = uri?.lastPathSegment
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.OPERATION_FAILED,
+                    "Failed to create the exception for event $eventId"
+                )
+            )
+        return Result.success(exceptionId)
     }
 
     private data class EventRow(
@@ -1483,27 +1598,49 @@ class EventsService(private val context: Context) {
         return seconds * 1000L
     }
 
-    /** First occurrence of [eventId] strictly after [afterMillis], or null. */
-    private fun queryNextInstanceBegin(eventId: String, afterMillis: Long): Long? {
-        // Five-year window: covers daily/weekly/monthly easily, and yearly
-        // rules with an interval of up to five.
-        val windowEnd = afterMillis + 5L * 366 * 24 * 3600 * 1000
+    /** Number of occurrences of [eventId] that start before [beforeMillis]. */
+    private fun countInstancesBefore(eventId: String, beforeMillis: Long): Int {
+        // Five-year look-back window: covers daily/weekly/monthly easily, and
+        // yearly rules with an interval of up to five.
+        val windowStart = beforeMillis - 5L * 366 * 24 * 3600 * 1000
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            .appendPath((afterMillis + 1).toString())
-            .appendPath(windowEnd.toString())
+            .appendPath(windowStart.toString())
+            .appendPath(beforeMillis.toString())
             .build()
+        var count = 0
         context.contentResolver.query(
             uri,
             arrayOf(CalendarContract.Instances.BEGIN),
             "${CalendarContract.Instances.EVENT_ID} = ?",
             arrayOf(eventId),
-            "${CalendarContract.Instances.BEGIN} ASC"
+            null
         )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                return cursor.getLong(0)
+            while (cursor.moveToNext()) {
+                if (cursor.getLong(0) < beforeMillis) count++
+            }
+        }
+        return count
+    }
+
+    /** The COUNT value of an RRULE, or null if it has none. */
+    private fun rruleCount(rrule: String): Int? {
+        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
+        for (part in body.split(";")) {
+            if (part.substringBefore('=').uppercase() == "COUNT") {
+                return part.substringAfter('=').trim().toIntOrNull()
             }
         }
         return null
+    }
+
+    /** Replaces any COUNT/UNTIL in [rrule] with COUNT=[count]. */
+    private fun setRruleCount(rrule: String, count: Int): String {
+        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
+        val parts = body.split(";").filter {
+            val key = it.substringBefore('=').uppercase()
+            it.isNotEmpty() && key != "COUNT" && key != "UNTIL"
+        }
+        return (parts + "COUNT=$count").joinToString(";")
     }
 
     /** Replaces any COUNT/UNTIL in [rrule] with UNTIL at [untilMillis] (inclusive). */

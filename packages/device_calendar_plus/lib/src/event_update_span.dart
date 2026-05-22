@@ -9,16 +9,19 @@ enum EventUpdateSpan {
   /// into a single, non-recurring event.
   allEvents,
 
-  /// The edit applies from the supplied occurrence onwards, leaving earlier
-  /// occurrences untouched.
+  /// The edit applies to the supplied occurrence and every occurrence after
+  /// it; earlier occurrences are left untouched.
   ///
   /// The series is split at the occurrence timestamp carried by the instance
-  /// ID: the original series is truncated and a new series is created for the
-  /// affected occurrences.
-  ///
-  /// **Off-by-one:** the occurrence you name as the split point stays on the
-  /// *original* series — the new series begins at the next occurrence. iOS
-  /// EventKit behaves this way natively and Android is bent to match, so the
-  /// behaviour is consistent and documented rather than divergent.
+  /// ID: the original series is truncated to end just before that occurrence,
+  /// and a new series — carrying the edit — begins at it.
   thisAndFollowing,
+
+  /// The edit applies only to the supplied occurrence; the rest of the series
+  /// is left untouched.
+  ///
+  /// This detaches that occurrence from the series as an exception. A
+  /// recurrence rule cannot be set with this span — a single occurrence has
+  /// no rule of its own.
+  thisInstance,
 }
