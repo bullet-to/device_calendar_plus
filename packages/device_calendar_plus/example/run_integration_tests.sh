@@ -118,7 +118,13 @@ if [ "$PLATFORM" == "ios" ]; then
 
 elif [ "$PLATFORM" == "android" ]; then
     echo "🤖 Android detected"
-    echo "  (Permissions will be granted automatically by test driver)"
+    echo "📱 Granting calendar permissions via adb..."
+
+    # Best-effort: this succeeds once the app is installed, and the grant
+    # persists across the reinstall that `flutter test` performs. On a fresh
+    # device, run the script once to install the app, then again to test.
+    adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.READ_CALENDAR 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.WRITE_CALENDAR 2>/dev/null || true
     echo ""
 fi
 
@@ -127,16 +133,11 @@ cd "$(dirname "$0")"
 echo "🚀 Running integration tests on $DEVICE_ID..."
 echo ""
 
-# Run all integration tests in a single app launch
+# Run all integration tests in a single app launch.
+# `flutter test` is used for both platforms: it self-terminates with a real
+# exit code, unlike `flutter drive`, which hangs on teardown.
 run_tests() {
-    if [ "$PLATFORM" == "android" ]; then
-        flutter drive \
-            --driver=integration_test/integration_test_driver.dart \
-            --target=integration_test/all_tests.dart \
-            -d "$DEVICE_ID"
-    else
-        flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
-    fi
+    flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
 }
 
 # Timezones to cycle through on Android (covers positive, negative, and zero offsets).
