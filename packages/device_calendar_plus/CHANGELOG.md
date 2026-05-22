@@ -1,3 +1,11 @@
+## Unreleased
+
+### Added
+- `url` parameter on `updateEvent()` — based on @SuperKrallan (#38)
+
+### Fixed
+- Missing `availability` parameter in platform interface test mock — based on @SuperKrallan (#39)
+
 ## 0.3.5 - 2026-04-20
 
 ### Added

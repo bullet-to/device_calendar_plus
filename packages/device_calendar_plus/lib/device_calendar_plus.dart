@@ -706,6 +706,9 @@ class DeviceCalendar {
   /// - [endDate] - new end date/time
   /// - [description] - new event description
   /// - [location] - new event location
+  /// - [url] - new URL associated with the event. Round-trips through
+  ///   [Event.url]. On iOS this maps to `EKEvent.url`; on Android it maps to
+  ///   `CalendarContract.Events.CUSTOM_APP_URI`.
   /// - [isAllDay] - change between all-day and timed event
   ///   - Changing timed → all-day: Time components are stripped to midnight
   ///   - Changing all-day → timed: Midnight time is used
@@ -752,6 +755,7 @@ class DeviceCalendar {
     DateTime? endDate,
     String? description,
     String? location,
+    String? url,
     bool? isAllDay,
     String? timeZone,
     EventAvailability? availability,
@@ -771,6 +775,7 @@ class DeviceCalendar {
         endDate == null &&
         description == null &&
         location == null &&
+        url == null &&
         isAllDay == null &&
         timeZone == null &&
         availability == null) {
@@ -804,6 +809,7 @@ class DeviceCalendar {
         endDate: normalizedEndDate,
         description: description,
         location: location,
+        url: url,
         isAllDay: isAllDay,
         timeZone: timeZone,
         availability: availability?.name,

@@ -77,8 +77,10 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     DateTime? endDate,
     String? description,
     String? location,
+    String? url,
     bool? isAllDay,
     String? timeZone,
+    String? availability,
   }) async {}
 
   @override

@@ -934,6 +934,39 @@ void main() {
       );
     });
 
+    test('23. Update Event URL', () async {
+      // Verifies the url field can be added via updateEvent and round-trips
+      // through getEvent on both platforms (iOS EKEvent.url, Android
+      // CUSTOM_APP_URI).
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Update URL Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day, 9, 0);
+      final endDate = DateTime(now.year, now.month, now.day, 10, 0);
+
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'URL Update Test',
+        startDate: startDate,
+        endDate: endDate,
+      );
+
+      var event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.url, isNull);
+
+      final url = 'https://example.com/event/$timestamp';
+      await plugin.updateEvent(eventId: eventId, url: url);
+
+      event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.url, url);
+    });
+
     test(
       '24. Update All Instances of Recurring Event',
       () async {

@@ -482,6 +482,7 @@ class DeviceCalendarPlusAndroidPlugin :
         val endDateMillis = call.argument<Long>("endDate")
         val description = call.argument<String>("description")
         val location = call.argument<String>("location")
+        val url = call.argument<String>("url")
         val isAllDay = call.argument<Boolean>("isAllDay")
         val timeZone = call.argument<String>("timeZone")
         val availability = call.argument<String>("availability")
@@ -497,6 +498,7 @@ class DeviceCalendarPlusAndroidPlugin :
             endDate,
             description,
             location,
+            url,
             isAllDay,
             timeZone,
             availability

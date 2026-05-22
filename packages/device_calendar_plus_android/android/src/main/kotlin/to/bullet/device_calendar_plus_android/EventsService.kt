@@ -816,6 +816,7 @@ class EventsService(private val context: Context) {
         endDate: java.util.Date?,
         description: String?,
         location: String?,
+        url: String?,
         isAllDay: Boolean?,
         timeZone: String?,
         availability: String?
@@ -855,7 +856,12 @@ class EventsService(private val context: Context) {
             if (location != null) {
                 values.put(CalendarContract.Events.EVENT_LOCATION, location)
             }
-            
+
+            // Update URL if provided
+            if (url != null) {
+                values.put(CalendarContract.Events.CUSTOM_APP_URI, url)
+            }
+
             // Update isAllDay if provided
             val effectiveIsAllDay = isAllDay ?: wasAllDay
             if (isAllDay != null) {
