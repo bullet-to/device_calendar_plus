@@ -454,9 +454,18 @@ await plugin.updateEvent(
   title: 'Team Sync',
   startDate: DateTime(2024, 3, 21, 15, 0),
   endDate: DateTime(2024, 3, 21, 16, 0),
-  location: 'Conference Room B',
-  description: 'Updated description',
-  url: 'https://example.com/meeting/456',
+  location: Patch.set('Conference Room B'),
+  description: Patch.set('Updated description'),
+  url: Patch.set('https://example.com/meeting/456'),
+);
+
+// Clear optional fields. description, location and url take a Patch:
+// omit the argument to leave a field unchanged, Patch.set(...) to change it,
+// Patch.clear() to remove its value.
+await plugin.updateEvent(
+  instanceId: event.instanceId,
+  location: Patch.clear(),
+  description: Patch.clear(),
 );
 
 // Change a timed event to all-day

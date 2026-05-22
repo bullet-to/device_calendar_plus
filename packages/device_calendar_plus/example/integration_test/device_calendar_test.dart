@@ -798,8 +798,8 @@ void main() {
       // Update multiple fields
       await plugin.updateEvent(
         eventId: eventId,
-        description: 'Updated description',
-        location: 'Updated location',
+        description: Patch.set('Updated description'),
+        location: Patch.set('Updated location'),
       );
 
       // Verify update
@@ -960,11 +960,48 @@ void main() {
       expect(event!.url, isNull);
 
       final url = 'https://example.com/event/$timestamp';
-      await plugin.updateEvent(eventId: eventId, url: url);
+      await plugin.updateEvent(eventId: eventId, url: Patch.set(url));
 
       event = await plugin.getEvent(eventId);
       expect(event, isNotNull);
       expect(event!.url, url);
+    });
+
+    test('23b. Patch.set and Patch.clear are independent per field', () async {
+      // Covers set, clear, and "leave unchanged" in a single updateEvent call:
+      // one field set, one cleared, one left untouched.
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Mixed Patch Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day, 11, 0);
+      final endDate = DateTime(now.year, now.month, now.day, 12, 0);
+
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Mixed Patch Test',
+        startDate: startDate,
+        endDate: endDate,
+        description: 'Original description',
+        location: 'Original location',
+        url: 'https://example.com/event/$timestamp',
+      );
+
+      // Set description, clear location, leave url untouched.
+      await plugin.updateEvent(
+        eventId: eventId,
+        description: Patch.set('New description'),
+        location: Patch.clear(),
+      );
+
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.description, 'New description');
+      expect(event.location, isNull);
+      expect(event.url, 'https://example.com/event/$timestamp');
     });
 
     test(

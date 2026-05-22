@@ -1,9 +1,11 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'src/create_calendar_options.dart';
+import 'src/patch.dart';
 
 export 'src/create_calendar_options.dart';
 export 'src/instance_id_parser.dart';
+export 'src/patch.dart';
 
 /// The interface that implementations of device_calendar_plus must implement.
 ///
@@ -199,12 +201,15 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// - [title] - new event title
   /// - [startDate] - new start date/time
   /// - [endDate] - new end date/time
-  /// - [description] - new event description
-  /// - [location] - new event location
-  /// - [url] - new URL for the event
+  /// - [description] - new event description, or cleared
+  /// - [location] - new event location, or cleared
+  /// - [url] - new URL for the event, or cleared
   /// - [isAllDay] - change between all-day and timed event
   /// - [timeZone] - new timezone identifier
   /// - [availability] - new availability identifier
+  ///
+  /// [description], [location] and [url] take a [Patch]: `null` leaves the
+  /// field unchanged, [Patch.set] assigns a value, [Patch.clear] removes it.
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions.
@@ -213,9 +218,9 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? title,
     DateTime? startDate,
     DateTime? endDate,
-    String? description,
-    String? location,
-    String? url,
+    Patch<String>? description,
+    Patch<String>? location,
+    Patch<String>? url,
     bool? isAllDay,
     String? timeZone,
     String? availability,

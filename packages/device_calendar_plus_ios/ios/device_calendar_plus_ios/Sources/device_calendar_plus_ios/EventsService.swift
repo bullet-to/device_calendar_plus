@@ -785,6 +785,7 @@ class EventsService {
     isAllDay: Bool?,
     timeZone: String?,
     availability: String?,
+    clearedFields: [String],
     completion: @escaping (Result<Void, CalendarError>) -> Void)
   {
     // Permission Check
@@ -807,9 +808,21 @@ class EventsService {
 
     // Get new data into event
     if let title = title { foundEvent.title = title }
-    if let description = description { foundEvent.notes = description }
-    if let location = location { foundEvent.location = location }
-    if let url = url { foundEvent.url = URL(string: url) }
+    if clearedFields.contains("description") {
+      foundEvent.notes = nil
+    } else if let description = description {
+      foundEvent.notes = description
+    }
+    if clearedFields.contains("location") {
+      foundEvent.location = nil
+    } else if let location = location {
+      foundEvent.location = location
+    }
+    if clearedFields.contains("url") {
+      foundEvent.url = nil
+    } else if let url = url {
+      foundEvent.url = URL(string: url)
+    }
     if let isAllDay = isAllDay { foundEvent.isAllDay = isAllDay }
     if let startDate = startDate { foundEvent.startDate = startDate }
     if let endDate = endDate { foundEvent.endDate = endDate }

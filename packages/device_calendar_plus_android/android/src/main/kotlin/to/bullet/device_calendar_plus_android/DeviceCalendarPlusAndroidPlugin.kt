@@ -486,6 +486,7 @@ class DeviceCalendarPlusAndroidPlugin :
         val isAllDay = call.argument<Boolean>("isAllDay")
         val timeZone = call.argument<String>("timeZone")
         val availability = call.argument<String>("availability")
+        val clearedFields = call.argument<List<String>>("clearedFields") ?: emptyList()
         
         // Convert dates if provided
         val startDate = startDateMillis?.let { java.util.Date(it) }
@@ -501,7 +502,8 @@ class DeviceCalendarPlusAndroidPlugin :
             url,
             isAllDay,
             timeZone,
-            availability
+            availability,
+            clearedFields
         )
         
         serviceResult.fold(

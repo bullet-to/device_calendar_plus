@@ -184,28 +184,28 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     String? title,
     DateTime? startDate,
     DateTime? endDate,
-    String? description,
-    String? location,
-    String? url,
+    Patch<String>? description,
+    Patch<String>? location,
+    Patch<String>? url,
     bool? isAllDay,
     String? timeZone,
     String? availability,
   }) async {
-    await methodChannel.invokeMethod<void>(
-      'updateEvent',
-      <String, dynamic>{
-        'eventId': eventId,
-        'title': title,
-        'startDate': startDate?.millisecondsSinceEpoch,
-        'endDate': endDate?.millisecondsSinceEpoch,
-        'description': description,
-        'location': location,
-        'url': url,
-        'isAllDay': isAllDay,
-        'timeZone': timeZone,
-        'availability': availability,
-      },
-    );
+    final args = <String, dynamic>{
+      'eventId': eventId,
+      'title': title,
+      'startDate': startDate?.millisecondsSinceEpoch,
+      'endDate': endDate?.millisecondsSinceEpoch,
+      'isAllDay': isAllDay,
+      'timeZone': timeZone,
+      'availability': availability,
+    };
+    writePatchFields(args, {
+      'description': description,
+      'location': location,
+      'url': url,
+    });
+    await methodChannel.invokeMethod<void>('updateEvent', args);
   }
 
   @override
