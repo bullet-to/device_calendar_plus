@@ -40,6 +40,23 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? availability,
   })? _updateEventCallback;
 
+  // Callback to capture updateRecurring arguments
+  Future<String> Function(
+    String eventId,
+    int? timestamp,
+    String span, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    Patch<String>? description,
+    Patch<String>? location,
+    Patch<String>? url,
+    bool? isAllDay,
+    String? timeZone,
+    String? availability,
+    Patch<String>? recurrenceRule,
+  })? _updateRecurringCallback;
+
   void setPermissionStatus(CalendarPermissionStatus status) {
     _permissionStatusCode = status.name;
   }
@@ -93,6 +110,26 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     }) callback,
   ) {
     _updateEventCallback = callback;
+  }
+
+  void setUpdateRecurringCallback(
+    Future<String> Function(
+      String eventId,
+      int? timestamp,
+      String span, {
+      String? title,
+      DateTime? startDate,
+      DateTime? endDate,
+      Patch<String>? description,
+      Patch<String>? location,
+      Patch<String>? url,
+      bool? isAllDay,
+      String? timeZone,
+      String? availability,
+      Patch<String>? recurrenceRule,
+    }) callback,
+  ) {
+    _updateRecurringCallback = callback;
   }
 
   @override
@@ -232,6 +269,43 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
         availability: availability,
       );
     }
+  }
+
+  @override
+  Future<String> updateRecurring(
+    String eventId,
+    int? timestamp,
+    String span, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    Patch<String>? description,
+    Patch<String>? location,
+    Patch<String>? url,
+    bool? isAllDay,
+    String? timeZone,
+    String? availability,
+    Patch<String>? recurrenceRule,
+  }) async {
+    if (_exceptionToThrow != null) throw _exceptionToThrow!;
+    if (_updateRecurringCallback != null) {
+      return _updateRecurringCallback!(
+        eventId,
+        timestamp,
+        span,
+        title: title,
+        startDate: startDate,
+        endDate: endDate,
+        description: description,
+        location: location,
+        url: url,
+        isAllDay: isAllDay,
+        timeZone: timeZone,
+        availability: availability,
+        recurrenceRule: recurrenceRule,
+      );
+    }
+    return 'mock-event-id';
   }
 
   // Callback to capture showCreateEventModal arguments
@@ -713,6 +787,213 @@ void main() {
           ),
           throwsArgumentError,
         );
+      });
+    });
+
+    group('updateRecurring', () {
+      test('throws ArgumentError when instanceId is empty', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            '',
+            EventUpdateSpan.allEvents,
+            title: 'New Title',
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when no fields provided', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventUpdateSpan.allEvents,
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when thisAndFollowing given a bare event ID',
+          () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventUpdateSpan.thisAndFollowing,
+            title: 'New Title',
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when endDate is before startDate', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventUpdateSpan.allEvents,
+            startDate: DateTime(2024, 3, 20, 11, 0),
+            endDate: DateTime(2024, 3, 20, 10, 0),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('allEvents accepts a bare event ID (no occurrence timestamp)',
+          () async {
+        final result = await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventUpdateSpan.allEvents,
+          title: 'New Title',
+        );
+        expect(result, 'mock-event-id');
+      });
+
+      test('passes the span name and parsed instance ID to the platform',
+          () async {
+        String? capturedEventId;
+        int? capturedTimestamp;
+        String? capturedSpan;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setUpdateRecurringCallback((
+          eventId,
+          timestamp,
+          span, {
+          title,
+          startDate,
+          endDate,
+          description,
+          location,
+          url,
+          isAllDay,
+          timeZone,
+          availability,
+          recurrenceRule,
+        }) {
+          capturedEventId = eventId;
+          capturedTimestamp = timestamp;
+          capturedSpan = span;
+          return Future.value('new-series-id');
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        final result = await DeviceCalendar.instance.updateRecurring(
+          'event-123@1700000000000',
+          EventUpdateSpan.thisAndFollowing,
+          title: 'New Title',
+        );
+
+        expect(capturedEventId, 'event-123');
+        expect(capturedTimestamp, 1700000000000);
+        expect(capturedSpan, 'thisAndFollowing');
+        expect(result, 'new-series-id');
+      });
+
+      test('converts a RecurrenceRule patch to an RRULE string', () async {
+        Patch<String>? capturedRule;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setUpdateRecurringCallback((
+          eventId,
+          timestamp,
+          span, {
+          title,
+          startDate,
+          endDate,
+          description,
+          location,
+          url,
+          isAllDay,
+          timeZone,
+          availability,
+          recurrenceRule,
+        }) {
+          capturedRule = recurrenceRule;
+          return Future.value('id');
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventUpdateSpan.allEvents,
+          recurrenceRule: Patch.set(const DailyRecurrence(end: CountEnd(5))),
+        );
+
+        expect(capturedRule, isA<PatchSet<String>>());
+        expect((capturedRule as PatchSet<String>).value, 'FREQ=DAILY;COUNT=5');
+      });
+
+      test('passes a cleared recurrence rule through as Patch.clear', () async {
+        Patch<String>? capturedRule;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setUpdateRecurringCallback((
+          eventId,
+          timestamp,
+          span, {
+          title,
+          startDate,
+          endDate,
+          description,
+          location,
+          url,
+          isAllDay,
+          timeZone,
+          availability,
+          recurrenceRule,
+        }) {
+          capturedRule = recurrenceRule;
+          return Future.value('id');
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventUpdateSpan.allEvents,
+          recurrenceRule: const Patch.clear(),
+        );
+
+        expect(capturedRule, isA<PatchClear<String>>());
+      });
+
+      test('normalizes dates when isAllDay is true', () async {
+        DateTime? capturedStart;
+        DateTime? capturedEnd;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setUpdateRecurringCallback((
+          eventId,
+          timestamp,
+          span, {
+          title,
+          startDate,
+          endDate,
+          description,
+          location,
+          url,
+          isAllDay,
+          timeZone,
+          availability,
+          recurrenceRule,
+        }) {
+          capturedStart = startDate;
+          capturedEnd = endDate;
+          return Future.value('id');
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventUpdateSpan.allEvents,
+          startDate: DateTime(2024, 3, 15, 14, 30, 45),
+          endDate: DateTime(2024, 3, 16, 18, 15, 30),
+          isAllDay: true,
+        );
+
+        expect(capturedStart!.hour, 0);
+        expect(capturedStart!.minute, 0);
+        expect(capturedStart!.second, 0);
+        expect(capturedEnd!.hour, 0);
+        expect(capturedEnd!.minute, 0);
+        expect(capturedEnd!.second, 0);
       });
     });
 

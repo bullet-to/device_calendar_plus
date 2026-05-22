@@ -980,4 +980,560 @@ class EventsService(private val context: Context) {
             )
         }
     }
+
+    // -- updateRecurring (issue #36) --
+
+    /**
+     * Updates a recurring event, choosing which occurrences the edit affects.
+     *
+     * [span] is "allEvents" (the whole series) or "thisAndFollowing" (split the
+     * series at [timestamp]). Returns the event ID for the affected scope —
+     * the same ID for "allEvents", the new series' ID for "thisAndFollowing".
+     */
+    fun updateRecurring(
+        eventId: String,
+        timestamp: Long?,
+        span: String,
+        title: String?,
+        startDate: java.util.Date?,
+        endDate: java.util.Date?,
+        description: String?,
+        location: String?,
+        url: String?,
+        isAllDay: Boolean?,
+        timeZone: String?,
+        availability: String?,
+        recurrenceRule: String?,
+        clearedFields: List<String>
+    ): Result<String> {
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+            context.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied. Call requestPermissions() first."
+                )
+            )
+        }
+
+        return try {
+            when (span) {
+                "thisAndFollowing" -> updateRecurringThisAndFollowing(
+                    eventId, timestamp, title, startDate, endDate,
+                    description, location, url, isAllDay, timeZone, availability,
+                    recurrenceRule, clearedFields
+                )
+                "allEvents" -> updateRecurringAllEvents(
+                    eventId, title, startDate, endDate,
+                    description, location, url, isAllDay, timeZone, availability,
+                    recurrenceRule, clearedFields
+                )
+                else -> Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "Unknown update span: $span"
+                    )
+                )
+            }
+        } catch (e: SecurityException) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.OPERATION_FAILED,
+                    "Failed to update recurring event: ${e.message}"
+                )
+            )
+        }
+    }
+
+    private fun updateRecurringAllEvents(
+        eventId: String,
+        title: String?,
+        startDate: java.util.Date?,
+        endDate: java.util.Date?,
+        description: String?,
+        location: String?,
+        url: String?,
+        isAllDay: Boolean?,
+        timeZone: String?,
+        availability: String?,
+        recurrenceRule: String?,
+        clearedFields: List<String>
+    ): Result<String> {
+        val row = readEventRow(eventId)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+
+        val values = android.content.ContentValues()
+
+        if (title != null) {
+            values.put(CalendarContract.Events.TITLE, title)
+        }
+
+        if ("description" in clearedFields) {
+            values.putNull(CalendarContract.Events.DESCRIPTION)
+        } else if (description != null) {
+            values.put(CalendarContract.Events.DESCRIPTION, description)
+        }
+
+        if ("location" in clearedFields) {
+            values.putNull(CalendarContract.Events.EVENT_LOCATION)
+        } else if (location != null) {
+            values.put(CalendarContract.Events.EVENT_LOCATION, location)
+        }
+
+        if ("url" in clearedFields) {
+            values.putNull(CalendarContract.Events.CUSTOM_APP_URI)
+        } else if (url != null) {
+            values.put(CalendarContract.Events.CUSTOM_APP_URI, url)
+        }
+
+        if (availability != null) {
+            values.put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
+        }
+
+        val effectiveIsAllDay = isAllDay ?: row.allDay
+        if (isAllDay != null) {
+            values.put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+        }
+
+        // Recurrence rule column and the resulting recurring state.
+        val wasRecurring = row.rrule != null
+        val clearRrule = "recurrenceRule" in clearedFields
+        val willBeRecurring = when {
+            clearRrule -> false
+            recurrenceRule != null -> true
+            else -> wasRecurring
+        }
+        if (clearRrule) {
+            values.putNull(CalendarContract.Events.RRULE)
+        } else if (recurrenceRule != null) {
+            values.put(CalendarContract.Events.RRULE, recurrenceRule)
+        }
+
+        // Time columns. A recurring event must use DURATION (and no DTEND); a
+        // single event must use DTEND (and no DURATION). Rewrite them when the
+        // dates change or when the event flips between recurring and single.
+        if (startDate != null || endDate != null || wasRecurring != willBeRecurring) {
+            val existingDuration = eventDurationMillis(row)
+            val newStart = if (startDate != null) {
+                toStorageMillis(startDate, effectiveIsAllDay)
+            } else {
+                row.dtstart
+            }
+            val newEnd = if (endDate != null) {
+                toStorageMillis(endDate, effectiveIsAllDay)
+            } else {
+                newStart + existingDuration
+            }
+            values.put(CalendarContract.Events.DTSTART, newStart)
+            if (willBeRecurring) {
+                values.put(
+                    CalendarContract.Events.DURATION,
+                    "P${(newEnd - newStart) / 1000}S"
+                )
+                values.putNull(CalendarContract.Events.DTEND)
+            } else {
+                values.put(CalendarContract.Events.DTEND, newEnd)
+                values.putNull(CalendarContract.Events.DURATION)
+            }
+        }
+
+        if (timeZone != null) {
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
+        } else if (isAllDay == true) {
+            values.put(
+                CalendarContract.Events.EVENT_TIMEZONE,
+                java.util.TimeZone.getDefault().id
+            )
+        }
+
+        val updatedRows = context.contentResolver.update(
+            CalendarContract.Events.CONTENT_URI,
+            values,
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(eventId)
+        )
+        if (updatedRows == 0) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+        }
+        return Result.success(eventId)
+    }
+
+    private fun updateRecurringThisAndFollowing(
+        eventId: String,
+        timestamp: Long?,
+        title: String?,
+        startDate: java.util.Date?,
+        endDate: java.util.Date?,
+        description: String?,
+        location: String?,
+        url: String?,
+        isAllDay: Boolean?,
+        timeZone: String?,
+        availability: String?,
+        recurrenceRule: String?,
+        clearedFields: List<String>
+    ): Result<String> {
+        if (timestamp == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "thisAndFollowing requires an occurrence timestamp"
+                )
+            )
+        }
+
+        val row = readEventRow(eventId)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+
+        if (row.rrule == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "Event $eventId is not recurring; use updateEvent instead"
+                )
+            )
+        }
+
+        // Effective field values for the new series: the patch value when one
+        // is given, otherwise the master's existing value.
+        val effectiveIsAllDay = isAllDay ?: row.allDay
+        val effectiveTitle = title ?: row.title
+        val effectiveDescription =
+            if ("description" in clearedFields) null else (description ?: row.description)
+        val effectiveLocation =
+            if ("location" in clearedFields) null else (location ?: row.location)
+        val effectiveUrl =
+            if ("url" in clearedFields) null else (url ?: row.url)
+        val effectiveTimeZone = timeZone ?: row.timeZone
+        val effectiveAvailability = availability ?: row.availability
+        val effectiveRrule = when {
+            "recurrenceRule" in clearedFields -> null
+            recurrenceRule != null -> recurrenceRule
+            else -> row.rrule
+        }
+
+        // The new series starts at the explicit start date when given,
+        // otherwise at the first occurrence after the split point. iOS's
+        // .futureEvents leaves the anchor occurrence on the original series;
+        // matching that here keeps the two platforms consistent.
+        val duration = eventDurationMillis(row)
+        val newStart = if (startDate != null) {
+            toStorageMillis(startDate, effectiveIsAllDay)
+        } else {
+            queryNextInstanceBegin(eventId, timestamp)
+        }
+
+        // No explicit start and nothing after the anchor — there is no tail to
+        // split off, so the series is left unchanged.
+        if (newStart == null) {
+            return Result.success(eventId)
+        }
+
+        val newEnd = if (endDate != null) {
+            toStorageMillis(endDate, effectiveIsAllDay)
+        } else {
+            newStart + duration
+        }
+
+        // Create the new series first, so that a later failure leaves the
+        // original series intact.
+        val insertResult = insertEvent(
+            calendarId = row.calendarId,
+            title = effectiveTitle,
+            startMillis = newStart,
+            endMillis = newEnd,
+            isAllDay = effectiveIsAllDay,
+            description = effectiveDescription,
+            location = effectiveLocation,
+            url = effectiveUrl,
+            timeZone = effectiveTimeZone,
+            availability = effectiveAvailability,
+            rrule = effectiveRrule
+        )
+        val newEventId = insertResult.getOrElse { return Result.failure(it) }
+
+        // Truncate the original series. UNTIL is inclusive, so anchoring it at
+        // the split point keeps that occurrence on the original series.
+        val truncatedRrule = setRruleUntil(row.rrule, timestamp, row.allDay)
+        val truncateValues = android.content.ContentValues().apply {
+            put(CalendarContract.Events.RRULE, truncatedRrule)
+        }
+        val truncatedRows = context.contentResolver.update(
+            CalendarContract.Events.CONTENT_URI,
+            truncateValues,
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(eventId)
+        )
+        if (truncatedRows == 0) {
+            // Roll back the new series so the calendar is left unchanged.
+            context.contentResolver.delete(
+                CalendarContract.Events.CONTENT_URI,
+                "${CalendarContract.Events._ID} = ?",
+                arrayOf(newEventId)
+            )
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.OPERATION_FAILED,
+                    "Failed to truncate original series for event $eventId"
+                )
+            )
+        }
+
+        return Result.success(newEventId)
+    }
+
+    private data class EventRow(
+        val id: String,
+        val calendarId: String,
+        val title: String,
+        val description: String?,
+        val location: String?,
+        val url: String?,
+        val dtstart: Long,
+        val dtend: Long?,
+        val duration: String?,
+        val allDay: Boolean,
+        val timeZone: String?,
+        val availability: String,
+        val rrule: String?
+    )
+
+    /** Reads the master row of an event straight from the Events table. */
+    private fun readEventRow(eventId: String): EventRow? {
+        val projection = arrayOf(
+            CalendarContract.Events._ID,
+            CalendarContract.Events.CALENDAR_ID,
+            CalendarContract.Events.TITLE,
+            CalendarContract.Events.DESCRIPTION,
+            CalendarContract.Events.EVENT_LOCATION,
+            CalendarContract.Events.CUSTOM_APP_URI,
+            CalendarContract.Events.DTSTART,
+            CalendarContract.Events.DTEND,
+            CalendarContract.Events.DURATION,
+            CalendarContract.Events.ALL_DAY,
+            CalendarContract.Events.EVENT_TIMEZONE,
+            CalendarContract.Events.AVAILABILITY,
+            CalendarContract.Events.RRULE
+        )
+        context.contentResolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            projection,
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(eventId),
+            null
+        )?.use { cursor ->
+            if (!cursor.moveToFirst()) return null
+            fun str(column: String): String? {
+                val index = cursor.getColumnIndexOrThrow(column)
+                return if (cursor.isNull(index)) null else cursor.getString(index)
+            }
+            fun long(column: String): Long? {
+                val index = cursor.getColumnIndexOrThrow(column)
+                return if (cursor.isNull(index)) null else cursor.getLong(index)
+            }
+            return EventRow(
+                id = str(CalendarContract.Events._ID) ?: eventId,
+                calendarId = str(CalendarContract.Events.CALENDAR_ID) ?: "",
+                title = str(CalendarContract.Events.TITLE) ?: "",
+                description = str(CalendarContract.Events.DESCRIPTION),
+                location = str(CalendarContract.Events.EVENT_LOCATION),
+                url = str(CalendarContract.Events.CUSTOM_APP_URI),
+                dtstart = long(CalendarContract.Events.DTSTART) ?: 0L,
+                dtend = long(CalendarContract.Events.DTEND),
+                duration = str(CalendarContract.Events.DURATION),
+                allDay = (long(CalendarContract.Events.ALL_DAY) ?: 0L) == 1L,
+                timeZone = str(CalendarContract.Events.EVENT_TIMEZONE),
+                availability = availabilityToString(
+                    (long(CalendarContract.Events.AVAILABILITY) ?: 0L).toInt()
+                ),
+                rrule = str(CalendarContract.Events.RRULE)
+            )
+        }
+        return null
+    }
+
+    /** Inserts a fresh event row, using DURATION when recurring and DTEND otherwise. */
+    private fun insertEvent(
+        calendarId: String,
+        title: String,
+        startMillis: Long,
+        endMillis: Long,
+        isAllDay: Boolean,
+        description: String?,
+        location: String?,
+        url: String?,
+        timeZone: String?,
+        availability: String,
+        rrule: String?
+    ): Result<String> {
+        val values = android.content.ContentValues().apply {
+            put(CalendarContract.Events.CALENDAR_ID, calendarId.toLong())
+            put(CalendarContract.Events.TITLE, title)
+            put(CalendarContract.Events.DTSTART, startMillis)
+            put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+            if (rrule != null) {
+                put(
+                    CalendarContract.Events.DURATION,
+                    "P${(endMillis - startMillis) / 1000}S"
+                )
+                put(CalendarContract.Events.RRULE, rrule)
+            } else {
+                put(CalendarContract.Events.DTEND, endMillis)
+            }
+            if (description != null) {
+                put(CalendarContract.Events.DESCRIPTION, description)
+            }
+            if (location != null) {
+                put(CalendarContract.Events.EVENT_LOCATION, location)
+            }
+            if (url != null) {
+                put(CalendarContract.Events.CUSTOM_APP_URI, url)
+            }
+            put(
+                CalendarContract.Events.EVENT_TIMEZONE,
+                if (isAllDay) java.util.TimeZone.getDefault().id
+                else (timeZone ?: java.util.TimeZone.getDefault().id)
+            )
+            put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
+            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
+        }
+        val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+        val newId = uri?.lastPathSegment
+        return if (newId != null) {
+            Result.success(newId)
+        } else {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.OPERATION_FAILED,
+                    "Failed to create the new series"
+                )
+            )
+        }
+    }
+
+    private fun availabilityToInt(availability: String): Int {
+        return when (availability) {
+            "free" -> CalendarContract.Events.AVAILABILITY_FREE
+            "tentative" -> CalendarContract.Events.AVAILABILITY_TENTATIVE
+            else -> CalendarContract.Events.AVAILABILITY_BUSY
+        }
+    }
+
+    /** Storage millis for a date: UTC midnight for all-day, the instant otherwise. */
+    private fun toStorageMillis(date: java.util.Date, isAllDay: Boolean): Long {
+        if (!isAllDay) return date.time
+        val local = java.util.Calendar.getInstance().apply { time = date }
+        val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        utc.set(
+            local.get(java.util.Calendar.YEAR),
+            local.get(java.util.Calendar.MONTH),
+            local.get(java.util.Calendar.DAY_OF_MONTH),
+            0, 0, 0
+        )
+        utc.set(java.util.Calendar.MILLISECOND, 0)
+        return utc.timeInMillis
+    }
+
+    /** Resolves an event's duration, falling back to one hour when unknown. */
+    private fun eventDurationMillis(row: EventRow): Long {
+        if (row.dtend != null) return row.dtend - row.dtstart
+        if (row.duration != null) {
+            parseDurationMillis(row.duration)?.let { return it }
+        }
+        return 3_600_000L
+    }
+
+    /** Parses an RFC 5545 / Android duration string (e.g. "P3600S", "PT1H"). */
+    private fun parseDurationMillis(duration: String): Long? {
+        val trimmed = duration.trim()
+        Regex("P(\\d+)S").matchEntire(trimmed)?.let {
+            return it.groupValues[1].toLong() * 1000L
+        }
+        val match = Regex(
+            "P(?:(\\d+)W)?(?:(\\d+)D)?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?)?"
+        ).matchEntire(trimmed) ?: return null
+        var seconds = 0L
+        match.groupValues[1].toLongOrNull()?.let { seconds += it * 7 * 24 * 3600 }
+        match.groupValues[2].toLongOrNull()?.let { seconds += it * 24 * 3600 }
+        match.groupValues[3].toLongOrNull()?.let { seconds += it * 3600 }
+        match.groupValues[4].toLongOrNull()?.let { seconds += it * 60 }
+        match.groupValues[5].toLongOrNull()?.let { seconds += it }
+        return seconds * 1000L
+    }
+
+    /** First occurrence of [eventId] strictly after [afterMillis], or null. */
+    private fun queryNextInstanceBegin(eventId: String, afterMillis: Long): Long? {
+        // Five-year window: covers daily/weekly/monthly easily, and yearly
+        // rules with an interval of up to five.
+        val windowEnd = afterMillis + 5L * 366 * 24 * 3600 * 1000
+        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
+            .appendPath((afterMillis + 1).toString())
+            .appendPath(windowEnd.toString())
+            .build()
+        context.contentResolver.query(
+            uri,
+            arrayOf(CalendarContract.Instances.BEGIN),
+            "${CalendarContract.Instances.EVENT_ID} = ?",
+            arrayOf(eventId),
+            "${CalendarContract.Instances.BEGIN} ASC"
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                return cursor.getLong(0)
+            }
+        }
+        return null
+    }
+
+    /** Replaces any COUNT/UNTIL in [rrule] with UNTIL at [untilMillis] (inclusive). */
+    private fun setRruleUntil(rrule: String, untilMillis: Long, isAllDay: Boolean): String {
+        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
+        val parts = body.split(";").filter {
+            val key = it.substringBefore('=').uppercase()
+            it.isNotEmpty() && key != "COUNT" && key != "UNTIL"
+        }
+        return (parts + "UNTIL=${formatRruleUtc(untilMillis, isAllDay)}").joinToString(";")
+    }
+
+    /** Formats [millis] as an RRULE UTC value (date-only when [dateOnly]). */
+    private fun formatRruleUtc(millis: Long, dateOnly: Boolean): String {
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        cal.timeInMillis = millis
+        val date = String.format(
+            java.util.Locale.US,
+            "%04d%02d%02d",
+            cal.get(java.util.Calendar.YEAR),
+            cal.get(java.util.Calendar.MONTH) + 1,
+            cal.get(java.util.Calendar.DAY_OF_MONTH)
+        )
+        if (dateOnly) return date
+        return date + String.format(
+            java.util.Locale.US,
+            "T%02d%02d%02dZ",
+            cal.get(java.util.Calendar.HOUR_OF_DAY),
+            cal.get(java.util.Calendar.MINUTE),
+            cal.get(java.util.Calendar.SECOND)
+        )
+    }
 }

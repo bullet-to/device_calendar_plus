@@ -490,7 +490,47 @@ await plugin.updateEvent(
 );
 ```
 
-**Note on Recurring Events**: For recurring events, `updateEvent` will always update the ENTIRE series (all past and future occurrences). Single-instance updates are not supported to maintain consistent behavior across platforms.
+**Note on Recurring Events**: For recurring events, `updateEvent` updates the ENTIRE series (all past and future occurrences). To change the recurrence rule itself, or to edit only part of a series, use `updateRecurring` (below).
+
+### Update Recurring Events
+
+`updateEvent` always updates a whole event. To edit a recurring **series** — including changing or removing its recurrence rule — use `updateRecurring`. It takes an `EventUpdateSpan`:
+
+- `EventUpdateSpan.allEvents` — the change applies to the whole series.
+- `EventUpdateSpan.thisAndFollowing` — the series is split at the occurrence you pass, and the change applies from there onward.
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Change the whole series to weekly
+await plugin.updateRecurring(
+  event.instanceId,
+  EventUpdateSpan.allEvents,
+  recurrenceRule: Patch.set(WeeklyRecurrence(end: CountEnd(10))),
+);
+
+// Stop the series recurring — it becomes a single, non-recurring event
+await plugin.updateRecurring(
+  event.instanceId,
+  EventUpdateSpan.allEvents,
+  recurrenceRule: Patch.clear(),
+);
+
+// Split the series: this occurrence onward moves to a new time.
+// Returns the new series' event ID.
+final newSeriesId = await plugin.updateRecurring(
+  event.instanceId,
+  EventUpdateSpan.thisAndFollowing,
+  startDate: DateTime(2024, 3, 21, 15, 0),
+  endDate: DateTime(2024, 3, 21, 16, 0),
+);
+```
+
+`recurrenceRule` takes a `Patch`: omit it to leave recurrence unchanged, `Patch.set(...)` to change the rule, `Patch.clear()` to remove it. All other fields behave as in `updateEvent`. `updateRecurring` returns the event ID for the affected scope — the same ID for `allEvents`, the new series' ID for `thisAndFollowing`.
+
+**Span and the split point.** For `thisAndFollowing`, pass an instance ID (`event.instanceId`) that carries an occurrence timestamp — it is the split point. The occurrence you name stays on the *original* series; the new rule applies from the next occurrence. iOS EventKit behaves this way natively and Android is bent to match, so the behaviour is consistent across platforms.
+
+**Customised occurrences.** Changing a recurrence rule is best-effort with respect to occurrences a user had individually moved or deleted. Customisations before a `thisAndFollowing` split point survive; customisations at or after the split point (or anywhere, for `allEvents`) may be reset.
 
 ### Delete Event
 
@@ -512,7 +552,7 @@ await plugin.deleteEvent(event.instanceId);
 - [x] **All-day events** — proper floating date handling across timezones
 - [x] **Native UI** — show event modal on both platforms
 - [x] **Recurring events** — create and read with sealed RecurrenceRule model (daily, weekly, monthly, yearly)
-- [ ] **Update recurrence rules** — change/add/remove recurrence rule via `updateEvent`
+- [x] **Update recurrence rules** — change, add or remove a recurrence rule via `updateRecurring`
 - [ ] **Attendees** — read on both platforms; write on Android (iOS EventKit is read-only for participants)
 - [ ] **Reminders / alarms** — read/write on both platforms
 - [ ] **Platform-specific extras** — event URL, organizer, and other platform-native fields exposed where supported

@@ -6,6 +6,7 @@ import 'src/calendar_permission_status.dart';
 import 'src/calendar_source.dart';
 import 'src/event.dart';
 import 'src/event_availability.dart';
+import 'src/event_update_span.dart';
 import 'src/platform_exception_converter.dart';
 import 'src/recurrence_rule.dart';
 
@@ -31,6 +32,7 @@ export 'src/device_calendar_error.dart';
 export 'src/event.dart';
 export 'src/event_availability.dart';
 export 'src/event_status.dart';
+export 'src/event_update_span.dart';
 export 'src/platform_exception_codes.dart';
 export 'src/recurrence_rule.dart';
 
@@ -827,6 +829,167 @@ class DeviceCalendar {
         isAllDay: isAllDay,
         timeZone: timeZone,
         availability: availability?.name,
+      );
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
+  /// Updates a recurring event, choosing which occurrences the edit affects.
+  ///
+  /// Use this instead of [updateEvent] when you need to change a recurring
+  /// event's [recurrenceRule], or when an edit should affect only part of a
+  /// series. For non-recurring events, keep using [updateEvent].
+  ///
+  /// [instanceId] identifies the occurrence to act on — pass an instance ID
+  /// (`event.instanceId`). For [EventUpdateSpan.thisAndFollowing] it must
+  /// carry an occurrence timestamp (`eventId@timestamp`), which is the split
+  /// point; a bare event ID throws [ArgumentError].
+  ///
+  /// [span] chooses the scope:
+  /// - [EventUpdateSpan.allEvents] — the whole series follows the change.
+  ///   Clearing [recurrenceRule] collapses the series into a single event.
+  /// - [EventUpdateSpan.thisAndFollowing] — the series is split at the
+  ///   occurrence timestamp. The named occurrence stays on the original
+  ///   series; the new rule and fields apply from the next occurrence on.
+  ///
+  /// Field parameters behave as in [updateEvent]. [recurrenceRule] takes a
+  /// [Patch]: omit it to leave recurrence unchanged, [Patch.set] to change
+  /// the rule, [Patch.clear] to remove it (the event stops recurring).
+  ///
+  /// **Primary effect** — the recurrence rule change itself — behaves
+  /// identically on iOS and Android.
+  ///
+  /// **Secondary effects** — what happens to occurrences the user had
+  /// individually customised — are best-effort and differ by platform.
+  /// Customisations before a `thisAndFollowing` split point survive.
+  /// Customisations after the split point (or anywhere, for `allEvents`) are
+  /// reset: a moved occurrence persists as a detached standalone event, and a
+  /// deleted occurrence may reappear if the new rule regenerates that date.
+  ///
+  /// Returns the event ID for the affected scope — the same ID for
+  /// `allEvents`, the new series' ID for `thisAndFollowing`.
+  ///
+  /// At least one field must be provided.
+  /// Requires calendar write permissions - call [requestPermissions] first.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  ///
+  /// // Change the whole series to weekly
+  /// await plugin.updateRecurring(
+  ///   event.instanceId,
+  ///   EventUpdateSpan.allEvents,
+  ///   recurrenceRule: Patch.set(WeeklyRecurrence(end: CountEnd(10))),
+  /// );
+  ///
+  /// // Stop the series recurring (becomes a single event)
+  /// await plugin.updateRecurring(
+  ///   event.instanceId,
+  ///   EventUpdateSpan.allEvents,
+  ///   recurrenceRule: Patch.clear(),
+  /// );
+  ///
+  /// // Split: this occurrence onwards moves to a new time
+  /// final newSeriesId = await plugin.updateRecurring(
+  ///   event.instanceId,
+  ///   EventUpdateSpan.thisAndFollowing,
+  ///   startDate: DateTime(2024, 3, 21, 15, 0),
+  ///   endDate: DateTime(2024, 3, 21, 16, 0),
+  /// );
+  /// ```
+  Future<String> updateRecurring(
+    String instanceId,
+    EventUpdateSpan span, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    Patch<String>? description,
+    Patch<String>? location,
+    Patch<String>? url,
+    bool? isAllDay,
+    String? timeZone,
+    EventAvailability? availability,
+    Patch<RecurrenceRule>? recurrenceRule,
+  }) async {
+    // Validate instanceId
+    if (instanceId.trim().isEmpty) {
+      throw ArgumentError.value(
+        instanceId,
+        'instanceId',
+        'Instance ID cannot be empty',
+      );
+    }
+
+    // Parse the ID — thisAndFollowing needs an occurrence timestamp to split on
+    final parsed = InstanceIdParser.parse(instanceId);
+    if (span == EventUpdateSpan.thisAndFollowing && parsed.timestamp == null) {
+      throw ArgumentError.value(
+        instanceId,
+        'instanceId',
+        'EventUpdateSpan.thisAndFollowing requires an instance ID with an '
+            'occurrence timestamp (eventId@timestamp)',
+      );
+    }
+
+    // Validate at least one field is provided
+    if (title == null &&
+        startDate == null &&
+        endDate == null &&
+        description == null &&
+        location == null &&
+        url == null &&
+        isAllDay == null &&
+        timeZone == null &&
+        availability == null &&
+        recurrenceRule == null) {
+      throw ArgumentError(
+        'At least one field must be provided to update',
+      );
+    }
+
+    // Validate dates if both are provided
+    if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
+      throw ArgumentError(
+        'End date must be after start date',
+      );
+    }
+
+    // Normalize dates for all-day events
+    final normalizedStartDate = (isAllDay == true && startDate != null)
+        ? _stripTime(startDate)
+        : startDate;
+    final normalizedEndDate =
+        (isAllDay == true && endDate != null) ? _stripTime(endDate) : endDate;
+
+    // The platform layer works in RRULE strings; map the typed Patch across.
+    final Patch<String>? recurrenceRulePatch = switch (recurrenceRule) {
+      null => null,
+      PatchSet(:final value) => Patch.set(value.toRruleString()),
+      PatchClear() => const Patch.clear(),
+    };
+
+    try {
+      return await DeviceCalendarPlusPlatform.instance.updateRecurring(
+        parsed.eventId,
+        parsed.timestamp,
+        span.name,
+        title: title,
+        startDate: normalizedStartDate,
+        endDate: normalizedEndDate,
+        description: description,
+        location: location,
+        url: url,
+        isAllDay: isAllDay,
+        timeZone: timeZone,
+        availability: availability?.name,
+        recurrenceRule: recurrenceRulePatch,
       );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =

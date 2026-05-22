@@ -209,6 +209,44 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   }
 
   @override
+  Future<String> updateRecurring(
+    String eventId,
+    int? timestamp,
+    String span, {
+    String? title,
+    DateTime? startDate,
+    DateTime? endDate,
+    Patch<String>? description,
+    Patch<String>? location,
+    Patch<String>? url,
+    bool? isAllDay,
+    String? timeZone,
+    String? availability,
+    Patch<String>? recurrenceRule,
+  }) async {
+    final args = <String, dynamic>{
+      'eventId': eventId,
+      'timestamp': timestamp,
+      'span': span,
+      'title': title,
+      'startDate': startDate?.millisecondsSinceEpoch,
+      'endDate': endDate?.millisecondsSinceEpoch,
+      'isAllDay': isAllDay,
+      'timeZone': timeZone,
+      'availability': availability,
+    };
+    writePatchFields(args, {
+      'description': description,
+      'location': location,
+      'url': url,
+      'recurrenceRule': recurrenceRule,
+    });
+    final result =
+        await methodChannel.invokeMethod<String>('updateRecurring', args);
+    return result!;
+  }
+
+  @override
   Future<void> showCreateEventModal({
     String? title,
     int? startDate,

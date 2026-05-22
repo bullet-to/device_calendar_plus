@@ -49,6 +49,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleDeleteEvent(call: call, result: result)
     case "updateEvent":
       handleUpdateEvent(call: call, result: result)
+    case "updateRecurring":
+      handleUpdateRecurring(call: call, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -584,6 +586,82 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
   
+  private func handleUpdateRecurring(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any] else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Invalid arguments for updateRecurring",
+        details: nil
+      ))
+      return
+    }
+
+    // Parse event ID (required)
+    guard let eventId = args["eventId"] as? String else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Missing or invalid eventId",
+        details: nil
+      ))
+      return
+    }
+
+    // Parse span (required)
+    guard let span = args["span"] as? String else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Missing or invalid span",
+        details: nil
+      ))
+      return
+    }
+
+    // Parse optional parameters
+    let timestamp = args["timestamp"] as? Int64
+    let title = args["title"] as? String
+    let description = args["description"] as? String
+    let location = args["location"] as? String
+    let url = args["url"] as? String
+    let isAllDay = args["isAllDay"] as? Bool
+    let timeZone = args["timeZone"] as? String
+    let availability = args["availability"] as? String
+    let recurrenceRule = args["recurrenceRule"] as? String
+    let clearedFields = args["clearedFields"] as? [String] ?? []
+
+    let startDate = (args["startDate"] as? Int64).map {
+      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
+    }
+    let endDate = (args["endDate"] as? Int64).map {
+      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
+    }
+
+    eventsService.updateRecurring(
+      eventId: eventId,
+      timestamp: timestamp,
+      span: span,
+      title: title,
+      startDate: startDate,
+      endDate: endDate,
+      description: description,
+      location: location,
+      url: url,
+      isAllDay: isAllDay,
+      timeZone: timeZone,
+      availability: availability,
+      recurrenceRule: recurrenceRule,
+      clearedFields: clearedFields
+    ) { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success(let affectedEventId):
+          result(affectedEventId)
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+
   // MARK: - EKEventViewControllerDelegate
   
   public func eventViewController(_ controller: EKEventViewController, didCompleteWith action: EKEventViewAction) {
