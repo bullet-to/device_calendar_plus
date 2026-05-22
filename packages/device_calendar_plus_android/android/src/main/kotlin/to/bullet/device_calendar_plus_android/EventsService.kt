@@ -819,7 +819,8 @@ class EventsService(private val context: Context) {
         url: String?,
         isAllDay: Boolean?,
         timeZone: String?,
-        availability: String?
+        availability: String?,
+        clearedFields: List<String>
     ): Result<Unit> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -847,18 +848,24 @@ class EventsService(private val context: Context) {
                 values.put(CalendarContract.Events.TITLE, title)
             }
             
-            // Update description if provided
-            if (description != null) {
+            // Update description
+            if ("description" in clearedFields) {
+                values.putNull(CalendarContract.Events.DESCRIPTION)
+            } else if (description != null) {
                 values.put(CalendarContract.Events.DESCRIPTION, description)
             }
-            
-            // Update location if provided
-            if (location != null) {
+
+            // Update location
+            if ("location" in clearedFields) {
+                values.putNull(CalendarContract.Events.EVENT_LOCATION)
+            } else if (location != null) {
                 values.put(CalendarContract.Events.EVENT_LOCATION, location)
             }
 
-            // Update URL if provided
-            if (url != null) {
+            // Update URL
+            if ("url" in clearedFields) {
+                values.putNull(CalendarContract.Events.CUSTOM_APP_URI)
+            } else if (url != null) {
                 values.put(CalendarContract.Events.CUSTOM_APP_URI, url)
             }
 

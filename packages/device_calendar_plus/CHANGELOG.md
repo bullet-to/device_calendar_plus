@@ -3,6 +3,12 @@
 ### Added
 - `url` parameter on `updateEvent()` — based on @SuperKrallan (#38)
 
+### Changed
+- **Breaking:** `updateEvent()` `description`, `location` and `url` now take a
+  `Patch<String>` instead of a `String`. `null` leaves the field unchanged,
+  `Patch.set(value)` assigns a value, `Patch.clear()` removes it — clearing an
+  optional field was previously impossible.
+
 ### Fixed
 - Missing `availability` parameter in platform interface test mock — based on @SuperKrallan (#39)
 

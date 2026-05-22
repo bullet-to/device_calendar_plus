@@ -15,7 +15,13 @@ export 'package:device_calendar_plus_ios/device_calendar_plus_ios.dart'
     show CreateCalendarOptionsIos;
 // Platform-specific options
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
-    show CreateCalendarPlatformOptions, InstanceIdParser, ParsedInstanceId;
+    show
+        CreateCalendarPlatformOptions,
+        InstanceIdParser,
+        ParsedInstanceId,
+        Patch,
+        PatchSet,
+        PatchClear;
 
 export 'src/attendee.dart';
 export 'src/calendar.dart';
@@ -704,10 +710,13 @@ class DeviceCalendar {
   /// - [title] - new event title
   /// - [startDate] - new start date/time
   /// - [endDate] - new end date/time
-  /// - [description] - new event description
-  /// - [location] - new event location
-  /// - [url] - new URL associated with the event. Round-trips through
-  ///   [Event.url]. On iOS this maps to `EKEvent.url`; on Android it maps to
+  /// - [description] - event description ([Patch.set] to change, [Patch.clear]
+  ///   to remove)
+  /// - [location] - event location ([Patch.set] to change, [Patch.clear] to
+  ///   remove)
+  /// - [url] - URL associated with the event ([Patch.set] to change,
+  ///   [Patch.clear] to remove). Round-trips through [Event.url]. On iOS this
+  ///   maps to `EKEvent.url`; on Android it maps to
   ///   `CalendarContract.Events.CUSTOM_APP_URI`.
   /// - [isAllDay] - change between all-day and timed event
   ///   - Changing timed → all-day: Time components are stripped to midnight
@@ -716,6 +725,10 @@ class DeviceCalendar {
   ///   - Note: This reinterprets the local time, not preserving the instant
   ///   - Example: "3:00 PM EST" → "3:00 PM PST" (different instant in time)
   /// - [availability] - new availability status
+  ///
+  /// [description], [location] and [url] take a [Patch]: omit the argument (or
+  /// pass `null`) to leave the field unchanged, [Patch.set] to assign a new
+  /// value, [Patch.clear] to remove the existing value.
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions - call [requestPermissions] first.
@@ -736,13 +749,14 @@ class DeviceCalendar {
   ///   isAllDay: true,
   /// );
   ///
-  /// // Update multiple fields
+  /// // Update multiple fields, and clear the location
   /// await plugin.updateEvent(
   ///   eventId: event.eventId,
   ///   title: 'Team Sync',
   ///   startDate: DateTime(2024, 3, 20, 10, 0),
   ///   endDate: DateTime(2024, 3, 20, 11, 0),
-  ///   location: 'Conference Room B',
+  ///   description: Patch.set('Updated agenda'),
+  ///   location: Patch.clear(),
   ///   availability: EventAvailability.free,
   /// );
   /// ```
@@ -753,9 +767,9 @@ class DeviceCalendar {
     String? title,
     DateTime? startDate,
     DateTime? endDate,
-    String? description,
-    String? location,
-    String? url,
+    Patch<String>? description,
+    Patch<String>? location,
+    Patch<String>? url,
     bool? isAllDay,
     String? timeZone,
     EventAvailability? availability,
