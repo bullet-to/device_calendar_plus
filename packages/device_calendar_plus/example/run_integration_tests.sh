@@ -100,6 +100,22 @@ echo -e "${GREEN}✓${NC} Device ID: ${YELLOW}$DEVICE_ID${NC}"
 echo -e "${GREEN}✓${NC} Platform: ${YELLOW}$PLATFORM${NC}"
 echo ""
 
+# Pre-flight: kill any leftover Android emulators that aren't the target.
+# Leftover AVDs from earlier runs or other workflows can hold ADB sessions,
+# Dart VM service ports, or installed-app state that interferes with this
+# run. The target DEVICE_ID is left alone — the caller is expected to have
+# booted a fresh AVD for that one.
+if [ "$PLATFORM" == "android" ]; then
+    LEFTOVERS=$(adb devices | awk '/^emulator-/ {print $1}' | grep -v "^${DEVICE_ID}$" || true)
+    if [ -n "$LEFTOVERS" ]; then
+        for emu in $LEFTOVERS; do
+            echo -e "${YELLOW}🧹 Killing leftover emulator: $emu${NC}"
+            adb -s "$emu" emu kill > /dev/null 2>&1 || true
+        done
+        echo ""
+    fi
+fi
+
 # Grant permissions based on platform
 if [ "$PLATFORM" == "ios" ]; then
     echo "🍎 iOS detected"
@@ -120,15 +136,36 @@ elif [ "$PLATFORM" == "android" ]; then
     echo "🤖 Android detected"
     echo "📱 Granting calendar permissions via adb..."
 
-    # Best-effort: this succeeds once the app is installed, and the grant
-    # persists across the reinstall that `flutter test` performs. On a fresh
-    # device, run the script once to install the app, then again to test.
+    # Belt-and-braces: pm grant sets the runtime permission at the package
+    # level (clears on reinstall in some Android versions); appops sets the
+    # underlying op at the OS-policy layer, which survives reinstall more
+    # reliably. Both are best-effort — they succeed once the app is installed.
+    # On a fresh device, run the script once to install the app, then again
+    # to test.
     adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.READ_CALENDAR 2>/dev/null || true
     adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.WRITE_CALENDAR 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell appops set to.bullet.example READ_CALENDAR allow 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell appops set to.bullet.example WRITE_CALENDAR allow 2>/dev/null || true
     echo ""
 fi
 
 cd "$(dirname "$0")"
+
+# Heartbeat: when stdout isn't a TTY (Claude Code background tasks, CI logs,
+# anything piped), background a 10s ping so the captured stream stays alive
+# while flutter test buffers its own output. Without this, the Gradle build
+# and quiet emulator-launch stretches look like a stall and the runner gets
+# killed mid-run. Interactive shells get a TTY and skip this entirely.
+if [ ! -t 1 ]; then
+    HEARTBEAT_START=$(date +%s)
+    (
+        while sleep 10; do
+            echo "[heartbeat $(($(date +%s)-HEARTBEAT_START))s @ $(date +%H:%M:%S)] integration tests running on $DEVICE_ID"
+        done
+    ) &
+    HEARTBEAT_PID=$!
+    trap 'kill $HEARTBEAT_PID 2>/dev/null' EXIT
+fi
 
 echo "🚀 Running integration tests on $DEVICE_ID..."
 echo ""
@@ -192,6 +229,22 @@ else
 fi
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+# Device cleanup: shut down the AVD / simulator on the way out. Each
+# script invocation should start from a freshly-booted device —
+# accumulated state across runs (perms wiped by reinstall, zombie test
+# processes holding the Dart VM service port, calendar provider DB
+# from earlier tests) breaks subsequent invocations in subtle ways.
+# Killing here is the cheap half of "fresh device per run"; the caller
+# boots a fresh AVD / simulator before the next invocation.
+# Android: skipped for real devices (DEVICE_ID won't match emulator-*).
+if [ "$PLATFORM" == "android" ] && [[ "$DEVICE_ID" == emulator-* ]]; then
+    echo -e "${CYAN}🧹 Shutting down emulator $DEVICE_ID${NC}"
+    adb -s "$DEVICE_ID" emu kill > /dev/null 2>&1 || true
+elif [ "$PLATFORM" == "ios" ]; then
+    echo -e "${CYAN}🧹 Shutting down simulator $DEVICE_ID${NC}"
+    xcrun simctl shutdown "$DEVICE_ID" > /dev/null 2>&1 || true
+fi
 
 exit $EXIT_CODE
 
