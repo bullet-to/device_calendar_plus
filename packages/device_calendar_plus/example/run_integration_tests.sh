@@ -130,6 +130,22 @@ fi
 
 cd "$(dirname "$0")"
 
+# Heartbeat: when stdout isn't a TTY (Claude Code background tasks, CI logs,
+# anything piped), background a 10s ping so the captured stream stays alive
+# while flutter test buffers its own output. Without this, the Gradle build
+# and quiet emulator-launch stretches look like a stall and the runner gets
+# killed mid-run. Interactive shells get a TTY and skip this entirely.
+if [ ! -t 1 ]; then
+    HEARTBEAT_START=$(date +%s)
+    (
+        while sleep 10; do
+            echo "[heartbeat $(($(date +%s)-HEARTBEAT_START))s @ $(date +%H:%M:%S)] integration tests running on $DEVICE_ID"
+        done
+    ) &
+    HEARTBEAT_PID=$!
+    trap 'kill $HEARTBEAT_PID 2>/dev/null' EXIT
+fi
+
 echo "🚀 Running integration tests on $DEVICE_ID..."
 echo ""
 
