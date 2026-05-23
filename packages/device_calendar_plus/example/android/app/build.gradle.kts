@@ -37,6 +37,15 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    // Pass `-g` to every `adb install` Gradle runs, so all manifest
+    // permissions (READ_CALENDAR, WRITE_CALENDAR) are auto-granted on
+    // install/reinstall. Without this, `flutter test`'s reinstall wipes
+    // runtime perms granted by adb beforehand, and the test app blocks
+    // forever on a system permission dialog in headless runs.
+    installation {
+        installOptions += listOf("-g")
+    }
 }
 
 flutter {
