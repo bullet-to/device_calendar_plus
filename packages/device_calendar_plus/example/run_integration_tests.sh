@@ -14,6 +14,44 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Headless qemu instances left over from a killed `flutter test` driver hold the
+# AVD lock and make the next visible `emulator -avd` launch fail with
+# "Running multiple emulators with the same AVD". Sweep them up before doing
+# anything else. Only targets -headless qemu processes and orphaned helpers
+# (PPID=1) so the visible emulator the user just booted is left alone.
+kill_zombie_headless_emulators() {
+    local headless_pids
+    headless_pids=$(pgrep -f "qemu-system-.*-headless.*-avd" 2>/dev/null || true)
+    if [ -z "$headless_pids" ]; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}⚠️  Found headless emulator(s) from a previous run — cleaning up${NC}"
+    for pid in $headless_pids; do
+        echo "   killing headless qemu (pid $pid)"
+        kill "$pid" 2>/dev/null || true
+    done
+    sleep 2
+
+    ps -axo pid=,ppid=,command= \
+        | awk '$2 == 1 && /Library\/Android\/sdk\/emulator\/(crashpad_handler|netsimd)/ { print $1 }' \
+        | xargs kill 2>/dev/null || true
+}
+
+kill_zombie_headless_emulators
+
+# Re-grant calendar permissions. Idempotent — pm grant on an already-granted
+# perm is a no-op, and pm grant on an uninstalled app silently errors. Both
+# pm grant (runtime layer) and appops set (system-policy layer) are issued
+# because the runtime grant is wiped on reinstall but appops set survives —
+# belt and braces.
+grant_android_calendar_permissions() {
+    adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.READ_CALENDAR 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.WRITE_CALENDAR 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell appops set to.bullet.example READ_CALENDAR allow 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell appops set to.bullet.example WRITE_CALENDAR allow 2>/dev/null || true
+}
+
 # Function to select device interactively
 select_device() {
     echo -e "${BLUE}📱 Fetching devices:${NC}"
@@ -129,10 +167,7 @@ elif [ "$PLATFORM" == "android" ]; then
     fi
 
     echo "📱 Granting calendar permissions via adb..."
-    adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.READ_CALENDAR 2>/dev/null || true
-    adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.WRITE_CALENDAR 2>/dev/null || true
-    adb -s "$DEVICE_ID" shell appops set to.bullet.example READ_CALENDAR allow 2>/dev/null || true
-    adb -s "$DEVICE_ID" shell appops set to.bullet.example WRITE_CALENDAR allow 2>/dev/null || true
+    grant_android_calendar_permissions
     echo -e "${GREEN}✓${NC} Calendar permissions granted"
     echo ""
 fi
@@ -161,7 +196,28 @@ echo ""
 # Run all integration tests in a single app launch.
 # `flutter test` is used for both platforms: it self-terminates with a real
 # exit code, unlike `flutter drive`, which hangs on teardown.
+#
+# Android quirk: `flutter test` does its own `adb install` before launching,
+# which wipes runtime permissions granted with `pm grant`. There's no hook
+# between install and launch, so we tail-grant in a tight loop in the
+# background — every 0.5s for the lifetime of `flutter test` — which catches
+# the post-install moment within sub-second latency, before the app's first
+# permission check.
 run_tests() {
+    if [ "$PLATFORM" == "android" ]; then
+        (
+            while true; do
+                grant_android_calendar_permissions
+                sleep 0.5
+            done
+        ) &
+        local grant_pid=$!
+        flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
+        local result=$?
+        kill "$grant_pid" 2>/dev/null || true
+        wait "$grant_pid" 2>/dev/null || true
+        return $result
+    fi
     flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
 }
 

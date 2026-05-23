@@ -102,6 +102,13 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       'mock-event-id';
 
   @override
+  Future<void> deleteRecurring(
+    String eventId,
+    int? timestamp,
+    String span,
+  ) async {}
+
+  @override
   Future<void> showCreateEventModal({
     String? title,
     int? startDate,

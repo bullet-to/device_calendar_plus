@@ -859,6 +859,29 @@ class EventsService {
     }
   }
 
+  // MARK: - Recurring helpers
+
+  /// Resolves the occurrence of `eventId` nearest to `timestamp` (epoch
+  /// millis). EventKit has no direct lookup for a single occurrence, so we
+  /// query a tight ±1s window and pick the match whose start is closest.
+  ///
+  /// Shared by `updateRecurring` and `deleteRecurring` for the
+  /// `thisAndFollowing` and `thisInstance` spans.
+  private func findOccurrence(eventId: String, timestamp: Int64) -> EKEvent? {
+    let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
+    let predicate = eventStore.predicateForEvents(
+      withStart: occurrenceDate.addingTimeInterval(-1),
+      end: occurrenceDate.addingTimeInterval(1),
+      calendars: nil
+    )
+    return eventStore.events(matching: predicate)
+      .filter { $0.eventIdentifier == eventId }
+      .min(by: {
+        abs($0.startDate.timeIntervalSince(occurrenceDate)) <
+          abs($1.startDate.timeIntervalSince(occurrenceDate))
+      })
+  }
+
   // MARK: - updateRecurring (issue #36)
 
   /// Updates a recurring event, choosing which occurrences the edit affects.
@@ -906,18 +929,7 @@ class EventsService {
         )))
         return
       }
-      let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
-      let predicate = eventStore.predicateForEvents(
-        withStart: occurrenceDate.addingTimeInterval(-1),
-        end: occurrenceDate.addingTimeInterval(1),
-        calendars: nil
-      )
-      let matches = eventStore.events(matching: predicate)
-        .filter { $0.eventIdentifier == eventId }
-      targetEvent = matches.min(by: {
-        abs($0.startDate.timeIntervalSince(occurrenceDate)) <
-          abs($1.startDate.timeIntervalSince(occurrenceDate))
-      })
+      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
     } else {
       targetEvent = eventStore.event(withIdentifier: eventId)
     }
@@ -997,6 +1009,72 @@ class EventsService {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.operationFailed,
         message: "Failed to update recurring event: \(error.localizedDescription)"
+      )))
+    }
+  }
+
+  // MARK: - deleteRecurring (issue #43)
+
+  /// Deletes a recurring event, choosing which occurrences are removed.
+  ///
+  /// `span` is "allEvents" (the whole series), "thisAndFollowing" (the
+  /// occurrence at `timestamp` and every later one), or "thisInstance" (only
+  /// that occurrence).
+  func deleteRecurring(
+    eventId: String,
+    timestamp: Int64?,
+    span: String,
+    completion: @escaping (Result<Void, CalendarError>) -> Void
+  ) {
+    // Permission Check
+    guard permissionService.hasPermission(for: .full) else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.permissionDenied,
+        message: "Calendar permission denied. Call requestPermissions() first."
+      )))
+      return
+    }
+
+    // Resolve the event to act on. "allEvents" works from the master (the
+    // whole series); "thisAndFollowing" and "thisInstance" work from the
+    // specific occurrence at `timestamp`.
+    let needsOccurrence = (span == "thisAndFollowing" || span == "thisInstance")
+    let targetEvent: EKEvent?
+    if needsOccurrence {
+      guard let timestamp = timestamp else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "\(span) requires an occurrence timestamp"
+        )))
+        return
+      }
+      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
+    } else {
+      targetEvent = eventStore.event(withIdentifier: eventId)
+    }
+
+    guard let foundEvent = targetEvent else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.notFound,
+        message: "Event not found with event ID: \(eventId)"
+      )))
+      return
+    }
+
+    // "thisInstance" removes only the fetched occurrence (.thisEvent).
+    // "allEvents" and "thisAndFollowing" use .futureEvents: from the master
+    // that removes the whole series; from an occurrence it removes that
+    // occurrence and every later one. (.futureEvents on a non-recurring event
+    // behaves like .thisEvent.)
+    let removeSpan: EKSpan = (span == "thisInstance") ? .thisEvent : .futureEvents
+
+    do {
+      try eventStore.remove(foundEvent, span: removeSpan)
+      completion(.success(()))
+    } catch {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "Failed to delete recurring event: \(error.localizedDescription)"
       )))
     }
   }

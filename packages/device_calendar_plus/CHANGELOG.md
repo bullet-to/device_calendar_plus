@@ -2,12 +2,21 @@
 
 ### Added
 - `updateRecurring()` — update a recurring event with a span choice:
-  `EventUpdateSpan.allEvents` (whole series), `thisAndFollowing` (this
+  `EventSpan.allEvents` (whole series), `thisAndFollowing` (this
   occurrence and every later one), or `thisInstance` (only this occurrence).
   Can change or remove the recurrence rule. Resolves the long-standing
   limitation that `updateEvent()` could not edit recurrence.
   Based on @SuperKrallan (#36)
-- `EventUpdateSpan` enum for choosing the scope of a recurring-event edit
+- `deleteRecurring()` — delete part of a recurring event with a span choice:
+  `EventSpan.allEvents` (whole series), `thisAndFollowing` (this occurrence
+  and every later one), or `thisInstance` (only this occurrence). Completes
+  the single-occurrence support that `updateRecurring()` started.
+  Note: `EventSpan.thisInstance` is iOS-only at the moment — Android throws
+  "not yet supported"; a follow-up will land Android support (likely via
+  EXDATE on the master rather than the exception-event path).
+  Based on @SuperKrallan (#43)
+- `EventSpan` enum for choosing the scope of a recurring-event operation,
+  shared by `updateRecurring()` and `deleteRecurring()`
 - `url` parameter on `updateEvent()` — based on @SuperKrallan (#38)
 
 ### Changed

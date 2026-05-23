@@ -1164,12 +1164,9 @@ class EventsService(private val context: Context) {
             )
         }
 
-        val updatedRows = context.contentResolver.update(
-            CalendarContract.Events.CONTENT_URI,
-            values,
-            "${CalendarContract.Events._ID} = ?",
-            arrayOf(eventId)
-        )
+        // RRULE writes require sync-adapter context on Android — see
+        // updateEventAsSyncAdapter for the rationale.
+        val updatedRows = updateEventAsSyncAdapter(eventId, row.calendarId, values)
         if (updatedRows == 0) {
             return Result.failure(
                 CalendarException(
@@ -1286,16 +1283,21 @@ class EventsService(private val context: Context) {
         // Truncate the original series to end just before the anchor. UNTIL is
         // inclusive, so cutting it one second early keeps the anchor occurrence
         // off the old series — it belongs to the new one.
+        //
+        // RRULE writes go through updateEventAsSyncAdapter; we also rewrite
+        // DTSTART/DURATION with their existing values to force Android's
+        // CalendarProvider to invalidate the Instances cache (it doesn't
+        // always when only RRULE changes — see deleteRecurringThisAndFollowing).
         val truncatedRrule = setRruleUntil(row.rrule, timestamp - 1000, row.allDay)
         val truncateValues = android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, truncatedRrule)
+            put(CalendarContract.Events.DTSTART, row.dtstart)
+            if (row.duration != null) {
+                put(CalendarContract.Events.DURATION, row.duration)
+            }
         }
-        val truncatedRows = context.contentResolver.update(
-            CalendarContract.Events.CONTENT_URI,
-            truncateValues,
-            "${CalendarContract.Events._ID} = ?",
-            arrayOf(eventId)
-        )
+        val truncatedRows =
+            updateEventAsSyncAdapter(eventId, row.calendarId, truncateValues)
         if (truncatedRows == 0) {
             // Roll back the new series so the calendar is left unchanged.
             context.contentResolver.delete(
@@ -1417,6 +1419,137 @@ class EventsService(private val context: Context) {
                 )
             )
         return Result.success(exceptionId)
+    }
+
+    // -- deleteRecurring (issue #43) --
+
+    /**
+     * Deletes a recurring event, choosing which occurrences are removed.
+     *
+     * [span] is "allEvents" (the whole series) or "thisAndFollowing" (the
+     * occurrence at [timestamp] and every later one). "thisInstance" is
+     * accepted by the public API but currently rejected here — see below.
+     *
+     * iOS supports all three spans via EventKit's `remove(span:)`. On
+     * Android, "thisInstance" needs to insert a cancelled exception via
+     * `CONTENT_EXCEPTION_URI`. The straightforward implementations of that
+     * insert (`ORIGINAL_INSTANCE_TIME + STATUS_CANCELED` and the same plus
+     * explicit `DTSTART + DURATION`) both cause the provider to cancel
+     * every generated instance of the master rather than just the targeted
+     * one. Rather than ship that silent data-loss bug, this returns a
+     * clear error until a correct implementation lands (likely via
+     * `EXDATE` on the master rather than the exception pattern).
+     */
+    fun deleteRecurring(
+        eventId: String,
+        timestamp: Long?,
+        span: String
+    ): Result<Unit> {
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+            context.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied. Call requestPermissions() first."
+                )
+            )
+        }
+
+        return try {
+            when (span) {
+                // The whole series — exactly what deleteEvent already does.
+                "allEvents" -> deleteEvent(eventId)
+                "thisAndFollowing" -> deleteRecurringThisAndFollowing(eventId, timestamp)
+                "thisInstance" -> Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.OPERATION_FAILED,
+                        "deleteRecurring with EventSpan.thisInstance is not yet " +
+                        "supported on Android. Use EventSpan.allEvents or " +
+                        "EventSpan.thisAndFollowing, or call deleteRecurring on iOS."
+                    )
+                )
+                else -> Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "Unknown delete span: $span"
+                    )
+                )
+            }
+        } catch (e: SecurityException) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.OPERATION_FAILED,
+                    "Failed to delete recurring event: ${e.message}"
+                )
+            )
+        }
+    }
+
+    private fun deleteRecurringThisAndFollowing(
+        eventId: String,
+        timestamp: Long?
+    ): Result<Unit> {
+        if (timestamp == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "thisAndFollowing requires an occurrence timestamp"
+                )
+            )
+        }
+
+        val row = readEventRow(eventId)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+
+        if (row.rrule == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "Event $eventId is not recurring; use deleteEvent instead"
+                )
+            )
+        }
+
+        // Truncate the series so the anchor occurrence and every later one
+        // stop generating. UNTIL is inclusive, so cutting one second early
+        // drops the anchor too — "this and following" removes the anchor.
+        //
+        // RRULE writes go through updateEventAsSyncAdapter; we also rewrite
+        // DTSTART/DURATION with their existing values, because Android's
+        // CalendarProvider doesn't always invalidate the Instances cache
+        // when only RRULE changes — touching multiple time columns forces
+        // it to regenerate. Without this the master's RRULE is correctly
+        // updated on disk but listEvents keeps returning the old expansion.
+        val truncatedRrule = setRruleUntil(row.rrule, timestamp - 1000, row.allDay)
+        val values = android.content.ContentValues().apply {
+            put(CalendarContract.Events.RRULE, truncatedRrule)
+            put(CalendarContract.Events.DTSTART, row.dtstart)
+            if (row.duration != null) {
+                put(CalendarContract.Events.DURATION, row.duration)
+            }
+        }
+        val updatedRows = updateEventAsSyncAdapter(eventId, row.calendarId, values)
+        if (updatedRows == 0) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+        }
+        return Result.success(Unit)
     }
 
     private data class EventRow(
@@ -1671,6 +1804,67 @@ class EventsService(private val context: Context) {
             cal.get(java.util.Calendar.HOUR_OF_DAY),
             cal.get(java.util.Calendar.MINUTE),
             cal.get(java.util.Calendar.SECOND)
+        )
+    }
+
+    /**
+     * Reads ACCOUNT_NAME and ACCOUNT_TYPE for a calendar. Needed to build
+     * sync-adapter URIs for event updates.
+     */
+    private fun readCalendarAccount(calendarId: String): Pair<String, String>? {
+        val projection = arrayOf(
+            CalendarContract.Calendars.ACCOUNT_NAME,
+            CalendarContract.Calendars.ACCOUNT_TYPE
+        )
+        context.contentResolver.query(
+            CalendarContract.Calendars.CONTENT_URI,
+            projection,
+            "${CalendarContract.Calendars._ID} = ?",
+            arrayOf(calendarId),
+            null
+        )?.use { cursor ->
+            if (!cursor.moveToFirst()) return null
+            val nameIdx = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_NAME)
+            val typeIdx = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_TYPE)
+            return Pair(cursor.getString(nameIdx), cursor.getString(typeIdx))
+        }
+        return null
+    }
+
+    /**
+     * Updates an event row with sync-adapter context (CALLER_IS_SYNCADAPTER +
+     * ACCOUNT_NAME + ACCOUNT_TYPE query params on the URI). Required when
+     * the values touch protected columns like RRULE — without sync-adapter
+     * context, AOSP's CalendarProvider2 silently strips those columns from
+     * non-sync-adapter updates, reporting rows-matched as if the update
+     * succeeded while leaving the actual stored values unchanged. Symptom:
+     * the next Instances query returns the old expansion as if the RRULE
+     * change never happened.
+     *
+     * Falls back to a non-sync-adapter update if the calendar's account
+     * can't be read, which should only happen if the calendar was deleted
+     * between the row read and the update.
+     */
+    private fun updateEventAsSyncAdapter(
+        eventId: String,
+        calendarId: String,
+        values: android.content.ContentValues
+    ): Int {
+        val account = readCalendarAccount(calendarId)
+        val uri = if (account != null) {
+            CalendarContract.Events.CONTENT_URI.buildUpon()
+                .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+                .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.first)
+                .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.second)
+                .build()
+        } else {
+            CalendarContract.Events.CONTENT_URI
+        }
+        return context.contentResolver.update(
+            uri,
+            values,
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(eventId)
         )
     }
 }

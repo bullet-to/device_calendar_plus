@@ -494,11 +494,11 @@ await plugin.updateEvent(
 
 ### Update Recurring Events
 
-`updateEvent` always updates a whole event. To edit a recurring **series** — including changing or removing its recurrence rule — use `updateRecurring`. It takes an `EventUpdateSpan`:
+`updateEvent` always updates a whole event. To edit a recurring **series** — including changing or removing its recurrence rule — use `updateRecurring`. It takes an `EventSpan`:
 
-- `EventUpdateSpan.allEvents` — the change applies to the whole series.
-- `EventUpdateSpan.thisAndFollowing` — the series is split: the occurrence you pass, and every later one, carry the change.
-- `EventUpdateSpan.thisInstance` — only the occurrence you pass is changed, as a detached exception.
+- `EventSpan.allEvents` — the change applies to the whole series.
+- `EventSpan.thisAndFollowing` — the series is split: the occurrence you pass, and every later one, carry the change.
+- `EventSpan.thisInstance` — only the occurrence you pass is changed, as a detached exception.
 
 ```dart
 final plugin = DeviceCalendar.instance;
@@ -506,14 +506,14 @@ final plugin = DeviceCalendar.instance;
 // Change the whole series to weekly
 await plugin.updateRecurring(
   event.instanceId,
-  EventUpdateSpan.allEvents,
+  EventSpan.allEvents,
   recurrenceRule: Patch.set(WeeklyRecurrence(end: CountEnd(10))),
 );
 
 // Stop the series recurring — it becomes a single, non-recurring event
 await plugin.updateRecurring(
   event.instanceId,
-  EventUpdateSpan.allEvents,
+  EventSpan.allEvents,
   recurrenceRule: Patch.clear(),
 );
 
@@ -521,7 +521,7 @@ await plugin.updateRecurring(
 // Returns the new series' event ID.
 final newSeriesId = await plugin.updateRecurring(
   event.instanceId,
-  EventUpdateSpan.thisAndFollowing,
+  EventSpan.thisAndFollowing,
   startDate: DateTime(2024, 3, 21, 15, 0),
   endDate: DateTime(2024, 3, 21, 16, 0),
 );
@@ -529,7 +529,7 @@ final newSeriesId = await plugin.updateRecurring(
 // Change only this one occurrence, leaving the rest of the series alone.
 await plugin.updateRecurring(
   event.instanceId,
-  EventUpdateSpan.thisInstance,
+  EventSpan.thisInstance,
   title: 'Moved this week only',
 );
 ```
@@ -552,6 +552,29 @@ await plugin.deleteEvent(event.instanceId);
 await plugin.deleteEvent(event.instanceId);
 ```
 
+### Delete Recurring Events
+
+`deleteEvent` always deletes a whole event. To delete only part of a recurring **series**, use `deleteRecurring`. It takes the same `EventSpan` as `updateRecurring`:
+
+- `EventSpan.allEvents` — the whole series is deleted (the same as `deleteEvent`).
+- `EventSpan.thisAndFollowing` — the occurrence you pass, and every later one, are removed; the series is truncated to end before it.
+- `EventSpan.thisInstance` — only the occurrence you pass is removed, as a cancelled exception. **iOS only at the moment** — Android throws "not yet supported"; use `thisAndFollowing` or `allEvents` instead, or call from iOS.
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Delete the whole series
+await plugin.deleteRecurring(event.instanceId, EventSpan.allEvents);
+
+// Delete this occurrence and every later one
+await plugin.deleteRecurring(event.instanceId, EventSpan.thisAndFollowing);
+
+// Delete only this one occurrence, leaving the rest of the series alone (iOS only)
+await plugin.deleteRecurring(event.instanceId, EventSpan.thisInstance);
+```
+
+For `thisAndFollowing` and `thisInstance`, pass an instance ID (`event.instanceId`) that carries an occurrence timestamp; a bare event ID throws `ArgumentError`. `allEvents` accepts either.
+
 ## 📋 Roadmap
 
 - [x] **Permissions** — request, check, and open settings
@@ -561,6 +584,7 @@ await plugin.deleteEvent(event.instanceId);
 - [x] **Native UI** — show event modal on both platforms
 - [x] **Recurring events** — create and read with sealed RecurrenceRule model (daily, weekly, monthly, yearly)
 - [x] **Update recurrence rules** — change, add or remove a recurrence rule via `updateRecurring`
+- [x] **Delete recurring events** — delete a whole series, this-and-following, or a single occurrence via `deleteRecurring`
 - [ ] **Attendees** — read on both platforms; write on Android (iOS EventKit is read-only for participants)
 - [ ] **Reminders / alarms** — read/write on both platforms
 - [ ] **Platform-specific extras** — event URL, organizer, and other platform-native fields exposed where supported
