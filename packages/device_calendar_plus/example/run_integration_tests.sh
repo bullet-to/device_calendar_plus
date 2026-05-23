@@ -214,5 +214,20 @@ fi
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
+# Android emulator cleanup: kill the AVD on the way out. Each script
+# invocation should start from a freshly-booted emulator — Android's
+# permission system, ADB sessions, and the calendar provider all
+# accumulate state across runs that breaks subsequent invocations
+# (perms wiped by reinstall → blocking dialog, zombie processes holding
+# the Dart VM service port, stale ADB sessions). Killing here is the
+# cheap half of "fresh emulator per run"; the caller is responsible for
+# booting a fresh AVD before the next invocation.
+# Skipped for real devices (DEVICE_ID won't match emulator-*) and for
+# iOS, where simulator lifecycle is handled separately.
+if [ "$PLATFORM" == "android" ] && [[ "$DEVICE_ID" == emulator-* ]]; then
+    echo -e "${CYAN}🧹 Shutting down emulator $DEVICE_ID${NC}"
+    adb -s "$DEVICE_ID" emu kill > /dev/null 2>&1 || true
+fi
+
 exit $EXIT_CODE
 
