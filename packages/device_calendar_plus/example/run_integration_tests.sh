@@ -14,6 +14,32 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Headless qemu instances left over from a killed `flutter test` driver hold the
+# AVD lock and make the next visible `emulator -avd` launch fail with
+# "Running multiple emulators with the same AVD". Sweep them up before doing
+# anything else. Only targets -headless qemu processes and orphaned helpers
+# (PPID=1) so the visible emulator the user just booted is left alone.
+kill_zombie_headless_emulators() {
+    local headless_pids
+    headless_pids=$(pgrep -f "qemu-system-.*-headless.*-avd" 2>/dev/null || true)
+    if [ -z "$headless_pids" ]; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}⚠️  Found headless emulator(s) from a previous run — cleaning up${NC}"
+    for pid in $headless_pids; do
+        echo "   killing headless qemu (pid $pid)"
+        kill "$pid" 2>/dev/null || true
+    done
+    sleep 2
+
+    ps -axo pid=,ppid=,command= \
+        | awk '$2 == 1 && /Library\/Android\/sdk\/emulator\/(crashpad_handler|netsimd)/ { print $1 }' \
+        | xargs kill 2>/dev/null || true
+}
+
+kill_zombie_headless_emulators
+
 # Function to select device interactively
 select_device() {
     echo -e "${BLUE}📱 Fetching devices:${NC}"
