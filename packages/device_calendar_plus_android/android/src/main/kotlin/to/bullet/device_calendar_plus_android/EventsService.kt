@@ -1426,19 +1426,18 @@ class EventsService(private val context: Context) {
     /**
      * Deletes a recurring event, choosing which occurrences are removed.
      *
-     * [span] is "allEvents" (the whole series) or "thisAndFollowing" (the
-     * occurrence at [timestamp] and every later one). "thisInstance" is
-     * accepted by the public API but currently rejected here — see below.
+     * [span] is "allEvents" (the whole series), "thisAndFollowing" (the
+     * occurrence at [timestamp] and every later one), or "thisInstance"
+     * (only the occurrence at [timestamp]).
      *
-     * iOS supports all three spans via EventKit's `remove(span:)`. On
-     * Android, "thisInstance" needs to insert a cancelled exception via
-     * `CONTENT_EXCEPTION_URI`. The straightforward implementations of that
-     * insert (`ORIGINAL_INSTANCE_TIME + STATUS_CANCELED` and the same plus
-     * explicit `DTSTART + DURATION`) both cause the provider to cancel
-     * every generated instance of the master rather than just the targeted
-     * one. Rather than ship that silent data-loss bug, this returns a
-     * clear error until a correct implementation lands (likely via
-     * `EXDATE` on the master rather than the exception pattern).
+     * "thisInstance" is implemented by appending the occurrence to the
+     * master's `EXDATE` column rather than inserting a cancelled exception
+     * via `CONTENT_EXCEPTION_URI`. The exception-insert path looks correct
+     * on paper but in practice (AOSP CalendarProvider2) cancels every
+     * generated instance of the master rather than just the targeted one —
+     * even when DTSTART/DURATION are supplied explicitly. EXDATE on the
+     * master is the same shape the provider uses internally for ICS-imported
+     * exclusions, and it cleanly drops only the matching occurrence.
      */
     fun deleteRecurring(
         eventId: String,
@@ -1460,14 +1459,7 @@ class EventsService(private val context: Context) {
                 // The whole series — exactly what deleteEvent already does.
                 "allEvents" -> deleteEvent(eventId)
                 "thisAndFollowing" -> deleteRecurringThisAndFollowing(eventId, timestamp)
-                "thisInstance" -> Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.OPERATION_FAILED,
-                        "deleteRecurring with EventSpan.thisInstance is not yet " +
-                        "supported on Android. Use EventSpan.allEvents or " +
-                        "EventSpan.thisAndFollowing, or call deleteRecurring on iOS."
-                    )
-                )
+                "thisInstance" -> deleteRecurringThisInstance(eventId, timestamp)
                 else -> Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.INVALID_ARGUMENTS,
@@ -1552,6 +1544,60 @@ class EventsService(private val context: Context) {
         return Result.success(Unit)
     }
 
+    private fun deleteRecurringThisInstance(
+        eventId: String,
+        timestamp: Long?
+    ): Result<Unit> {
+        if (timestamp == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "thisInstance requires an occurrence timestamp"
+                )
+            )
+        }
+
+        val row = readEventRow(eventId)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+
+        if (row.rrule == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "Event $eventId is not recurring; use deleteEvent instead"
+                )
+            )
+        }
+
+        // Append the occurrence to the master's EXDATE. Same multi-field
+        // touch (DTSTART + DURATION) as the thisAndFollowing path — the
+        // provider doesn't always invalidate the Instances cache when a
+        // single recurrence-related column changes in isolation.
+        val nextExdate = appendExdate(row.exdate, timestamp, row.allDay)
+        val values = android.content.ContentValues().apply {
+            put(CalendarContract.Events.EXDATE, nextExdate)
+            put(CalendarContract.Events.DTSTART, row.dtstart)
+            if (row.duration != null) {
+                put(CalendarContract.Events.DURATION, row.duration)
+            }
+        }
+        val updatedRows = updateEventAsSyncAdapter(eventId, row.calendarId, values)
+        if (updatedRows == 0) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+        }
+        return Result.success(Unit)
+    }
+
     private data class EventRow(
         val id: String,
         val calendarId: String,
@@ -1565,7 +1611,8 @@ class EventsService(private val context: Context) {
         val allDay: Boolean,
         val timeZone: String?,
         val availability: String,
-        val rrule: String?
+        val rrule: String?,
+        val exdate: String?
     )
 
     /** Reads the master row of an event straight from the Events table. */
@@ -1583,7 +1630,8 @@ class EventsService(private val context: Context) {
             CalendarContract.Events.ALL_DAY,
             CalendarContract.Events.EVENT_TIMEZONE,
             CalendarContract.Events.AVAILABILITY,
-            CalendarContract.Events.RRULE
+            CalendarContract.Events.RRULE,
+            CalendarContract.Events.EXDATE
         )
         context.contentResolver.query(
             CalendarContract.Events.CONTENT_URI,
@@ -1616,7 +1664,8 @@ class EventsService(private val context: Context) {
                 availability = availabilityToString(
                     (long(CalendarContract.Events.AVAILABILITY) ?: 0L).toInt()
                 ),
-                rrule = str(CalendarContract.Events.RRULE)
+                rrule = str(CalendarContract.Events.RRULE),
+                exdate = str(CalendarContract.Events.EXDATE)
             )
         }
         return null
@@ -1774,6 +1823,22 @@ class EventsService(private val context: Context) {
             it.isNotEmpty() && key != "COUNT" && key != "UNTIL"
         }
         return (parts + "COUNT=$count").joinToString(";")
+    }
+
+    /**
+     * Appends [instanceMillis] (formatted as a UTC RRULE date or date-time)
+     * to an existing EXDATE string. Multiple exclusions are comma-separated
+     * within a single Events.EXDATE column — CalendarProvider2 parses this
+     * format and drops matching occurrences from the expansion.
+     */
+    private fun appendExdate(
+        existing: String?,
+        instanceMillis: Long,
+        isAllDay: Boolean
+    ): String {
+        val value = formatRruleUtc(instanceMillis, isAllDay)
+        val trimmed = existing?.trim().orEmpty()
+        return if (trimmed.isEmpty()) value else "$trimmed,$value"
     }
 
     /** Replaces any COUNT/UNTIL in [rrule] with UNTIL at [untilMillis] (inclusive). */

@@ -10,10 +10,9 @@
 - `deleteRecurring()` — delete part of a recurring event with a span choice:
   `EventSpan.allEvents` (whole series), `thisAndFollowing` (this occurrence
   and every later one), or `thisInstance` (only this occurrence). Completes
-  the single-occurrence support that `updateRecurring()` started.
-  Note: `EventSpan.thisInstance` is iOS-only at the moment — Android throws
-  "not yet supported"; a follow-up will land Android support (likely via
-  EXDATE on the master rather than the exception-event path).
+  the single-occurrence support that `updateRecurring()` started. On Android
+  `thisInstance` appends the occurrence to the master's `EXDATE`; on iOS it
+  uses EventKit's `remove(span: .thisEvent)`.
   Based on @SuperKrallan (#43)
 - `EventSpan` enum for choosing the scope of a recurring-event operation,
   shared by `updateRecurring()` and `deleteRecurring()`

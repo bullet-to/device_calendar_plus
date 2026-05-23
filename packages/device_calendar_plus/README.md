@@ -558,7 +558,7 @@ await plugin.deleteEvent(event.instanceId);
 
 - `EventSpan.allEvents` — the whole series is deleted (the same as `deleteEvent`).
 - `EventSpan.thisAndFollowing` — the occurrence you pass, and every later one, are removed; the series is truncated to end before it.
-- `EventSpan.thisInstance` — only the occurrence you pass is removed, as a cancelled exception. **iOS only at the moment** — Android throws "not yet supported"; use `thisAndFollowing` or `allEvents` instead, or call from iOS.
+- `EventSpan.thisInstance` — only the occurrence you pass is removed. On iOS this is a cancelled exception via EventKit; on Android the occurrence is appended to the master's `EXDATE`.
 
 ```dart
 final plugin = DeviceCalendar.instance;
@@ -569,7 +569,7 @@ await plugin.deleteRecurring(event.instanceId, EventSpan.allEvents);
 // Delete this occurrence and every later one
 await plugin.deleteRecurring(event.instanceId, EventSpan.thisAndFollowing);
 
-// Delete only this one occurrence, leaving the rest of the series alone (iOS only)
+// Delete only this one occurrence, leaving the rest of the series alone
 await plugin.deleteRecurring(event.instanceId, EventSpan.thisInstance);
 ```
 
