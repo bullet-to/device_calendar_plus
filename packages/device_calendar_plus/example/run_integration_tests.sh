@@ -40,6 +40,18 @@ kill_zombie_headless_emulators() {
 
 kill_zombie_headless_emulators
 
+# Re-grant calendar permissions. Idempotent — pm grant on an already-granted
+# perm is a no-op, and pm grant on an uninstalled app silently errors. Both
+# pm grant (runtime layer) and appops set (system-policy layer) are issued
+# because the runtime grant is wiped on reinstall but appops set survives —
+# belt and braces.
+grant_android_calendar_permissions() {
+    adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.READ_CALENDAR 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.WRITE_CALENDAR 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell appops set to.bullet.example READ_CALENDAR allow 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell appops set to.bullet.example WRITE_CALENDAR allow 2>/dev/null || true
+}
+
 # Function to select device interactively
 select_device() {
     echo -e "${BLUE}📱 Fetching devices:${NC}"
@@ -155,10 +167,7 @@ elif [ "$PLATFORM" == "android" ]; then
     fi
 
     echo "📱 Granting calendar permissions via adb..."
-    adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.READ_CALENDAR 2>/dev/null || true
-    adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.WRITE_CALENDAR 2>/dev/null || true
-    adb -s "$DEVICE_ID" shell appops set to.bullet.example READ_CALENDAR allow 2>/dev/null || true
-    adb -s "$DEVICE_ID" shell appops set to.bullet.example WRITE_CALENDAR allow 2>/dev/null || true
+    grant_android_calendar_permissions
     echo -e "${GREEN}✓${NC} Calendar permissions granted"
     echo ""
 fi
@@ -187,7 +196,28 @@ echo ""
 # Run all integration tests in a single app launch.
 # `flutter test` is used for both platforms: it self-terminates with a real
 # exit code, unlike `flutter drive`, which hangs on teardown.
+#
+# Android quirk: `flutter test` does its own `adb install` before launching,
+# which wipes runtime permissions granted with `pm grant`. There's no hook
+# between install and launch, so we tail-grant in a tight loop in the
+# background — every 0.5s for the lifetime of `flutter test` — which catches
+# the post-install moment within sub-second latency, before the app's first
+# permission check.
 run_tests() {
+    if [ "$PLATFORM" == "android" ]; then
+        (
+            while true; do
+                grant_android_calendar_permissions
+                sleep 0.5
+            done
+        ) &
+        local grant_pid=$!
+        flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
+        local result=$?
+        kill "$grant_pid" 2>/dev/null || true
+        wait "$grant_pid" 2>/dev/null || true
+        return $result
+    fi
     flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
 }
 
