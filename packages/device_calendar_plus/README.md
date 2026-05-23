@@ -552,6 +552,29 @@ await plugin.deleteEvent(event.instanceId);
 await plugin.deleteEvent(event.instanceId);
 ```
 
+### Delete Recurring Events
+
+`deleteEvent` always deletes a whole event. To delete only part of a recurring **series**, use `deleteRecurring`. It takes the same `EventSpan` as `updateRecurring`:
+
+- `EventSpan.allEvents` — the whole series is deleted (the same as `deleteEvent`).
+- `EventSpan.thisAndFollowing` — the occurrence you pass, and every later one, are removed; the series is truncated to end before it.
+- `EventSpan.thisInstance` — only the occurrence you pass is removed, as a cancelled exception. **iOS only at the moment** — Android throws "not yet supported"; use `thisAndFollowing` or `allEvents` instead, or call from iOS.
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Delete the whole series
+await plugin.deleteRecurring(event.instanceId, EventSpan.allEvents);
+
+// Delete this occurrence and every later one
+await plugin.deleteRecurring(event.instanceId, EventSpan.thisAndFollowing);
+
+// Delete only this one occurrence, leaving the rest of the series alone (iOS only)
+await plugin.deleteRecurring(event.instanceId, EventSpan.thisInstance);
+```
+
+For `thisAndFollowing` and `thisInstance`, pass an instance ID (`event.instanceId`) that carries an occurrence timestamp; a bare event ID throws `ArgumentError`. `allEvents` accepts either.
+
 ## 📋 Roadmap
 
 - [x] **Permissions** — request, check, and open settings
@@ -561,6 +584,7 @@ await plugin.deleteEvent(event.instanceId);
 - [x] **Native UI** — show event modal on both platforms
 - [x] **Recurring events** — create and read with sealed RecurrenceRule model (daily, weekly, monthly, yearly)
 - [x] **Update recurrence rules** — change, add or remove a recurrence rule via `updateRecurring`
+- [x] **Delete recurring events** — delete a whole series, this-and-following, or a single occurrence via `deleteRecurring`
 - [ ] **Attendees** — read on both platforms; write on Android (iOS EventKit is read-only for participants)
 - [ ] **Reminders / alarms** — read/write on both platforms
 - [ ] **Platform-specific extras** — event URL, organizer, and other platform-native fields exposed where supported

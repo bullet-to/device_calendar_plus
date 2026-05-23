@@ -62,6 +62,7 @@ class DeviceCalendarPlusAndroidPlugin :
             "deleteEvent" -> handleDeleteEvent(call, result)
             "updateEvent" -> handleUpdateEvent(call, result)
             "updateRecurring" -> handleUpdateRecurring(call, result)
+            "deleteRecurring" -> handleDeleteRecurring(call, result)
             else -> result.notImplemented()
         }
     }
@@ -578,6 +579,45 @@ class DeviceCalendarPlusAndroidPlugin :
 
         serviceResult.fold(
             onSuccess = { affectedEventId -> result.success(affectedEventId) },
+            onFailure = { error ->
+                if (error is CalendarException) {
+                    result.error(error.code, error.message, null)
+                } else {
+                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                }
+            }
+        )
+    }
+
+    private fun handleDeleteRecurring(call: MethodCall, result: Result) {
+        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
+
+        val eventId = call.argument<String>("eventId")
+        if (eventId == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing or invalid eventId",
+                null
+            )
+            return
+        }
+
+        val span = call.argument<String>("span")
+        if (span == null) {
+            result.error(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Missing or invalid span",
+                null
+            )
+            return
+        }
+
+        val timestamp = call.argument<Long>("timestamp")
+
+        val serviceResult = service.deleteRecurring(eventId, timestamp, span)
+
+        serviceResult.fold(
+            onSuccess = { result.success(null) },
             onFailure = { error ->
                 if (error is CalendarException) {
                     result.error(error.code, error.message, null)

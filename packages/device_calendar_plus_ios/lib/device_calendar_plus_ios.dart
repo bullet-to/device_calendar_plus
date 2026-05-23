@@ -243,6 +243,22 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }
 
   @override
+  Future<void> deleteRecurring(
+    String eventId,
+    int? timestamp,
+    String span,
+  ) async {
+    await methodChannel.invokeMethod<void>(
+      'deleteRecurring',
+      <String, dynamic>{
+        'eventId': eventId,
+        'timestamp': timestamp,
+        'span': span,
+      },
+    );
+  }
+
+  @override
   Future<void> showCreateEventModal({
     String? title,
     int? startDate,

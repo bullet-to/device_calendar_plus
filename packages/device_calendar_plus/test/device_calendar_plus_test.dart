@@ -57,6 +57,13 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     Patch<String>? recurrenceRule,
   })? _updateRecurringCallback;
 
+  // Callback to capture deleteRecurring arguments
+  Future<void> Function(
+    String eventId,
+    int? timestamp,
+    String span,
+  )? _deleteRecurringCallback;
+
   void setPermissionStatus(CalendarPermissionStatus status) {
     _permissionStatusCode = status.name;
   }
@@ -130,6 +137,16 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     }) callback,
   ) {
     _updateRecurringCallback = callback;
+  }
+
+  void setDeleteRecurringCallback(
+    Future<void> Function(
+      String eventId,
+      int? timestamp,
+      String span,
+    ) callback,
+  ) {
+    _deleteRecurringCallback = callback;
   }
 
   @override
@@ -306,6 +323,18 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       );
     }
     return 'mock-event-id';
+  }
+
+  @override
+  Future<void> deleteRecurring(
+    String eventId,
+    int? timestamp,
+    String span,
+  ) async {
+    if (_exceptionToThrow != null) throw _exceptionToThrow!;
+    if (_deleteRecurringCallback != null) {
+      return _deleteRecurringCallback!(eventId, timestamp, span);
+    }
   }
 
   // Callback to capture showCreateEventModal arguments
@@ -1017,6 +1046,78 @@ void main() {
         expect(capturedEnd!.hour, 0);
         expect(capturedEnd!.minute, 0);
         expect(capturedEnd!.second, 0);
+      });
+    });
+
+    group('deleteRecurring', () {
+      test('throws ArgumentError when instanceId is empty', () {
+        expect(
+          () => DeviceCalendar.instance.deleteRecurring(
+            '',
+            EventSpan.allEvents,
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when thisAndFollowing given a bare event ID',
+          () {
+        expect(
+          () => DeviceCalendar.instance.deleteRecurring(
+            'event-123',
+            EventSpan.thisAndFollowing,
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when thisInstance given a bare event ID', () {
+        expect(
+          () => DeviceCalendar.instance.deleteRecurring(
+            'event-123',
+            EventSpan.thisInstance,
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('allEvents accepts a bare event ID (no occurrence timestamp)',
+          () async {
+        final mock = MockDeviceCalendarPlusPlatform();
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await expectLater(
+          DeviceCalendar.instance.deleteRecurring(
+            'event-123',
+            EventSpan.allEvents,
+          ),
+          completes,
+        );
+      });
+
+      test('passes the span name and parsed instance ID to the platform',
+          () async {
+        String? capturedEventId;
+        int? capturedTimestamp;
+        String? capturedSpan;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setDeleteRecurringCallback((eventId, timestamp, span) {
+          capturedEventId = eventId;
+          capturedTimestamp = timestamp;
+          capturedSpan = span;
+          return Future.value();
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.deleteRecurring(
+          'event-123@1700000000000',
+          EventSpan.thisAndFollowing,
+        );
+
+        expect(capturedEventId, 'event-123');
+        expect(capturedTimestamp, 1700000000000);
+        expect(capturedSpan, 'thisAndFollowing');
       });
     });
 

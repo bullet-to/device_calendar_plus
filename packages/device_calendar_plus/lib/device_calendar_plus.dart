@@ -1022,6 +1022,81 @@ class DeviceCalendar {
     }
   }
 
+  /// Deletes a recurring event, choosing which occurrences are removed.
+  ///
+  /// Use this instead of [deleteEvent] when only part of a recurring series
+  /// should be removed — [deleteEvent] always deletes the whole series.
+  ///
+  /// [instanceId] identifies the occurrence to act on — pass an instance ID
+  /// (`event.instanceId`). For every [span] except [EventSpan.allEvents] it
+  /// must carry an occurrence timestamp (`eventId@timestamp`); a bare event
+  /// ID throws [ArgumentError].
+  ///
+  /// [span] chooses the scope:
+  /// - [EventSpan.allEvents] — the whole series is deleted (the same result
+  ///   as [deleteEvent]).
+  /// - [EventSpan.thisAndFollowing] — the occurrence at the timestamp and
+  ///   every later one are removed; the series is truncated to end before it.
+  ///   Earlier occurrences are untouched.
+  /// - [EventSpan.thisInstance] — only that occurrence is removed, as a
+  ///   cancelled exception; the rest of the series is untouched.
+  ///
+  /// Requires calendar write permissions - call [requestPermissions] first.
+  ///
+  /// Example:
+  /// ```dart
+  /// final plugin = DeviceCalendar.instance;
+  ///
+  /// // Delete the whole series
+  /// await plugin.deleteRecurring(event.instanceId, EventSpan.allEvents);
+  ///
+  /// // Delete this occurrence and every later one
+  /// await plugin.deleteRecurring(
+  ///   event.instanceId,
+  ///   EventSpan.thisAndFollowing,
+  /// );
+  ///
+  /// // Delete only this one occurrence, leaving the rest of the series alone
+  /// await plugin.deleteRecurring(event.instanceId, EventSpan.thisInstance);
+  /// ```
+  Future<void> deleteRecurring(String instanceId, EventSpan span) async {
+    // Validate instanceId
+    if (instanceId.trim().isEmpty) {
+      throw ArgumentError.value(
+        instanceId,
+        'instanceId',
+        'Instance ID cannot be empty',
+      );
+    }
+
+    // Parse the ID — every span except allEvents acts on a specific
+    // occurrence, so it needs an occurrence timestamp.
+    final parsed = InstanceIdParser.parse(instanceId);
+    if (span != EventSpan.allEvents && parsed.timestamp == null) {
+      throw ArgumentError.value(
+        instanceId,
+        'instanceId',
+        'EventSpan.${span.name} requires an instance ID with an '
+            'occurrence timestamp (eventId@timestamp)',
+      );
+    }
+
+    try {
+      await DeviceCalendarPlusPlatform.instance.deleteRecurring(
+        parsed.eventId,
+        parsed.timestamp,
+        span.name,
+      );
+    } on PlatformException catch (e, stackTrace) {
+      final convertedException =
+          PlatformExceptionConverter.convertPlatformException(e);
+      if (convertedException != null) {
+        Error.throwWithStackTrace(convertedException, stackTrace);
+      }
+      rethrow;
+    }
+  }
+
   /// Opens the native platform calendar editor in create mode.
   ///
   /// All parameters are optional pre-fill values. The native editor opens

@@ -51,6 +51,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       handleUpdateEvent(call: call, result: result)
     case "updateRecurring":
       handleUpdateRecurring(call: call, result: result)
+    case "deleteRecurring":
+      handleDeleteRecurring(call: call, result: result)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -655,6 +657,54 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
         switch serviceResult {
         case .success(let affectedEventId):
           result(affectedEventId)
+        case .failure(let error):
+          result(FlutterError(code: error.code, message: error.message, details: nil))
+        }
+      }
+    }
+  }
+
+  private func handleDeleteRecurring(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard let args = call.arguments as? [String: Any] else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Invalid arguments for deleteRecurring",
+        details: nil
+      ))
+      return
+    }
+
+    // Parse event ID (required)
+    guard let eventId = args["eventId"] as? String else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Missing or invalid eventId",
+        details: nil
+      ))
+      return
+    }
+
+    // Parse span (required)
+    guard let span = args["span"] as? String else {
+      result(FlutterError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Missing or invalid span",
+        details: nil
+      ))
+      return
+    }
+
+    let timestamp = args["timestamp"] as? Int64
+
+    eventsService.deleteRecurring(
+      eventId: eventId,
+      timestamp: timestamp,
+      span: span
+    ) { serviceResult in
+      DispatchQueue.main.async {
+        switch serviceResult {
+        case .success:
+          result(nil)
         case .failure(let error):
           result(FlutterError(code: error.code, message: error.message, details: nil))
         }
