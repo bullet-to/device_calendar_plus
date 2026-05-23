@@ -100,6 +100,22 @@ echo -e "${GREEN}✓${NC} Device ID: ${YELLOW}$DEVICE_ID${NC}"
 echo -e "${GREEN}✓${NC} Platform: ${YELLOW}$PLATFORM${NC}"
 echo ""
 
+# Pre-flight: kill any leftover Android emulators that aren't the target.
+# Leftover AVDs from earlier runs or other workflows can hold ADB sessions,
+# Dart VM service ports, or installed-app state that interferes with this
+# run. The target DEVICE_ID is left alone — the caller is expected to have
+# booted a fresh AVD for that one.
+if [ "$PLATFORM" == "android" ]; then
+    LEFTOVERS=$(adb devices | awk '/^emulator-/ {print $1}' | grep -v "^${DEVICE_ID}$" || true)
+    if [ -n "$LEFTOVERS" ]; then
+        for emu in $LEFTOVERS; do
+            echo -e "${YELLOW}🧹 Killing leftover emulator: $emu${NC}"
+            adb -s "$emu" emu kill > /dev/null 2>&1 || true
+        done
+        echo ""
+    fi
+fi
+
 # Grant permissions based on platform
 if [ "$PLATFORM" == "ios" ]; then
     echo "🍎 iOS detected"
@@ -214,19 +230,20 @@ fi
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-# Android emulator cleanup: kill the AVD on the way out. Each script
-# invocation should start from a freshly-booted emulator — Android's
-# permission system, ADB sessions, and the calendar provider all
-# accumulate state across runs that breaks subsequent invocations
-# (perms wiped by reinstall → blocking dialog, zombie processes holding
-# the Dart VM service port, stale ADB sessions). Killing here is the
-# cheap half of "fresh emulator per run"; the caller is responsible for
-# booting a fresh AVD before the next invocation.
-# Skipped for real devices (DEVICE_ID won't match emulator-*) and for
-# iOS, where simulator lifecycle is handled separately.
+# Device cleanup: shut down the AVD / simulator on the way out. Each
+# script invocation should start from a freshly-booted device —
+# accumulated state across runs (perms wiped by reinstall, zombie test
+# processes holding the Dart VM service port, calendar provider DB
+# from earlier tests) breaks subsequent invocations in subtle ways.
+# Killing here is the cheap half of "fresh device per run"; the caller
+# boots a fresh AVD / simulator before the next invocation.
+# Android: skipped for real devices (DEVICE_ID won't match emulator-*).
 if [ "$PLATFORM" == "android" ] && [[ "$DEVICE_ID" == emulator-* ]]; then
     echo -e "${CYAN}🧹 Shutting down emulator $DEVICE_ID${NC}"
     adb -s "$DEVICE_ID" emu kill > /dev/null 2>&1 || true
+elif [ "$PLATFORM" == "ios" ]; then
+    echo -e "${CYAN}🧹 Shutting down simulator $DEVICE_ID${NC}"
+    xcrun simctl shutdown "$DEVICE_ID" > /dev/null 2>&1 || true
 fi
 
 exit $EXIT_CODE
