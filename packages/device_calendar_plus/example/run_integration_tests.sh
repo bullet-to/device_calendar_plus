@@ -100,22 +100,6 @@ echo -e "${GREEN}✓${NC} Device ID: ${YELLOW}$DEVICE_ID${NC}"
 echo -e "${GREEN}✓${NC} Platform: ${YELLOW}$PLATFORM${NC}"
 echo ""
 
-# Pre-flight: kill any leftover Android emulators that aren't the target.
-# Leftover AVDs from earlier runs or other workflows can hold ADB sessions,
-# Dart VM service ports, or installed-app state that interferes with this
-# run. The target DEVICE_ID is left alone — the caller is expected to have
-# booted a fresh AVD for that one.
-if [ "$PLATFORM" == "android" ]; then
-    LEFTOVERS=$(adb devices | awk '/^emulator-/ {print $1}' | grep -v "^${DEVICE_ID}$" || true)
-    if [ -n "$LEFTOVERS" ]; then
-        for emu in $LEFTOVERS; do
-            echo -e "${YELLOW}🧹 Killing leftover emulator: $emu${NC}"
-            adb -s "$emu" emu kill > /dev/null 2>&1 || true
-        done
-        echo ""
-    fi
-fi
-
 # Grant permissions based on platform
 if [ "$PLATFORM" == "ios" ]; then
     echo "🍎 iOS detected"
@@ -134,18 +118,22 @@ if [ "$PLATFORM" == "ios" ]; then
 
 elif [ "$PLATFORM" == "android" ]; then
     echo "🤖 Android detected"
-    echo "📱 Granting calendar permissions via adb..."
 
-    # Belt-and-braces: pm grant sets the runtime permission at the package
-    # level (clears on reinstall in some Android versions); appops sets the
-    # underlying op at the OS-policy layer, which survives reinstall more
-    # reliably. Both are best-effort — they succeed once the app is installed.
-    # On a fresh device, run the script once to install the app, then again
-    # to test.
+    # pm grant only works once the app is installed. If it isn't installed
+    # yet, do a build+install pass first so we can grant before the test run.
+    if ! adb -s "$DEVICE_ID" shell pm list packages 2>/dev/null | grep -q 'to.bullet.example'; then
+        echo "📦 App not installed — building and installing first..."
+        (cd "$(dirname "$0")" && flutter build apk --debug -t integration_test/all_tests.dart)
+        adb -s "$DEVICE_ID" install build/app/outputs/flutter-apk/app-debug.apk
+        echo ""
+    fi
+
+    echo "📱 Granting calendar permissions via adb..."
     adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.READ_CALENDAR 2>/dev/null || true
     adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.WRITE_CALENDAR 2>/dev/null || true
     adb -s "$DEVICE_ID" shell appops set to.bullet.example READ_CALENDAR allow 2>/dev/null || true
     adb -s "$DEVICE_ID" shell appops set to.bullet.example WRITE_CALENDAR allow 2>/dev/null || true
+    echo -e "${GREEN}✓${NC} Calendar permissions granted"
     echo ""
 fi
 
@@ -230,20 +218,16 @@ fi
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-# Device cleanup: shut down the AVD / simulator on the way out. Each
-# script invocation should start from a freshly-booted device —
-# accumulated state across runs (perms wiped by reinstall, zombie test
-# processes holding the Dart VM service port, calendar provider DB
-# from earlier tests) breaks subsequent invocations in subtle ways.
-# Killing here is the cheap half of "fresh device per run"; the caller
-# boots a fresh AVD / simulator before the next invocation.
-# Android: skipped for real devices (DEVICE_ID won't match emulator-*).
-if [ "$PLATFORM" == "android" ] && [[ "$DEVICE_ID" == emulator-* ]]; then
-    echo -e "${CYAN}🧹 Shutting down emulator $DEVICE_ID${NC}"
-    adb -s "$DEVICE_ID" emu kill > /dev/null 2>&1 || true
+# Device cleanup: uninstall the app so accumulated state (calendar
+# provider DB, stale permissions, zombie Dart VM service ports) doesn't
+# leak into the next run. The pre-install step at the top of the script
+# will reinstall and re-grant permissions on the next invocation.
+if [ "$PLATFORM" == "android" ]; then
+    echo -e "${CYAN}🧹 Uninstalling app from $DEVICE_ID${NC}"
+    adb -s "$DEVICE_ID" uninstall to.bullet.example > /dev/null 2>&1 || true
 elif [ "$PLATFORM" == "ios" ]; then
-    echo -e "${CYAN}🧹 Shutting down simulator $DEVICE_ID${NC}"
-    xcrun simctl shutdown "$DEVICE_ID" > /dev/null 2>&1 || true
+    echo -e "${CYAN}🧹 Uninstalling app from $DEVICE_ID${NC}"
+    xcrun simctl uninstall "$DEVICE_ID" to.bullet.example > /dev/null 2>&1 || true
 fi
 
 exit $EXIT_CODE
