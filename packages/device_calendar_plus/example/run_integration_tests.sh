@@ -120,11 +120,16 @@ elif [ "$PLATFORM" == "android" ]; then
     echo "🤖 Android detected"
     echo "📱 Granting calendar permissions via adb..."
 
-    # Best-effort: this succeeds once the app is installed, and the grant
-    # persists across the reinstall that `flutter test` performs. On a fresh
-    # device, run the script once to install the app, then again to test.
+    # Belt-and-braces: pm grant sets the runtime permission at the package
+    # level (clears on reinstall in some Android versions); appops sets the
+    # underlying op at the OS-policy layer, which survives reinstall more
+    # reliably. Both are best-effort — they succeed once the app is installed.
+    # On a fresh device, run the script once to install the app, then again
+    # to test.
     adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.READ_CALENDAR 2>/dev/null || true
     adb -s "$DEVICE_ID" shell pm grant to.bullet.example android.permission.WRITE_CALENDAR 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell appops set to.bullet.example READ_CALENDAR allow 2>/dev/null || true
+    adb -s "$DEVICE_ID" shell appops set to.bullet.example WRITE_CALENDAR allow 2>/dev/null || true
     echo ""
 fi
 
