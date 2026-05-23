@@ -494,11 +494,11 @@ await plugin.updateEvent(
 
 ### Update Recurring Events
 
-`updateEvent` always updates a whole event. To edit a recurring **series** — including changing or removing its recurrence rule — use `updateRecurring`. It takes an `EventUpdateSpan`:
+`updateEvent` always updates a whole event. To edit a recurring **series** — including changing or removing its recurrence rule — use `updateRecurring`. It takes an `EventSpan`:
 
-- `EventUpdateSpan.allEvents` — the change applies to the whole series.
-- `EventUpdateSpan.thisAndFollowing` — the series is split: the occurrence you pass, and every later one, carry the change.
-- `EventUpdateSpan.thisInstance` — only the occurrence you pass is changed, as a detached exception.
+- `EventSpan.allEvents` — the change applies to the whole series.
+- `EventSpan.thisAndFollowing` — the series is split: the occurrence you pass, and every later one, carry the change.
+- `EventSpan.thisInstance` — only the occurrence you pass is changed, as a detached exception.
 
 ```dart
 final plugin = DeviceCalendar.instance;
@@ -506,14 +506,14 @@ final plugin = DeviceCalendar.instance;
 // Change the whole series to weekly
 await plugin.updateRecurring(
   event.instanceId,
-  EventUpdateSpan.allEvents,
+  EventSpan.allEvents,
   recurrenceRule: Patch.set(WeeklyRecurrence(end: CountEnd(10))),
 );
 
 // Stop the series recurring — it becomes a single, non-recurring event
 await plugin.updateRecurring(
   event.instanceId,
-  EventUpdateSpan.allEvents,
+  EventSpan.allEvents,
   recurrenceRule: Patch.clear(),
 );
 
@@ -521,7 +521,7 @@ await plugin.updateRecurring(
 // Returns the new series' event ID.
 final newSeriesId = await plugin.updateRecurring(
   event.instanceId,
-  EventUpdateSpan.thisAndFollowing,
+  EventSpan.thisAndFollowing,
   startDate: DateTime(2024, 3, 21, 15, 0),
   endDate: DateTime(2024, 3, 21, 16, 0),
 );
@@ -529,7 +529,7 @@ final newSeriesId = await plugin.updateRecurring(
 // Change only this one occurrence, leaving the rest of the series alone.
 await plugin.updateRecurring(
   event.instanceId,
-  EventUpdateSpan.thisInstance,
+  EventSpan.thisInstance,
   title: 'Moved this week only',
 );
 ```

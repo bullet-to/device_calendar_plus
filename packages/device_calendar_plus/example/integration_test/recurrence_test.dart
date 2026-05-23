@@ -382,7 +382,7 @@ void main() {
 
       final result = await plugin.updateRecurring(
         series.eventId,
-        EventUpdateSpan.allEvents,
+        EventSpan.allEvents,
         recurrenceRule: Patch.set(const WeeklyRecurrence(
           daysOfWeek: [DayOfWeek.monday],
           end: CountEnd(5),
@@ -403,7 +403,7 @@ void main() {
 
       await plugin.updateRecurring(
         series.eventId,
-        EventUpdateSpan.allEvents,
+        EventSpan.allEvents,
         recurrenceRule: const Patch.clear(),
       );
 
@@ -426,7 +426,7 @@ void main() {
 
       await plugin.updateRecurring(
         splitPoint.instanceId,
-        EventUpdateSpan.thisAndFollowing,
+        EventSpan.thisAndFollowing,
         title: 'Split Tail',
       );
 
@@ -465,7 +465,7 @@ void main() {
 
       final newSeriesId = await plugin.updateRecurring(
         splitPoint.instanceId,
-        EventUpdateSpan.thisAndFollowing,
+        EventSpan.thisAndFollowing,
         recurrenceRule: Patch.set(const WeeklyRecurrence(end: CountEnd(3))),
       );
 
@@ -485,7 +485,7 @@ void main() {
 
       await plugin.updateRecurring(
         target.instanceId,
-        EventUpdateSpan.thisInstance,
+        EventSpan.thisInstance,
         title: 'Just this one',
       );
 

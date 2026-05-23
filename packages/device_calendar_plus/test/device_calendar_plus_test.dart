@@ -795,7 +795,7 @@ void main() {
         expect(
           () => DeviceCalendar.instance.updateRecurring(
             '',
-            EventUpdateSpan.allEvents,
+            EventSpan.allEvents,
             title: 'New Title',
           ),
           throwsArgumentError,
@@ -806,7 +806,7 @@ void main() {
         expect(
           () => DeviceCalendar.instance.updateRecurring(
             'event-123',
-            EventUpdateSpan.allEvents,
+            EventSpan.allEvents,
           ),
           throwsArgumentError,
         );
@@ -817,7 +817,7 @@ void main() {
         expect(
           () => DeviceCalendar.instance.updateRecurring(
             'event-123',
-            EventUpdateSpan.thisAndFollowing,
+            EventSpan.thisAndFollowing,
             title: 'New Title',
           ),
           throwsArgumentError,
@@ -828,7 +828,7 @@ void main() {
         expect(
           () => DeviceCalendar.instance.updateRecurring(
             'event-123',
-            EventUpdateSpan.thisInstance,
+            EventSpan.thisInstance,
             title: 'New Title',
           ),
           throwsArgumentError,
@@ -840,7 +840,7 @@ void main() {
         expect(
           () => DeviceCalendar.instance.updateRecurring(
             'event-123@1700000000000',
-            EventUpdateSpan.thisInstance,
+            EventSpan.thisInstance,
             recurrenceRule: Patch.set(const DailyRecurrence()),
           ),
           throwsArgumentError,
@@ -851,7 +851,7 @@ void main() {
         expect(
           () => DeviceCalendar.instance.updateRecurring(
             'event-123',
-            EventUpdateSpan.allEvents,
+            EventSpan.allEvents,
             startDate: DateTime(2024, 3, 20, 11, 0),
             endDate: DateTime(2024, 3, 20, 10, 0),
           ),
@@ -863,7 +863,7 @@ void main() {
           () async {
         final result = await DeviceCalendar.instance.updateRecurring(
           'event-123',
-          EventUpdateSpan.allEvents,
+          EventSpan.allEvents,
           title: 'New Title',
         );
         expect(result, 'mock-event-id');
@@ -900,7 +900,7 @@ void main() {
 
         final result = await DeviceCalendar.instance.updateRecurring(
           'event-123@1700000000000',
-          EventUpdateSpan.thisAndFollowing,
+          EventSpan.thisAndFollowing,
           title: 'New Title',
         );
 
@@ -936,7 +936,7 @@ void main() {
 
         await DeviceCalendar.instance.updateRecurring(
           'event-123',
-          EventUpdateSpan.allEvents,
+          EventSpan.allEvents,
           recurrenceRule: Patch.set(const DailyRecurrence(end: CountEnd(5))),
         );
 
@@ -970,7 +970,7 @@ void main() {
 
         await DeviceCalendar.instance.updateRecurring(
           'event-123',
-          EventUpdateSpan.allEvents,
+          EventSpan.allEvents,
           recurrenceRule: const Patch.clear(),
         );
 
@@ -1005,7 +1005,7 @@ void main() {
 
         await DeviceCalendar.instance.updateRecurring(
           'event-123',
-          EventUpdateSpan.allEvents,
+          EventSpan.allEvents,
           startDate: DateTime(2024, 3, 15, 14, 30, 45),
           endDate: DateTime(2024, 3, 16, 18, 15, 30),
           isAllDay: true,

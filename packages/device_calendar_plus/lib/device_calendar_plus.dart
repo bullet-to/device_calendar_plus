@@ -6,7 +6,7 @@ import 'src/calendar_permission_status.dart';
 import 'src/calendar_source.dart';
 import 'src/event.dart';
 import 'src/event_availability.dart';
-import 'src/event_update_span.dart';
+import 'src/event_span.dart';
 import 'src/platform_exception_converter.dart';
 import 'src/recurrence_rule.dart';
 
@@ -32,7 +32,7 @@ export 'src/device_calendar_error.dart';
 export 'src/event.dart';
 export 'src/event_availability.dart';
 export 'src/event_status.dart';
-export 'src/event_update_span.dart';
+export 'src/event_span.dart';
 export 'src/platform_exception_codes.dart';
 export 'src/recurrence_rule.dart';
 
@@ -847,17 +847,17 @@ class DeviceCalendar {
   /// series. For non-recurring events, keep using [updateEvent].
   ///
   /// [instanceId] identifies the occurrence to act on — pass an instance ID
-  /// (`event.instanceId`). For every [span] except [EventUpdateSpan.allEvents]
+  /// (`event.instanceId`). For every [span] except [EventSpan.allEvents]
   /// it must carry an occurrence timestamp (`eventId@timestamp`); a bare event
   /// ID throws [ArgumentError].
   ///
   /// [span] chooses the scope:
-  /// - [EventUpdateSpan.allEvents] — the whole series follows the change.
+  /// - [EventSpan.allEvents] — the whole series follows the change.
   ///   Clearing [recurrenceRule] collapses the series into a single event.
-  /// - [EventUpdateSpan.thisAndFollowing] — the series is split at the
+  /// - [EventSpan.thisAndFollowing] — the series is split at the
   ///   occurrence timestamp: that occurrence and every later one carry the
   ///   edit; earlier occurrences are untouched.
-  /// - [EventUpdateSpan.thisInstance] — only that occurrence is edited, as a
+  /// - [EventSpan.thisInstance] — only that occurrence is edited, as a
   ///   detached exception; the rest of the series is untouched.
   ///   [recurrenceRule] cannot be used with this span.
   ///
@@ -889,21 +889,21 @@ class DeviceCalendar {
   /// // Change the whole series to weekly
   /// await plugin.updateRecurring(
   ///   event.instanceId,
-  ///   EventUpdateSpan.allEvents,
+  ///   EventSpan.allEvents,
   ///   recurrenceRule: Patch.set(WeeklyRecurrence(end: CountEnd(10))),
   /// );
   ///
   /// // Stop the series recurring (becomes a single event)
   /// await plugin.updateRecurring(
   ///   event.instanceId,
-  ///   EventUpdateSpan.allEvents,
+  ///   EventSpan.allEvents,
   ///   recurrenceRule: Patch.clear(),
   /// );
   ///
   /// // Split: this occurrence and every later one move to a new time
   /// final newSeriesId = await plugin.updateRecurring(
   ///   event.instanceId,
-  ///   EventUpdateSpan.thisAndFollowing,
+  ///   EventSpan.thisAndFollowing,
   ///   startDate: DateTime(2024, 3, 21, 15, 0),
   ///   endDate: DateTime(2024, 3, 21, 16, 0),
   /// );
@@ -911,13 +911,13 @@ class DeviceCalendar {
   /// // Edit only this one occurrence, leaving the rest of the series alone
   /// await plugin.updateRecurring(
   ///   event.instanceId,
-  ///   EventUpdateSpan.thisInstance,
+  ///   EventSpan.thisInstance,
   ///   title: 'Moved this week only',
   /// );
   /// ```
   Future<String> updateRecurring(
     String instanceId,
-    EventUpdateSpan span, {
+    EventSpan span, {
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -941,21 +941,21 @@ class DeviceCalendar {
     // Parse the ID — every span except allEvents acts on a specific
     // occurrence, so it needs an occurrence timestamp.
     final parsed = InstanceIdParser.parse(instanceId);
-    if (span != EventUpdateSpan.allEvents && parsed.timestamp == null) {
+    if (span != EventSpan.allEvents && parsed.timestamp == null) {
       throw ArgumentError.value(
         instanceId,
         'instanceId',
-        'EventUpdateSpan.${span.name} requires an instance ID with an '
+        'EventSpan.${span.name} requires an instance ID with an '
             'occurrence timestamp (eventId@timestamp)',
       );
     }
 
     // A single occurrence has no recurrence rule of its own.
-    if (span == EventUpdateSpan.thisInstance && recurrenceRule != null) {
+    if (span == EventSpan.thisInstance && recurrenceRule != null) {
       throw ArgumentError.value(
         recurrenceRule,
         'recurrenceRule',
-        'recurrenceRule cannot be set with EventUpdateSpan.thisInstance',
+        'recurrenceRule cannot be set with EventSpan.thisInstance',
       );
     }
 

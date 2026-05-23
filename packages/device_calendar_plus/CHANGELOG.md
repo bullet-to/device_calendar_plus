@@ -2,12 +2,12 @@
 
 ### Added
 - `updateRecurring()` — update a recurring event with a span choice:
-  `EventUpdateSpan.allEvents` (whole series), `thisAndFollowing` (this
+  `EventSpan.allEvents` (whole series), `thisAndFollowing` (this
   occurrence and every later one), or `thisInstance` (only this occurrence).
   Can change or remove the recurrence rule. Resolves the long-standing
   limitation that `updateEvent()` could not edit recurrence.
   Based on @SuperKrallan (#36)
-- `EventUpdateSpan` enum for choosing the scope of a recurring-event edit
+- `EventSpan` enum for choosing the scope of a recurring-event operation
 - `url` parameter on `updateEvent()` — based on @SuperKrallan (#38)
 
 ### Changed

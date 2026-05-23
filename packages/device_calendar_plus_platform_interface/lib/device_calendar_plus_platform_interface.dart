@@ -231,7 +231,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// [eventId] is the event identifier. [timestamp] is the occurrence
   /// timestamp in milliseconds — required for every [span] except `allEvents`.
   ///
-  /// [span] is the [EventUpdateSpan] name: `allEvents` updates the whole
+  /// [span] is the `EventSpan` name: `allEvents` updates the whole
   /// series; `thisAndFollowing` splits it at [timestamp]; `thisInstance`
   /// detaches and edits only that occurrence.
   ///
