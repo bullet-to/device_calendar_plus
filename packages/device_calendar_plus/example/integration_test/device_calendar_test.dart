@@ -4,6 +4,33 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+/// Probes whether the given calendar's source supports event availability.
+///
+/// iOS calendars on the `.local` source (the simulator fallback when iCloud
+/// isn't signed in) silently drop the availability flag and always read back
+/// as `EventAvailability.notSupported`. Android calendars all support
+/// availability via the AVAILABILITY column.
+///
+/// The probe writes and immediately deletes a short throwaway event, so
+/// callers can use the result to choose between asserting the requested
+/// round-trip vs asserting the unsupported sentinel.
+Future<bool> calendarSupportsAvailability(
+  DeviceCalendar plugin,
+  String calendarId,
+) async {
+  final probeStart = DateTime.now().add(const Duration(days: 365));
+  final probeId = await plugin.createEvent(
+    calendarId: calendarId,
+    title: '__availability_probe__',
+    startDate: probeStart,
+    endDate: probeStart.add(const Duration(minutes: 1)),
+    availability: EventAvailability.busy,
+  );
+  final probe = await plugin.getEvent(probeId);
+  await plugin.deleteEvent(eventId: probeId);
+  return probe?.availability == EventAvailability.busy;
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -612,6 +639,9 @@ void main() {
       );
       createdCalendarIds.add(calendarId);
 
+      final supportsAvailability =
+          await calendarSupportsAvailability(plugin, calendarId);
+
       final now = DateTime.now();
       final availabilities = [
         EventAvailability.busy,
@@ -634,9 +664,19 @@ void main() {
 
         expect(eventId, isNotEmpty);
 
-        // Verify availability was saved correctly
+        // On calendars that support availability the value round-trips;
+        // on iOS .local-source calendars (the simulator's iCloud-less
+        // fallback) the value always reads back as notSupported regardless
+        // of what was set.
         final event = await plugin.getEvent(eventId);
-        expect(event?.availability, availability);
+        if (supportsAvailability) {
+          expect(event?.availability, availability,
+              reason: 'availability must round-trip on supporting calendars');
+        } else {
+          expect(event?.availability, EventAvailability.notSupported,
+              reason:
+                  'calendars without availability support read back as notSupported');
+        }
       }
     });
 
@@ -647,6 +687,14 @@ void main() {
         name: 'Update Availability Test $timestamp',
       );
       createdCalendarIds.add(calendarId);
+
+      final supportsAvailability =
+          await calendarSupportsAvailability(plugin, calendarId);
+      // On calendars that don't support availability the read always
+      // returns notSupported; there's no meaningful update path to
+      // exercise here.
+      EventAvailability expectedAfterUpdate(EventAvailability set) =>
+          supportsAvailability ? set : EventAvailability.notSupported;
 
       final now = DateTime.now();
       final startDate = DateTime(now.year, now.month, now.day, 10, 0);
@@ -661,9 +709,9 @@ void main() {
         availability: EventAvailability.busy,
       );
 
-      // 2. Verify it's 'busy'
+      // 2. Verify it's 'busy' (or notSupported on iOS Local)
       var event = await plugin.getEvent(eventId);
-      expect(event?.availability, EventAvailability.busy);
+      expect(event?.availability, expectedAfterUpdate(EventAvailability.busy));
 
       // 3. Update to 'free'
       await plugin.updateEvent(
@@ -671,9 +719,9 @@ void main() {
         availability: EventAvailability.free,
       );
 
-      // 4. Verify it's now 'free'
+      // 4. Verify it's now 'free' (or notSupported)
       event = await plugin.getEvent(eventId);
-      expect(event?.availability, EventAvailability.free);
+      expect(event?.availability, expectedAfterUpdate(EventAvailability.free));
 
       // 5. Update to 'tentative'
       await plugin.updateEvent(
@@ -681,9 +729,10 @@ void main() {
         availability: EventAvailability.tentative,
       );
 
-      // 6. Verify it's now 'tentative'
+      // 6. Verify it's now 'tentative' (or notSupported)
       event = await plugin.getEvent(eventId);
-      expect(event?.availability, EventAvailability.tentative);
+      expect(event?.availability,
+          expectedAfterUpdate(EventAvailability.tentative));
     });
 
     test('Update Event Title', () async {
