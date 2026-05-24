@@ -2,6 +2,42 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+/// Creates a daily recurring event starting one hour from now (UTC), with
+/// `count` total occurrences. Returns the event ID and the start time.
+Future<({String eventId, DateTime start})> createDailySeries(
+  DeviceCalendar plugin,
+  String calendarId, {
+  int count = 10,
+}) async {
+  final start = DateTime.now().add(const Duration(hours: 1));
+  final eventId = await plugin.createEvent(
+    calendarId: calendarId,
+    title: 'Daily Series',
+    startDate: start,
+    endDate: start.add(const Duration(hours: 1)),
+    recurrenceRule: DailyRecurrence(end: CountEnd(count)),
+    timeZone: 'UTC',
+  );
+  return (eventId: eventId, start: start);
+}
+
+/// Lists the occurrences of `eventId` in the calendar over a window wide
+/// enough to capture the whole series, in date order as returned by the
+/// platform.
+Future<List<Event>> occurrencesOf(
+  DeviceCalendar plugin,
+  String calendarId,
+  String eventId,
+  DateTime start,
+) async {
+  final events = await plugin.listEvents(
+    start.subtract(const Duration(days: 1)),
+    start.add(const Duration(days: 14)),
+    calendarIds: [calendarId],
+  );
+  return events.where((e) => e.eventId == eventId).toList();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -349,36 +385,10 @@ void main() {
       }
     });
 
-    /// Creates a daily recurring event, returning its ID and start date.
-    Future<({String eventId, DateTime start})> createDailySeries({
-      int count = 10,
-    }) async {
-      final start = DateTime.now().add(const Duration(hours: 1));
-      final eventId = await plugin.createEvent(
-        calendarId: calendarId!,
-        title: 'Daily Series',
-        startDate: start,
-        endDate: start.add(const Duration(hours: 1)),
-        recurrenceRule: DailyRecurrence(end: CountEnd(count)),
-        timeZone: 'UTC',
-      );
-      return (eventId: eventId, start: start);
-    }
-
-    /// Lists the occurrences of [eventId] around [start], in date order.
-    Future<List<Event>> occurrencesOf(String eventId, DateTime start) async {
-      final events = await plugin.listEvents(
-        start.subtract(const Duration(days: 1)),
-        start.add(const Duration(days: 14)),
-        calendarIds: [calendarId!],
-      );
-      return events.where((e) => e.eventId == eventId).toList();
-    }
-
     test('allEvents changes the recurrence rule for the whole series',
         () async {
-      if (calendarId == null) return;
-      final series = await createDailySeries();
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!);
 
       final result = await plugin.updateRecurring(
         series.eventId,
@@ -394,12 +404,16 @@ void main() {
       final updated = await plugin.getEvent(series.eventId);
       expect(updated, isNotNull);
       expect(updated!.isRecurring, isTrue);
-      expect(updated.recurrenceRule, isA<WeeklyRecurrence>());
+      final weekly = updated.recurrenceRule as WeeklyRecurrence;
+      expect(weekly.daysOfWeek, [DayOfWeek.monday],
+          reason: 'daysOfWeek must round-trip through update');
+      expect((weekly.end as CountEnd).count, 5,
+          reason: 'count must round-trip through update');
     });
 
     test('allEvents with Patch.clear removes recurrence', () async {
-      if (calendarId == null) return;
-      final series = await createDailySeries();
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!);
 
       await plugin.updateRecurring(
         series.eventId,
@@ -415,10 +429,11 @@ void main() {
 
     test('thisAndFollowing splits so the anchor occurrence carries the change',
         () async {
-      if (calendarId == null) return;
-      final series = await createDailySeries(count: 10);
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
 
-      final occurrences = await occurrencesOf(series.eventId, series.start);
+      final occurrences =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6),
           reason: 'the daily series should have expanded into occurrences');
       final splitPoint = occurrences[4];
@@ -456,12 +471,14 @@ void main() {
 
     test('thisAndFollowing can change the rule from the split point onward',
         () async {
-      if (calendarId == null) return;
-      final series = await createDailySeries(count: 10);
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
 
-      final occurrences = await occurrencesOf(series.eventId, series.start);
+      final occurrences =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
       final splitPoint = occurrences[4];
+      final splitMillis = splitPoint.startDate.millisecondsSinceEpoch;
 
       final newSeriesId = await plugin.updateRecurring(
         splitPoint.instanceId,
@@ -469,17 +486,27 @@ void main() {
         recurrenceRule: Patch.set(const WeeklyRecurrence(end: CountEnd(3))),
       );
 
+      // The new series carries the new rule with the requested count.
       final newSeries = await plugin.getEvent(newSeriesId);
       expect(newSeries, isNotNull);
-      expect(newSeries!.recurrenceRule, isA<WeeklyRecurrence>());
+      final weekly = newSeries!.recurrenceRule as WeeklyRecurrence;
+      expect((weekly.end as CountEnd).count, 3,
+          reason: 'count from the new rule must round-trip');
+
+      // The new series starts at the split point — i.e. the anchor
+      // occurrence is now the first occurrence of the new series.
+      expect(newSeries.startDate.millisecondsSinceEpoch, splitMillis,
+          reason: 'the new series must start at the split point');
     });
 
     test('thisInstance edits only the one occurrence', () async {
-      if (calendarId == null) return;
-      final series = await createDailySeries(count: 10);
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
 
-      final occurrences = await occurrencesOf(series.eventId, series.start);
+      final occurrences =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
+      final initialCount = occurrences.length;
       final target = occurrences[4];
       final targetMillis = target.startDate.millisecondsSinceEpoch;
 
@@ -501,10 +528,10 @@ void main() {
           reason: 'only the targeted occurrence should change');
       expect(changed.first.startDate.millisecondsSinceEpoch, targetMillis);
 
-      // The rest of the series keeps the original title.
+      // Every other occurrence keeps the original title.
       final unchanged = after.where((e) => e.title == 'Daily Series').toList();
-      expect(unchanged.length, greaterThanOrEqualTo(8),
-          reason: 'the rest of the series must be untouched');
+      expect(unchanged.length, initialCount - 1,
+          reason: 'all non-targeted occurrences must keep the original title');
     });
   });
 
@@ -528,53 +555,30 @@ void main() {
       }
     });
 
-    /// Creates a daily recurring event, returning its ID and start date.
-    Future<({String eventId, DateTime start})> createDailySeries({
-      int count = 10,
-    }) async {
-      final start = DateTime.now().add(const Duration(hours: 1));
-      final eventId = await plugin.createEvent(
-        calendarId: calendarId!,
-        title: 'Daily Series',
-        startDate: start,
-        endDate: start.add(const Duration(hours: 1)),
-        recurrenceRule: DailyRecurrence(end: CountEnd(count)),
-        timeZone: 'UTC',
-      );
-      return (eventId: eventId, start: start);
-    }
-
-    /// Lists the occurrences of [eventId] around [start], in date order.
-    Future<List<Event>> occurrencesOf(String eventId, DateTime start) async {
-      final events = await plugin.listEvents(
-        start.subtract(const Duration(days: 1)),
-        start.add(const Duration(days: 14)),
-        calendarIds: [calendarId!],
-      );
-      return events.where((e) => e.eventId == eventId).toList();
-    }
-
     test('allEvents deletes the whole series', () async {
-      if (calendarId == null) return;
-      final series = await createDailySeries();
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!);
 
       // The series should have expanded into occurrences first.
-      final before = await occurrencesOf(series.eventId, series.start);
+      final before =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
       expect(before, isNotEmpty);
 
       await plugin.deleteRecurring(series.eventId, EventSpan.allEvents);
 
-      final after = await occurrencesOf(series.eventId, series.start);
+      final after =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
       expect(after, isEmpty, reason: 'the whole series should be gone');
       expect(await plugin.getEvent(series.eventId), isNull);
     });
 
     test('thisAndFollowing removes the anchor and every later occurrence',
         () async {
-      if (calendarId == null) return;
-      final series = await createDailySeries(count: 10);
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
 
-      final occurrences = await occurrencesOf(series.eventId, series.start);
+      final occurrences =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
       final anchor = occurrences[4];
       final anchorMillis = anchor.startDate.millisecondsSinceEpoch;
@@ -584,7 +588,8 @@ void main() {
         EventSpan.thisAndFollowing,
       );
 
-      final after = await occurrencesOf(series.eventId, series.start);
+      final after =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
 
       // The anchor and everything after it are gone.
       expect(
@@ -606,10 +611,11 @@ void main() {
         // on the master).
         skip: 'TODO: enable when Android thisInstance is implemented',
         () async {
-      if (calendarId == null) return;
-      final series = await createDailySeries(count: 10);
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
 
-      final occurrences = await occurrencesOf(series.eventId, series.start);
+      final occurrences =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
       final initialCount = occurrences.length;
       final target = occurrences[4];
@@ -617,7 +623,8 @@ void main() {
 
       await plugin.deleteRecurring(target.instanceId, EventSpan.thisInstance);
 
-      final after = await occurrencesOf(series.eventId, series.start);
+      final after =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
 
       // The targeted occurrence is gone.
       expect(
