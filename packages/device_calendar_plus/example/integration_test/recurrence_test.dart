@@ -515,7 +515,6 @@ void main() {
       final occurrences =
           await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
-      final initialCount = occurrences.length;
       final target = occurrences[4];
       final targetMillis = target.startDate.millisecondsSinceEpoch;
 
@@ -550,6 +549,27 @@ void main() {
       expect(master, isNotNull);
       expect(master!.title, series.title,
           reason: 'the master event row must keep its original title');
+    });
+
+    test('legacy updateEvent on a recurring eventId updates the whole series',
+        () async {
+      // Per the v0.3.0 contract, `updateEvent` on a recurring event always
+      // affects the entire series — semantically equivalent to
+      // `updateRecurring(EventSpan.allEvents)`. This guards the legacy path
+      // against regressions if the two methods drift apart on the native side.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!);
+
+      await plugin.updateEvent(
+        eventId: series.eventId,
+        title: 'Legacy Updated',
+      );
+
+      final occurrences =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      expect(occurrences, isNotEmpty);
+      expect(occurrences.every((e) => e.title == 'Legacy Updated'), isTrue,
+          reason: 'every occurrence of the series must reflect the update');
     });
   });
 
@@ -653,6 +673,27 @@ void main() {
       // Exactly one occurrence was removed; the rest survive.
       expect(after.length, initialCount - 1,
           reason: 'only the one occurrence should be removed');
+    });
+
+    test('legacy deleteEvent on a recurring eventId removes the whole series',
+        () async {
+      // Per the v0.3.0 contract, `deleteEvent` on a recurring event always
+      // removes the entire series — semantically equivalent to
+      // `deleteRecurring(EventSpan.allEvents)`. This guards the legacy path
+      // against regressions if the two methods drift apart on the native side.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!);
+
+      final before =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      expect(before, isNotEmpty);
+
+      await plugin.deleteEvent(eventId: series.eventId);
+
+      final after =
+          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      expect(after, isEmpty, reason: 'the whole series should be gone');
+      expect(await plugin.getEvent(series.eventId), isNull);
     });
   });
 }

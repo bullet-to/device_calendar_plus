@@ -686,33 +686,6 @@ void main() {
       expect(event?.availability, EventAvailability.tentative);
     });
 
-    test(
-      '15. Delete All Instances of Recurring Event',
-      () async {
-        // This test requires a recurring event to exist, which must be created
-        // manually in the iOS Calendar or Android Calendar app since we don't
-        // support creating recurring events yet.
-        //
-        // To test manually:
-        // 1. Create a recurring event in your device's calendar app
-        // 2. Get the instanceId (format: "eventId@timestamp")
-        // 3. Uncomment and update the code below with the actual instanceId
-        // 4. Run this test
-        //
-        // Example:
-        // const recurringInstanceId = 'YOUR-EVENT-ID@1234567890000';
-        // await plugin.deleteEvent(recurringInstanceId);
-        //
-        // Expected: Entire series (all instances) of the recurring event should be deleted
-
-        fail(
-            'This test requires manual setup. Create a recurring event in your '
-            'device calendar app, then update this test with the instanceId.');
-      },
-      skip: 'Requires manual creation of recurring event. '
-          'Will be automated when recurrence rule support is added.',
-    );
-
     test('16. Update Event Title', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
@@ -1003,37 +976,6 @@ void main() {
       expect(event.location, isNull);
       expect(event.url, 'https://example.com/event/$timestamp');
     });
-
-    test(
-      '24. Update All Instances of Recurring Event',
-      () async {
-        // This test requires a recurring event to exist, which must be created
-        // manually in the iOS Calendar or Android Calendar app since we don't
-        // support creating recurring events yet.
-        //
-        // To test manually:
-        // 1. Create a recurring event in your device's calendar app
-        // 2. Get the instanceId (format: "eventId" for series update)
-        // 3. Uncomment and update the code below with the actual instanceId
-        // 4. Run this test
-        //
-        // Example:
-        // const recurringEventId = 'YOUR-EVENT-ID';
-        // await plugin.updateEvent(
-        //   instanceId: recurringEventId,
-        //   updateAllInstances: true,
-        //   title: 'Updated Recurring Event',
-        // );
-        //
-        // Expected: All instances of the recurring event should be updated
-
-        fail(
-            'This test requires manual setup. Create a recurring event in your '
-            'device calendar app, then update this test with the eventId.');
-      },
-      skip: 'Requires manual creation of recurring event. '
-          'Will be automated when recurrence rule support is added.',
-    );
 
     test(
       '25. Show Event Modal Awaits Until Closed',
