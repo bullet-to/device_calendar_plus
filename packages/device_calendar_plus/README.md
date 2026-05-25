@@ -30,12 +30,14 @@ Created by [Bullet](https://bullet.to) — a personal task + notes + calendar ap
 
 - **Permissions**: Request and check calendar permissions
 - **Calendars**: Create, read, update, and delete calendars
+- **Sources/accounts**: List calendar sources (iCloud, Google, local, etc.) and target a specific account when creating calendars
 - **Events**: Create, read, update, and delete events
 - **Query**: Retrieve events by date range or specific event IDs
-- **Native UI**: Open native event modal for viewing/editing in both android and iOS
+- **Native UI**: Open native event modal for viewing or editing (`edit: true`) on both Android and iOS
 - **All-Day Events**: Proper handling of floating calendar dates
 - **Timezones**: Correct timezone behavior for timed events
-- **Recurring Events**: Create, read, and delete recurring events (daily, weekly, monthly, yearly) with full RRULE support
+- **Recurring events**: Create, read, and delete recurring events (daily, weekly, monthly, yearly) with full RRULE support
+- **Edit a recurring series**: `updateRecurring()` and `deleteRecurring()` with `EventSpan` — apply changes to the whole series, this-and-following, or just one occurrence
 
 ## 🧩 Installation
 
@@ -209,8 +211,13 @@ for (final calendar in calendars) {
   if (calendar.isPrimary) {
     print('  ⭐ Primary calendar');
   }
+  // Raw hex string (e.g. "#FF5733")
   if (calendar.colorHex != null) {
     print('  Color: ${calendar.colorHex}');
+  }
+  // Or use the parsed Flutter Color directly for theming
+  if (calendar.color != null) {
+    // e.g. Container(color: calendar.color, ...)
   }
 }
 
@@ -220,6 +227,96 @@ final writableCalendar = calendars.firstWhere(
   orElse: () => calendars.first,
 );
 ```
+
+### List Sources
+
+Sources are the accounts that own calendars (iCloud, Google, local, Exchange, etc.). Use them to discover where a new calendar can live, and to target a specific account when calling `createCalendar`.
+
+```dart
+final plugin = DeviceCalendar.instance;
+final sources = await plugin.listSources();
+
+for (final source in sources) {
+  print('${source.accountName} — ${source.type}');
+  if (source.supportsCalendarCreation) {
+    print('  ✓ can create calendars here');
+  }
+}
+
+// Pick the first source that supports creation
+final writable = sources.firstWhere((s) => s.supportsCalendarCreation);
+
+// iOS: pass the source id via CreateCalendarOptionsIos
+await plugin.createCalendar(
+  name: 'Work',
+  platformOptions: CreateCalendarOptionsIos(sourceId: writable.id),
+);
+
+// Android: pass accountName + accountType via CreateCalendarOptionsAndroid
+await plugin.createCalendar(
+  name: 'Work',
+  platformOptions: CreateCalendarOptionsAndroid(
+    accountName: writable.accountName,
+    accountType: writable.accountType,
+  ),
+);
+```
+
+> **Note on Android**: Only sources that already have at least one calendar are returned. Freshly-added accounts won't appear until their first calendar exists.
+
+### Create Calendar
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Simplest case — picks a sensible default source on each platform
+final calendarId = await plugin.createCalendar(name: 'My Calendar');
+
+// With a color
+final colored = await plugin.createCalendar(
+  name: 'Work',
+  colorHex: '#FF5733',
+);
+
+// Target a specific account (see "List Sources" above for full example)
+final scoped = await plugin.createCalendar(
+  name: 'Project Calendar',
+  platformOptions: CreateCalendarOptionsAndroid(accountName: 'MyApp'),
+);
+```
+
+Returns the new calendar's ID. Requires write permission.
+
+### Update Calendar
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+// Rename
+await plugin.updateCalendar(calendarId, name: 'New Name');
+
+// Recolor
+await plugin.updateCalendar(calendarId, colorHex: '#3366FF');
+
+// Both at once
+await plugin.updateCalendar(
+  calendarId,
+  name: 'Q3 Planning',
+  colorHex: '#3366FF',
+);
+```
+
+At least one of `name` or `colorHex` must be provided.
+
+### Delete Calendar
+
+```dart
+final plugin = DeviceCalendar.instance;
+
+await plugin.deleteCalendar(calendarId);
+```
+
+Throws `DeviceCalendarException` with `DeviceCalendarError.readOnly` if the calendar can't be deleted (e.g. a system-managed account calendar).
 
 ### Retrieve Events
 
@@ -561,7 +658,7 @@ await plugin.deleteEvent(event.instanceId);
 
 - `EventSpan.allEvents` — the whole series is deleted (the same as `deleteEvent`).
 - `EventSpan.thisAndFollowing` — the occurrence you pass, and every later one, are removed; the series is truncated to end before it.
-- `EventSpan.thisInstance` — only the occurrence you pass is removed, as a cancelled exception. **iOS only at the moment** — Android throws "not yet supported"; use `thisAndFollowing` or `allEvents` instead, or call from iOS.
+- `EventSpan.thisInstance` — only the occurrence you pass is removed. iOS records this as a cancelled exception; Android appends the occurrence timestamp to the master's `EXDATE` column.
 
 ```dart
 final plugin = DeviceCalendar.instance;
@@ -572,7 +669,7 @@ await plugin.deleteRecurring(event.instanceId, EventSpan.allEvents);
 // Delete this occurrence and every later one
 await plugin.deleteRecurring(event.instanceId, EventSpan.thisAndFollowing);
 
-// Delete only this one occurrence, leaving the rest of the series alone (iOS only)
+// Delete only this one occurrence, leaving the rest of the series alone
 await plugin.deleteRecurring(event.instanceId, EventSpan.thisInstance);
 ```
 
@@ -590,7 +687,7 @@ For `thisAndFollowing` and `thisInstance`, pass an instance ID (`event.instanceI
 - [x] **Delete recurring events** — delete a whole series, this-and-following, or a single occurrence via `deleteRecurring`
 - [ ] **Attendees** — read on both platforms; write on Android (iOS EventKit is read-only for participants)
 - [ ] **Reminders / alarms** — read/write on both platforms
-- [ ] **Platform-specific extras** — event URL, organizer, and other platform-native fields exposed where supported
+- [ ] **Platform-specific extras** — organizer and other platform-native fields exposed where supported (event URL is now supported)
 
 ## 🤝 Contributing
 

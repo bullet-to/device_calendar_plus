@@ -1,3 +1,18 @@
+## 0.4.0 - 2026-05-25
+
+### Added
+- `updateRecurring()` — series-level recurring-event edits with `EventSpan` (allEvents / thisAndFollowing / thisInstance). `thisAndFollowing` truncates the master with `UNTIL` and starts a new series; `thisInstance` writes a detached exception event.
+- `deleteRecurring()` — `allEvents` deletes the master; `thisAndFollowing` truncates via `UNTIL`; `thisInstance` appends to the master's `EXDATE` column (no separate exception event needed).
+- `url` field on events via `Events.CUSTOM_APP_URI`
+- `Patch<T>` support in `updateEvent()` — null leaves a field unchanged, `Patch.set` writes, `Patch.clear` writes the empty string to remove
+- `edit` flag on `showEvent()` — fires `Intent.ACTION_EDIT` instead of `ACTION_VIEW`
+
+### Fixed
+- Event deletion now uses sync-adapter context so EventKit-equivalent listEvents calls stop returning the deleted row immediately
+
+### Changed
+- Extracted all-day date-conversion helpers; no behaviour change
+
 ## 0.3.5 - 2026-04-20
 
 ### Fixed
