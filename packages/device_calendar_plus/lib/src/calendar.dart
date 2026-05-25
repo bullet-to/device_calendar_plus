@@ -1,3 +1,5 @@
+import 'dart:ui' show Color;
+
 /// Represents a user's calendar
 class Calendar {
   /// Identifier returned by the platform (Android `Calendars._ID`, iOS `EKCalendar.calendarIdentifier`).
@@ -8,6 +10,16 @@ class Calendar {
 
   /// Calendar color as a hex string in `#RRGGBB` format, if provided by the OS.
   final String? colorHex;
+
+  /// Parsed [colorHex] as a Flutter [Color], or `null` if absent or unparseable.
+  Color? get color {
+    final hex = colorHex;
+    if (hex == null) return null;
+    final cleaned = hex.startsWith('#') ? hex.substring(1) : hex;
+    final value = int.tryParse(cleaned, radix: 16);
+    if (value == null) return null;
+    return Color(cleaned.length == 6 ? value | 0xFF000000 : value);
+  }
 
   /// Whether edits are disallowed (subscribed/shared calendars, server-managed feeds, etc.).
   final bool readOnly;
