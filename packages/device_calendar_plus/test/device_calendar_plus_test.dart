@@ -1,3 +1,5 @@
+import 'dart:ui' show Color;
+
 import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
 import 'package:flutter/services.dart';
@@ -1130,7 +1132,6 @@ void main() {
         expect(capturedTimestamp, 1700000000000);
         expect(capturedSpan, 'thisAndFollowing');
       });
-
     });
 
     group('deleteEvent', () {
@@ -1206,6 +1207,35 @@ void main() {
           ),
         );
       });
+    });
+  });
+
+  group('Calendar.color', () {
+    Calendar cal({String? colorHex}) => Calendar(
+          id: '1',
+          name: 'Test',
+          colorHex: colorHex,
+          readOnly: false,
+        );
+
+    test('parses 6-digit hex with # prefix', () {
+      expect(cal(colorHex: '#FF0000').color, const Color(0xFFFF0000));
+    });
+
+    test('parses 8-digit hex with alpha', () {
+      expect(cal(colorHex: '#80FF0000').color, const Color(0x80FF0000));
+    });
+
+    test('parses without # prefix', () {
+      expect(cal(colorHex: '00FF00').color, const Color(0xFF00FF00));
+    });
+
+    test('returns null when colorHex is null', () {
+      expect(cal().color, isNull);
+    });
+
+    test('returns null for unparseable string', () {
+      expect(cal(colorHex: 'notacolor').color, isNull);
     });
   });
 }
