@@ -130,19 +130,7 @@ class EventsService(private val context: Context) {
      * Converts local millis to UTC midnight of the same local calendar date.
      * E.g. Dec 25 00:00 AEDT (UTC+11) → Dec 25 00:00 UTC.
      */
-    private fun localMillisToUtcMidnight(millis: Long): Long {
-        val local = java.util.Calendar.getInstance()
-        local.timeInMillis = millis
-        val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        utc.set(
-            local.get(java.util.Calendar.YEAR),
-            local.get(java.util.Calendar.MONTH),
-            local.get(java.util.Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        utc.set(java.util.Calendar.MILLISECOND, 0)
-        return utc.timeInMillis
-    }
+    private fun localMillisToUtcMidnight(millis: Long): Long = localDateToUtcMidnight(millis)
 
     /**
      * Checks whether an event (all-day or timed) falls within the query range.
@@ -248,27 +236,8 @@ class EventsService(private val context: Context) {
         val end: Long
         
         if (allDay) {
-            // Extract date components from UTC timestamp
-            val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-            utcCal.timeInMillis = rawStart
-            val startYear = utcCal.get(java.util.Calendar.YEAR)
-            val startMonth = utcCal.get(java.util.Calendar.MONTH)
-            val startDay = utcCal.get(java.util.Calendar.DAY_OF_MONTH)
-            
-            utcCal.timeInMillis = rawEnd
-            val endYear = utcCal.get(java.util.Calendar.YEAR)
-            val endMonth = utcCal.get(java.util.Calendar.MONTH)
-            val endDay = utcCal.get(java.util.Calendar.DAY_OF_MONTH)
-            
-            // Create local timestamps with those date components
-            val localCal = java.util.Calendar.getInstance()
-            localCal.set(startYear, startMonth, startDay, 0, 0, 0)
-            localCal.set(java.util.Calendar.MILLISECOND, 0)
-            start = localCal.timeInMillis
-            
-            localCal.set(endYear, endMonth, endDay, 0, 0, 0)
-            localCal.set(java.util.Calendar.MILLISECOND, 0)
-            end = localCal.timeInMillis
+            start = utcToLocalMidnight(rawStart)
+            end = utcToLocalMidnight(rawEnd)
         } else {
             start = rawStart
             end = rawEnd
@@ -645,27 +614,8 @@ class EventsService(private val context: Context) {
             val endMillis: Long
             
             if (isAllDay) {
-                // Extract date components from local time
-                val localCal = java.util.Calendar.getInstance()
-                localCal.time = startDate
-                val startYear = localCal.get(java.util.Calendar.YEAR)
-                val startMonth = localCal.get(java.util.Calendar.MONTH)
-                val startDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
-                
-                localCal.time = endDate
-                val endYear = localCal.get(java.util.Calendar.YEAR)
-                val endMonth = localCal.get(java.util.Calendar.MONTH)
-                val endDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
-                
-                // Create UTC timestamps with those date components
-                val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-                utcCal.set(startYear, startMonth, startDay, 0, 0, 0)
-                utcCal.set(java.util.Calendar.MILLISECOND, 0)
-                startMillis = utcCal.timeInMillis
-                
-                utcCal.set(endYear, endMonth, endDay, 0, 0, 0)
-                utcCal.set(java.util.Calendar.MILLISECOND, 0)
-                endMillis = utcCal.timeInMillis
+                startMillis = localDateToUtcMidnight(startDate.time)
+                endMillis = localDateToUtcMidnight(endDate.time)
             } else {
                 startMillis = startDate.time
                 endMillis = endDate.time
@@ -886,38 +836,9 @@ class EventsService(private val context: Context) {
                 val endMillis: Long?
                 
                 if (effectiveIsAllDay) {
-                    // For all-day events, convert date components to UTC midnight
-                    val localCal = java.util.Calendar.getInstance()
-                    
-                    if (startDate != null) {
-                        localCal.time = startDate
-                        val startYear = localCal.get(java.util.Calendar.YEAR)
-                        val startMonth = localCal.get(java.util.Calendar.MONTH)
-                        val startDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
-                        
-                        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-                        utcCal.set(startYear, startMonth, startDay, 0, 0, 0)
-                        utcCal.set(java.util.Calendar.MILLISECOND, 0)
-                        startMillis = utcCal.timeInMillis
-                    } else {
-                        startMillis = null
-                    }
-                    
-                    if (endDate != null) {
-                        localCal.time = endDate
-                        val endYear = localCal.get(java.util.Calendar.YEAR)
-                        val endMonth = localCal.get(java.util.Calendar.MONTH)
-                        val endDay = localCal.get(java.util.Calendar.DAY_OF_MONTH)
-                        
-                        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-                        utcCal.set(endYear, endMonth, endDay, 0, 0, 0)
-                        utcCal.set(java.util.Calendar.MILLISECOND, 0)
-                        endMillis = utcCal.timeInMillis
-                    } else {
-                        endMillis = null
-                    }
+                    startMillis = startDate?.let { localDateToUtcMidnight(it.time) }
+                    endMillis = endDate?.let { localDateToUtcMidnight(it.time) }
                 } else {
-                    // For timed events, use timestamps directly
                     startMillis = startDate?.time
                     endMillis = endDate?.time
                 }
@@ -1735,7 +1656,17 @@ class EventsService(private val context: Context) {
     /** Storage millis for a date: UTC midnight for all-day, the instant otherwise. */
     private fun toStorageMillis(date: java.util.Date, isAllDay: Boolean): Long {
         if (!isAllDay) return date.time
-        val local = java.util.Calendar.getInstance().apply { time = date }
+        return localDateToUtcMidnight(date.time)
+    }
+
+    /**
+     * Converts local-time millis to UTC midnight, preserving the calendar date.
+     * Used when writing all-day events: Android stores them as UTC midnight
+     * boundaries, so a local "June 5" must become "June 5 00:00 UTC".
+     */
+    private fun localDateToUtcMidnight(localMillis: Long): Long {
+        val local = java.util.Calendar.getInstance()
+        local.timeInMillis = localMillis
         val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
         utc.set(
             local.get(java.util.Calendar.YEAR),
@@ -1745,6 +1676,25 @@ class EventsService(private val context: Context) {
         )
         utc.set(java.util.Calendar.MILLISECOND, 0)
         return utc.timeInMillis
+    }
+
+    /**
+     * Converts UTC millis to local midnight, preserving the calendar date.
+     * Used when reading all-day events: Android stores them as UTC midnight
+     * boundaries, and we need to present the date in the device's local time.
+     */
+    private fun utcToLocalMidnight(utcMillis: Long): Long {
+        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        utcCal.timeInMillis = utcMillis
+        val localCal = java.util.Calendar.getInstance()
+        localCal.set(
+            utcCal.get(java.util.Calendar.YEAR),
+            utcCal.get(java.util.Calendar.MONTH),
+            utcCal.get(java.util.Calendar.DAY_OF_MONTH),
+            0, 0, 0
+        )
+        localCal.set(java.util.Calendar.MILLISECOND, 0)
+        return localCal.timeInMillis
     }
 
     /** Resolves an event's duration, falling back to one hour when unknown. */
