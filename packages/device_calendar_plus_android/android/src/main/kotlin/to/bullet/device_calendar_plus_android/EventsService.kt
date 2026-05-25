@@ -773,15 +773,19 @@ class EventsService(private val context: Context) {
                 )
             )
         }
-        
+
         try {
-            // Delete the event (entire series for recurring events)
+            // Use sync-adapter context so the Calendar Provider physically
+            // removes the row instead of just setting DELETED=1. Without
+            // this, the event survives deletion on real devices (where a
+            // sync adapter is present) and getEvent still returns it.
+            val uri = buildDeleteUri(eventId)
             val deletedRows = context.contentResolver.delete(
-                CalendarContract.Events.CONTENT_URI,
+                uri,
                 "${CalendarContract.Events._ID} = ?",
                 arrayOf(eventId)
             )
-            
+
             if (deletedRows == 0) {
                 return Result.failure(
                     CalendarException(
@@ -790,7 +794,7 @@ class EventsService(private val context: Context) {
                     )
                 )
             }
-            
+
             return Result.success(Unit)
         } catch (e: SecurityException) {
             return Result.failure(
@@ -1866,5 +1870,36 @@ class EventsService(private val context: Context) {
             "${CalendarContract.Events._ID} = ?",
             arrayOf(eventId)
         )
+    }
+
+    /**
+     * Builds a delete URI with sync-adapter context for the given event.
+     * Without CALLER_IS_SYNCADAPTER, the Calendar Provider on real devices
+     * only marks the row as DELETED=1 (for sync propagation) instead of
+     * physically removing it. Falls back to the plain URI if the calendar
+     * account can't be read.
+     */
+    private fun buildDeleteUri(eventId: String): android.net.Uri {
+        // Look up the event's calendar ID so we can get the account.
+        val calendarId = context.contentResolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            arrayOf(CalendarContract.Events.CALENDAR_ID),
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(eventId),
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.CALENDAR_ID))
+            } else null
+        } ?: return CalendarContract.Events.CONTENT_URI
+
+        val account = readCalendarAccount(calendarId)
+            ?: return CalendarContract.Events.CONTENT_URI
+
+        return CalendarContract.Events.CONTENT_URI.buildUpon()
+            .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+            .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.first)
+            .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.second)
+            .build()
     }
 }
