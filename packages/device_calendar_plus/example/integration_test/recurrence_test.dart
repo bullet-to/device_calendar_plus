@@ -664,15 +664,7 @@ void main() {
           reason: 'occurrences before the anchor must survive');
     });
 
-    test('thisInstance removes only the one occurrence',
-        // iOS works (EventKit's remove with .thisEvent). Android currently
-        // throws "not yet supported" — both the minimal CONTENT_EXCEPTION_URI
-        // insert and the DTSTART+DURATION variant cause the provider to
-        // cancel the whole series rather than just one instance. Re-enable
-        // when Android lands a working implementation (likely via EXDATE
-        // on the master).
-        skip: 'TODO: enable when Android thisInstance is implemented',
-        () async {
+    test('thisInstance removes only the one occurrence', () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 

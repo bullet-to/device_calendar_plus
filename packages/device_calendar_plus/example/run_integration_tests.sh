@@ -110,11 +110,19 @@ select_device() {
     echo -e "${GREEN}✓${NC} Selected: ${DEVICE_NAMES[$((SELECTION-1))]}"
 }
 
-# Check if device ID is provided
-if [ -z "$1" ]; then
+# Parse arguments
+SKIP_TZ=false
+DEVICE_ID=""
+for arg in "$@"; do
+    if [ "$arg" == "--no-tz" ]; then
+        SKIP_TZ=true
+    elif [ -z "$DEVICE_ID" ]; then
+        DEVICE_ID="$arg"
+    fi
+done
+
+if [ -z "$DEVICE_ID" ]; then
     select_device
-else
-    DEVICE_ID="$1"
 fi
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -225,7 +233,7 @@ run_tests() {
 # All-day event boundary logic depends on correct UTC date extraction regardless of offset.
 ANDROID_TIMEZONES=("America/Los_Angeles" "UTC" "Australia/Sydney")
 
-if [ "$PLATFORM" == "android" ]; then
+if [ "$PLATFORM" == "android" ] && [ "$SKIP_TZ" == false ]; then
     # Save original timezone
     ORIGINAL_TZ=$(adb -s "$DEVICE_ID" shell getprop persist.sys.timezone | tr -d '\r')
     EXIT_CODE=0

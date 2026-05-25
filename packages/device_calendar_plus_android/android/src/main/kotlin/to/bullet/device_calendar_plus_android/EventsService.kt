@@ -1427,23 +1427,7 @@ class EventsService(private val context: Context) {
 
     // -- deleteRecurring (issue #43) --
 
-    /**
-     * Deletes a recurring event, choosing which occurrences are removed.
-     *
-     * [span] is "allEvents" (the whole series) or "thisAndFollowing" (the
-     * occurrence at [timestamp] and every later one). "thisInstance" is
-     * accepted by the public API but currently rejected here — see below.
-     *
-     * iOS supports all three spans via EventKit's `remove(span:)`. On
-     * Android, "thisInstance" needs to insert a cancelled exception via
-     * `CONTENT_EXCEPTION_URI`. The straightforward implementations of that
-     * insert (`ORIGINAL_INSTANCE_TIME + STATUS_CANCELED` and the same plus
-     * explicit `DTSTART + DURATION`) both cause the provider to cancel
-     * every generated instance of the master rather than just the targeted
-     * one. Rather than ship that silent data-loss bug, this returns a
-     * clear error until a correct implementation lands (likely via
-     * `EXDATE` on the master rather than the exception pattern).
-     */
+    /** Deletes a recurring event, choosing which occurrences are removed. */
     fun deleteRecurring(
         eventId: String,
         timestamp: Long?,
@@ -1461,17 +1445,9 @@ class EventsService(private val context: Context) {
 
         return try {
             when (span) {
-                // The whole series — exactly what deleteEvent already does.
                 "allEvents" -> deleteEvent(eventId)
                 "thisAndFollowing" -> deleteRecurringThisAndFollowing(eventId, timestamp)
-                "thisInstance" -> Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.OPERATION_FAILED,
-                        "deleteRecurring with EventSpan.thisInstance is not yet " +
-                        "supported on Android. Use EventSpan.allEvents or " +
-                        "EventSpan.thisAndFollowing, or call deleteRecurring on iOS."
-                    )
-                )
+                "thisInstance" -> deleteRecurringThisInstance(eventId, timestamp)
                 else -> Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.INVALID_ARGUMENTS,
@@ -1550,6 +1526,69 @@ class EventsService(private val context: Context) {
                 CalendarException(
                     PlatformExceptionCodes.NOT_FOUND,
                     "Event with ID $eventId not found"
+                )
+            )
+        }
+        return Result.success(Unit)
+    }
+
+    /**
+     * Removes a single occurrence by inserting a cancelled exception event
+     * via CONTENT_EXCEPTION_URI. The Calendar Provider then excludes that
+     * occurrence from the Instances expansion.
+     */
+    private fun deleteRecurringThisInstance(
+        eventId: String,
+        timestamp: Long?
+    ): Result<Unit> {
+        if (timestamp == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "thisInstance requires an occurrence timestamp"
+                )
+            )
+        }
+
+        val row = readEventRow(eventId)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+
+        if (row.rrule == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "Event $eventId is not recurring; use deleteEvent instead"
+                )
+            )
+        }
+
+        val values = android.content.ContentValues().apply {
+            put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
+            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CANCELED)
+        }
+
+        // Build the exception URI with sync-adapter context.
+        val account = readCalendarAccount(row.calendarId)
+        val uriBuilder = CalendarContract.Events.CONTENT_EXCEPTION_URI.buildUpon()
+        if (account != null) {
+            uriBuilder
+                .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+                .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.first)
+                .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.second)
+        }
+        uriBuilder.appendPath(eventId)
+
+        val exceptionUri = context.contentResolver.insert(uriBuilder.build(), values)
+        if (exceptionUri == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.OPERATION_FAILED,
+                    "Failed to create cancellation exception for event $eventId"
                 )
             )
         }
