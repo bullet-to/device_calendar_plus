@@ -287,7 +287,8 @@ class EventsService {
   func showEvent(
     eventId: String,
     timestamp: Int64?,
-    completion: @escaping (Result<EKEventViewController?, CalendarError>) -> Void
+    edit: Bool = false,
+    completion: @escaping (Result<UIViewController?, CalendarError>) -> Void
   ) {
     // Check permission
     guard permissionService.hasPermission(for: .full) else {
@@ -339,13 +340,18 @@ class EventsService {
       return
     }
     
-    // Create event view controller
-    let eventViewController = EKEventViewController()
-    eventViewController.event = foundEvent
-    eventViewController.allowsEditing = true
-    eventViewController.allowsCalendarPreview = true
-    
-    completion(.success(eventViewController))
+    if edit {
+      let editViewController = EKEventEditViewController()
+      editViewController.eventStore = eventStore
+      editViewController.event = foundEvent
+      completion(.success(editViewController))
+    } else {
+      let eventViewController = EKEventViewController()
+      eventViewController.event = foundEvent
+      eventViewController.allowsEditing = true
+      eventViewController.allowsCalendarPreview = true
+      completion(.success(eventViewController))
+    }
   }
   
   func createEvent(

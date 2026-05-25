@@ -125,12 +125,14 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   }
 
   @override
-  Future<void> showEventModal(String eventId, int? timestamp) async {
+  Future<void> showEventModal(String eventId, int? timestamp,
+      {bool edit = false}) async {
     await methodChannel.invokeMethod<void>(
       'showEventModal',
       <String, dynamic>{
         'eventId': eventId,
         'timestamp': timestamp,
+        'edit': edit,
       },
     );
   }

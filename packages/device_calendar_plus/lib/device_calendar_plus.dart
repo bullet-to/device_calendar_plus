@@ -504,31 +504,31 @@ class DeviceCalendar {
   /// - **Event ID**: Shows the master event definition (for recurring events)
   /// - **Instance ID**: Shows a specific occurrence (for recurring events)
   ///
+  /// When [edit] is `true`, opens the native editor directly instead of the
+  /// read-only view. Useful when the user has already expressed intent to edit.
   ///
   /// **Platform Differences:**
-  /// - **iOS**: Presents the event in a native modal using EventKit's
-  ///   `EKEventViewController`. The user can view and edit the event without
-  ///   leaving your app. Requires your app to be in the foreground.
-  /// - **Android**: Opens the event using an Intent with `ACTION_VIEW`.
-  ///   The system handles the presentation based on device and app configuration.
+  /// - **iOS**: Presents `EKEventViewController` (view) or
+  ///   `EKEventEditViewController` (edit) in a native modal.
+  /// - **Android**: Fires `ACTION_VIEW` or `ACTION_EDIT`.
   ///
   /// Example:
   /// ```dart
   /// final plugin = DeviceCalendar.instance;
-  /// // Show specific instance of a recurring event
+  /// // View an event (read-only, user can tap Edit)
   /// await plugin.showEventModal(event.instanceId);
   ///
-  /// // Show master event definition
-  /// await plugin.showEventModal(event.eventId);
+  /// // Open directly in the editor
+  /// await plugin.showEventModal(event.instanceId, edit: true);
   /// ```
-  Future<void> showEventModal(String id) async {
+  Future<void> showEventModal(String id, {bool edit = false}) async {
     try {
-      // Parse the ID to extract eventId and optional timestamp
       final parsed = InstanceIdParser.parse(id);
 
       await DeviceCalendarPlusPlatform.instance.showEventModal(
         parsed.eventId,
         parsed.timestamp,
+        edit: edit,
       );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =

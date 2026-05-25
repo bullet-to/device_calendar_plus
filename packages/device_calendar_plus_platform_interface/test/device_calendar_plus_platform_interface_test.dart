@@ -48,7 +48,8 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       null;
 
   @override
-  Future<void> showEventModal(String eventId, int? timestamp) async {}
+  Future<void> showEventModal(String eventId, int? timestamp,
+      {bool edit = false}) async {}
 
   @override
   Future<String> createEvent(

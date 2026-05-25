@@ -279,6 +279,9 @@ await plugin.showEventModal(event.instanceId);
 
 // For recurring events, show the master event
 await plugin.showEventModal(event.eventId);
+
+// Open the native editor directly (skip the read-only viewer)
+await plugin.showEventModal(event.instanceId, edit: true);
 ```
 
 ### Create Event via Native Editor

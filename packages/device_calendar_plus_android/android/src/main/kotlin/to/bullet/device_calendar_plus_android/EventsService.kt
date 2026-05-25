@@ -459,7 +459,7 @@ class EventsService(private val context: Context) {
     /**
      * Shows a calendar event in a modal dialog.
      */
-    fun showEvent(activityContext: Activity, eventId: String, timestamp: Long?, requestCode: Int): Result<Unit> {
+    fun showEvent(activityContext: Activity, eventId: String, timestamp: Long?, edit: Boolean, requestCode: Int): Result<Unit> {
         return try {
             // Validate permissions
             if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -471,8 +471,8 @@ class EventsService(private val context: Context) {
                     )
                 )
             }
-            
-            val intent = Intent(Intent.ACTION_VIEW)
+
+            val intent = Intent(if (edit) Intent.ACTION_EDIT else Intent.ACTION_VIEW)
             
             // Build event URI
             val eventUri = android.content.ContentUris.withAppendedId(

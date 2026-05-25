@@ -318,7 +318,8 @@ class DeviceCalendarPlusAndroidPlugin :
         // Parse arguments
         val eventId = call.argument<String>("eventId")
         val timestamp = call.argument<Long>("timestamp")
-        
+        val edit = call.argument<Boolean>("edit") ?: false
+
         if (eventId == null) {
             result.error(
                 PlatformExceptionCodes.INVALID_ARGUMENTS,
@@ -327,11 +328,11 @@ class DeviceCalendarPlusAndroidPlugin :
             )
             return
         }
-        
+
         // Store the result callback to call when activity returns
         showEventModalResult = result
-        
-        val serviceResult = service.showEvent(currentActivity, eventId, timestamp, SHOW_EVENT_REQUEST_CODE)
+
+        val serviceResult = service.showEvent(currentActivity, eventId, timestamp, edit, SHOW_EVENT_REQUEST_CODE)
         serviceResult.fold(
             onSuccess = { /* Result will be sent in onActivityResult */ },
             onFailure = { error ->

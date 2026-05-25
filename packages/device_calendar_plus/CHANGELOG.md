@@ -18,6 +18,9 @@
 - `EventSpan` enum for choosing the scope of a recurring-event operation,
   shared by `updateRecurring()` and `deleteRecurring()`
 - `url` parameter on `updateEvent()` — based on @SuperKrallan (#38)
+- `edit` parameter on `showEventModal()` — when `true`, opens the native editor
+  directly (`EKEventEditViewController` on iOS, `ACTION_EDIT` on Android)
+  instead of the read-only viewer. Based on @xonaman (#45)
 
 ### Changed
 - **Breaking:** `updateEvent()` `description`, `location` and `url` now take a

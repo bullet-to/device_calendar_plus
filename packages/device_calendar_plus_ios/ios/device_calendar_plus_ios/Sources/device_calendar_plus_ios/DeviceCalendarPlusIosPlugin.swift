@@ -356,31 +356,31 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     
     // Parse timestamp (optional, for recurring events)
     let timestamp = args["timestamp"] as? Int64
-    
-    eventsService.showEvent(eventId: eventId, timestamp: timestamp) { serviceResult in
+    let edit = args["edit"] as? Bool ?? false
+
+    eventsService.showEvent(eventId: eventId, timestamp: timestamp, edit: edit) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
         case .success(let viewController):
-          // If we have a view controller (modal mode), present it
           if let viewController = viewController {
-            // Get the root view controller
             guard let rootViewController = self.getRootViewController() else {
               fatalError("Failed to get root view controller - plugin lifecycle error")
             }
-            
-            // Set the delegate
-            viewController.delegate = self
-            
-            // Store the result callback to call it when modal is dismissed
+
+            // Set the appropriate delegate based on view controller type
+            if let editVC = viewController as? EKEventEditViewController {
+              editVC.editViewDelegate = self
+            } else if let viewVC = viewController as? EKEventViewController {
+              viewVC.delegate = self
+            }
+
             self.eventModalResult = result
-            
-            // Wrap in navigation controller for proper dismissal
+
             let navigationController = UINavigationController(rootViewController: viewController)
             navigationController.modalPresentationStyle = .pageSheet
-            
+
             rootViewController.present(navigationController, animated: true, completion: nil)
           } else {
-            // Calendar app was opened
             result(nil)
           }
         case .failure(let error):
@@ -727,8 +727,14 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
 
   public func eventEditViewController(_ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction) {
     controller.dismiss(animated: true) {
-      self.createEventModalResult?(nil)
-      self.createEventModalResult = nil
+      // Resolve whichever result callback is active (create modal or edit modal)
+      if self.createEventModalResult != nil {
+        self.createEventModalResult?(nil)
+        self.createEventModalResult = nil
+      } else {
+        self.eventModalResult?(nil)
+        self.eventModalResult = nil
+      }
     }
   }
 
