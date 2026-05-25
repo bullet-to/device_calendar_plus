@@ -1,4 +1,4 @@
-## Unreleased
+## 0.4.0 - 2026-05-25
 
 ### Added
 - `updateRecurring()` — update a recurring event with a span choice:
@@ -9,11 +9,9 @@
   Based on @SuperKrallan (#36)
 - `deleteRecurring()` — delete part of a recurring event with a span choice:
   `EventSpan.allEvents` (whole series), `thisAndFollowing` (this occurrence
-  and every later one), or `thisInstance` (only this occurrence). Completes
-  the single-occurrence support that `updateRecurring()` started.
-  Note: `EventSpan.thisInstance` is iOS-only at the moment — Android throws
-  "not yet supported"; a follow-up will land Android support (likely via
-  EXDATE on the master rather than the exception-event path).
+  and every later one), or `thisInstance` (only this occurrence). Now
+  supported on both iOS and Android (Android uses EXDATE on the master
+  rather than a cancelled exception event).
   Based on @SuperKrallan (#43)
 - `EventSpan` enum for choosing the scope of a recurring-event operation,
   shared by `updateRecurring()` and `deleteRecurring()`
@@ -21,6 +19,8 @@
 - `edit` parameter on `showEventModal()` — when `true`, opens the native editor
   directly (`EKEventEditViewController` on iOS, `ACTION_EDIT` on Android)
   instead of the read-only viewer. Based on @xonaman (#45)
+- `Calendar.color` getter — derived Flutter `Color?` parsed from `colorHex`,
+  saving consumers from writing the same hex-parsing helper. Based on @xonaman (#46)
 
 ### Changed
 - **Breaking:** `updateEvent()` `description`, `location` and `url` now take a

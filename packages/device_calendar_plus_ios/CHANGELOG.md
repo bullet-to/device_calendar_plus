@@ -1,3 +1,12 @@
+## 0.4.0 - 2026-05-25
+
+### Added
+- `updateRecurring()` — series-level recurring-event edits with `EventSpan` (allEvents / thisAndFollowing / thisInstance), backed by `EKSpan.futureEvents` and `EKSpan.thisEvent`
+- `deleteRecurring()` — same `EventSpan` semantics on `EKEventStore.remove`
+- `url` field on events via `EKEvent.url`
+- `Patch<T>` support in `updateEvent()` — null leaves a field unchanged, `Patch.set` writes, `Patch.clear` nils the field on the `EKEvent`
+- `edit` flag on `showEvent()` — presents `EKEventEditViewController` instead of `EKEventViewController`
+
 ## 0.3.5 - 2026-04-20
 
 ### Fixed

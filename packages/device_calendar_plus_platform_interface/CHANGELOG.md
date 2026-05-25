@@ -1,3 +1,15 @@
+## 0.4.0 - 2026-05-25
+
+### Added
+- `updateRecurring()` method with `EventSpan` enum (allEvents / thisAndFollowing / thisInstance)
+- `deleteRecurring()` method taking an `EventSpan`
+- `url` parameter on `updateEvent()`
+- `edit` parameter on `showEventModal()`
+- `Patch<T>` sealed type (`Patch.set` / `Patch.clear`) for clearable optional fields
+
+### Changed
+- **Breaking:** `updateEvent()` `description`, `location`, and `url` now take `Patch<String>` instead of `String?`
+
 ## 0.3.5 - 2026-04-20
 
 Version sync with other packages. No functional changes.
