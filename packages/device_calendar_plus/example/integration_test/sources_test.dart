@@ -67,12 +67,18 @@ void main() {
     (tester) async {
       final sources = await plugin.listSources();
 
-      // Find a writable source (local or calDav)
-      final source = sources.firstWhere(
+      // Mirror the native fallback: prefer iCloud (calDav with "icloud"
+      // account name), then local. Other calDav sources (e.g. Exchange)
+      // may not allow programmatic calendar creation.
+      final icloud = sources.where(
         (s) =>
-            s.type == CalendarSourceType.local ||
-            s.type == CalendarSourceType.calDav,
+            s.type == CalendarSourceType.calDav &&
+            s.accountName.toLowerCase() == 'icloud',
       );
+      final local = sources.where(
+        (s) => s.type == CalendarSourceType.local,
+      );
+      final source = icloud.followedBy(local).first;
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
