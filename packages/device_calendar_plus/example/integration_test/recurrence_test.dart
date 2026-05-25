@@ -427,13 +427,16 @@ void main() {
       expect(updated.recurrenceRule, isNull);
     });
 
+    // Known failure on Android emulator: the emulator's Calendar Provider
+    // doesn't propagate the title change to the anchor occurrence after a
+    // thisAndFollowing split. Passes on real Android devices.
     test('thisAndFollowing splits so the anchor occurrence carries the change',
         () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 
-      final occurrences =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6),
           reason: 'the daily series should have expanded into occurrences');
       final splitPoint = occurrences[4];
@@ -448,8 +451,8 @@ void main() {
       // The original master series is now truncated — only occurrences
       // before the split point should remain under its eventId, and none
       // of them are touched.
-      final remainingMaster =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final remainingMaster = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(remainingMaster, isNotEmpty,
           reason: 'occurrences before the split must survive');
       expect(
@@ -462,13 +465,14 @@ void main() {
           reason: 'occurrences before the split must keep the original title');
 
       // The new series starts at the split point and carries the new title.
-      final newSeriesOccurrences = await occurrencesOf(
-          plugin, calendarId!, newSeriesId, series.start);
+      final newSeriesOccurrences =
+          await occurrencesOf(plugin, calendarId!, newSeriesId, series.start);
       final atSplit = newSeriesOccurrences
           .where((e) => e.startDate.millisecondsSinceEpoch == splitMillis)
           .toList();
       expect(atSplit, isNotEmpty,
-          reason: 'the new series should have an occurrence at the split point');
+          reason:
+              'the new series should have an occurrence at the split point');
       expect(atSplit.first.title, 'Split Tail',
           reason: 'the anchor occurrence must receive the change');
     });
@@ -478,8 +482,8 @@ void main() {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 
-      final occurrences =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
       final splitPoint = occurrences[4];
       final splitMillis = splitPoint.startDate.millisecondsSinceEpoch;
@@ -516,8 +520,8 @@ void main() {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 
-      final occurrences =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
       final target = occurrences[4];
       final targetMillis = target.startDate.millisecondsSinceEpoch;
@@ -585,8 +589,8 @@ void main() {
         title: 'Legacy Updated',
       );
 
-      final occurrences =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(occurrences, isNotEmpty);
       expect(occurrences.every((e) => e.title == 'Legacy Updated'), isTrue,
           reason: 'every occurrence of the series must reflect the update');
@@ -618,14 +622,14 @@ void main() {
       final series = await createDailySeries(plugin, calendarId!);
 
       // The series should have expanded into occurrences first.
-      final before =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(before, isNotEmpty);
 
       await plugin.deleteRecurring(series.eventId, EventSpan.allEvents);
 
-      final after =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(after, isEmpty, reason: 'the whole series should be gone');
       expect(await plugin.getEvent(series.eventId), isNull);
     });
@@ -635,8 +639,8 @@ void main() {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 
-      final occurrences =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
       final anchor = occurrences[4];
       final anchorMillis = anchor.startDate.millisecondsSinceEpoch;
@@ -646,8 +650,8 @@ void main() {
         EventSpan.thisAndFollowing,
       );
 
-      final after =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
 
       // The anchor and everything after it are gone.
       expect(
@@ -672,8 +676,8 @@ void main() {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 
-      final occurrences =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
       final initialCount = occurrences.length;
       final target = occurrences[4];
@@ -681,8 +685,8 @@ void main() {
 
       await plugin.deleteRecurring(target.instanceId, EventSpan.thisInstance);
 
-      final after =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
 
       // The targeted occurrence is gone.
       expect(
@@ -704,14 +708,14 @@ void main() {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!);
 
-      final before =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(before, isNotEmpty);
 
       await plugin.deleteEvent(eventId: series.eventId);
 
-      final after =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(after, isEmpty, reason: 'the whole series should be gone');
       expect(await plugin.getEvent(series.eventId), isNull);
     });
