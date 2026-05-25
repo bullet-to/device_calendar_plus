@@ -216,7 +216,8 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
-  Future<void> showEventModal(String eventId, int? timestamp) async {
+  Future<void> showEventModal(String eventId, int? timestamp,
+      {bool edit = false}) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
   }
 
@@ -1130,7 +1131,6 @@ void main() {
         expect(capturedTimestamp, 1700000000000);
         expect(capturedSpan, 'thisAndFollowing');
       });
-
     });
 
     group('deleteEvent', () {

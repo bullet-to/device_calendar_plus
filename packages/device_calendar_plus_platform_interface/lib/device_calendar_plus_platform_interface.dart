@@ -140,10 +140,12 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// [eventId] is the event identifier.
   /// [timestamp] is the occurrence timestamp in milliseconds for recurring events.
+  /// [edit] opens the native editor directly instead of the read-only view.
   ///
-  /// On iOS, presents the event in a modal using EKEventViewController.
-  /// On Android, opens the event using an Intent with ACTION_VIEW.
-  Future<void> showEventModal(String eventId, int? timestamp);
+  /// On iOS, presents EKEventViewController (view) or EKEventEditViewController (edit).
+  /// On Android, fires ACTION_VIEW or ACTION_EDIT.
+  Future<void> showEventModal(String eventId, int? timestamp,
+      {bool edit = false});
 
   /// Creates a new event in the specified calendar.
   ///
