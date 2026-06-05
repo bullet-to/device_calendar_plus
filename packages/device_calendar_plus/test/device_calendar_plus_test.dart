@@ -1214,6 +1214,50 @@ void main() {
         expect(capturedDuration, 90);
       });
 
+      test(
+          'computes duration from occurrence timestamp when only endDate is provided',
+          () async {
+        int? capturedDuration;
+        int? capturedHour;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setUpdateRecurringCallback((
+          eventId,
+          timestamp,
+          span, {
+          title,
+          startTimeHour,
+          startTimeMinute,
+          durationMinutes,
+          description,
+          location,
+          url,
+          isAllDay,
+          timeZone,
+          availability,
+          recurrenceRule,
+        }) {
+          capturedDuration = durationMinutes;
+          capturedHour = startTimeHour;
+          return Future.value('id');
+        });
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        // Occurrence at 2023-11-14 22:13:20 UTC (1700000000000ms).
+        // End date is 90 minutes later.
+        final occurrenceStart =
+            DateTime.fromMillisecondsSinceEpoch(1700000000000);
+        final endDate = occurrenceStart.add(const Duration(minutes: 90));
+
+        await DeviceCalendar.instance.updateEvent(
+          eventId: 'event-123@1700000000000',
+          endDate: endDate,
+        );
+
+        expect(capturedHour, isNull);
+        expect(capturedDuration, 90);
+      });
+
       test('bare event ID still goes through updateEvent platform call',
           () async {
         String? capturedEventId;

@@ -723,8 +723,16 @@ class DeviceCalendar {
   ///   maps to `EKEvent.url`; on Android it maps to
   ///   `CalendarContract.Events.CUSTOM_APP_URI`.
   /// - [isAllDay] - change between all-day and timed event
+  ///   - Changing timed → all-day: Time components are stripped to midnight
+  ///   - Changing all-day → timed: Midnight time is used
   /// - [timeZone] - new timezone identifier
+  ///   - Note: This reinterprets the local time, not preserving the instant
+  ///   - Example: "3:00 PM EST" → "3:00 PM PST" (different instant in time)
   /// - [availability] - new availability status
+  ///
+  /// [description], [location] and [url] take a [Patch]: omit the argument (or
+  /// pass `null`) to leave the field unchanged, [Patch.set] to assign a new
+  /// value, [Patch.clear] to remove the existing value.
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions - call [requestPermissions] first.
@@ -897,6 +905,13 @@ class DeviceCalendar {
   /// [recurrenceRule] takes a [Patch]: omit it to leave recurrence unchanged,
   /// [Patch.set] to change the rule, [Patch.clear] to remove it (the event
   /// stops recurring).
+  ///
+  /// **Secondary effects** — what happens to occurrences the user had
+  /// individually customised — are best-effort and differ by platform.
+  /// Customisations before a `thisAndFollowing` split point survive.
+  /// Customisations after the split point (or anywhere, for `allEvents`) are
+  /// reset: a moved occurrence persists as a detached standalone event, and a
+  /// deleted occurrence may reappear if the new rule regenerates that date.
   ///
   /// Returns the event ID for the affected scope — the same ID for
   /// `allEvents`, the new series' ID for `thisAndFollowing`.
