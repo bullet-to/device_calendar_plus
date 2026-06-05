@@ -921,8 +921,9 @@ class EventsService(private val context: Context) {
         timestamp: Long?,
         span: String,
         title: String?,
-        startDate: java.util.Date?,
-        endDate: java.util.Date?,
+        startTimeHour: Int?,
+        startTimeMinute: Int?,
+        durationMinutes: Int?,
         description: String?,
         location: String?,
         url: String?,
@@ -945,19 +946,19 @@ class EventsService(private val context: Context) {
         return try {
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    eventId, timestamp, title, startDate, endDate,
-                    description, location, url, isAllDay, timeZone, availability,
-                    recurrenceRule, clearedFields
+                    eventId, timestamp, title, startTimeHour, startTimeMinute,
+                    durationMinutes, description, location, url, isAllDay,
+                    timeZone, availability, recurrenceRule, clearedFields
                 )
                 "thisInstance" -> updateRecurringThisInstance(
-                    eventId, timestamp, title, startDate, endDate,
-                    description, location, url, isAllDay, timeZone, availability,
-                    clearedFields
+                    eventId, timestamp, title, startTimeHour, startTimeMinute,
+                    durationMinutes, description, location, url, isAllDay,
+                    timeZone, availability, clearedFields
                 )
                 "allEvents" -> updateRecurringAllEvents(
-                    eventId, title, startDate, endDate,
-                    description, location, url, isAllDay, timeZone, availability,
-                    recurrenceRule, clearedFields
+                    eventId, title, startTimeHour, startTimeMinute,
+                    durationMinutes, description, location, url, isAllDay,
+                    timeZone, availability, recurrenceRule, clearedFields
                 )
                 else -> Result.failure(
                     CalendarException(
@@ -986,8 +987,9 @@ class EventsService(private val context: Context) {
     private fun updateRecurringAllEvents(
         eventId: String,
         title: String?,
-        startDate: java.util.Date?,
-        endDate: java.util.Date?,
+        startTimeHour: Int?,
+        startTimeMinute: Int?,
+        durationMinutes: Int?,
         description: String?,
         location: String?,
         url: String?,
@@ -1054,28 +1056,29 @@ class EventsService(private val context: Context) {
 
         // Time columns. A recurring event must use DURATION (and no DTEND); a
         // single event must use DTEND (and no DURATION). Rewrite them when the
-        // dates change or when the event flips between recurring and single.
-        if (startDate != null || endDate != null || wasRecurring != willBeRecurring) {
+        // time-of-day, duration, or recurring state changes.
+        val hasTimeChange = startTimeHour != null || durationMinutes != null
+        if (hasTimeChange || wasRecurring != willBeRecurring) {
             val existingDuration = eventDurationMillis(row)
-            val newStart = if (startDate != null) {
-                toStorageMillis(startDate, effectiveIsAllDay)
+            val newStart = if (startTimeHour != null) {
+                replaceTimeOfDay(row.dtstart, startTimeHour, startTimeMinute ?: 0, row.timeZone)
             } else {
                 row.dtstart
             }
-            val newEnd = if (endDate != null) {
-                toStorageMillis(endDate, effectiveIsAllDay)
+            val newDurationMs = if (durationMinutes != null) {
+                durationMinutes.toLong() * 60_000L
             } else {
-                newStart + existingDuration
+                existingDuration
             }
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
                 values.put(
                     CalendarContract.Events.DURATION,
-                    "P${(newEnd - newStart) / 1000}S"
+                    "P${newDurationMs / 1000}S"
                 )
                 values.putNull(CalendarContract.Events.DTEND)
             } else {
-                values.put(CalendarContract.Events.DTEND, newEnd)
+                values.put(CalendarContract.Events.DTEND, newStart + newDurationMs)
                 values.putNull(CalendarContract.Events.DURATION)
             }
         }
@@ -1107,8 +1110,9 @@ class EventsService(private val context: Context) {
         eventId: String,
         timestamp: Long?,
         title: String?,
-        startDate: java.util.Date?,
-        endDate: java.util.Date?,
+        startTimeHour: Int?,
+        startTimeMinute: Int?,
+        durationMinutes: Int?,
         description: String?,
         location: String?,
         url: String?,
@@ -1173,20 +1177,20 @@ class EventsService(private val context: Context) {
             }
         }
 
-        // The new series starts at the explicit start date, or at the anchor
-        // occurrence itself — "this and following" includes the named
-        // occurrence.
-        val duration = eventDurationMillis(row)
-        val newStart = if (startDate != null) {
-            toStorageMillis(startDate, effectiveIsAllDay)
+        // The new series starts at the anchor occurrence, optionally with a
+        // new time-of-day applied. Duration is the master's unless overridden.
+        val existingDuration = eventDurationMillis(row)
+        val newStart = if (startTimeHour != null) {
+            replaceTimeOfDay(timestamp, startTimeHour, startTimeMinute ?: 0, row.timeZone)
         } else {
             timestamp
         }
-        val newEnd = if (endDate != null) {
-            toStorageMillis(endDate, effectiveIsAllDay)
+        val newDurationMs = if (durationMinutes != null) {
+            durationMinutes.toLong() * 60_000L
         } else {
-            newStart + duration
+            existingDuration
         }
+        val newEnd = newStart + newDurationMs
 
         // Create the new series first, so that a later failure leaves the
         // original series intact.
@@ -1245,8 +1249,9 @@ class EventsService(private val context: Context) {
         eventId: String,
         timestamp: Long?,
         title: String?,
-        startDate: java.util.Date?,
-        endDate: java.util.Date?,
+        startTimeHour: Int?,
+        startTimeMinute: Int?,
+        durationMinutes: Int?,
         description: String?,
         location: String?,
         url: String?,
@@ -1281,17 +1286,16 @@ class EventsService(private val context: Context) {
             )
         }
 
-        val effectiveIsAllDay = isAllDay ?: row.allDay
-        val duration = eventDurationMillis(row)
-        val newStart = if (startDate != null) {
-            toStorageMillis(startDate, effectiveIsAllDay)
+        val existingDuration = eventDurationMillis(row)
+        val newStart = if (startTimeHour != null) {
+            replaceTimeOfDay(timestamp, startTimeHour, startTimeMinute ?: 0, row.timeZone)
         } else {
             timestamp
         }
-        val newEnd = if (endDate != null) {
-            toStorageMillis(endDate, effectiveIsAllDay)
+        val newDurationMs = if (durationMinutes != null) {
+            durationMinutes.toLong() * 60_000L
         } else {
-            newStart + duration
+            existingDuration
         }
 
         // Insert an exception overriding this single occurrence. The provider
@@ -1299,7 +1303,7 @@ class EventsService(private val context: Context) {
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
             put(CalendarContract.Events.DTSTART, newStart)
-            put(CalendarContract.Events.DURATION, "P${(newEnd - newStart) / 1000}S")
+            put(CalendarContract.Events.DURATION, "P${newDurationMs / 1000}S")
             put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
 
             if (title != null) {
@@ -1651,6 +1655,28 @@ class EventsService(private val context: Context) {
             "tentative" -> CalendarContract.Events.AVAILABILITY_TENTATIVE
             else -> CalendarContract.Events.AVAILABILITY_BUSY
         }
+    }
+
+    /**
+     * Keeps the calendar date of [baseMillis] but replaces the time-of-day
+     * with [hour]:[minute]. The date is interpreted in the event's timezone
+     * (or the device default when [timeZoneId] is null).
+     */
+    private fun replaceTimeOfDay(
+        baseMillis: Long,
+        hour: Int,
+        minute: Int,
+        timeZoneId: String?
+    ): Long {
+        val tz = if (timeZoneId != null) java.util.TimeZone.getTimeZone(timeZoneId)
+                 else java.util.TimeZone.getDefault()
+        val cal = java.util.Calendar.getInstance(tz)
+        cal.timeInMillis = baseMillis
+        cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
+        cal.set(java.util.Calendar.MINUTE, minute)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
     }
 
     /** Storage millis for a date: UTC midnight for all-day, the instant otherwise. */

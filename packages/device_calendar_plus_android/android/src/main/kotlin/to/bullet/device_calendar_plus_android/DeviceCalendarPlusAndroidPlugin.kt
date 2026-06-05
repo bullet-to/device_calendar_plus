@@ -547,8 +547,9 @@ class DeviceCalendarPlusAndroidPlugin :
         // Parse optional arguments (all can be null)
         val timestamp = call.argument<Long>("timestamp")
         val title = call.argument<String>("title")
-        val startDateMillis = call.argument<Long>("startDate")
-        val endDateMillis = call.argument<Long>("endDate")
+        val startTimeHour = call.argument<Int>("startTimeHour")
+        val startTimeMinute = call.argument<Int>("startTimeMinute")
+        val durationMinutes = call.argument<Int>("durationMinutes")
         val description = call.argument<String>("description")
         val location = call.argument<String>("location")
         val url = call.argument<String>("url")
@@ -558,16 +559,14 @@ class DeviceCalendarPlusAndroidPlugin :
         val recurrenceRule = call.argument<String>("recurrenceRule")
         val clearedFields = call.argument<List<String>>("clearedFields") ?: emptyList()
 
-        val startDate = startDateMillis?.let { java.util.Date(it) }
-        val endDate = endDateMillis?.let { java.util.Date(it) }
-
         val serviceResult = service.updateRecurring(
             eventId,
             timestamp,
             span,
             title,
-            startDate,
-            endDate,
+            startTimeHour,
+            startTimeMinute,
+            durationMinutes,
             description,
             location,
             url,

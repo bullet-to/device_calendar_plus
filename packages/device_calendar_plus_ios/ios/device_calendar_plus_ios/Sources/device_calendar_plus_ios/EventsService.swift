@@ -901,8 +901,9 @@ class EventsService {
     timestamp: Int64?,
     span: String,
     title: String?,
-    startDate: Date?,
-    endDate: Date?,
+    startTimeHour: Int?,
+    startTimeMinute: Int?,
+    durationMinutes: Int?,
     description: String?,
     location: String?,
     url: String?,
@@ -966,8 +967,29 @@ class EventsService {
       foundEvent.url = URL(string: url)
     }
     if let isAllDay = isAllDay { foundEvent.isAllDay = isAllDay }
-    if let startDate = startDate { foundEvent.startDate = startDate }
-    if let endDate = endDate { foundEvent.endDate = endDate }
+
+    // Apply time-of-day and/or duration changes. The existing date is
+    // preserved; only the time component is replaced.
+    if let hour = startTimeHour {
+      let minute = startTimeMinute ?? 0
+      let tz = foundEvent.timeZone ?? .current
+      var components = Calendar.current.dateComponents(in: tz, from: foundEvent.startDate)
+      components.hour = hour
+      components.minute = minute
+      components.second = 0
+      components.nanosecond = 0
+      if let newStart = Calendar.current.date(from: components) {
+        let existingDuration = foundEvent.endDate.timeIntervalSince(foundEvent.startDate)
+        foundEvent.startDate = newStart
+        if let dur = durationMinutes {
+          foundEvent.endDate = newStart.addingTimeInterval(TimeInterval(dur * 60))
+        } else {
+          foundEvent.endDate = newStart.addingTimeInterval(existingDuration)
+        }
+      }
+    } else if let dur = durationMinutes {
+      foundEvent.endDate = foundEvent.startDate.addingTimeInterval(TimeInterval(dur * 60))
+    }
 
     if foundEvent.isAllDay {
       foundEvent.timeZone = nil

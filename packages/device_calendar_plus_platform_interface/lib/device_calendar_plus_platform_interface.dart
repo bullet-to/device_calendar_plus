@@ -237,6 +237,11 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// series; `thisAndFollowing` splits it at [timestamp]; `thisInstance`
   /// detaches and edits only that occurrence.
   ///
+  /// Time fields:
+  /// - [startTimeHour] and [startTimeMinute] set the time-of-day for every
+  ///   occurrence in scope, preserving each occurrence's date.
+  /// - [durationMinutes] sets the event duration in minutes.
+  ///
   /// [description], [location] and [url] take a [Patch] of the field value.
   /// [recurrenceRule] takes a [Patch] of the RRULE string: [Patch.set]
   /// changes the rule, [Patch.clear] removes it (the event stops recurring).
@@ -248,8 +253,9 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     int? timestamp,
     String span, {
     String? title,
-    DateTime? startDate,
-    DateTime? endDate,
+    int? startTimeHour,
+    int? startTimeMinute,
+    int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
     Patch<String>? url,

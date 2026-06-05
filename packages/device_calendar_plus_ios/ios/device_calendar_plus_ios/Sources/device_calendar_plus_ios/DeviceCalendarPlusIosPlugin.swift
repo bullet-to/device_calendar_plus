@@ -621,6 +621,9 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     // Parse optional parameters
     let timestamp = args["timestamp"] as? Int64
     let title = args["title"] as? String
+    let startTimeHour = args["startTimeHour"] as? Int
+    let startTimeMinute = args["startTimeMinute"] as? Int
+    let durationMinutes = args["durationMinutes"] as? Int
     let description = args["description"] as? String
     let location = args["location"] as? String
     let url = args["url"] as? String
@@ -630,20 +633,14 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let recurrenceRule = args["recurrenceRule"] as? String
     let clearedFields = args["clearedFields"] as? [String] ?? []
 
-    let startDate = (args["startDate"] as? Int64).map {
-      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
-    }
-    let endDate = (args["endDate"] as? Int64).map {
-      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
-    }
-
     eventsService.updateRecurring(
       eventId: eventId,
       timestamp: timestamp,
       span: span,
       title: title,
-      startDate: startDate,
-      endDate: endDate,
+      startTimeHour: startTimeHour,
+      startTimeMinute: startTimeMinute,
+      durationMinutes: durationMinutes,
       description: description,
       location: location,
       url: url,

@@ -90,8 +90,9 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     int? timestamp,
     String span, {
     String? title,
-    DateTime? startDate,
-    DateTime? endDate,
+    int? startTimeHour,
+    int? startTimeMinute,
+    int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
     Patch<String>? url,

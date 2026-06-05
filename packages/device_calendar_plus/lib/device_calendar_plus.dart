@@ -698,15 +698,17 @@ class DeviceCalendar {
     }
   }
 
-  /// Updates an existing event on the device.
+  /// Updates a single event or a single occurrence of a recurring event.
   ///
-  /// [eventId] identifies the event to update (required). You can pass either:
-  /// - An event ID (e.g., from `event.eventId`)
-  /// - An instance ID (e.g., from `event.instanceId`) - the event ID will be extracted by the platform
+  /// [eventId] identifies what to update (required):
+  /// - **Bare event ID** (e.g., `event.eventId`): updates the non-recurring
+  ///   event, or the master of a recurring series (all occurrences).
+  /// - **Instance ID** (e.g., `event.instanceId`, format
+  ///   `eventId@timestamp`): detaches that single occurrence from the series
+  ///   and applies the changes to it alone.
   ///
-  /// **For recurring events**: This will update the ENTIRE series (all past
-  /// and future occurrences). Single-instance updates are not supported to
-  /// maintain consistent behavior across platforms.
+  /// To change a property across an entire recurring series or from a split
+  /// point forward, use [updateRecurring] instead.
   ///
   /// All field parameters are optional - only provided fields will be updated:
   /// - [title] - new event title
@@ -721,16 +723,8 @@ class DeviceCalendar {
   ///   maps to `EKEvent.url`; on Android it maps to
   ///   `CalendarContract.Events.CUSTOM_APP_URI`.
   /// - [isAllDay] - change between all-day and timed event
-  ///   - Changing timed → all-day: Time components are stripped to midnight
-  ///   - Changing all-day → timed: Midnight time is used
   /// - [timeZone] - new timezone identifier
-  ///   - Note: This reinterprets the local time, not preserving the instant
-  ///   - Example: "3:00 PM EST" → "3:00 PM PST" (different instant in time)
   /// - [availability] - new availability status
-  ///
-  /// [description], [location] and [url] take a [Patch]: omit the argument (or
-  /// pass `null`) to leave the field unchanged, [Patch.set] to assign a new
-  /// value, [Patch.clear] to remove the existing value.
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions - call [requestPermissions] first.
@@ -739,31 +733,20 @@ class DeviceCalendar {
   /// ```dart
   /// final plugin = DeviceCalendar.instance;
   ///
-  /// // Update event title using event ID (entire series for recurring events)
+  /// // Update a non-recurring event (or all occurrences of a recurring one)
   /// await plugin.updateEvent(
   ///   eventId: event.eventId,
   ///   title: 'Updated Meeting Title',
   /// );
   ///
-  /// // Update using instance ID (event ID will be extracted by platform)
+  /// // Edit only this one occurrence of a recurring event
   /// await plugin.updateEvent(
   ///   eventId: event.instanceId,
-  ///   isAllDay: true,
-  /// );
-  ///
-  /// // Update multiple fields, and clear the location
-  /// await plugin.updateEvent(
-  ///   eventId: event.eventId,
-  ///   title: 'Team Sync',
-  ///   startDate: DateTime(2024, 3, 20, 10, 0),
-  ///   endDate: DateTime(2024, 3, 20, 11, 0),
-  ///   description: Patch.set('Updated agenda'),
-  ///   location: Patch.clear(),
-  ///   availability: EventAvailability.free,
+  ///   title: 'Moved this week only',
+  ///   startDate: DateTime(2024, 3, 21, 15, 0),
+  ///   endDate: DateTime(2024, 3, 21, 16, 0),
   /// );
   /// ```
-  // TODO(breaking): rename param to `id` and stop discarding the parsed
-  // timestamp so per-instance update works (matching getEvent/showEventModal).
   Future<void> updateEvent({
     required String eventId,
     String? title,
@@ -814,22 +797,63 @@ class DeviceCalendar {
     final normalizedEndDate =
         (isAllDay == true && endDate != null) ? _stripTime(endDate) : endDate;
 
-    try {
-      // Parse the ID to extract eventId (timestamp is ignored for update)
-      final parsed = InstanceIdParser.parse(eventId);
+    final parsed = InstanceIdParser.parse(eventId);
 
-      await DeviceCalendarPlusPlatform.instance.updateEvent(
-        parsed.eventId,
-        title: title,
-        startDate: normalizedStartDate,
-        endDate: normalizedEndDate,
-        description: description,
-        location: location,
-        url: url,
-        isAllDay: isAllDay,
-        timeZone: timeZone,
-        availability: availability?.name,
-      );
+    try {
+      if (parsed.timestamp != null) {
+        // Instance ID with timestamp → detach and edit this occurrence only.
+        // Compute startTime and duration from the provided dates so the
+        // platform interface's time-of-day semantics are satisfied.
+        int? startTimeHour;
+        int? startTimeMinute;
+        int? durationMinutes;
+        if (normalizedStartDate != null) {
+          startTimeHour = normalizedStartDate.hour;
+          startTimeMinute = normalizedStartDate.minute;
+        }
+        if (normalizedStartDate != null && normalizedEndDate != null) {
+          durationMinutes =
+              normalizedEndDate.difference(normalizedStartDate).inMinutes;
+        } else if (normalizedEndDate != null) {
+          // End date without start date: compute duration from the occurrence
+          // timestamp so the native layer can derive the new end time.
+          final occurrenceStart =
+              DateTime.fromMillisecondsSinceEpoch(parsed.timestamp!);
+          durationMinutes =
+              normalizedEndDate.difference(occurrenceStart).inMinutes;
+        }
+
+        await DeviceCalendarPlusPlatform.instance.updateRecurring(
+          parsed.eventId,
+          parsed.timestamp,
+          'thisInstance',
+          title: title,
+          startTimeHour: startTimeHour,
+          startTimeMinute: startTimeMinute,
+          durationMinutes: durationMinutes,
+          description: description,
+          location: location,
+          url: url,
+          isAllDay: isAllDay,
+          timeZone: timeZone,
+          availability: availability?.name,
+        );
+      } else {
+        // Bare event ID → update the event directly (whole series for
+        // recurring, single event for non-recurring).
+        await DeviceCalendarPlusPlatform.instance.updateEvent(
+          parsed.eventId,
+          title: title,
+          startDate: normalizedStartDate,
+          endDate: normalizedEndDate,
+          description: description,
+          location: location,
+          url: url,
+          isAllDay: isAllDay,
+          timeZone: timeZone,
+          availability: availability?.name,
+        );
+      }
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);
@@ -840,16 +864,20 @@ class DeviceCalendar {
     }
   }
 
-  /// Updates a recurring event, choosing which occurrences the edit affects.
+  /// Updates a recurring event's series, choosing which occurrences the edit
+  /// affects.
   ///
   /// Use this instead of [updateEvent] when you need to change a recurring
-  /// event's [recurrenceRule], or when an edit should affect only part of a
-  /// series. For non-recurring events, keep using [updateEvent].
+  /// event's [recurrenceRule], its time-of-day or duration across a series, or
+  /// when an edit should split the series at a given point.
+  ///
+  /// To edit a single occurrence, pass its instance ID to [updateEvent]
+  /// instead.
   ///
   /// [instanceId] identifies the occurrence to act on — pass an instance ID
-  /// (`event.instanceId`). For every [span] except [EventSpan.allEvents]
-  /// it must carry an occurrence timestamp (`eventId@timestamp`); a bare event
-  /// ID throws [ArgumentError].
+  /// (`event.instanceId`). For [EventSpan.thisAndFollowing] it must carry an
+  /// occurrence timestamp (`eventId@timestamp`); a bare event ID throws
+  /// [ArgumentError].
   ///
   /// [span] chooses the scope:
   /// - [EventSpan.allEvents] — the whole series follows the change.
@@ -857,27 +885,21 @@ class DeviceCalendar {
   /// - [EventSpan.thisAndFollowing] — the series is split at the
   ///   occurrence timestamp: that occurrence and every later one carry the
   ///   edit; earlier occurrences are untouched.
-  /// - [EventSpan.thisInstance] — only that occurrence is edited, as a
-  ///   detached exception; the rest of the series is untouched.
-  ///   [recurrenceRule] cannot be used with this span.
   ///
-  /// Field parameters behave as in [updateEvent]. [recurrenceRule] takes a
-  /// [Patch]: omit it to leave recurrence unchanged, [Patch.set] to change
-  /// the rule, [Patch.clear] to remove it (the event stops recurring).
+  /// Time fields:
+  /// - [startTime] sets the time-of-day for every occurrence in scope,
+  ///   preserving each occurrence's date. Duration is preserved unless
+  ///   [duration] is also passed.
+  /// - [duration] sets the event duration. For all-day events, only
+  ///   whole-day durations are valid (e.g., `Duration(days: 3)` for a
+  ///   three-day conference).
   ///
-  /// **Primary effect** — the recurrence rule change itself — behaves
-  /// identically on iOS and Android.
-  ///
-  /// **Secondary effects** — what happens to occurrences the user had
-  /// individually customised — are best-effort and differ by platform.
-  /// Customisations before a `thisAndFollowing` split point survive.
-  /// Customisations after the split point (or anywhere, for `allEvents`) are
-  /// reset: a moved occurrence persists as a detached standalone event, and a
-  /// deleted occurrence may reappear if the new rule regenerates that date.
+  /// [recurrenceRule] takes a [Patch]: omit it to leave recurrence unchanged,
+  /// [Patch.set] to change the rule, [Patch.clear] to remove it (the event
+  /// stops recurring).
   ///
   /// Returns the event ID for the affected scope — the same ID for
-  /// `allEvents`, the new series' ID for `thisAndFollowing`, the detached
-  /// occurrence's ID for `thisInstance`.
+  /// `allEvents`, the new series' ID for `thisAndFollowing`.
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions - call [requestPermissions] first.
@@ -886,41 +908,41 @@ class DeviceCalendar {
   /// ```dart
   /// final plugin = DeviceCalendar.instance;
   ///
+  /// // Change every occurrence to start at 3 PM
+  /// await plugin.updateRecurring(
+  ///   event.instanceId,
+  ///   EventSpan.allEvents,
+  ///   startTime: (hour: 15, minute: 0),
+  /// );
+  ///
+  /// // Change the duration of all occurrences to 90 minutes
+  /// await plugin.updateRecurring(
+  ///   event.instanceId,
+  ///   EventSpan.allEvents,
+  ///   duration: Duration(minutes: 90),
+  /// );
+  ///
+  /// // Split: this occurrence and later ones move to a new time
+  /// final newSeriesId = await plugin.updateRecurring(
+  ///   event.instanceId,
+  ///   EventSpan.thisAndFollowing,
+  ///   startTime: (hour: 15, minute: 0),
+  ///   duration: Duration(hours: 1),
+  /// );
+  ///
   /// // Change the whole series to weekly
   /// await plugin.updateRecurring(
   ///   event.instanceId,
   ///   EventSpan.allEvents,
   ///   recurrenceRule: Patch.set(WeeklyRecurrence(end: CountEnd(10))),
   /// );
-  ///
-  /// // Stop the series recurring (becomes a single event)
-  /// await plugin.updateRecurring(
-  ///   event.instanceId,
-  ///   EventSpan.allEvents,
-  ///   recurrenceRule: Patch.clear(),
-  /// );
-  ///
-  /// // Split: this occurrence and every later one move to a new time
-  /// final newSeriesId = await plugin.updateRecurring(
-  ///   event.instanceId,
-  ///   EventSpan.thisAndFollowing,
-  ///   startDate: DateTime(2024, 3, 21, 15, 0),
-  ///   endDate: DateTime(2024, 3, 21, 16, 0),
-  /// );
-  ///
-  /// // Edit only this one occurrence, leaving the rest of the series alone
-  /// await plugin.updateRecurring(
-  ///   event.instanceId,
-  ///   EventSpan.thisInstance,
-  ///   title: 'Moved this week only',
-  /// );
   /// ```
   Future<String> updateRecurring(
     String instanceId,
     EventSpan span, {
     String? title,
-    DateTime? startDate,
-    DateTime? endDate,
+    ({int hour, int minute})? startTime,
+    Duration? duration,
     Patch<String>? description,
     Patch<String>? location,
     Patch<String>? url,
@@ -938,31 +960,51 @@ class DeviceCalendar {
       );
     }
 
-    // Parse the ID — every span except allEvents acts on a specific
-    // occurrence, so it needs an occurrence timestamp.
+    // thisInstance is handled by updateEvent; updateRecurring only accepts
+    // series-level spans.
+    if (span == EventSpan.thisInstance) {
+      throw ArgumentError.value(
+        span,
+        'span',
+        'EventSpan.thisInstance is not supported by updateRecurring. '
+            'Pass the instance ID to updateEvent instead.',
+      );
+    }
+
+    // Parse the ID — thisAndFollowing acts on a specific occurrence, so it
+    // needs an occurrence timestamp.
     final parsed = InstanceIdParser.parse(instanceId);
-    if (span != EventSpan.allEvents && parsed.timestamp == null) {
+    if (span == EventSpan.thisAndFollowing && parsed.timestamp == null) {
       throw ArgumentError.value(
         instanceId,
         'instanceId',
-        'EventSpan.${span.name} requires an instance ID with an '
+        'EventSpan.thisAndFollowing requires an instance ID with an '
             'occurrence timestamp (eventId@timestamp)',
       );
     }
 
-    // A single occurrence has no recurrence rule of its own.
-    if (span == EventSpan.thisInstance && recurrenceRule != null) {
+    // All-day events have no time-of-day.
+    if (isAllDay == true && startTime != null) {
       throw ArgumentError.value(
-        recurrenceRule,
-        'recurrenceRule',
-        'recurrenceRule cannot be set with EventSpan.thisInstance',
+        startTime,
+        'startTime',
+        'startTime cannot be set when isAllDay is true',
+      );
+    }
+
+    // All-day events only accept whole-day durations.
+    if (isAllDay == true && duration != null && duration.inMinutes % 1440 != 0) {
+      throw ArgumentError.value(
+        duration,
+        'duration',
+        'All-day events require whole-day durations (multiples of 24 hours)',
       );
     }
 
     // Validate at least one field is provided
     if (title == null &&
-        startDate == null &&
-        endDate == null &&
+        startTime == null &&
+        duration == null &&
         description == null &&
         location == null &&
         url == null &&
@@ -974,20 +1016,6 @@ class DeviceCalendar {
         'At least one field must be provided to update',
       );
     }
-
-    // Validate dates if both are provided
-    if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
-      throw ArgumentError(
-        'End date must be after start date',
-      );
-    }
-
-    // Normalize dates for all-day events
-    final normalizedStartDate = (isAllDay == true && startDate != null)
-        ? _stripTime(startDate)
-        : startDate;
-    final normalizedEndDate =
-        (isAllDay == true && endDate != null) ? _stripTime(endDate) : endDate;
 
     // The platform layer works in RRULE strings; map the typed Patch across.
     final Patch<String>? recurrenceRulePatch = switch (recurrenceRule) {
@@ -1002,8 +1030,9 @@ class DeviceCalendar {
         parsed.timestamp,
         span.name,
         title: title,
-        startDate: normalizedStartDate,
-        endDate: normalizedEndDate,
+        startTimeHour: startTime?.hour,
+        startTimeMinute: startTime?.minute,
+        durationMinutes: duration?.inMinutes,
         description: description,
         location: location,
         url: url,
