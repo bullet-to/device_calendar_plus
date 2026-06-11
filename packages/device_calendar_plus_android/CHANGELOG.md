@@ -1,7 +1,19 @@
-## Unreleased
+## 0.5.0 - 2026-06-11
+
+### Changed
+- **Breaking:** recurring-edit split — `updateRecurring` / `deleteRecurring`
+  accept only `allEvents` and `thisAndFollowing`; single occurrences go through
+  `updateEvent` / `deleteEvent` with an occurrence timestamp (detached
+  exception rows; deletes via `STATUS_CANCELED` exceptions)
+- `updateRecurring` time changes preserve each occurrence's date, replacing
+  only the time-of-day; `thisAndFollowing` truncates the master with `UNTIL`
+  to match iOS's `EKSpan.futureEvents` split
 
 ### Fixed
 - Calendar Provider work now runs on a background thread. Method-channel handlers were doing blocking provider queries on the main thread, which could ANR on large calendars (#73). Thanks @mauriziopinotti for the report and a working proof-of-fix.
+- A NULL `STATUS` column reads back as `none`; it was defaulted to `0`, which
+  is `STATUS_TENTATIVE`, so status-less events came back tentative (#70) —
+  thanks @mauriziopinotti
 
 ## 0.4.0 - 2026-05-25
 

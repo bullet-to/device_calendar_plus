@@ -1,3 +1,18 @@
+## 0.5.0 - 2026-06-11
+
+### Changed
+- **Breaking:** recurring-edit split — `updateRecurring` / `deleteRecurring`
+  accept only `allEvents` and `thisAndFollowing` (both `EKSpan.futureEvents`);
+  single occurrences go through `updateEvent` / `deleteEvent` with an
+  occurrence timestamp (`EKSpan.thisEvent`)
+- `updateRecurring` time changes preserve each occurrence's date, replacing
+  only the time-of-day components
+
+### Fixed
+- Occurrence edits validate before mutating the live `EKEvent`; an edit whose
+  `startDate` passes the occurrence's untouched end now fails with
+  `invalidArguments` (matching Android) instead of saving an inverted event
+
 ## 0.4.0 - 2026-05-25
 
 ### Added

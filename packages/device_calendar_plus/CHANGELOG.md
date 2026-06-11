@@ -1,3 +1,37 @@
+## 0.5.0 - 2026-06-11
+
+### Changed
+- **Breaking:** `updateRecurring()` is redesigned around series semantics (#69).
+  Times are now expressed as `startTime` (`EventTimeOfDay`) plus `duration`
+  instead of absolute `startDate`/`endDate`, so every occurrence keeps its own
+  date — changing a series' time no longer re-anchors the series to the
+  occurrence you happened to edit (#68, thanks @SuperKrallan). The recurrence
+  rule is now a `Patch<RecurrenceRule>`: `Patch.set` replaces it, `Patch.clear`
+  collapses the series into a single event. Returns the event ID of the
+  affected scope.
+- **Breaking:** `EventSpan.thisInstance` is gone — `EventSpan` is now just
+  `allEvents` and `thisAndFollowing`. Single occurrences are handled by
+  `updateEvent` / `deleteEvent` with an instance ID (below).
+- **Breaking:** `updateEvent()` with an instance ID (`eventId@timestamp`)
+  edits only that occurrence, detaching it from the series; a bare event ID
+  on a recurring event updates the whole series.
+- **Breaking:** `deleteEvent()` with an instance ID removes only that
+  occurrence; a bare event ID deletes the event (the whole series when
+  recurring).
+
+### Added
+- `EventTimeOfDay` — small validating hour/minute value class used by
+  `updateRecurring()`.
+
+### Fixed
+- Occurrence edits with a `startDate` past the occurrence's untouched end
+  are rejected with `invalidArguments` on iOS too, matching Android, instead
+  of saving an inverted event.
+- Android: events with no status read back as `EventStatus.none` instead of
+  `EventStatus.tentative` — thanks @mauriziopinotti (#70).
+- Android: all Calendar Provider work runs on a background thread; large
+  calendars could ANR — thanks @mauriziopinotti (#73).
+
 ## 0.4.0 - 2026-05-25
 
 ### Added
