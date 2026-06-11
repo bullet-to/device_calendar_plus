@@ -912,12 +912,6 @@ class EventsService {
 
   // MARK: - updateRecurring (issue #36)
 
-  /// Updates a recurring event, choosing which occurrences the edit affects.
-  ///
-  /// `span` is "allEvents" (the whole series) or "thisAndFollowing" (split the
-  /// series at `timestamp`). On success returns the event ID for the affected
-  /// scope — the same ID for "allEvents", the new series' ID for
-  /// "thisAndFollowing".
   /// Keeps the calendar date of `date` but replaces the time-of-day with
   /// `hour`:`minute`, interpreted in `timeZone`. The Swift counterpart of
   /// Android's `replaceTimeOfDay`.
@@ -935,6 +929,12 @@ class EventsService {
     return Calendar.current.date(from: components)
   }
 
+  /// Updates a recurring event, choosing which occurrences the edit affects.
+  ///
+  /// `span` is "allEvents" (the whole series) or "thisAndFollowing" (split the
+  /// series at `timestamp`). On success returns the event ID for the affected
+  /// scope — the same ID for "allEvents", the new series' ID for
+  /// "thisAndFollowing".
   func updateRecurring(
     eventId: String,
     timestamp: Int64?,
