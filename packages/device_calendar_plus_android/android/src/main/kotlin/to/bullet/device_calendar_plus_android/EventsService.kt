@@ -821,11 +821,15 @@ class EventsService(private val context: Context) {
         endDate: java.util.Date?,
         patch: EventFieldPatch
     ): Result<Unit> {
-        // Need to fetch existing event to determine if it's all-day
-        // This is required for proper date normalization
-        val existingEventResult = getEvent(eventId, null)
-        val existingEvent = existingEventResult.getOrNull()
-        val wasAllDay = existingEvent?.get("isAllDay") as? Boolean ?: false
+        // The existing row decides all-day date normalization when the call
+        // doesn't change the flag.
+        val row = readEventRow(eventId)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
 
         // Build ContentValues with only provided fields
         val values = android.content.ContentValues()
@@ -833,7 +837,7 @@ class EventsService(private val context: Context) {
 
         // Update dates if provided
         // If event is/becomes all-day, need to normalize to UTC midnight
-        val effectiveIsAllDay = patch.isAllDay ?: wasAllDay
+        val effectiveIsAllDay = patch.isAllDay ?: row.allDay
         if (startDate != null || endDate != null) {
             val startMillis: Long?
             val endMillis: Long?
