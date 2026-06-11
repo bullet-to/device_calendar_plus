@@ -2,6 +2,8 @@ package to.bullet.device_calendar_plus_android
 
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
@@ -10,6 +12,8 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /** DeviceCalendarPlusAndroidPlugin */
 class DeviceCalendarPlusAndroidPlugin :
@@ -27,6 +31,11 @@ class DeviceCalendarPlusAndroidPlugin :
     private var eventsService: EventsService? = null
     private var showEventModalResult: Result? = null
     private var createEventModalResult: Result? = null
+    private var providerExecutor: ExecutorService? = null
+
+    // Lazy so constructing the plugin doesn't touch the Looper — JVM unit
+    // tests can instantiate the class without an Android runtime.
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
 
     companion object {
         private const val SHOW_EVENT_REQUEST_CODE = 1001
@@ -42,6 +51,40 @@ class DeviceCalendarPlusAndroidPlugin :
         calendarService = CalendarService(context)
         eventsService = EventsService(context)
         permissionService = PermissionService(context)
+        providerExecutor = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "DeviceCalendarPlusProvider").apply { isDaemon = true }
+        }
+    }
+
+    /**
+     * Runs a Calendar Provider operation off the main thread and replies on
+     * it. ContentResolver calls are blocking binder IPC and method-channel
+     * handlers run on the main thread, so query-heavy calls (listEvents fans
+     * out one attendees query per event) can ANR there (#73). A single
+     * worker keeps operations in call order, as they were when inline.
+     */
+    private fun <T> runOffMainThread(result: Result, operation: () -> kotlin.Result<T>) {
+        providerExecutor!!.execute {
+            val serviceResult = try {
+                operation()
+            } catch (error: Throwable) {
+                kotlin.Result.failure(error)
+            }
+            mainHandler.post {
+                serviceResult.fold(
+                    // The channel codec can't encode Unit; void operations
+                    // reply with null, as the inline handlers did.
+                    onSuccess = { value -> result.success(value.takeIf { it != Unit }) },
+                    onFailure = { error ->
+                        if (error is CalendarException) {
+                            result.error(error.code, error.message, null)
+                        } else {
+                            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
+                        }
+                    }
+                )
+            }
+        }
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -130,34 +173,14 @@ class DeviceCalendarPlusAndroidPlugin :
     
     private fun handleListCalendars(result: Result) {
         val service = calendarService!!
-        
-        val serviceResult = service.listCalendars()
-        serviceResult.fold(
-            onSuccess = { calendars -> result.success(calendars) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+
+        runOffMainThread(result) { service.listCalendars() }
     }
-    
+
     private fun handleListSources(result: Result) {
         val service = calendarService!!
 
-        val serviceResult = service.listSources()
-        serviceResult.fold(
-            onSuccess = { sources -> result.success(sources) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        runOffMainThread(result) { service.listSources() }
     }
 
     private fun handleCreateCalendar(call: MethodCall, result: Result) {
@@ -178,17 +201,7 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        val serviceResult = service.createCalendar(name, colorHex, accountName, accountType)
-        serviceResult.fold(
-            onSuccess = { calendarId -> result.success(calendarId) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        runOffMainThread(result) { service.createCalendar(name, colorHex, accountName, accountType) }
     }
     
     private fun handleUpdateCalendar(call: MethodCall, result: Result) {
@@ -208,17 +221,7 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        val serviceResult = service.updateCalendar(calendarId, name, colorHex)
-        serviceResult.fold(
-            onSuccess = { result.success(null) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        runOffMainThread(result) { service.updateCalendar(calendarId, name, colorHex) }
     }
     
     private fun handleDeleteCalendar(call: MethodCall, result: Result) {
@@ -236,17 +239,7 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        val serviceResult = service.deleteCalendar(calendarId)
-        serviceResult.fold(
-            onSuccess = { result.success(null) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        runOffMainThread(result) { service.deleteCalendar(calendarId) }
     }
     
     private fun handleListEvents(call: MethodCall, result: Result) {
@@ -269,17 +262,7 @@ class DeviceCalendarPlusAndroidPlugin :
         val startDate = java.util.Date(startDateMillis)
         val endDate = java.util.Date(endDateMillis)
         
-        val serviceResult = service.retrieveEvents(startDate, endDate, calendarIds)
-        serviceResult.fold(
-            onSuccess = { events -> result.success(events) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        runOffMainThread(result) { service.retrieveEvents(startDate, endDate, calendarIds) }
     }
     
     private fun handleGetEvent(call: MethodCall, result: Result) {
@@ -298,17 +281,7 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        val serviceResult = service.getEvent(eventId, timestamp)
-        serviceResult.fold(
-            onSuccess = { event -> result.success(event) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        runOffMainThread(result) { service.getEvent(eventId, timestamp) }
     }
     
     private fun handleShowEventModal(call: MethodCall, result: Result) {
@@ -410,30 +383,21 @@ class DeviceCalendarPlusAndroidPlugin :
         val startDate = java.util.Date(startDateMillis)
         val endDate = java.util.Date(endDateMillis)
         
-        val serviceResult = service.createEvent(
-            calendarId,
-            title,
-            startDate,
-            endDate,
-            isAllDay,
-            description,
-            location,
-            url,
-            timeZone,
-            availability,
-            recurrenceRule
-        )
-        
-        serviceResult.fold(
-            onSuccess = { eventId -> result.success(eventId) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        runOffMainThread(result) {
+            service.createEvent(
+                calendarId,
+                title,
+                startDate,
+                endDate,
+                isAllDay,
+                description,
+                location,
+                url,
+                timeZone,
+                availability,
+                recurrenceRule
+            )
+        }
     }
     
     private fun handleDeleteEvent(call: MethodCall, result: Result) {
@@ -453,17 +417,7 @@ class DeviceCalendarPlusAndroidPlugin :
         
         val timestamp = call.argument<Long>("timestamp")
 
-        val serviceResult = service.deleteEvent(eventId, timestamp)
-        serviceResult.fold(
-            onSuccess = { result.success(null) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        runOffMainThread(result) { service.deleteEvent(eventId, timestamp) }
     }
     
     private fun handleUpdateEvent(call: MethodCall, result: Result) {
@@ -486,24 +440,11 @@ class DeviceCalendarPlusAndroidPlugin :
         val startDate = call.argument<Long>("startDate")?.let { java.util.Date(it) }
         val endDate = call.argument<Long>("endDate")?.let { java.util.Date(it) }
 
-        val serviceResult = service.updateEvent(
-            eventId,
-            timestamp,
-            startDate,
-            endDate,
-            EventFieldPatch.fromCall(call)
-        )
-        
-        serviceResult.fold(
-            onSuccess = { result.success(null) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        val patch = EventFieldPatch.fromCall(call)
+
+        runOffMainThread(result) {
+            service.updateEvent(eventId, timestamp, startDate, endDate, patch)
+        }
     }
 
     private fun handleUpdateRecurring(call: MethodCall, result: Result) {
@@ -535,26 +476,19 @@ class DeviceCalendarPlusAndroidPlugin :
         val durationMinutes = call.argument<Int>("durationMinutes")
         val recurrenceRule = call.argument<String>("recurrenceRule")
 
-        val serviceResult = service.updateRecurring(
-            eventId,
-            timestamp,
-            span,
-            startMinuteOfDay,
-            durationMinutes,
-            recurrenceRule,
-            EventFieldPatch.fromCall(call)
-        )
+        val patch = EventFieldPatch.fromCall(call)
 
-        serviceResult.fold(
-            onSuccess = { affectedEventId -> result.success(affectedEventId) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        runOffMainThread(result) {
+            service.updateRecurring(
+                eventId,
+                timestamp,
+                span,
+                startMinuteOfDay,
+                durationMinutes,
+                recurrenceRule,
+                patch
+            )
+        }
     }
 
     private fun handleDeleteRecurring(call: MethodCall, result: Result) {
@@ -582,18 +516,7 @@ class DeviceCalendarPlusAndroidPlugin :
 
         val timestamp = call.argument<Long>("timestamp")
 
-        val serviceResult = service.deleteRecurring(eventId, timestamp, span)
-
-        serviceResult.fold(
-            onSuccess = { result.success(null) },
-            onFailure = { error ->
-                if (error is CalendarException) {
-                    result.error(error.code, error.message, null)
-                } else {
-                    result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                }
-            }
-        )
+        runOffMainThread(result) { service.deleteRecurring(eventId, timestamp, span) }
     }
 
     override fun onRequestPermissionsResult(
@@ -620,6 +543,10 @@ class DeviceCalendarPlusAndroidPlugin :
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        // Let in-flight provider work finish; the worker is a daemon thread,
+        // so it can't keep the process alive.
+        providerExecutor?.shutdown()
+        providerExecutor = null
         appContext = null
         calendarService = null
         eventsService = null
