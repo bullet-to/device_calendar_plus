@@ -1,3 +1,18 @@
+## 0.5.0 - 2026-06-11
+
+### Changed
+- **Breaking:** `updateRecurring()` reworked — positional `eventId`, occurrence
+  `timestamp` and `span`, with `startTime` (`EventTimeOfDay`) and
+  `durationMinutes` replacing absolute dates, and `recurrenceRule` taking a
+  `Patch<String>` (RRULE); returns the affected scope's event ID
+- **Breaking:** `updateEvent()` and `deleteEvent()` take an optional occurrence
+  `timestamp`; when set, the operation acts on that single occurrence
+- **Breaking:** `span` accepts only `allEvents` and `thisAndFollowing`;
+  `thisInstance` is gone
+
+### Added
+- `EventTimeOfDay` — validating hour/minute value class
+
 ## 0.4.0 - 2026-05-25
 
 ### Added
