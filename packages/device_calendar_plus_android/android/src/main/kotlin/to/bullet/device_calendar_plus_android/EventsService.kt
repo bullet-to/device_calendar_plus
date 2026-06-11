@@ -6,6 +6,8 @@ import android.content.Intent
 import android.provider.CalendarContract
 import java.util.Date
 
+private const val MINUTES_PER_DAY = 1440
+
 class EventsService(private val context: Context) {
     
     fun retrieveEvents(
@@ -1075,22 +1077,56 @@ class EventsService(private val context: Context) {
         }
 
         return try {
-            when (span) {
-                "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    eventId, timestamp, title, startTimeHour, startTimeMinute,
-                    durationMinutes, description, location, url, isAllDay,
-                    timeZone, availability, recurrenceRule, clearedFields
-                )
-                "allEvents" -> updateRecurringAllEvents(
-                    eventId, title, startTimeHour, startTimeMinute,
-                    durationMinutes, description, location, url, isAllDay,
-                    timeZone, availability, recurrenceRule, clearedFields
-                )
-                else -> Result.failure(
+            if (span != "allEvents" && span != "thisAndFollowing") {
+                return Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.INVALID_ARGUMENTS,
                         "Unknown update span: $span"
                     )
+                )
+            }
+
+            val row = readEventRow(eventId)
+                ?: return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.NOT_FOUND,
+                        "Event with ID $eventId not found"
+                    )
+                )
+
+            // All-day events have no time-of-day and only whole-day durations.
+            // The Dart layer can only check these against fields in the same
+            // call; the stored event's state is enforced here.
+            val effectiveIsAllDay = isAllDay ?: row.allDay
+            if (startTimeHour != null && effectiveIsAllDay) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "startTime cannot be set on an all-day event"
+                    )
+                )
+            }
+            if (durationMinutes != null && effectiveIsAllDay &&
+                durationMinutes % MINUTES_PER_DAY != 0) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "All-day events require whole-day durations"
+                    )
+                )
+            }
+
+            when (span) {
+                "thisAndFollowing" -> updateRecurringThisAndFollowing(
+                    eventId, row, timestamp, title, startTimeHour,
+                    startTimeMinute, durationMinutes, description, location,
+                    url, isAllDay, timeZone, availability, recurrenceRule,
+                    clearedFields
+                )
+                else -> updateRecurringAllEvents(
+                    eventId, row, title, startTimeHour, startTimeMinute,
+                    durationMinutes, description, location, url, isAllDay,
+                    timeZone, availability, recurrenceRule, clearedFields
                 )
             }
         } catch (e: SecurityException) {
@@ -1112,6 +1148,7 @@ class EventsService(private val context: Context) {
 
     private fun updateRecurringAllEvents(
         eventId: String,
+        row: EventRow,
         title: String?,
         startTimeHour: Int?,
         startTimeMinute: Int?,
@@ -1125,37 +1162,11 @@ class EventsService(private val context: Context) {
         recurrenceRule: String?,
         clearedFields: List<String>
     ): Result<String> {
-        val row = readEventRow(eventId)
-            ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
-                )
-            )
-
         val values = android.content.ContentValues()
         applyEventFieldValues(
             values, title, description, location, url, isAllDay,
             availability, clearedFields
         )
-
-        val effectiveIsAllDay = isAllDay ?: row.allDay
-        if (startTimeHour != null && effectiveIsAllDay) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "startTime cannot be set on an all-day event"
-                )
-            )
-        }
-        if (durationMinutes != null && effectiveIsAllDay && durationMinutes % 1440 != 0) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "All-day events require whole-day durations"
-                )
-            )
-        }
 
         // Recurrence rule column and the resulting recurring state.
         val wasRecurring = row.rrule != null
@@ -1218,6 +1229,7 @@ class EventsService(private val context: Context) {
 
     private fun updateRecurringThisAndFollowing(
         eventId: String,
+        row: EventRow,
         timestamp: Long?,
         title: String?,
         startTimeHour: Int?,
@@ -1241,14 +1253,6 @@ class EventsService(private val context: Context) {
             )
         }
 
-        val row = readEventRow(eventId)
-            ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
-                )
-            )
-
         if (row.rrule == null) {
             return Result.failure(
                 CalendarException(
@@ -1261,22 +1265,6 @@ class EventsService(private val context: Context) {
         // Effective field values for the new series: the patch value when one
         // is given, otherwise the master's existing value.
         val effectiveIsAllDay = isAllDay ?: row.allDay
-        if (startTimeHour != null && effectiveIsAllDay) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "startTime cannot be set on an all-day event"
-                )
-            )
-        }
-        if (durationMinutes != null && effectiveIsAllDay && durationMinutes % 1440 != 0) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "All-day events require whole-day durations"
-                )
-            )
-        }
         val effectiveTitle = title ?: row.title
         val effectiveDescription =
             if ("description" in clearedFields) null else (description ?: row.description)
