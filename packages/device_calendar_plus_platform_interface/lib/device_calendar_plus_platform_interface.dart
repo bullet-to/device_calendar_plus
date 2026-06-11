@@ -186,12 +186,13 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// [eventId] is the event identifier.
   ///
-  /// **For recurring events**: This will delete the ENTIRE series (all past and
-  /// future occurrences). To delete only part of a series, use
-  /// [deleteRecurring].
+  /// [timestamp] selects a single occurrence of a recurring series (epoch
+  /// milliseconds). When given, the platform removes only that occurrence,
+  /// as a cancelled exception. When `null`, the delete targets the event
+  /// itself — the whole series for a recurring event.
   ///
   /// Requires calendar write permissions.
-  Future<void> deleteEvent(String eventId);
+  Future<void> deleteEvent(String eventId, {int? timestamp});
 
   /// Updates an existing event on the device.
   ///
@@ -270,15 +271,16 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     Patch<String>? recurrenceRule,
   });
 
-  /// Deletes a recurring event, choosing which occurrences are removed.
+  /// Deletes a recurring event's series, choosing which occurrences are
+  /// removed.
   ///
   /// [eventId] is the event identifier. [timestamp] is the occurrence
-  /// timestamp in milliseconds — required for every [span] except `allEvents`.
+  /// timestamp in milliseconds — required for `thisAndFollowing`.
   ///
   /// [span] is the `EventSpan` name: `allEvents` deletes the whole series;
   /// `thisAndFollowing` removes the occurrence at [timestamp] and every later
-  /// one, truncating the series before it; `thisInstance` removes only that
-  /// occurrence as a cancelled exception.
+  /// one, truncating the series before it. Single-occurrence deletes go
+  /// through [deleteEvent] with a [timestamp] instead.
   Future<void> deleteRecurring(
     String eventId,
     int? timestamp,

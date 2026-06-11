@@ -167,11 +167,12 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }
 
   @override
-  Future<void> deleteEvent(String eventId) async {
+  Future<void> deleteEvent(String eventId, {int? timestamp}) async {
     await methodChannel.invokeMethod<void>(
       'deleteEvent',
       <String, dynamic>{
         'eventId': eventId,
+        'timestamp': timestamp,
       },
     );
   }

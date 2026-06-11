@@ -748,8 +748,12 @@ class EventsService {
     return parts.joined(separator: ";")
   }
   
+  /// Deletes an event. With a `timestamp`, removes only the occurrence at
+  /// that instant from its recurring series; without one, deletes the event
+  /// itself (the whole series when recurring).
   func deleteEvent(
     eventId: String,
+    timestamp: Int64?,
     completion: @escaping (Result<Void, CalendarError>) -> Void
   ) {
     // Check permission
@@ -760,21 +764,39 @@ class EventsService {
       )))
       return
     }
-    
-    // Fetch the master event by eventId
-    guard let event = eventStore.event(withIdentifier: eventId) else {
+
+    // Resolve the event to act on: the occurrence at `timestamp` when given,
+    // otherwise the event (master) itself.
+    let targetEvent: EKEvent?
+    if let timestamp = timestamp {
+      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
+    } else {
+      targetEvent = eventStore.event(withIdentifier: eventId)
+    }
+
+    guard let foundEvent = targetEvent else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.notFound,
         message: "Event not found with event ID: \(eventId)"
       )))
       return
     }
-    
-    // Delete the event
-    // For recurring events, .futureEvents on the master event deletes the entire series
-    // For non-recurring events, .futureEvents behaves the same as .thisEvent
+
+    if timestamp != nil && !foundEvent.hasRecurrenceRules {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Event \(eventId) is not recurring; pass a bare event ID instead"
+      )))
+      return
+    }
+
+    // An occurrence delete removes .thisEvent only. A bare event ID removes
+    // the whole series (.futureEvents from the master; on a non-recurring
+    // event that behaves like .thisEvent).
+    let span: EKSpan = (timestamp != nil) ? .thisEvent : .futureEvents
+
     do {
-      try eventStore.remove(event, span: .futureEvents)
+      try eventStore.remove(foundEvent, span: span)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
@@ -858,9 +880,8 @@ class EventsService {
   /// millis). EventKit has no direct lookup for a single occurrence, so we
   /// query a tight ±1s window and pick the match whose start is closest.
   ///
-  /// Shared by `updateEvent` (instance edits), `updateRecurring`
-  /// (`thisAndFollowing`) and `deleteRecurring` (`thisAndFollowing`,
-  /// `thisInstance`).
+  /// Shared by `updateEvent` and `deleteEvent` (instance edits) and
+  /// `updateRecurring` and `deleteRecurring` (`thisAndFollowing`).
   private func findOccurrence(eventId: String, timestamp: Int64) -> EKEvent? {
     let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
     let predicate = eventStore.predicateForEvents(
@@ -1040,11 +1061,12 @@ class EventsService {
 
   // MARK: - deleteRecurring (issue #43)
 
-  /// Deletes a recurring event, choosing which occurrences are removed.
+  /// Deletes a recurring event's series, choosing which occurrences are
+  /// removed.
   ///
-  /// `span` is "allEvents" (the whole series), "thisAndFollowing" (the
-  /// occurrence at `timestamp` and every later one), or "thisInstance" (only
-  /// that occurrence).
+  /// `span` is "allEvents" (the whole series) or "thisAndFollowing" (the
+  /// occurrence at `timestamp` and every later one). Single-occurrence
+  /// deletes go through `deleteEvent` with a timestamp.
   func deleteRecurring(
     eventId: String,
     timestamp: Int64?,
@@ -1061,11 +1083,10 @@ class EventsService {
     }
 
     // Resolve the event to act on. "allEvents" works from the master (the
-    // whole series); "thisAndFollowing" and "thisInstance" work from the
-    // specific occurrence at `timestamp`.
-    let needsOccurrence = (span == "thisAndFollowing" || span == "thisInstance")
+    // whole series); "thisAndFollowing" works from the specific occurrence
+    // at `timestamp`.
     let targetEvent: EKEvent?
-    if needsOccurrence {
+    if span == "thisAndFollowing" {
       guard let timestamp = timestamp else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
@@ -1086,15 +1107,12 @@ class EventsService {
       return
     }
 
-    // "thisInstance" removes only the fetched occurrence (.thisEvent).
-    // "allEvents" and "thisAndFollowing" use .futureEvents: from the master
-    // that removes the whole series; from an occurrence it removes that
-    // occurrence and every later one. (.futureEvents on a non-recurring event
-    // behaves like .thisEvent.)
-    let removeSpan: EKSpan = (span == "thisInstance") ? .thisEvent : .futureEvents
-
+    // Both spans remove with .futureEvents: from the master that removes the
+    // whole series; from an occurrence it removes that occurrence and every
+    // later one. (.futureEvents on a non-recurring event behaves like
+    // .thisEvent.)
     do {
-      try eventStore.remove(foundEvent, span: removeSpan)
+      try eventStore.remove(foundEvent, span: .futureEvents)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(

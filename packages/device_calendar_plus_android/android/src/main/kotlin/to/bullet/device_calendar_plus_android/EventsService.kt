@@ -714,7 +714,13 @@ class EventsService(private val context: Context) {
         }
     }
     
-    fun deleteEvent(eventId: String): Result<Unit> {
+    /**
+     * Deletes an event. With a [timestamp], removes only the occurrence at
+     * that instant from its recurring series, as a cancelled exception;
+     * without one, deletes the event itself (the whole series when
+     * recurring).
+     */
+    fun deleteEvent(eventId: String, timestamp: Long? = null): Result<Unit> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
             context.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
@@ -726,43 +732,55 @@ class EventsService(private val context: Context) {
             )
         }
 
-        try {
-            // Use sync-adapter context so the Calendar Provider physically
-            // removes the row instead of just setting DELETED=1. Without
-            // this, the event survives deletion on real devices (where a
-            // sync adapter is present) and getEvent still returns it.
-            val uri = buildDeleteUri(eventId)
-            val deletedRows = context.contentResolver.delete(
-                uri,
-                "${CalendarContract.Events._ID} = ?",
-                arrayOf(eventId)
-            )
-
-            if (deletedRows == 0) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.NOT_FOUND,
-                        "Event with ID $eventId not found"
-                    )
-                )
+        return try {
+            if (timestamp != null) {
+                deleteEventInstance(eventId, timestamp)
+            } else {
+                deleteEventMaster(eventId)
             }
-
-            return Result.success(Unit)
         } catch (e: SecurityException) {
-            return Result.failure(
+            Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.PERMISSION_DENIED,
                     "Calendar permission denied: ${e.message}"
                 )
             )
         } catch (e: Exception) {
-            return Result.failure(
+            Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to delete event: ${e.message}"
                 )
             )
         }
+    }
+
+    /**
+     * The bare-event-ID path of [deleteEvent]: deletes the event row itself —
+     * the whole series when recurring.
+     */
+    private fun deleteEventMaster(eventId: String): Result<Unit> {
+        // Use sync-adapter context so the Calendar Provider physically
+        // removes the row instead of just setting DELETED=1. Without
+        // this, the event survives deletion on real devices (where a
+        // sync adapter is present) and getEvent still returns it.
+        val uri = buildDeleteUri(eventId)
+        val deletedRows = context.contentResolver.delete(
+            uri,
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(eventId)
+        )
+
+        if (deletedRows == 0) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+        }
+
+        return Result.success(Unit)
     }
     
     /**
@@ -1299,7 +1317,15 @@ class EventsService(private val context: Context) {
 
     // -- deleteRecurring (issue #43) --
 
-    /** Deletes a recurring event, choosing which occurrences are removed. */
+    /**
+     * Deletes a recurring event's series, choosing which occurrences are
+     * removed.
+     *
+     * [span] is "allEvents" (the whole series) or "thisAndFollowing" (the
+     * occurrence at [timestamp] and every later one, truncating the series
+     * before it). Single-occurrence deletes go through [deleteEvent] with a
+     * timestamp.
+     */
     fun deleteRecurring(
         eventId: String,
         timestamp: Long?,
@@ -1319,7 +1345,6 @@ class EventsService(private val context: Context) {
             when (span) {
                 "allEvents" -> deleteEvent(eventId)
                 "thisAndFollowing" -> deleteRecurringThisAndFollowing(eventId, timestamp)
-                "thisInstance" -> deleteRecurringThisInstance(eventId, timestamp)
                 else -> Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.INVALID_ARGUMENTS,
@@ -1405,23 +1430,15 @@ class EventsService(private val context: Context) {
     }
 
     /**
-     * Removes a single occurrence by inserting a cancelled exception event
-     * via CONTENT_EXCEPTION_URI. The Calendar Provider then excludes that
+     * The instance-ID path of [deleteEvent]: removes the single occurrence
+     * at [timestamp] by inserting a cancelled exception event via
+     * CONTENT_EXCEPTION_URI. The Calendar Provider then excludes that
      * occurrence from the Instances expansion.
      */
-    private fun deleteRecurringThisInstance(
+    private fun deleteEventInstance(
         eventId: String,
-        timestamp: Long?
+        timestamp: Long
     ): Result<Unit> {
-        if (timestamp == null) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "thisInstance requires an occurrence timestamp"
-                )
-            )
-        }
-
         val row = readEventRow(eventId)
             ?: return Result.failure(
                 CalendarException(
@@ -1434,7 +1451,7 @@ class EventsService(private val context: Context) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "Event $eventId is not recurring; use deleteEvent instead"
+                    "Event $eventId is not recurring; pass a bare event ID instead"
                 )
             )
         }

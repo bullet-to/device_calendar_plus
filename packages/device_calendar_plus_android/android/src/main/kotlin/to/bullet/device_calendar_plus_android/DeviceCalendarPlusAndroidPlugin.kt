@@ -451,7 +451,9 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        val serviceResult = service.deleteEvent(eventId)
+        val timestamp = call.argument<Long>("timestamp")
+
+        val serviceResult = service.deleteEvent(eventId, timestamp)
         serviceResult.fold(
             onSuccess = { result.success(null) },
             onFailure = { error ->

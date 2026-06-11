@@ -47,9 +47,11 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   Map<String, dynamic>? _event;
   PlatformException? _exceptionToThrow;
 
-  /// The arguments of the most recent updateEvent / updateRecurring call.
+  /// The arguments of the most recent updateEvent / updateRecurring /
+  /// deleteEvent call.
   UpdateEventCall? lastUpdateEvent;
   UpdateRecurringCall? lastUpdateRecurring;
+  ({String eventId, int? timestamp})? lastDeleteEvent;
 
   /// What updateRecurring returns (the affected scope's event ID).
   String updateRecurringResult = 'mock-event-id';
@@ -230,8 +232,9 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
-  Future<void> deleteEvent(String eventId) async {
+  Future<void> deleteEvent(String eventId, {int? timestamp}) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
+    lastDeleteEvent = (eventId: eventId, timestamp: timestamp);
   }
 
   @override
@@ -799,17 +802,6 @@ void main() {
         );
       });
 
-      test('throws ArgumentError when thisInstance is passed', () {
-        expect(
-          () => DeviceCalendar.instance.updateRecurring(
-            'event-123@1700000000000',
-            EventSpan.thisInstance,
-            title: 'New Title',
-          ),
-          throwsArgumentError,
-        );
-      });
-
       test('throws ArgumentError when isAllDay is true with startTime', () {
         expect(
           () => DeviceCalendar.instance.updateRecurring(
@@ -1033,16 +1025,6 @@ void main() {
         );
       });
 
-      test('throws ArgumentError when thisInstance given a bare event ID', () {
-        expect(
-          () => DeviceCalendar.instance.deleteRecurring(
-            'event-123',
-            EventSpan.thisInstance,
-          ),
-          throwsArgumentError,
-        );
-      });
-
       test('allEvents passes a bare event ID through with null timestamp',
           () async {
         String? capturedEventId;
@@ -1100,6 +1082,25 @@ void main() {
           () => DeviceCalendar.instance.deleteEvent(eventId: ''),
           throwsArgumentError,
         );
+      });
+
+      test('bare event ID passes a null timestamp', () async {
+        await DeviceCalendar.instance.deleteEvent(eventId: 'event-123');
+
+        final call = mockPlatform.lastDeleteEvent!;
+        expect(call.eventId, 'event-123');
+        expect(call.timestamp, isNull);
+      });
+
+      test('passes the parsed event ID and occurrence timestamp through',
+          () async {
+        await DeviceCalendar.instance.deleteEvent(
+          eventId: 'event-123@1700000000000',
+        );
+
+        final call = mockPlatform.lastDeleteEvent!;
+        expect(call.eventId, 'event-123');
+        expect(call.timestamp, 1700000000000);
       });
     });
 

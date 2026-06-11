@@ -68,7 +68,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       'mock-event-id';
 
   @override
-  Future<void> deleteEvent(String eventId) async {}
+  Future<void> deleteEvent(String eventId, {int? timestamp}) async {}
 
   @override
   Future<void> updateEvent(

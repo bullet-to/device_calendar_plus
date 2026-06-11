@@ -505,8 +505,11 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       return
     }
     
+    let timestamp = args["timestamp"] as? Int64
+
     eventsService.deleteEvent(
-      eventId: eventId
+      eventId: eventId,
+      timestamp: timestamp
     ) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {

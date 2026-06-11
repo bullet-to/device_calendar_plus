@@ -519,7 +519,8 @@ void main() {
     // Known failure on Android emulator: after inserting a
     // CONTENT_EXCEPTION_URI, the emulator's Calendar Provider returns 0
     // occurrences for the master series. Passes on real Android devices.
-    test('thisInstance edits only the one occurrence', () async {
+    test('updateEvent with an instance ID edits only the one occurrence',
+        () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 
@@ -529,21 +530,15 @@ void main() {
       final target = occurrences[4];
       final targetMillis = target.startDate.millisecondsSinceEpoch;
 
-      final exceptionId = await plugin.updateRecurring(
-        target.instanceId,
-        EventSpan.thisInstance,
+      await plugin.updateEvent(
+        eventId: target.instanceId,
         title: 'Just this one',
       );
 
-      // The exception event holds the new title at the targeted moment.
-      final exception = await plugin.getEvent(exceptionId);
-      expect(exception, isNotNull, reason: 'exception event must be readable');
-      expect(exception!.title, 'Just this one');
-      expect(exception.startDate.millisecondsSinceEpoch, targetMillis);
-
-      // listEvents must also surface the detached exception in the window —
-      // not just getEvent. Guards against the Provider dropping detached
-      // exceptions from the Instances expansion entirely.
+      // updateEvent returns no ID for the detached exception (the platforms
+      // disagree on what it would be), so the edit is verified through
+      // listEvents: the detached exception must surface in the window with
+      // the new title at the targeted moment.
       final listed = await plugin.listEvents(
         series.start.subtract(const Duration(days: 1)),
         series.start.add(const Duration(days: 14)),
@@ -670,7 +665,8 @@ void main() {
     // Known failure on Android emulator: after inserting a
     // CONTENT_EXCEPTION_URI, the emulator's Calendar Provider returns 0
     // occurrences for the master series. Passes on real Android devices.
-    test('thisInstance removes only the one occurrence', () async {
+    test('deleteEvent with an instance ID removes only the one occurrence',
+        () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 
@@ -681,7 +677,7 @@ void main() {
       final target = occurrences[4];
       final targetMillis = target.startDate.millisecondsSinceEpoch;
 
-      await plugin.deleteRecurring(target.instanceId, EventSpan.thisInstance);
+      await plugin.deleteEvent(eventId: target.instanceId);
 
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);

@@ -539,18 +539,20 @@ print(rule?.rruleString); // e.g. "FREQ=MONTHLY;BYDAY=2TU;COUNT=12"
 
 ### Update Event
 
+`updateEvent` updates a single thing: pass a bare event ID (`event.eventId`) to update the event — the whole series when it's recurring — or an instance ID (`event.instanceId`) to detach and edit one occurrence of a recurring series.
+
 ```dart
 final plugin = DeviceCalendar.instance;
 
 // Update event title
 await plugin.updateEvent(
-  instanceId: event.instanceId,
+  eventId: event.eventId,
   title: 'Updated Meeting Title',
 );
 
 // Update multiple fields
 await plugin.updateEvent(
-  instanceId: event.instanceId,
+  eventId: event.eventId,
   title: 'Team Sync',
   startDate: DateTime(2024, 3, 21, 15, 0),
   endDate: DateTime(2024, 3, 21, 16, 0),
@@ -563,20 +565,20 @@ await plugin.updateEvent(
 // omit the argument to leave a field unchanged, Patch.set(...) to change it,
 // Patch.clear() to remove its value.
 await plugin.updateEvent(
-  instanceId: event.instanceId,
+  eventId: event.eventId,
   location: Patch.clear(),
   description: Patch.clear(),
 );
 
 // Change a timed event to all-day
 await plugin.updateEvent(
-  instanceId: event.instanceId,
+  eventId: event.eventId,
   isAllDay: true,
 );
 
 // Change an all-day event to timed
 await plugin.updateEvent(
-  instanceId: event.instanceId,
+  eventId: event.eventId,
   isAllDay: false,
   startDate: DateTime(2024, 3, 21, 10, 0),
   endDate: DateTime(2024, 3, 21, 11, 0),
@@ -585,23 +587,44 @@ await plugin.updateEvent(
 // Update timezone (reinterprets local time)
 // Note: "3 PM EST" becomes "3 PM PST" (different instant in time)
 await plugin.updateEvent(
-  instanceId: event.instanceId,
+  eventId: event.eventId,
   timeZone: 'America/Los_Angeles',
+);
+
+// Edit only this one occurrence of a recurring event. The occurrence is
+// detached from the series as an exception; startDate and endDate are
+// absolute instants, so it can move to a different day.
+await plugin.updateEvent(
+  eventId: event.instanceId,
+  title: 'Moved this week only',
+  startDate: DateTime(2024, 3, 21, 15, 0),
+  endDate: DateTime(2024, 3, 21, 16, 0),
 );
 ```
 
-**Note on Recurring Events**: For recurring events, `updateEvent` updates the ENTIRE series (all past and future occurrences). To change the recurrence rule itself, or to edit only part of a series, use `updateRecurring` (below).
-
 ### Update Recurring Events
 
-`updateEvent` always updates a whole event. To edit a recurring **series** — including changing or removing its recurrence rule — use `updateRecurring`. It takes an `EventSpan`:
+To edit a recurring **series** — its recurrence rule, its time-of-day or duration, or any field across many occurrences — use `updateRecurring`. It takes an `EventSpan`:
 
 - `EventSpan.allEvents` — the change applies to the whole series.
 - `EventSpan.thisAndFollowing` — the series is split: the occurrence you pass, and every later one, carry the change.
-- `EventSpan.thisInstance` — only the occurrence you pass is changed, as a detached exception.
 
 ```dart
 final plugin = DeviceCalendar.instance;
+
+// Change every occurrence to start at 3 PM, keeping each occurrence's date
+await plugin.updateRecurring(
+  event.instanceId,
+  EventSpan.allEvents,
+  startTime: EventTimeOfDay(hour: 15, minute: 0),
+);
+
+// Change the duration of all occurrences to 90 minutes
+await plugin.updateRecurring(
+  event.instanceId,
+  EventSpan.allEvents,
+  duration: Duration(minutes: 90),
+);
 
 // Change the whole series to weekly
 await plugin.updateRecurring(
@@ -622,43 +645,37 @@ await plugin.updateRecurring(
 final newSeriesId = await plugin.updateRecurring(
   event.instanceId,
   EventSpan.thisAndFollowing,
-  startDate: DateTime(2024, 3, 21, 15, 0),
-  endDate: DateTime(2024, 3, 21, 16, 0),
-);
-
-// Change only this one occurrence, leaving the rest of the series alone.
-await plugin.updateRecurring(
-  event.instanceId,
-  EventSpan.thisInstance,
-  title: 'Moved this week only',
+  startTime: EventTimeOfDay(hour: 15, minute: 0),
+  duration: Duration(hours: 1),
 );
 ```
 
-`recurrenceRule` takes a `Patch`: omit it to leave recurrence unchanged, `Patch.set(...)` to change the rule, `Patch.clear()` to remove it. It cannot be used with `thisInstance` (a single occurrence has no rule of its own). All other fields behave as in `updateEvent`. `updateRecurring` returns the event ID for the affected scope — the same ID for `allEvents`, the new series' ID for `thisAndFollowing`, the detached occurrence's ID for `thisInstance`.
+`startTime` replaces the time-of-day of every occurrence in scope while preserving each occurrence's date; `duration` sets how long each occurrence lasts (whole minutes; whole days for all-day events). `recurrenceRule` takes a `Patch`: omit it to leave recurrence unchanged, `Patch.set(...)` to change the rule, `Patch.clear()` to remove it. All other fields behave as in `updateEvent`. `updateRecurring` returns the event ID for the affected scope — the same ID for `allEvents`, the new series' ID for `thisAndFollowing`.
 
-**Span and the split point.** For `thisAndFollowing` and `thisInstance`, pass an instance ID (`event.instanceId`) that carries an occurrence timestamp. For `thisAndFollowing` it is the split point: that occurrence and every later one become a new series carrying the change; earlier occurrences are untouched.
+**Span and the split point.** For `thisAndFollowing`, pass an instance ID (`event.instanceId`) that carries an occurrence timestamp. It is the split point: that occurrence and every later one become a new series carrying the change; earlier occurrences are untouched.
 
 **Customised occurrences.** Editing a series is best-effort with respect to occurrences a user had individually moved or deleted. Customisations before a `thisAndFollowing` split point survive; customisations at or after the split point (or anywhere, for `allEvents`) may be reset.
 
 ### Delete Event
 
+`deleteEvent` mirrors `updateEvent`: a bare event ID deletes the event — the whole series when it's recurring — and an instance ID removes one occurrence of a recurring series.
+
 ```dart
 final plugin = DeviceCalendar.instance;
 
-// Delete a single event
-await plugin.deleteEvent(event.instanceId);
+// Delete an event (the whole series, if recurring)
+await plugin.deleteEvent(eventId: event.eventId);
 
-// For recurring events, this deletes the ENTIRE series (all occurrences)
-await plugin.deleteEvent(event.instanceId);
+// Delete only this one occurrence, leaving the rest of the series alone
+await plugin.deleteEvent(eventId: event.instanceId);
 ```
 
 ### Delete Recurring Events
 
-`deleteEvent` always deletes a whole event. To delete only part of a recurring **series**, use `deleteRecurring`. It takes the same `EventSpan` as `updateRecurring`:
+To delete a recurring **series** outright or truncate it, use `deleteRecurring`. It takes the same `EventSpan` as `updateRecurring`:
 
-- `EventSpan.allEvents` — the whole series is deleted (the same as `deleteEvent`).
+- `EventSpan.allEvents` — the whole series is deleted (the same as `deleteEvent` with a bare event ID).
 - `EventSpan.thisAndFollowing` — the occurrence you pass, and every later one, are removed; the series is truncated to end before it.
-- `EventSpan.thisInstance` — only the occurrence you pass is removed. iOS records this as a cancelled exception; Android appends the occurrence timestamp to the master's `EXDATE` column.
 
 ```dart
 final plugin = DeviceCalendar.instance;
@@ -668,12 +685,9 @@ await plugin.deleteRecurring(event.instanceId, EventSpan.allEvents);
 
 // Delete this occurrence and every later one
 await plugin.deleteRecurring(event.instanceId, EventSpan.thisAndFollowing);
-
-// Delete only this one occurrence, leaving the rest of the series alone
-await plugin.deleteRecurring(event.instanceId, EventSpan.thisInstance);
 ```
 
-For `thisAndFollowing` and `thisInstance`, pass an instance ID (`event.instanceId`) that carries an occurrence timestamp; a bare event ID throws `ArgumentError`. `allEvents` accepts either.
+For `thisAndFollowing`, pass an instance ID (`event.instanceId`) that carries an occurrence timestamp; a bare event ID throws `ArgumentError`. `allEvents` accepts either.
 
 ## 📋 Roadmap
 
@@ -685,7 +699,7 @@ For `thisAndFollowing` and `thisInstance`, pass an instance ID (`event.instanceI
 - [x] **Recurring events** — create and read with sealed RecurrenceRule model (daily, weekly, monthly, yearly)
 - [x] **Update recurrence rules** — change, add or remove a recurrence rule via `updateRecurring`
 - [x] **Delete recurring events** — delete a whole series, this-and-following, or a single occurrence via `deleteRecurring`
-- [ ] **Attendees** — read on both platforms; write on Android (iOS EventKit is read-only for participants)
+- [x] **Attendees** — read-only on both platforms; use `showCreateEventModal` / `showEventModal(edit: true)` to add via native UI
 - [ ] **Reminders / alarms** — read/write on both platforms
 - [ ] **Platform-specific extras** — organizer and other platform-native fields exposed where supported (event URL is now supported)
 

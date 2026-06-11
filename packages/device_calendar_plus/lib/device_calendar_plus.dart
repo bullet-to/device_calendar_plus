@@ -650,31 +650,30 @@ class DeviceCalendar {
     }
   }
 
-  /// Deletes an event from the device.
+  /// Deletes a single event or a single occurrence of a recurring event.
   ///
-  /// [eventId] identifies the event to delete. You can pass either:
-  /// - An event ID (e.g., from `event.eventId`)
-  /// - An instance ID (e.g., from `event.instanceId`) - the event ID will be extracted
+  /// [eventId] identifies what to delete (required):
+  /// - **Bare event ID** (e.g., `event.eventId`): deletes the non-recurring
+  ///   event, or the master of a recurring series (all occurrences).
+  /// - **Instance ID** (e.g., `event.instanceId`, format
+  ///   `eventId@timestamp`): removes only that occurrence from the series,
+  ///   as a cancelled exception; the rest of the series is untouched.
   ///
-  /// **For recurring events**: This will delete the ENTIRE series (all past
-  /// and future occurrences). Single-instance deletion is not supported to
-  /// maintain consistent behavior across platforms.
+  /// To delete an entire recurring series or truncate it from a split point
+  /// forward, use [deleteRecurring] instead.
   ///
-  /// For non-recurring events, this deletes the single event.
   /// Requires calendar write permissions - call [requestPermissions] first.
   ///
   /// Example:
   /// ```dart
   /// final plugin = DeviceCalendar.instance;
   ///
-  /// // Delete using event ID
+  /// // Delete a non-recurring event (or a whole recurring series)
   /// await plugin.deleteEvent(eventId: event.eventId);
   ///
-  /// // Delete using instance ID (event ID will be extracted)
+  /// // Delete only this one occurrence of a recurring event
   /// await plugin.deleteEvent(eventId: event.instanceId);
   /// ```
-  // TODO(breaking): rename param to `id` and stop discarding the parsed
-  // timestamp so per-instance delete works (matching getEvent/showEventModal).
   Future<void> deleteEvent({required String eventId}) async {
     if (eventId.trim().isEmpty) {
       throw ArgumentError.value(
@@ -684,11 +683,16 @@ class DeviceCalendar {
       );
     }
 
-    try {
-      // Parse the ID to extract eventId (timestamp is ignored for delete)
-      final parsed = InstanceIdParser.parse(eventId);
+    // A bare event ID carries no timestamp and targets the event itself (the
+    // whole series when recurring); an instance ID carries the occurrence
+    // timestamp, which the platform uses to remove that occurrence alone.
+    final parsed = InstanceIdParser.parse(eventId);
 
-      await DeviceCalendarPlusPlatform.instance.deleteEvent(parsed.eventId);
+    try {
+      await DeviceCalendarPlusPlatform.instance.deleteEvent(
+        parsed.eventId,
+        timestamp: parsed.timestamp,
+      );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);
@@ -940,17 +944,6 @@ class DeviceCalendar {
       );
     }
 
-    // thisInstance is handled by updateEvent; updateRecurring only accepts
-    // series-level spans.
-    if (span == EventSpan.thisInstance) {
-      throw ArgumentError.value(
-        span,
-        'span',
-        'EventSpan.thisInstance is not supported by updateRecurring. '
-            'Pass the instance ID to updateEvent instead.',
-      );
-    }
-
     // Parse the ID — thisAndFollowing acts on a specific occurrence, so it
     // needs an occurrence timestamp.
     final parsed = InstanceIdParser.parse(instanceId);
@@ -1050,24 +1043,26 @@ class DeviceCalendar {
     }
   }
 
-  /// Deletes a recurring event, choosing which occurrences are removed.
+  /// Deletes a recurring event's series, choosing which occurrences are
+  /// removed.
   ///
-  /// Use this instead of [deleteEvent] when only part of a recurring series
-  /// should be removed — [deleteEvent] always deletes the whole series.
+  /// Use this instead of [deleteEvent] when a recurring series should be
+  /// truncated from a split point forward, or deleted outright.
+  ///
+  /// To delete a single occurrence, pass its instance ID to [deleteEvent]
+  /// instead.
   ///
   /// [instanceId] identifies the occurrence to act on — pass an instance ID
-  /// (`event.instanceId`). For every [span] except [EventSpan.allEvents] it
-  /// must carry an occurrence timestamp (`eventId@timestamp`); a bare event
-  /// ID throws [ArgumentError].
+  /// (`event.instanceId`). For [EventSpan.thisAndFollowing] it must carry an
+  /// occurrence timestamp (`eventId@timestamp`); a bare event ID throws
+  /// [ArgumentError].
   ///
   /// [span] chooses the scope:
   /// - [EventSpan.allEvents] — the whole series is deleted (the same result
-  ///   as [deleteEvent]).
+  ///   as [deleteEvent] with a bare event ID).
   /// - [EventSpan.thisAndFollowing] — the occurrence at the timestamp and
   ///   every later one are removed; the series is truncated to end before it.
   ///   Earlier occurrences are untouched.
-  /// - [EventSpan.thisInstance] — only that occurrence is removed, as a
-  ///   cancelled exception; the rest of the series is untouched.
   ///
   /// Requires calendar write permissions - call [requestPermissions] first.
   ///
@@ -1083,9 +1078,6 @@ class DeviceCalendar {
   ///   event.instanceId,
   ///   EventSpan.thisAndFollowing,
   /// );
-  ///
-  /// // Delete only this one occurrence, leaving the rest of the series alone
-  /// await plugin.deleteRecurring(event.instanceId, EventSpan.thisInstance);
   /// ```
   Future<void> deleteRecurring(String instanceId, EventSpan span) async {
     // Validate instanceId
@@ -1097,14 +1089,14 @@ class DeviceCalendar {
       );
     }
 
-    // Parse the ID — every span except allEvents acts on a specific
-    // occurrence, so it needs an occurrence timestamp.
+    // Parse the ID — thisAndFollowing acts on a specific occurrence, so it
+    // needs an occurrence timestamp.
     final parsed = InstanceIdParser.parse(instanceId);
-    if (span != EventSpan.allEvents && parsed.timestamp == null) {
+    if (span == EventSpan.thisAndFollowing && parsed.timestamp == null) {
       throw ArgumentError.value(
         instanceId,
         'instanceId',
-        'EventSpan.${span.name} requires an instance ID with an '
+        'EventSpan.thisAndFollowing requires an instance ID with an '
             'occurrence timestamp (eventId@timestamp)',
       );
     }
