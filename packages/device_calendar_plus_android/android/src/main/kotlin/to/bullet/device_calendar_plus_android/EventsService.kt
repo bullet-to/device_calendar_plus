@@ -166,7 +166,9 @@ class EventsService(private val context: Context) {
         }
     }
     
-    private fun statusToString(status: Int): String {
+    // A NULL STATUS column means "no status", not 0 — and 0 is
+    // STATUS_TENTATIVE, so defaulting the column would invent a status.
+    internal fun statusToString(status: Int?): String {
         return when (status) {
             CalendarContract.Events.STATUS_CONFIRMED -> "confirmed"
             CalendarContract.Events.STATUS_TENTATIVE -> "tentative"
@@ -218,7 +220,7 @@ class EventsService(private val context: Context) {
         val rawEnd = if (!cursor.isNull(endIndex)) cursor.getLong(endIndex) else rawStart
         val allDay = if (!cursor.isNull(allDayIndex)) cursor.getInt(allDayIndex) == 1 else false
         val availability = if (!cursor.isNull(availabilityIndex)) cursor.getInt(availabilityIndex) else 0
-        val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else 0
+        val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else null
         val timeZone = if (!cursor.isNull(timeZoneIndex)) cursor.getString(timeZoneIndex) else null
         val recurrenceRule = if (!cursor.isNull(recurrenceRuleIndex)) cursor.getString(recurrenceRuleIndex) else null
         val createdDate = if (createdIndex >= 0 && !cursor.isNull(createdIndex)) cursor.getLong(createdIndex) else null
