@@ -22,4 +22,17 @@ internal class EventsServiceTest {
         assertEquals("confirmed", service.statusToString(1))
         assertEquals("canceled", service.statusToString(2))
     }
+
+    // A NULL AVAILABILITY column falls through to the documented default.
+    @Test
+    fun availabilityToString_null_returnsBusy() {
+        assertEquals("busy", service.availabilityToString(null))
+    }
+
+    @Test
+    fun availabilityToString_mapsProviderConstants() {
+        assertEquals("busy", service.availabilityToString(0))
+        assertEquals("free", service.availabilityToString(1))
+        assertEquals("tentative", service.availabilityToString(2))
+    }
 }

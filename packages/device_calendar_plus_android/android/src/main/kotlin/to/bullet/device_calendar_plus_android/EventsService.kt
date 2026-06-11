@@ -157,7 +157,9 @@ class EventsService(private val context: Context) {
         return eventEnd > startMillis && eventBegin < endMillis
     }
 
-    private fun availabilityToString(availability: Int): String {
+    // A NULL column falls through to the documented "busy" default rather
+    // than relying on 0 happening to be AVAILABILITY_BUSY.
+    internal fun availabilityToString(availability: Int?): String {
         return when (availability) {
             CalendarContract.Events.AVAILABILITY_BUSY -> "busy"
             CalendarContract.Events.AVAILABILITY_FREE -> "free"
@@ -219,7 +221,7 @@ class EventsService(private val context: Context) {
         val rawStart = cursor.getLong(startIndex)
         val rawEnd = if (!cursor.isNull(endIndex)) cursor.getLong(endIndex) else rawStart
         val allDay = if (!cursor.isNull(allDayIndex)) cursor.getInt(allDayIndex) == 1 else false
-        val availability = if (!cursor.isNull(availabilityIndex)) cursor.getInt(availabilityIndex) else 0
+        val availability = if (!cursor.isNull(availabilityIndex)) cursor.getInt(availabilityIndex) else null
         val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else null
         val timeZone = if (!cursor.isNull(timeZoneIndex)) cursor.getString(timeZoneIndex) else null
         val recurrenceRule = if (!cursor.isNull(recurrenceRuleIndex)) cursor.getString(recurrenceRuleIndex) else null
@@ -1548,7 +1550,7 @@ class EventsService(private val context: Context) {
                 allDay = (long(CalendarContract.Events.ALL_DAY) ?: 0L) == 1L,
                 timeZone = str(CalendarContract.Events.EVENT_TIMEZONE),
                 availability = availabilityToString(
-                    (long(CalendarContract.Events.AVAILABILITY) ?: 0L).toInt()
+                    long(CalendarContract.Events.AVAILABILITY)?.toInt()
                 ),
                 rrule = str(CalendarContract.Events.RRULE)
             )
