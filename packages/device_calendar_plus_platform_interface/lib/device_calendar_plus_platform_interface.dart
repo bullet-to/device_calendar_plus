@@ -1,16 +1,13 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'src/create_calendar_options.dart';
+import 'src/event_time_of_day.dart';
 import 'src/patch.dart';
 
 export 'src/create_calendar_options.dart';
+export 'src/event_time_of_day.dart';
 export 'src/instance_id_parser.dart';
 export 'src/patch.dart';
-
-/// A time-of-day for a recurring event's occurrences: hour 0-23, minute 0-59.
-///
-/// Passed as a record literal, e.g. `(hour: 15, minute: 30)`.
-typedef EventTimeOfDay = ({int hour, int minute});
 
 /// The interface that implementations of device_calendar_plus must implement.
 ///

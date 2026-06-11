@@ -892,7 +892,7 @@ class DeviceCalendar {
   /// await plugin.updateRecurring(
   ///   event.instanceId,
   ///   EventSpan.allEvents,
-  ///   startTime: (hour: 15, minute: 0),
+  ///   startTime: EventTimeOfDay(hour: 15, minute: 0),
   /// );
   ///
   /// // Change the duration of all occurrences to 90 minutes
@@ -906,7 +906,7 @@ class DeviceCalendar {
   /// final newSeriesId = await plugin.updateRecurring(
   ///   event.instanceId,
   ///   EventSpan.thisAndFollowing,
-  ///   startTime: (hour: 15, minute: 0),
+  ///   startTime: EventTimeOfDay(hour: 15, minute: 0),
   ///   duration: Duration(hours: 1),
   /// );
   ///
@@ -960,20 +960,6 @@ class DeviceCalendar {
         'instanceId',
         'EventSpan.thisAndFollowing requires an instance ID with an '
             'occurrence timestamp (eventId@timestamp)',
-      );
-    }
-
-    // startTime must be a real time-of-day. java.util.Calendar is lenient
-    // and would silently roll an out-of-range value into the next day.
-    if (startTime != null &&
-        (startTime.hour < 0 ||
-            startTime.hour > 23 ||
-            startTime.minute < 0 ||
-            startTime.minute > 59)) {
-      throw ArgumentError.value(
-        startTime,
-        'startTime',
-        'hour must be 0-23 and minute 0-59',
       );
     }
 

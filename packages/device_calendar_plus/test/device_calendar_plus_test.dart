@@ -816,7 +816,7 @@ void main() {
             'event-123',
             EventSpan.allEvents,
             isAllDay: true,
-            startTime: (hour: 10, minute: 0),
+            startTime: EventTimeOfDay(hour: 10, minute: 0),
           ),
           throwsArgumentError,
         );
@@ -854,28 +854,6 @@ void main() {
             EventSpan.allEvents,
             isAllDay: true,
             duration: const Duration(days: 1, seconds: 30),
-          ),
-          throwsArgumentError,
-        );
-      });
-
-      test('throws ArgumentError when startTime hour is out of range', () {
-        expect(
-          () => DeviceCalendar.instance.updateRecurring(
-            'event-123',
-            EventSpan.allEvents,
-            startTime: (hour: 24, minute: 0),
-          ),
-          throwsArgumentError,
-        );
-      });
-
-      test('throws ArgumentError when startTime minute is out of range', () {
-        expect(
-          () => DeviceCalendar.instance.updateRecurring(
-            'event-123',
-            EventSpan.allEvents,
-            startTime: (hour: 10, minute: 60),
           ),
           throwsArgumentError,
         );
@@ -928,12 +906,12 @@ void main() {
         await DeviceCalendar.instance.updateRecurring(
           'event-123',
           EventSpan.allEvents,
-          startTime: (hour: 15, minute: 30),
+          startTime: EventTimeOfDay(hour: 15, minute: 30),
         );
 
         expect(
           mockPlatform.lastUpdateRecurring?.startTime,
-          (hour: 15, minute: 30),
+          EventTimeOfDay(hour: 15, minute: 30),
         );
       });
 
