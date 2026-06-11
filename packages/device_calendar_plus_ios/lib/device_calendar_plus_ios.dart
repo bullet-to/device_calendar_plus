@@ -167,11 +167,12 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }
 
   @override
-  Future<void> deleteEvent(String eventId) async {
+  Future<void> deleteEvent(String eventId, {int? timestamp}) async {
     await methodChannel.invokeMethod<void>(
       'deleteEvent',
       <String, dynamic>{
         'eventId': eventId,
+        'timestamp': timestamp,
       },
     );
   }
@@ -179,6 +180,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   @override
   Future<void> updateEvent(
     String eventId, {
+    int? timestamp,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -191,6 +193,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }) async {
     final args = <String, dynamic>{
       'eventId': eventId,
+      'timestamp': timestamp,
       'title': title,
       'startDate': startDate?.millisecondsSinceEpoch,
       'endDate': endDate?.millisecondsSinceEpoch,
@@ -212,8 +215,8 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     int? timestamp,
     String span, {
     String? title,
-    DateTime? startDate,
-    DateTime? endDate,
+    EventTimeOfDay? startTime,
+    int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
     Patch<String>? url,
@@ -227,8 +230,8 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       'timestamp': timestamp,
       'span': span,
       'title': title,
-      'startDate': startDate?.millisecondsSinceEpoch,
-      'endDate': endDate?.millisecondsSinceEpoch,
+      'startMinuteOfDay': startTime?.minuteOfDay,
+      'durationMinutes': durationMinutes,
       'isAllDay': isAllDay,
       'timeZone': timeZone,
       'availability': availability,

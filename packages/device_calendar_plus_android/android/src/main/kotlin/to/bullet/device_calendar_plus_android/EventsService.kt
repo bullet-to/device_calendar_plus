@@ -6,6 +6,8 @@ import android.content.Intent
 import android.provider.CalendarContract
 import java.util.Date
 
+private const val MINUTES_PER_DAY = 1440
+
 class EventsService(private val context: Context) {
     
     fun retrieveEvents(
@@ -712,7 +714,13 @@ class EventsService(private val context: Context) {
         }
     }
     
-    fun deleteEvent(eventId: String): Result<Unit> {
+    /**
+     * Deletes an event. With a [timestamp], removes only the occurrence at
+     * that instant from its recurring series, as a cancelled exception;
+     * without one, deletes the event itself (the whole series when
+     * recurring).
+     */
+    fun deleteEvent(eventId: String, timestamp: Long? = null): Result<Unit> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
             context.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
@@ -724,37 +732,21 @@ class EventsService(private val context: Context) {
             )
         }
 
-        try {
-            // Use sync-adapter context so the Calendar Provider physically
-            // removes the row instead of just setting DELETED=1. Without
-            // this, the event survives deletion on real devices (where a
-            // sync adapter is present) and getEvent still returns it.
-            val uri = buildDeleteUri(eventId)
-            val deletedRows = context.contentResolver.delete(
-                uri,
-                "${CalendarContract.Events._ID} = ?",
-                arrayOf(eventId)
-            )
-
-            if (deletedRows == 0) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.NOT_FOUND,
-                        "Event with ID $eventId not found"
-                    )
-                )
+        return try {
+            if (timestamp != null) {
+                deleteEventInstance(eventId, timestamp)
+            } else {
+                deleteEventMaster(eventId)
             }
-
-            return Result.success(Unit)
         } catch (e: SecurityException) {
-            return Result.failure(
+            Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.PERMISSION_DENIED,
                     "Calendar permission denied: ${e.message}"
                 )
             )
         } catch (e: Exception) {
-            return Result.failure(
+            Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to delete event: ${e.message}"
@@ -762,19 +754,46 @@ class EventsService(private val context: Context) {
             )
         }
     }
+
+    /**
+     * The bare-event-ID path of [deleteEvent]: deletes the event row itself —
+     * the whole series when recurring.
+     */
+    private fun deleteEventMaster(eventId: String): Result<Unit> {
+        // Use sync-adapter context so the Calendar Provider physically
+        // removes the row instead of just setting DELETED=1. Without
+        // this, the event survives deletion on real devices (where a
+        // sync adapter is present) and getEvent still returns it.
+        val uri = buildDeleteUri(eventId)
+        val deletedRows = context.contentResolver.delete(
+            uri,
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(eventId)
+        )
+
+        if (deletedRows == 0) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+        }
+
+        return Result.success(Unit)
+    }
     
+    /**
+     * Updates an event. With a [timestamp], detaches the occurrence at that
+     * instant from its recurring series and applies the changes to it alone;
+     * without one, updates the event itself (the whole series when recurring).
+     */
     fun updateEvent(
         eventId: String,
-        title: String?,
+        timestamp: Long?,
         startDate: java.util.Date?,
         endDate: java.util.Date?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ): Result<Unit> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -786,118 +805,22 @@ class EventsService(private val context: Context) {
                 )
             )
         }
-        
-        try {
-            // Need to fetch existing event to determine if it's all-day
-            // This is required for proper date normalization
-            val existingEventResult = getEvent(eventId, null)
-            val existingEvent = existingEventResult.getOrNull()
-            val wasAllDay = existingEvent?.get("isAllDay") as? Boolean ?: false
-            
-            // Build ContentValues with only provided fields
-            val values = android.content.ContentValues()
-            
-            // Update title if provided
-            if (title != null) {
-                values.put(CalendarContract.Events.TITLE, title)
-            }
-            
-            // Update description
-            if ("description" in clearedFields) {
-                values.putNull(CalendarContract.Events.DESCRIPTION)
-            } else if (description != null) {
-                values.put(CalendarContract.Events.DESCRIPTION, description)
-            }
 
-            // Update location
-            if ("location" in clearedFields) {
-                values.putNull(CalendarContract.Events.EVENT_LOCATION)
-            } else if (location != null) {
-                values.put(CalendarContract.Events.EVENT_LOCATION, location)
+        return try {
+            if (timestamp != null) {
+                updateEventInstance(eventId, timestamp, startDate, endDate, patch)
+            } else {
+                updateEventMaster(eventId, startDate, endDate, patch)
             }
-
-            // Update URL
-            if ("url" in clearedFields) {
-                values.putNull(CalendarContract.Events.CUSTOM_APP_URI)
-            } else if (url != null) {
-                values.put(CalendarContract.Events.CUSTOM_APP_URI, url)
-            }
-
-            // Update isAllDay if provided
-            val effectiveIsAllDay = isAllDay ?: wasAllDay
-            if (isAllDay != null) {
-                values.put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
-            }
-            
-            // Update dates if provided
-            // If event is/becomes all-day, need to normalize to UTC midnight
-            if (startDate != null || endDate != null) {
-                val startMillis: Long?
-                val endMillis: Long?
-                
-                if (effectiveIsAllDay) {
-                    startMillis = startDate?.let { localDateToUtcMidnight(it.time) }
-                    endMillis = endDate?.let { localDateToUtcMidnight(it.time) }
-                } else {
-                    startMillis = startDate?.time
-                    endMillis = endDate?.time
-                }
-                
-                if (startMillis != null) {
-                    values.put(CalendarContract.Events.DTSTART, startMillis)
-                }
-                if (endMillis != null) {
-                    values.put(CalendarContract.Events.DTEND, endMillis)
-                }
-            }
-            
-            // Update timezone if provided
-            // Note: For all-day events, timezone should be set but is less relevant
-            if (timeZone != null) {
-                values.put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
-            } else if (isAllDay == true) {
-                // If changing to all-day, set device timezone
-                values.put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
-            }
-            
-            // Update availability if provided
-            if (availability != null) {
-                val availabilityValue = when (availability) {
-                    "free" -> CalendarContract.Events.AVAILABILITY_FREE
-                    "tentative" -> CalendarContract.Events.AVAILABILITY_TENTATIVE
-                    "unavailable" -> CalendarContract.Events.AVAILABILITY_BUSY
-                    else -> CalendarContract.Events.AVAILABILITY_BUSY // "busy" or default
-                }
-                values.put(CalendarContract.Events.AVAILABILITY, availabilityValue)
-            }
-            
-            // Perform the update
-            val updatedRows = context.contentResolver.update(
-                CalendarContract.Events.CONTENT_URI,
-                values,
-                "${CalendarContract.Events._ID} = ?",
-                arrayOf(eventId)
-            )
-            
-            if (updatedRows == 0) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.NOT_FOUND,
-                        "Event with ID $eventId not found"
-                    )
-                )
-            }
-            
-            return Result.success(Unit)
         } catch (e: SecurityException) {
-            return Result.failure(
+            Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.PERMISSION_DENIED,
                     "Calendar permission denied: ${e.message}"
                 )
             )
         } catch (e: Exception) {
-            return Result.failure(
+            Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to update event: ${e.message}"
@@ -906,31 +829,221 @@ class EventsService(private val context: Context) {
         }
     }
 
+    /**
+     * The bare-event-ID path of [updateEvent]: updates the event row itself —
+     * the whole series when recurring.
+     */
+    private fun updateEventMaster(
+        eventId: String,
+        startDate: java.util.Date?,
+        endDate: java.util.Date?,
+        patch: EventFieldPatch
+    ): Result<Unit> {
+        // The existing row decides all-day date normalization when the call
+        // doesn't change the flag.
+        val row = readEventRow(eventId)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+
+        // Build ContentValues with only provided fields
+        val values = android.content.ContentValues()
+        applyEventFieldValues(values, patch)
+
+        // Update dates if provided
+        // If event is/becomes all-day, need to normalize to UTC midnight
+        val effectiveIsAllDay = patch.isAllDay ?: row.allDay
+        if (startDate != null || endDate != null) {
+            val startMillis: Long?
+            val endMillis: Long?
+
+            if (effectiveIsAllDay) {
+                startMillis = startDate?.let { localDateToUtcMidnight(it.time) }
+                endMillis = endDate?.let { localDateToUtcMidnight(it.time) }
+            } else {
+                startMillis = startDate?.time
+                endMillis = endDate?.time
+            }
+
+            if (startMillis != null) {
+                values.put(CalendarContract.Events.DTSTART, startMillis)
+            }
+            if (endMillis != null) {
+                values.put(CalendarContract.Events.DTEND, endMillis)
+            }
+        }
+
+        // Update timezone if provided
+        // Note: For all-day events, timezone should be set but is less relevant
+        if (patch.timeZone != null) {
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)
+        } else if (patch.isAllDay == true) {
+            // If changing to all-day, set device timezone
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
+        }
+
+        // Perform the update
+        val updatedRows = context.contentResolver.update(
+            CalendarContract.Events.CONTENT_URI,
+            values,
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(eventId)
+        )
+
+        if (updatedRows == 0) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+        }
+
+        return Result.success(Unit)
+    }
+
+    /**
+     * Applies [patch] — title, description, location, url, all-day flag and
+     * availability — to [values]. Fields named in the patch's clearedFields
+     * are nulled; null fields are left untouched. The patch's time zone is
+     * not applied here: each write path handles it differently.
+     */
+    private fun applyEventFieldValues(
+        values: android.content.ContentValues,
+        patch: EventFieldPatch
+    ) {
+        if (patch.title != null) {
+            values.put(CalendarContract.Events.TITLE, patch.title)
+        }
+        if ("description" in patch.clearedFields) {
+            values.putNull(CalendarContract.Events.DESCRIPTION)
+        } else if (patch.description != null) {
+            values.put(CalendarContract.Events.DESCRIPTION, patch.description)
+        }
+        if ("location" in patch.clearedFields) {
+            values.putNull(CalendarContract.Events.EVENT_LOCATION)
+        } else if (patch.location != null) {
+            values.put(CalendarContract.Events.EVENT_LOCATION, patch.location)
+        }
+        if ("url" in patch.clearedFields) {
+            values.putNull(CalendarContract.Events.CUSTOM_APP_URI)
+        } else if (patch.url != null) {
+            values.put(CalendarContract.Events.CUSTOM_APP_URI, patch.url)
+        }
+        if (patch.isAllDay != null) {
+            values.put(CalendarContract.Events.ALL_DAY, if (patch.isAllDay) 1 else 0)
+        }
+        if (patch.availability != null) {
+            values.put(
+                CalendarContract.Events.AVAILABILITY,
+                availabilityToInt(patch.availability)
+            )
+        }
+    }
+
+    /**
+     * Detaches the occurrence at [timestamp] from its recurring series as an
+     * exception and applies the changes to it alone. The instance-ID path of
+     * [updateEvent]; [startDate] and [endDate] are absolute instants, so the
+     * occurrence can move to a different day.
+     */
+    private fun updateEventInstance(
+        eventId: String,
+        timestamp: Long,
+        startDate: java.util.Date?,
+        endDate: java.util.Date?,
+        patch: EventFieldPatch
+    ): Result<Unit> {
+        val row = readEventRow(eventId)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+
+        if (row.rrule == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "Event $eventId is not recurring; pass a bare event ID instead"
+                )
+            )
+        }
+
+        val effectiveIsAllDay = patch.isAllDay ?: row.allDay
+        val newStart = if (startDate != null) {
+            toStorageMillis(startDate, effectiveIsAllDay)
+        } else {
+            timestamp
+        }
+        // Without an explicit endDate the occurrence's own end stays put —
+        // matching iOS, where setting startDate leaves endDate untouched.
+        val newEnd = if (endDate != null) {
+            toStorageMillis(endDate, effectiveIsAllDay)
+        } else {
+            timestamp + eventDurationMillis(row)
+        }
+        if (newEnd <= newStart) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "End date must be after the occurrence's start date"
+                )
+            )
+        }
+
+        // Insert an exception overriding this single occurrence. The provider
+        // expects DURATION (not DTEND) on an exception of a recurring parent.
+        val values = android.content.ContentValues().apply {
+            put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
+            put(CalendarContract.Events.DTSTART, newStart)
+            put(CalendarContract.Events.DURATION, "P${(newEnd - newStart) / 1000}S")
+            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
+        }
+        applyEventFieldValues(values, patch)
+        if (patch.timeZone != null) {
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)
+        }
+
+        val exceptionUri = android.content.ContentUris.withAppendedId(
+            CalendarContract.Events.CONTENT_EXCEPTION_URI,
+            eventId.toLong()
+        )
+        val uri = context.contentResolver.insert(exceptionUri, values)
+        if (uri?.lastPathSegment == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.OPERATION_FAILED,
+                    "Failed to create the exception for event $eventId"
+                )
+            )
+        }
+        return Result.success(Unit)
+    }
+
     // -- updateRecurring (issue #36) --
 
     /**
-     * Updates a recurring event, choosing which occurrences the edit affects.
+     * Updates a recurring event's series, choosing which occurrences the edit
+     * affects.
      *
-     * [span] is "allEvents" (the whole series), "thisAndFollowing" (split the
-     * series at [timestamp], that occurrence onward forming the new series), or
-     * "thisInstance" (detach and edit only that occurrence). Returns the event
-     * ID for the affected scope.
+     * [span] is "allEvents" (the whole series) or "thisAndFollowing" (split
+     * the series at [timestamp], that occurrence onward forming the new
+     * series). Single-occurrence edits go through [updateEvent] with a
+     * timestamp. Returns the event ID for the affected scope.
      */
     fun updateRecurring(
         eventId: String,
         timestamp: Long?,
         span: String,
-        title: String?,
-        startDate: java.util.Date?,
-        endDate: java.util.Date?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
+        startMinuteOfDay: Int?,
+        durationMinutes: Int?,
         recurrenceRule: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ): Result<String> {
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
             context.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
@@ -943,27 +1056,53 @@ class EventsService(private val context: Context) {
         }
 
         return try {
-            when (span) {
-                "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    eventId, timestamp, title, startDate, endDate,
-                    description, location, url, isAllDay, timeZone, availability,
-                    recurrenceRule, clearedFields
-                )
-                "thisInstance" -> updateRecurringThisInstance(
-                    eventId, timestamp, title, startDate, endDate,
-                    description, location, url, isAllDay, timeZone, availability,
-                    clearedFields
-                )
-                "allEvents" -> updateRecurringAllEvents(
-                    eventId, title, startDate, endDate,
-                    description, location, url, isAllDay, timeZone, availability,
-                    recurrenceRule, clearedFields
-                )
-                else -> Result.failure(
+            if (span != "allEvents" && span != "thisAndFollowing") {
+                return Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.INVALID_ARGUMENTS,
                         "Unknown update span: $span"
                     )
+                )
+            }
+
+            val row = readEventRow(eventId)
+                ?: return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.NOT_FOUND,
+                        "Event with ID $eventId not found"
+                    )
+                )
+
+            // All-day events have no time-of-day and only whole-day durations.
+            // The Dart layer can only check these against fields in the same
+            // call; the stored event's state is enforced here.
+            val effectiveIsAllDay = patch.isAllDay ?: row.allDay
+            if (startMinuteOfDay != null && effectiveIsAllDay) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "startTime cannot be set on an all-day event"
+                    )
+                )
+            }
+            if (durationMinutes != null && effectiveIsAllDay &&
+                durationMinutes % MINUTES_PER_DAY != 0) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "All-day events require whole-day durations"
+                    )
+                )
+            }
+
+            when (span) {
+                "thisAndFollowing" -> updateRecurringThisAndFollowing(
+                    eventId, row, timestamp, startMinuteOfDay,
+                    durationMinutes, recurrenceRule, patch
+                )
+                else -> updateRecurringAllEvents(
+                    eventId, row, startMinuteOfDay,
+                    durationMinutes, recurrenceRule, patch
                 )
             }
         } catch (e: SecurityException) {
@@ -985,62 +1124,18 @@ class EventsService(private val context: Context) {
 
     private fun updateRecurringAllEvents(
         eventId: String,
-        title: String?,
-        startDate: java.util.Date?,
-        endDate: java.util.Date?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
+        row: EventRow,
+        startMinuteOfDay: Int?,
+        durationMinutes: Int?,
         recurrenceRule: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ): Result<String> {
-        val row = readEventRow(eventId)
-            ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
-                )
-            )
-
         val values = android.content.ContentValues()
-
-        if (title != null) {
-            values.put(CalendarContract.Events.TITLE, title)
-        }
-
-        if ("description" in clearedFields) {
-            values.putNull(CalendarContract.Events.DESCRIPTION)
-        } else if (description != null) {
-            values.put(CalendarContract.Events.DESCRIPTION, description)
-        }
-
-        if ("location" in clearedFields) {
-            values.putNull(CalendarContract.Events.EVENT_LOCATION)
-        } else if (location != null) {
-            values.put(CalendarContract.Events.EVENT_LOCATION, location)
-        }
-
-        if ("url" in clearedFields) {
-            values.putNull(CalendarContract.Events.CUSTOM_APP_URI)
-        } else if (url != null) {
-            values.put(CalendarContract.Events.CUSTOM_APP_URI, url)
-        }
-
-        if (availability != null) {
-            values.put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
-        }
-
-        val effectiveIsAllDay = isAllDay ?: row.allDay
-        if (isAllDay != null) {
-            values.put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
-        }
+        applyEventFieldValues(values, patch)
 
         // Recurrence rule column and the resulting recurring state.
         val wasRecurring = row.rrule != null
-        val clearRrule = "recurrenceRule" in clearedFields
+        val clearRrule = "recurrenceRule" in patch.clearedFields
         val willBeRecurring = when {
             clearRrule -> false
             recurrenceRule != null -> true
@@ -1054,35 +1149,29 @@ class EventsService(private val context: Context) {
 
         // Time columns. A recurring event must use DURATION (and no DTEND); a
         // single event must use DTEND (and no DURATION). Rewrite them when the
-        // dates change or when the event flips between recurring and single.
-        if (startDate != null || endDate != null || wasRecurring != willBeRecurring) {
-            val existingDuration = eventDurationMillis(row)
-            val newStart = if (startDate != null) {
-                toStorageMillis(startDate, effectiveIsAllDay)
-            } else {
-                row.dtstart
-            }
-            val newEnd = if (endDate != null) {
-                toStorageMillis(endDate, effectiveIsAllDay)
-            } else {
-                newStart + existingDuration
-            }
+        // time-of-day, duration, or recurring state changes.
+        val hasTimeChange = startMinuteOfDay != null || durationMinutes != null
+        if (hasTimeChange || wasRecurring != willBeRecurring) {
+            val (newStart, newDurationMs) = resolveSeriesTimes(
+                row.dtstart, eventDurationMillis(row),
+                startMinuteOfDay, durationMinutes, row.timeZone
+            )
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
                 values.put(
                     CalendarContract.Events.DURATION,
-                    "P${(newEnd - newStart) / 1000}S"
+                    "P${newDurationMs / 1000}S"
                 )
                 values.putNull(CalendarContract.Events.DTEND)
             } else {
-                values.put(CalendarContract.Events.DTEND, newEnd)
+                values.put(CalendarContract.Events.DTEND, newStart + newDurationMs)
                 values.putNull(CalendarContract.Events.DURATION)
             }
         }
 
-        if (timeZone != null) {
-            values.put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
-        } else if (isAllDay == true) {
+        if (patch.timeZone != null) {
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)
+        } else if (patch.isAllDay == true) {
             values.put(
                 CalendarContract.Events.EVENT_TIMEZONE,
                 java.util.TimeZone.getDefault().id
@@ -1105,18 +1194,12 @@ class EventsService(private val context: Context) {
 
     private fun updateRecurringThisAndFollowing(
         eventId: String,
+        row: EventRow,
         timestamp: Long?,
-        title: String?,
-        startDate: java.util.Date?,
-        endDate: java.util.Date?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
+        startMinuteOfDay: Int?,
+        durationMinutes: Int?,
         recurrenceRule: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ): Result<String> {
         if (timestamp == null) {
             return Result.failure(
@@ -1126,14 +1209,6 @@ class EventsService(private val context: Context) {
                 )
             )
         }
-
-        val row = readEventRow(eventId)
-            ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
-                )
-            )
 
         if (row.rrule == null) {
             return Result.failure(
@@ -1146,18 +1221,24 @@ class EventsService(private val context: Context) {
 
         // Effective field values for the new series: the patch value when one
         // is given, otherwise the master's existing value.
-        val effectiveIsAllDay = isAllDay ?: row.allDay
-        val effectiveTitle = title ?: row.title
-        val effectiveDescription =
-            if ("description" in clearedFields) null else (description ?: row.description)
-        val effectiveLocation =
-            if ("location" in clearedFields) null else (location ?: row.location)
+        val effectiveIsAllDay = patch.isAllDay ?: row.allDay
+        val effectiveTitle = patch.title ?: row.title
+        val effectiveDescription = if ("description" in patch.clearedFields) {
+            null
+        } else {
+            patch.description ?: row.description
+        }
+        val effectiveLocation = if ("location" in patch.clearedFields) {
+            null
+        } else {
+            patch.location ?: row.location
+        }
         val effectiveUrl =
-            if ("url" in clearedFields) null else (url ?: row.url)
-        val effectiveTimeZone = timeZone ?: row.timeZone
-        val effectiveAvailability = availability ?: row.availability
+            if ("url" in patch.clearedFields) null else (patch.url ?: row.url)
+        val effectiveTimeZone = patch.timeZone ?: row.timeZone
+        val effectiveAvailability = patch.availability ?: row.availability
         val effectiveRrule = when {
-            "recurrenceRule" in clearedFields -> null
+            "recurrenceRule" in patch.clearedFields -> null
             recurrenceRule != null -> recurrenceRule
             else -> {
                 // Rule unchanged: the new series inherits the original rule. A
@@ -1173,20 +1254,13 @@ class EventsService(private val context: Context) {
             }
         }
 
-        // The new series starts at the explicit start date, or at the anchor
-        // occurrence itself — "this and following" includes the named
-        // occurrence.
-        val duration = eventDurationMillis(row)
-        val newStart = if (startDate != null) {
-            toStorageMillis(startDate, effectiveIsAllDay)
-        } else {
-            timestamp
-        }
-        val newEnd = if (endDate != null) {
-            toStorageMillis(endDate, effectiveIsAllDay)
-        } else {
-            newStart + duration
-        }
+        // The new series starts at the anchor occurrence, optionally with a
+        // new time-of-day applied. Duration is the master's unless overridden.
+        val (newStart, newDurationMs) = resolveSeriesTimes(
+            timestamp, eventDurationMillis(row),
+            startMinuteOfDay, durationMinutes, row.timeZone
+        )
+        val newEnd = newStart + newDurationMs
 
         // Create the new series first, so that a later failure leaves the
         // original series intact.
@@ -1241,114 +1315,17 @@ class EventsService(private val context: Context) {
         return Result.success(newEventId)
     }
 
-    private fun updateRecurringThisInstance(
-        eventId: String,
-        timestamp: Long?,
-        title: String?,
-        startDate: java.util.Date?,
-        endDate: java.util.Date?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
-        clearedFields: List<String>
-    ): Result<String> {
-        if (timestamp == null) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "thisInstance requires an occurrence timestamp"
-                )
-            )
-        }
-
-        val row = readEventRow(eventId)
-            ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
-                )
-            )
-
-        if (row.rrule == null) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "Event $eventId is not recurring; use updateEvent instead"
-                )
-            )
-        }
-
-        val effectiveIsAllDay = isAllDay ?: row.allDay
-        val duration = eventDurationMillis(row)
-        val newStart = if (startDate != null) {
-            toStorageMillis(startDate, effectiveIsAllDay)
-        } else {
-            timestamp
-        }
-        val newEnd = if (endDate != null) {
-            toStorageMillis(endDate, effectiveIsAllDay)
-        } else {
-            newStart + duration
-        }
-
-        // Insert an exception overriding this single occurrence. The provider
-        // expects DURATION (not DTEND) on an exception of a recurring parent.
-        val values = android.content.ContentValues().apply {
-            put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
-            put(CalendarContract.Events.DTSTART, newStart)
-            put(CalendarContract.Events.DURATION, "P${(newEnd - newStart) / 1000}S")
-            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
-
-            if (title != null) {
-                put(CalendarContract.Events.TITLE, title)
-            }
-            if ("description" in clearedFields) {
-                putNull(CalendarContract.Events.DESCRIPTION)
-            } else if (description != null) {
-                put(CalendarContract.Events.DESCRIPTION, description)
-            }
-            if ("location" in clearedFields) {
-                putNull(CalendarContract.Events.EVENT_LOCATION)
-            } else if (location != null) {
-                put(CalendarContract.Events.EVENT_LOCATION, location)
-            }
-            if ("url" in clearedFields) {
-                putNull(CalendarContract.Events.CUSTOM_APP_URI)
-            } else if (url != null) {
-                put(CalendarContract.Events.CUSTOM_APP_URI, url)
-            }
-            if (isAllDay != null) {
-                put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
-            }
-            if (timeZone != null) {
-                put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
-            }
-            if (availability != null) {
-                put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
-            }
-        }
-
-        val exceptionUri = android.content.ContentUris.withAppendedId(
-            CalendarContract.Events.CONTENT_EXCEPTION_URI,
-            eventId.toLong()
-        )
-        val uri = context.contentResolver.insert(exceptionUri, values)
-        val exceptionId = uri?.lastPathSegment
-            ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.OPERATION_FAILED,
-                    "Failed to create the exception for event $eventId"
-                )
-            )
-        return Result.success(exceptionId)
-    }
-
     // -- deleteRecurring (issue #43) --
 
-    /** Deletes a recurring event, choosing which occurrences are removed. */
+    /**
+     * Deletes a recurring event's series, choosing which occurrences are
+     * removed.
+     *
+     * [span] is "allEvents" (the whole series) or "thisAndFollowing" (the
+     * occurrence at [timestamp] and every later one, truncating the series
+     * before it). Single-occurrence deletes go through [deleteEvent] with a
+     * timestamp.
+     */
     fun deleteRecurring(
         eventId: String,
         timestamp: Long?,
@@ -1368,7 +1345,6 @@ class EventsService(private val context: Context) {
             when (span) {
                 "allEvents" -> deleteEvent(eventId)
                 "thisAndFollowing" -> deleteRecurringThisAndFollowing(eventId, timestamp)
-                "thisInstance" -> deleteRecurringThisInstance(eventId, timestamp)
                 else -> Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.INVALID_ARGUMENTS,
@@ -1454,23 +1430,15 @@ class EventsService(private val context: Context) {
     }
 
     /**
-     * Removes a single occurrence by inserting a cancelled exception event
-     * via CONTENT_EXCEPTION_URI. The Calendar Provider then excludes that
+     * The instance-ID path of [deleteEvent]: removes the single occurrence
+     * at [timestamp] by inserting a cancelled exception event via
+     * CONTENT_EXCEPTION_URI. The Calendar Provider then excludes that
      * occurrence from the Instances expansion.
      */
-    private fun deleteRecurringThisInstance(
+    private fun deleteEventInstance(
         eventId: String,
-        timestamp: Long?
+        timestamp: Long
     ): Result<Unit> {
-        if (timestamp == null) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "thisInstance requires an occurrence timestamp"
-                )
-            )
-        }
-
         val row = readEventRow(eventId)
             ?: return Result.failure(
                 CalendarException(
@@ -1483,7 +1451,7 @@ class EventsService(private val context: Context) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "Event $eventId is not recurring; use deleteEvent instead"
+                    "Event $eventId is not recurring; pass a bare event ID instead"
                 )
             )
         }
@@ -1651,6 +1619,55 @@ class EventsService(private val context: Context) {
             "tentative" -> CalendarContract.Events.AVAILABILITY_TENTATIVE
             else -> CalendarContract.Events.AVAILABILITY_BUSY
         }
+    }
+
+    /**
+     * Resolves the start and duration for a series-level time edit: the
+     * time-of-day of [baseMillis] is replaced when [startMinuteOfDay] is
+     * given, and the duration overridden when [durationMinutes] is given.
+     */
+    private fun resolveSeriesTimes(
+        baseMillis: Long,
+        existingDurationMillis: Long,
+        startMinuteOfDay: Int?,
+        durationMinutes: Int?,
+        timeZoneId: String?
+    ): Pair<Long, Long> {
+        val newStart = if (startMinuteOfDay != null) {
+            replaceTimeOfDay(
+                baseMillis, startMinuteOfDay / 60, startMinuteOfDay % 60, timeZoneId
+            )
+        } else {
+            baseMillis
+        }
+        val newDurationMs = if (durationMinutes != null) {
+            durationMinutes.toLong() * 60_000L
+        } else {
+            existingDurationMillis
+        }
+        return Pair(newStart, newDurationMs)
+    }
+
+    /**
+     * Keeps the calendar date of [baseMillis] but replaces the time-of-day
+     * with [hour]:[minute]. The date is interpreted in the event's timezone
+     * (or the device default when [timeZoneId] is null).
+     */
+    private fun replaceTimeOfDay(
+        baseMillis: Long,
+        hour: Int,
+        minute: Int,
+        timeZoneId: String?
+    ): Long {
+        val tz = if (timeZoneId != null) java.util.TimeZone.getTimeZone(timeZoneId)
+                 else java.util.TimeZone.getDefault()
+        val cal = java.util.Calendar.getInstance(tz)
+        cal.timeInMillis = baseMillis
+        cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
+        cal.set(java.util.Calendar.MINUTE, minute)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
     }
 
     /** Storage millis for a date: UTC midnight for all-day, the instant otherwise. */

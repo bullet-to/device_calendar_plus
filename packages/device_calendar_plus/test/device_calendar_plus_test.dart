@@ -6,12 +6,55 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+/// Arguments captured from the last [DeviceCalendarPlusPlatform.updateEvent]
+/// call.
+typedef UpdateEventCall = ({
+  String eventId,
+  int? timestamp,
+  String? title,
+  DateTime? startDate,
+  DateTime? endDate,
+  Patch<String>? description,
+  Patch<String>? location,
+  Patch<String>? url,
+  bool? isAllDay,
+  String? timeZone,
+  String? availability,
+});
+
+/// Arguments captured from the last
+/// [DeviceCalendarPlusPlatform.updateRecurring] call.
+typedef UpdateRecurringCall = ({
+  String eventId,
+  int? timestamp,
+  String span,
+  String? title,
+  EventTimeOfDay? startTime,
+  int? durationMinutes,
+  Patch<String>? description,
+  Patch<String>? location,
+  Patch<String>? url,
+  bool? isAllDay,
+  String? timeZone,
+  String? availability,
+  Patch<String>? recurrenceRule,
+});
+
 class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     with MockPlatformInterfaceMixin {
   String? _permissionStatusCode = "notDetermined";
   List<Map<String, dynamic>> _events = [];
   Map<String, dynamic>? _event;
   PlatformException? _exceptionToThrow;
+
+  /// The arguments of the most recent updateEvent / updateRecurring /
+  /// deleteEvent call.
+  UpdateEventCall? lastUpdateEvent;
+  UpdateRecurringCall? lastUpdateRecurring;
+  ({String eventId, int? timestamp})? lastDeleteEvent;
+
+  /// What updateRecurring returns (the affected scope's event ID).
+  String updateRecurringResult = 'mock-event-id';
 
   // Callback to capture createEvent arguments
   Future<String> Function(
@@ -27,37 +70,6 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String availability,
     String? recurrenceRule,
   )? _createEventCallback;
-
-  // Callback to capture updateEvent arguments
-  Future<void> Function(
-    String eventId, {
-    String? title,
-    DateTime? startDate,
-    DateTime? endDate,
-    Patch<String>? description,
-    Patch<String>? location,
-    Patch<String>? url,
-    bool? isAllDay,
-    String? timeZone,
-    String? availability,
-  })? _updateEventCallback;
-
-  // Callback to capture updateRecurring arguments
-  Future<String> Function(
-    String eventId,
-    int? timestamp,
-    String span, {
-    String? title,
-    DateTime? startDate,
-    DateTime? endDate,
-    Patch<String>? description,
-    Patch<String>? location,
-    Patch<String>? url,
-    bool? isAllDay,
-    String? timeZone,
-    String? availability,
-    Patch<String>? recurrenceRule,
-  })? _updateRecurringCallback;
 
   // Callback to capture deleteRecurring arguments
   Future<void> Function(
@@ -102,43 +114,6 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     ) callback,
   ) {
     _createEventCallback = callback;
-  }
-
-  void setUpdateEventCallback(
-    Future<void> Function(
-      String eventId, {
-      String? title,
-      DateTime? startDate,
-      DateTime? endDate,
-      Patch<String>? description,
-      Patch<String>? location,
-      Patch<String>? url,
-      bool? isAllDay,
-      String? timeZone,
-      String? availability,
-    }) callback,
-  ) {
-    _updateEventCallback = callback;
-  }
-
-  void setUpdateRecurringCallback(
-    Future<String> Function(
-      String eventId,
-      int? timestamp,
-      String span, {
-      String? title,
-      DateTime? startDate,
-      DateTime? endDate,
-      Patch<String>? description,
-      Patch<String>? location,
-      Patch<String>? url,
-      bool? isAllDay,
-      String? timeZone,
-      String? availability,
-      Patch<String>? recurrenceRule,
-    }) callback,
-  ) {
-    _updateRecurringCallback = callback;
   }
 
   void setDeleteRecurringCallback(
@@ -257,13 +232,15 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
-  Future<void> deleteEvent(String eventId) async {
+  Future<void> deleteEvent(String eventId, {int? timestamp}) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
+    lastDeleteEvent = (eventId: eventId, timestamp: timestamp);
   }
 
   @override
   Future<void> updateEvent(
     String eventId, {
+    int? timestamp,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -275,20 +252,19 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? availability,
   }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
-    if (_updateEventCallback != null) {
-      return _updateEventCallback!(
-        eventId,
-        title: title,
-        startDate: startDate,
-        endDate: endDate,
-        description: description,
-        location: location,
-        url: url,
-        isAllDay: isAllDay,
-        timeZone: timeZone,
-        availability: availability,
-      );
-    }
+    lastUpdateEvent = (
+      eventId: eventId,
+      timestamp: timestamp,
+      title: title,
+      startDate: startDate,
+      endDate: endDate,
+      description: description,
+      location: location,
+      url: url,
+      isAllDay: isAllDay,
+      timeZone: timeZone,
+      availability: availability,
+    );
   }
 
   @override
@@ -297,8 +273,8 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     int? timestamp,
     String span, {
     String? title,
-    DateTime? startDate,
-    DateTime? endDate,
+    EventTimeOfDay? startTime,
+    int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
     Patch<String>? url,
@@ -308,24 +284,22 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     Patch<String>? recurrenceRule,
   }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
-    if (_updateRecurringCallback != null) {
-      return _updateRecurringCallback!(
-        eventId,
-        timestamp,
-        span,
-        title: title,
-        startDate: startDate,
-        endDate: endDate,
-        description: description,
-        location: location,
-        url: url,
-        isAllDay: isAllDay,
-        timeZone: timeZone,
-        availability: availability,
-        recurrenceRule: recurrenceRule,
-      );
-    }
-    return 'mock-event-id';
+    lastUpdateRecurring = (
+      eventId: eventId,
+      timestamp: timestamp,
+      span: span,
+      title: title,
+      startTime: startTime,
+      durationMinutes: durationMinutes,
+      description: description,
+      location: location,
+      url: url,
+      isAllDay: isAllDay,
+      timeZone: timeZone,
+      availability: availability,
+      recurrenceRule: recurrenceRule,
+    );
+    return updateRecurringResult;
   }
 
   @override
@@ -753,44 +727,16 @@ void main() {
 
     group('updateEvent', () {
       test('normalizes dates when isAllDay is true', () async {
-        final startWithTime = DateTime(2024, 3, 15, 14, 30, 45);
-        final endWithTime = DateTime(2024, 3, 16, 18, 15, 30);
-
-        DateTime? capturedStart;
-        DateTime? capturedEnd;
-
-        final mock = MockDeviceCalendarPlusPlatform();
-        mock.setUpdateEventCallback((
-          instanceId, {
-          title,
-          startDate,
-          endDate,
-          description,
-          location,
-          url,
-          isAllDay,
-          timeZone,
-          availability,
-        }) {
-          capturedStart = startDate;
-          capturedEnd = endDate;
-          return Future.value();
-        });
-        DeviceCalendarPlusPlatform.instance = mock;
-
         await DeviceCalendar.instance.updateEvent(
           eventId: 'event-123',
-          startDate: startWithTime,
-          endDate: endWithTime,
+          startDate: DateTime(2024, 3, 15, 14, 30, 45),
+          endDate: DateTime(2024, 3, 16, 18, 15, 30),
           isAllDay: true,
         );
 
-        expect(capturedStart!.hour, 0);
-        expect(capturedStart!.minute, 0);
-        expect(capturedStart!.second, 0);
-        expect(capturedEnd!.hour, 0);
-        expect(capturedEnd!.minute, 0);
-        expect(capturedEnd!.second, 0);
+        final call = mockPlatform.lastUpdateEvent!;
+        expect(call.startDate, DateTime(2024, 3, 15));
+        expect(call.endDate, DateTime(2024, 3, 16));
       });
 
       test('throws ArgumentError when eventId is empty', () async {
@@ -856,36 +802,83 @@ void main() {
         );
       });
 
-      test('throws ArgumentError when thisInstance given a bare event ID', () {
-        expect(
-          () => DeviceCalendar.instance.updateRecurring(
-            'event-123',
-            EventSpan.thisInstance,
-            title: 'New Title',
-          ),
-          throwsArgumentError,
-        );
-      });
-
-      test('throws ArgumentError when recurrenceRule is set with thisInstance',
-          () {
-        expect(
-          () => DeviceCalendar.instance.updateRecurring(
-            'event-123@1700000000000',
-            EventSpan.thisInstance,
-            recurrenceRule: Patch.set(const DailyRecurrence()),
-          ),
-          throwsArgumentError,
-        );
-      });
-
-      test('throws ArgumentError when endDate is before startDate', () {
+      test('throws ArgumentError when isAllDay is true with startTime', () {
         expect(
           () => DeviceCalendar.instance.updateRecurring(
             'event-123',
             EventSpan.allEvents,
-            startDate: DateTime(2024, 3, 20, 11, 0),
-            endDate: DateTime(2024, 3, 20, 10, 0),
+            isAllDay: true,
+            startTime: EventTimeOfDay(hour: 10, minute: 0),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when isAllDay is true with sub-day duration',
+          () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            isAllDay: true,
+            duration: const Duration(hours: 2),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('allows isAllDay with whole-day duration', () async {
+        final result = await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventSpan.allEvents,
+          isAllDay: true,
+          duration: const Duration(days: 3),
+        );
+        expect(result, 'mock-event-id');
+      });
+
+      test(
+          'throws ArgumentError when isAllDay duration is a whole day plus '
+          'a sub-minute remainder', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            isAllDay: true,
+            duration: const Duration(days: 1, seconds: 30),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when duration is zero', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            duration: Duration.zero,
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when duration is negative', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            duration: const Duration(minutes: -30),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when duration is not whole minutes', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            duration: const Duration(minutes: 90, seconds: 30),
           ),
           throwsArgumentError,
         );
@@ -901,34 +894,32 @@ void main() {
         expect(result, 'mock-event-id');
       });
 
+      test('passes startTime to the platform', () async {
+        await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventSpan.allEvents,
+          startTime: EventTimeOfDay(hour: 15, minute: 30),
+        );
+
+        expect(
+          mockPlatform.lastUpdateRecurring?.startTime,
+          EventTimeOfDay(hour: 15, minute: 30),
+        );
+      });
+
+      test('passes duration as minutes to the platform', () async {
+        await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventSpan.allEvents,
+          duration: const Duration(hours: 1, minutes: 30),
+        );
+
+        expect(mockPlatform.lastUpdateRecurring?.durationMinutes, 90);
+      });
+
       test('passes the span name and parsed instance ID to the platform',
           () async {
-        String? capturedEventId;
-        int? capturedTimestamp;
-        String? capturedSpan;
-
-        final mock = MockDeviceCalendarPlusPlatform();
-        mock.setUpdateRecurringCallback((
-          eventId,
-          timestamp,
-          span, {
-          title,
-          startDate,
-          endDate,
-          description,
-          location,
-          url,
-          isAllDay,
-          timeZone,
-          availability,
-          recurrenceRule,
-        }) {
-          capturedEventId = eventId;
-          capturedTimestamp = timestamp;
-          capturedSpan = span;
-          return Future.value('new-series-id');
-        });
-        DeviceCalendarPlusPlatform.instance = mock;
+        mockPlatform.updateRecurringResult = 'new-series-id';
 
         final result = await DeviceCalendar.instance.updateRecurring(
           'event-123@1700000000000',
@@ -936,119 +927,79 @@ void main() {
           title: 'New Title',
         );
 
-        expect(capturedEventId, 'event-123');
-        expect(capturedTimestamp, 1700000000000);
-        expect(capturedSpan, 'thisAndFollowing');
+        final call = mockPlatform.lastUpdateRecurring!;
+        expect(call.eventId, 'event-123');
+        expect(call.timestamp, 1700000000000);
+        expect(call.span, 'thisAndFollowing');
         expect(result, 'new-series-id');
       });
 
       test('converts a RecurrenceRule patch to an RRULE string', () async {
-        Patch<String>? capturedRule;
-
-        final mock = MockDeviceCalendarPlusPlatform();
-        mock.setUpdateRecurringCallback((
-          eventId,
-          timestamp,
-          span, {
-          title,
-          startDate,
-          endDate,
-          description,
-          location,
-          url,
-          isAllDay,
-          timeZone,
-          availability,
-          recurrenceRule,
-        }) {
-          capturedRule = recurrenceRule;
-          return Future.value('id');
-        });
-        DeviceCalendarPlusPlatform.instance = mock;
-
         await DeviceCalendar.instance.updateRecurring(
           'event-123',
           EventSpan.allEvents,
           recurrenceRule: Patch.set(const DailyRecurrence(end: CountEnd(5))),
         );
 
-        expect(capturedRule, isA<PatchSet<String>>());
-        expect((capturedRule as PatchSet<String>).value, 'FREQ=DAILY;COUNT=5');
+        final rule = mockPlatform.lastUpdateRecurring?.recurrenceRule;
+        expect(rule, isA<PatchSet<String>>());
+        expect((rule as PatchSet<String>).value, 'FREQ=DAILY;COUNT=5');
       });
 
       test('passes a cleared recurrence rule through as Patch.clear', () async {
-        Patch<String>? capturedRule;
-
-        final mock = MockDeviceCalendarPlusPlatform();
-        mock.setUpdateRecurringCallback((
-          eventId,
-          timestamp,
-          span, {
-          title,
-          startDate,
-          endDate,
-          description,
-          location,
-          url,
-          isAllDay,
-          timeZone,
-          availability,
-          recurrenceRule,
-        }) {
-          capturedRule = recurrenceRule;
-          return Future.value('id');
-        });
-        DeviceCalendarPlusPlatform.instance = mock;
-
         await DeviceCalendar.instance.updateRecurring(
           'event-123',
           EventSpan.allEvents,
           recurrenceRule: const Patch.clear(),
         );
 
-        expect(capturedRule, isA<PatchClear<String>>());
+        expect(
+          mockPlatform.lastUpdateRecurring?.recurrenceRule,
+          isA<PatchClear<String>>(),
+        );
       });
+    });
 
-      test('normalizes dates when isAllDay is true', () async {
-        DateTime? capturedStart;
-        DateTime? capturedEnd;
-
-        final mock = MockDeviceCalendarPlusPlatform();
-        mock.setUpdateRecurringCallback((
-          eventId,
-          timestamp,
-          span, {
-          title,
-          startDate,
-          endDate,
-          description,
-          location,
-          url,
-          isAllDay,
-          timeZone,
-          availability,
-          recurrenceRule,
-        }) {
-          capturedStart = startDate;
-          capturedEnd = endDate;
-          return Future.value('id');
-        });
-        DeviceCalendarPlusPlatform.instance = mock;
-
-        await DeviceCalendar.instance.updateRecurring(
-          'event-123',
-          EventSpan.allEvents,
-          startDate: DateTime(2024, 3, 15, 14, 30, 45),
-          endDate: DateTime(2024, 3, 16, 18, 15, 30),
-          isAllDay: true,
+    group('updateEvent with instance ID', () {
+      test('passes the parsed event ID and occurrence timestamp through',
+          () async {
+        await DeviceCalendar.instance.updateEvent(
+          eventId: 'event-123@1700000000000',
+          title: 'Moved this week',
         );
 
-        expect(capturedStart!.hour, 0);
-        expect(capturedStart!.minute, 0);
-        expect(capturedStart!.second, 0);
-        expect(capturedEnd!.hour, 0);
-        expect(capturedEnd!.minute, 0);
-        expect(capturedEnd!.second, 0);
+        final call = mockPlatform.lastUpdateEvent!;
+        expect(call.eventId, 'event-123');
+        expect(call.timestamp, 1700000000000);
+        expect(call.title, 'Moved this week');
+      });
+
+      test('passes full start and end dates, so the occurrence can move days',
+          () async {
+        // Occurrence on 2023-11-14 (1700000000000ms); the edit moves it to a
+        // different day entirely. The dates must arrive intact — not reduced
+        // to a time-of-day.
+        await DeviceCalendar.instance.updateEvent(
+          eventId: 'event-123@1700000000000',
+          startDate: DateTime(2024, 3, 20, 14, 0),
+          endDate: DateTime(2024, 3, 20, 14, 30),
+        );
+
+        final call = mockPlatform.lastUpdateEvent!;
+        expect(call.timestamp, 1700000000000);
+        expect(call.startDate, DateTime(2024, 3, 20, 14, 0));
+        expect(call.endDate, DateTime(2024, 3, 20, 14, 30));
+      });
+
+      test('bare event ID passes a null timestamp', () async {
+        await DeviceCalendar.instance.updateEvent(
+          eventId: 'event-123',
+          title: 'New Title',
+        );
+
+        final call = mockPlatform.lastUpdateEvent!;
+        expect(call.eventId, 'event-123');
+        expect(call.timestamp, isNull);
       });
     });
 
@@ -1069,16 +1020,6 @@ void main() {
           () => DeviceCalendar.instance.deleteRecurring(
             'event-123',
             EventSpan.thisAndFollowing,
-          ),
-          throwsArgumentError,
-        );
-      });
-
-      test('throws ArgumentError when thisInstance given a bare event ID', () {
-        expect(
-          () => DeviceCalendar.instance.deleteRecurring(
-            'event-123',
-            EventSpan.thisInstance,
           ),
           throwsArgumentError,
         );
@@ -1141,6 +1082,25 @@ void main() {
           () => DeviceCalendar.instance.deleteEvent(eventId: ''),
           throwsArgumentError,
         );
+      });
+
+      test('bare event ID passes a null timestamp', () async {
+        await DeviceCalendar.instance.deleteEvent(eventId: 'event-123');
+
+        final call = mockPlatform.lastDeleteEvent!;
+        expect(call.eventId, 'event-123');
+        expect(call.timestamp, isNull);
+      });
+
+      test('passes the parsed event ID and occurrence timestamp through',
+          () async {
+        await DeviceCalendar.instance.deleteEvent(
+          eventId: 'event-123@1700000000000',
+        );
+
+        final call = mockPlatform.lastDeleteEvent!;
+        expect(call.eventId, 'event-123');
+        expect(call.timestamp, 1700000000000);
       });
     });
 

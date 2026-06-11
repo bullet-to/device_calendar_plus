@@ -68,11 +68,12 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       'mock-event-id';
 
   @override
-  Future<void> deleteEvent(String eventId) async {}
+  Future<void> deleteEvent(String eventId, {int? timestamp}) async {}
 
   @override
   Future<void> updateEvent(
     String eventId, {
+    int? timestamp,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -90,8 +91,8 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     int? timestamp,
     String span, {
     String? title,
-    DateTime? startDate,
-    DateTime? endDate,
+    EventTimeOfDay? startTime,
+    int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
     Patch<String>? url,
@@ -127,5 +128,28 @@ void main() {
     final mock = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mock;
     expect(DeviceCalendarPlusPlatform.instance, mock);
+  });
+
+  group('EventTimeOfDay', () {
+    test('throws ArgumentError when hour is out of range', () {
+      expect(() => EventTimeOfDay(hour: 24, minute: 0), throwsArgumentError);
+      expect(() => EventTimeOfDay(hour: -1, minute: 0), throwsArgumentError);
+    });
+
+    test('throws ArgumentError when minute is out of range', () {
+      expect(() => EventTimeOfDay(hour: 10, minute: 60), throwsArgumentError);
+      expect(() => EventTimeOfDay(hour: 10, minute: -1), throwsArgumentError);
+    });
+
+    test('equal values compare equal', () {
+      expect(
+        EventTimeOfDay(hour: 15, minute: 30),
+        EventTimeOfDay(hour: 15, minute: 30),
+      );
+      expect(
+        EventTimeOfDay(hour: 15, minute: 30),
+        isNot(EventTimeOfDay(hour: 15, minute: 31)),
+      );
+    });
   });
 }

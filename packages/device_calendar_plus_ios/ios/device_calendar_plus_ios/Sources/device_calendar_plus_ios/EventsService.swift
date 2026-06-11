@@ -1,6 +1,10 @@
 import EventKit
 import EventKitUI
 
+/// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
+/// two platforms must stay in lockstep.
+private let minutesPerDay = 1440
+
 extension EKEventAvailability {
   var stringValue: String {
     switch self {
@@ -744,8 +748,12 @@ class EventsService {
     return parts.joined(separator: ";")
   }
   
+  /// Deletes an event. With a `timestamp`, removes only the occurrence at
+  /// that instant from its recurring series; without one, deletes the event
+  /// itself (the whole series when recurring).
   func deleteEvent(
     eventId: String,
+    timestamp: Int64?,
     completion: @escaping (Result<Void, CalendarError>) -> Void
   ) {
     // Check permission
@@ -756,21 +764,39 @@ class EventsService {
       )))
       return
     }
-    
-    // Fetch the master event by eventId
-    guard let event = eventStore.event(withIdentifier: eventId) else {
+
+    // Resolve the event to act on: the occurrence at `timestamp` when given,
+    // otherwise the event (master) itself.
+    let targetEvent: EKEvent?
+    if let timestamp = timestamp {
+      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
+    } else {
+      targetEvent = eventStore.event(withIdentifier: eventId)
+    }
+
+    guard let foundEvent = targetEvent else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.notFound,
         message: "Event not found with event ID: \(eventId)"
       )))
       return
     }
-    
-    // Delete the event
-    // For recurring events, .futureEvents on the master event deletes the entire series
-    // For non-recurring events, .futureEvents behaves the same as .thisEvent
+
+    if timestamp != nil && !foundEvent.hasRecurrenceRules {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Event \(eventId) is not recurring; pass a bare event ID instead"
+      )))
+      return
+    }
+
+    // An occurrence delete removes .thisEvent only. A bare event ID removes
+    // the whole series (.futureEvents from the master; on a non-recurring
+    // event that behaves like .thisEvent).
+    let span: EKSpan = (timestamp != nil) ? .thisEvent : .futureEvents
+
     do {
-      try eventStore.remove(event, span: .futureEvents)
+      try eventStore.remove(foundEvent, span: span)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
@@ -780,18 +806,15 @@ class EventsService {
     }
   }
 
+  /// Updates an event. With a `timestamp`, detaches the occurrence at that
+  /// instant from its recurring series and applies the changes to it alone;
+  /// without one, updates the event itself (the whole series when recurring).
   func updateEvent(
     eventId: String,
-    title: String?,
+    timestamp: Int64?,
     startDate: Date?,
     endDate: Date?,
-    description: String?,
-    location: String?,
-    url: String?,
-    isAllDay: Bool?,
-    timeZone: String?,
-    availability: String?,
-    clearedFields: [String],
+    patch: EventFieldPatch,
     completion: @escaping (Result<Void, CalendarError>) -> Void)
   {
     // Permission Check
@@ -803,8 +826,16 @@ class EventsService {
       return
     }
 
-    // Fetch Event
-    guard let foundEvent = eventStore.event(withIdentifier: eventId) else {
+    // Resolve the event to act on: the occurrence at `timestamp` when given,
+    // otherwise the event (master) itself.
+    let targetEvent: EKEvent?
+    if let timestamp = timestamp {
+      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
+    } else {
+      targetEvent = eventStore.event(withIdentifier: eventId)
+    }
+
+    guard let foundEvent = targetEvent else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.notFound,
         message: "Event not found with event ID: \(eventId)"
@@ -812,46 +843,40 @@ class EventsService {
       return
     }
 
-    // Get new data into event
-    if let title = title { foundEvent.title = title }
-    if clearedFields.contains("description") {
-      foundEvent.notes = nil
-    } else if let description = description {
-      foundEvent.notes = description
-    }
-    if clearedFields.contains("location") {
-      foundEvent.location = nil
-    } else if let location = location {
-      foundEvent.location = location
-    }
-    if clearedFields.contains("url") {
-      foundEvent.url = nil
-    } else if let url = url {
-      foundEvent.url = URL(string: url)
-    }
-    if let isAllDay = isAllDay { foundEvent.isAllDay = isAllDay }
-    if let startDate = startDate { foundEvent.startDate = startDate }
-    if let endDate = endDate { foundEvent.endDate = endDate }
-
-    if foundEvent.isAllDay {
-      foundEvent.timeZone = nil
-    } else if let timeZoneIdentifier = timeZone {
-      foundEvent.timeZone = TimeZone(identifier: timeZoneIdentifier)
+    if timestamp != nil && !foundEvent.hasRecurrenceRules {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Event \(eventId) is not recurring; pass a bare event ID instead"
+      )))
+      return
     }
 
-    if let availabilityStr = availability {
-      switch availabilityStr {
-      case "free": foundEvent.availability = .free
-      case "tentative": foundEvent.availability = .tentative
-      case "unavailable": foundEvent.availability = .unavailable
-      case "busy": foundEvent.availability = .busy
-      default: break
+    // An occurrence edit leaves an omitted date at the occurrence's own
+    // value, so a startDate alone can overtake the end. Reject the inverted
+    // range here, before mutating the live EKEvent — matching Android, which
+    // computes the same effective range and fails with invalidArguments.
+    if timestamp != nil {
+      let newStart = startDate ?? foundEvent.startDate!
+      let newEnd = endDate ?? foundEvent.endDate!
+      if newEnd <= newStart {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "End date must be after the occurrence's start date"
+        )))
+        return
       }
     }
 
-    // Check if recurring or single event
-    let isRecurring = foundEvent.hasRecurrenceRules
-    let span: EKSpan = isRecurring ? .futureEvents : .thisEvent
+    // Get new data into event
+    patch.apply(to: foundEvent)
+    if let startDate = startDate { foundEvent.startDate = startDate }
+    if let endDate = endDate { foundEvent.endDate = endDate }
+    patch.applyTimeZone(to: foundEvent)
+
+    // An occurrence edit saves .thisEvent, detaching it as an exception. A
+    // bare event ID follows the whole series (.futureEvents from the master;
+    // on a non-recurring event that behaves like .thisEvent).
+    let span: EKSpan = (timestamp != nil) ? .thisEvent : .futureEvents
 
     // Save updated event
     do {
@@ -871,8 +896,8 @@ class EventsService {
   /// millis). EventKit has no direct lookup for a single occurrence, so we
   /// query a tight ±1s window and pick the match whose start is closest.
   ///
-  /// Shared by `updateRecurring` and `deleteRecurring` for the
-  /// `thisAndFollowing` and `thisInstance` spans.
+  /// Shared by `updateEvent` and `deleteEvent` (instance edits) and
+  /// `updateRecurring` and `deleteRecurring` (`thisAndFollowing`).
   private func findOccurrence(eventId: String, timestamp: Int64) -> EKEvent? {
     let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
     let predicate = eventStore.predicateForEvents(
@@ -890,6 +915,23 @@ class EventsService {
 
   // MARK: - updateRecurring (issue #36)
 
+  /// Keeps the calendar date of `date` but replaces the time-of-day with
+  /// `hour`:`minute`, interpreted in `timeZone`. The Swift counterpart of
+  /// Android's `replaceTimeOfDay`.
+  private func replaceTimeOfDay(
+    of date: Date,
+    hour: Int,
+    minute: Int,
+    timeZone: TimeZone
+  ) -> Date? {
+    var components = Calendar.current.dateComponents(in: timeZone, from: date)
+    components.hour = hour
+    components.minute = minute
+    components.second = 0
+    components.nanosecond = 0
+    return Calendar.current.date(from: components)
+  }
+
   /// Updates a recurring event, choosing which occurrences the edit affects.
   ///
   /// `span` is "allEvents" (the whole series) or "thisAndFollowing" (split the
@@ -900,17 +942,10 @@ class EventsService {
     eventId: String,
     timestamp: Int64?,
     span: String,
-    title: String?,
-    startDate: Date?,
-    endDate: Date?,
-    description: String?,
-    location: String?,
-    url: String?,
-    isAllDay: Bool?,
-    timeZone: String?,
-    availability: String?,
+    startMinuteOfDay: Int?,
+    durationMinutes: Int?,
     recurrenceRule: String?,
-    clearedFields: [String],
+    patch: EventFieldPatch,
     completion: @escaping (Result<String, CalendarError>) -> Void
   ) {
     // Permission Check
@@ -923,11 +958,10 @@ class EventsService {
     }
 
     // Resolve the event to act on. "allEvents" works from the master (the
-    // whole series); "thisAndFollowing" and "thisInstance" work from the
-    // specific occurrence at `timestamp`.
-    let needsOccurrence = (span == "thisAndFollowing" || span == "thisInstance")
+    // whole series); "thisAndFollowing" works from the specific occurrence
+    // at `timestamp`.
     let targetEvent: EKEvent?
-    if needsOccurrence {
+    if span == "thisAndFollowing" {
       guard let timestamp = timestamp else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
@@ -948,47 +982,51 @@ class EventsService {
       return
     }
 
-    // Apply field changes.
-    if let title = title { foundEvent.title = title }
-    if clearedFields.contains("description") {
-      foundEvent.notes = nil
-    } else if let description = description {
-      foundEvent.notes = description
+    // All-day events have no time-of-day and only whole-day durations. The
+    // Dart layer can only check these against fields in the same call; the
+    // stored event's state is enforced here.
+    let effectiveIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
+    if startMinuteOfDay != nil && effectiveIsAllDay {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "startTime cannot be set on an all-day event"
+      )))
+      return
     }
-    if clearedFields.contains("location") {
-      foundEvent.location = nil
-    } else if let location = location {
-      foundEvent.location = location
-    }
-    if clearedFields.contains("url") {
-      foundEvent.url = nil
-    } else if let url = url {
-      foundEvent.url = URL(string: url)
-    }
-    if let isAllDay = isAllDay { foundEvent.isAllDay = isAllDay }
-    if let startDate = startDate { foundEvent.startDate = startDate }
-    if let endDate = endDate { foundEvent.endDate = endDate }
-
-    if foundEvent.isAllDay {
-      foundEvent.timeZone = nil
-    } else if let timeZoneIdentifier = timeZone {
-      foundEvent.timeZone = TimeZone(identifier: timeZoneIdentifier)
+    if let durationMinutes = durationMinutes, effectiveIsAllDay,
+       durationMinutes % minutesPerDay != 0 {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "All-day events require whole-day durations"
+      )))
+      return
     }
 
-    if let availabilityStr = availability {
-      switch availabilityStr {
-      case "free": foundEvent.availability = .free
-      case "tentative": foundEvent.availability = .tentative
-      case "unavailable": foundEvent.availability = .unavailable
-      case "busy": foundEvent.availability = .busy
-      default: break
+    // Compute the new start and parse the recurrence rule before touching
+    // the event. EventKit keeps the fetched EKEvent live in its cache, so
+    // every failure exit must happen while it is still unmodified — orphaned
+    // mutations could otherwise ride along with a later save.
+    var newStart: Date?
+    if let minuteOfDay = startMinuteOfDay {
+      let hour = minuteOfDay / 60
+      let minute = minuteOfDay % 60
+      guard let replaced = replaceTimeOfDay(
+        of: foundEvent.startDate,
+        hour: hour,
+        minute: minute,
+        timeZone: foundEvent.timeZone ?? .current
+      ) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "Could not apply start time \(hour):\(minute) to the event's start date"
+        )))
+        return
       }
+      newStart = replaced
     }
 
-    // Apply the recurrence-rule patch.
-    if clearedFields.contains("recurrenceRule") {
-      foundEvent.recurrenceRules = nil
-    } else if let rruleString = recurrenceRule {
+    var parsedRecurrenceRule: EKRecurrenceRule?
+    if !patch.clearedFields.contains("recurrenceRule"), let rruleString = recurrenceRule {
       guard let rule = parseRecurrenceRule(rruleString) else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
@@ -996,20 +1034,38 @@ class EventsService {
         )))
         return
       }
+      parsedRecurrenceRule = rule
+    }
+
+    // Apply field changes.
+    patch.apply(to: foundEvent)
+
+    // Apply time-of-day and/or duration changes. The existing date is
+    // preserved; only the time component is replaced.
+    if newStart != nil || durationMinutes != nil {
+      let duration = durationMinutes.map { TimeInterval($0 * 60) }
+        ?? foundEvent.endDate.timeIntervalSince(foundEvent.startDate)
+      let start: Date = newStart ?? foundEvent.startDate
+      foundEvent.startDate = start
+      foundEvent.endDate = start.addingTimeInterval(duration)
+    }
+
+    patch.applyTimeZone(to: foundEvent)
+
+    // Apply the recurrence-rule patch.
+    if patch.clearedFields.contains("recurrenceRule") {
+      foundEvent.recurrenceRules = nil
+    } else if let rule = parsedRecurrenceRule {
       foundEvent.recurrenceRules = [rule]
     }
 
-    // "thisInstance" detaches only the fetched occurrence (.thisEvent).
-    // "allEvents" and "thisAndFollowing" use .futureEvents: from the master
-    // that is the whole series; from an occurrence it splits the series so
-    // that occurrence onward becomes the new series. .futureEvents is also
-    // what drops recurrence across a whole series — .thisEvent would only
-    // detach one occurrence. (.futureEvents on a non-recurring event behaves
-    // like .thisEvent.)
-    let saveSpan: EKSpan = (span == "thisInstance") ? .thisEvent : .futureEvents
-
+    // Both series spans save with .futureEvents: from the master that is the
+    // whole series; from an occurrence it splits the series so that
+    // occurrence onward becomes the new series. .futureEvents is also what
+    // drops recurrence across a whole series — .thisEvent would only detach
+    // one occurrence.
     do {
-      try eventStore.save(foundEvent, span: saveSpan, commit: true)
+      try eventStore.save(foundEvent, span: .futureEvents, commit: true)
       completion(.success(foundEvent.eventIdentifier ?? eventId))
     } catch {
       completion(.failure(CalendarError(
@@ -1021,11 +1077,12 @@ class EventsService {
 
   // MARK: - deleteRecurring (issue #43)
 
-  /// Deletes a recurring event, choosing which occurrences are removed.
+  /// Deletes a recurring event's series, choosing which occurrences are
+  /// removed.
   ///
-  /// `span` is "allEvents" (the whole series), "thisAndFollowing" (the
-  /// occurrence at `timestamp` and every later one), or "thisInstance" (only
-  /// that occurrence).
+  /// `span` is "allEvents" (the whole series) or "thisAndFollowing" (the
+  /// occurrence at `timestamp` and every later one). Single-occurrence
+  /// deletes go through `deleteEvent` with a timestamp.
   func deleteRecurring(
     eventId: String,
     timestamp: Int64?,
@@ -1042,11 +1099,10 @@ class EventsService {
     }
 
     // Resolve the event to act on. "allEvents" works from the master (the
-    // whole series); "thisAndFollowing" and "thisInstance" work from the
-    // specific occurrence at `timestamp`.
-    let needsOccurrence = (span == "thisAndFollowing" || span == "thisInstance")
+    // whole series); "thisAndFollowing" works from the specific occurrence
+    // at `timestamp`.
     let targetEvent: EKEvent?
-    if needsOccurrence {
+    if span == "thisAndFollowing" {
       guard let timestamp = timestamp else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
@@ -1067,15 +1123,12 @@ class EventsService {
       return
     }
 
-    // "thisInstance" removes only the fetched occurrence (.thisEvent).
-    // "allEvents" and "thisAndFollowing" use .futureEvents: from the master
-    // that removes the whole series; from an occurrence it removes that
-    // occurrence and every later one. (.futureEvents on a non-recurring event
-    // behaves like .thisEvent.)
-    let removeSpan: EKSpan = (span == "thisInstance") ? .thisEvent : .futureEvents
-
+    // Both spans remove with .futureEvents: from the master that removes the
+    // whole series; from an occurrence it removes that occurrence and every
+    // later one. (.futureEvents on a non-recurring event behaves like
+    // .thisEvent.)
     do {
-      try eventStore.remove(foundEvent, span: removeSpan)
+      try eventStore.remove(foundEvent, span: .futureEvents)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(

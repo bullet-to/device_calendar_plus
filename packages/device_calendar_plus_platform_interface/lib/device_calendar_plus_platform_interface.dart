@@ -1,9 +1,11 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'src/create_calendar_options.dart';
+import 'src/event_time_of_day.dart';
 import 'src/patch.dart';
 
 export 'src/create_calendar_options.dart';
+export 'src/event_time_of_day.dart';
 export 'src/instance_id_parser.dart';
 export 'src/patch.dart';
 
@@ -184,20 +186,22 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// [eventId] is the event identifier.
   ///
-  /// **For recurring events**: This will delete the ENTIRE series (all past and
-  /// future occurrences). To delete only part of a series, use
-  /// [deleteRecurring].
+  /// [timestamp] selects a single occurrence of a recurring series (epoch
+  /// milliseconds). When given, the platform removes only that occurrence,
+  /// as a cancelled exception. When `null`, the delete targets the event
+  /// itself — the whole series for a recurring event.
   ///
   /// Requires calendar write permissions.
-  Future<void> deleteEvent(String eventId);
+  Future<void> deleteEvent(String eventId, {int? timestamp});
 
   /// Updates an existing event on the device.
   ///
   /// [eventId] is the event identifier.
   ///
-  /// **For recurring events**: This will update the ENTIRE series (all past and
-  /// future occurrences). Single-instance updates are not supported to maintain
-  /// consistent behavior across platforms.
+  /// [timestamp] selects a single occurrence of a recurring series (epoch
+  /// milliseconds). When given, the platform detaches that occurrence as an
+  /// exception and applies the changes to it alone. When `null`, the update
+  /// targets the event itself — the whole series for a recurring event.
   ///
   /// All field parameters are optional - only provided fields will be updated:
   /// - [title] - new event title
@@ -217,6 +221,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// Requires calendar write permissions.
   Future<void> updateEvent(
     String eventId, {
+    int? timestamp,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -228,14 +233,21 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? availability,
   });
 
-  /// Updates a recurring event, choosing which occurrences the edit affects.
+  /// Updates a recurring event's series, choosing which occurrences the edit
+  /// affects.
   ///
   /// [eventId] is the event identifier. [timestamp] is the occurrence
-  /// timestamp in milliseconds — required for every [span] except `allEvents`.
+  /// timestamp in milliseconds — required for `thisAndFollowing`.
   ///
-  /// [span] is the `EventSpan` name: `allEvents` updates the whole
-  /// series; `thisAndFollowing` splits it at [timestamp]; `thisInstance`
-  /// detaches and edits only that occurrence.
+  /// [span] is the `EventSpan` name and must be series-level: `allEvents`
+  /// updates the whole series; `thisAndFollowing` splits it at [timestamp].
+  /// Single-occurrence edits go through [updateEvent] with a [timestamp]
+  /// instead.
+  ///
+  /// Time fields:
+  /// - [startTime] sets the time-of-day for every occurrence in scope,
+  ///   preserving each occurrence's date.
+  /// - [durationMinutes] sets the event duration in minutes.
   ///
   /// [description], [location] and [url] take a [Patch] of the field value.
   /// [recurrenceRule] takes a [Patch] of the RRULE string: [Patch.set]
@@ -248,8 +260,8 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     int? timestamp,
     String span, {
     String? title,
-    DateTime? startDate,
-    DateTime? endDate,
+    EventTimeOfDay? startTime,
+    int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
     Patch<String>? url,
@@ -259,15 +271,16 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     Patch<String>? recurrenceRule,
   });
 
-  /// Deletes a recurring event, choosing which occurrences are removed.
+  /// Deletes a recurring event's series, choosing which occurrences are
+  /// removed.
   ///
   /// [eventId] is the event identifier. [timestamp] is the occurrence
-  /// timestamp in milliseconds — required for every [span] except `allEvents`.
+  /// timestamp in milliseconds — required for `thisAndFollowing`.
   ///
   /// [span] is the `EventSpan` name: `allEvents` deletes the whole series;
   /// `thisAndFollowing` removes the occurrence at [timestamp] and every later
-  /// one, truncating the series before it; `thisInstance` removes only that
-  /// occurrence as a cancelled exception.
+  /// one, truncating the series before it. Single-occurrence deletes go
+  /// through [deleteEvent] with a [timestamp] instead.
   Future<void> deleteRecurring(
     String eventId,
     int? timestamp,

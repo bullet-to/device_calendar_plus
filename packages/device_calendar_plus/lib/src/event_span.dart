@@ -1,8 +1,10 @@
-/// Which occurrences of a recurring event an operation applies to.
+/// Which occurrences of a recurring event a series-level operation applies
+/// to.
 ///
 /// Used by [DeviceCalendar.updateRecurring] and
 /// [DeviceCalendar.deleteRecurring] to choose the scope of a change to a
-/// recurring series.
+/// recurring series. To act on a single occurrence, pass its instance ID to
+/// [DeviceCalendar.updateEvent] or [DeviceCalendar.deleteEvent] instead.
 enum EventSpan {
   /// The operation applies to every occurrence in the series — past and
   /// future.
@@ -19,12 +21,4 @@ enum EventSpan {
   /// ID: the original series is truncated to end just before that occurrence,
   /// and the occurrence and every later one carry the change.
   thisAndFollowing,
-
-  /// The operation applies only to the supplied occurrence; the rest of the
-  /// series is left untouched.
-  ///
-  /// This detaches that occurrence from the series as an exception. A
-  /// recurrence rule cannot be set with this span — a single occurrence has
-  /// no rule of its own.
-  thisInstance,
 }
