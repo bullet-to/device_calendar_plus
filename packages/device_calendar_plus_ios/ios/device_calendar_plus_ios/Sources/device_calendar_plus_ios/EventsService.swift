@@ -780,8 +780,12 @@ class EventsService {
     }
   }
 
+  /// Updates an event. With a `timestamp`, detaches the occurrence at that
+  /// instant from its recurring series and applies the changes to it alone;
+  /// without one, updates the event itself (the whole series when recurring).
   func updateEvent(
     eventId: String,
+    timestamp: Int64?,
     title: String?,
     startDate: Date?,
     endDate: Date?,
@@ -803,11 +807,27 @@ class EventsService {
       return
     }
 
-    // Fetch Event
-    guard let foundEvent = eventStore.event(withIdentifier: eventId) else {
+    // Resolve the event to act on: the occurrence at `timestamp` when given,
+    // otherwise the event (master) itself.
+    let targetEvent: EKEvent?
+    if let timestamp = timestamp {
+      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
+    } else {
+      targetEvent = eventStore.event(withIdentifier: eventId)
+    }
+
+    guard let foundEvent = targetEvent else {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.notFound,
         message: "Event not found with event ID: \(eventId)"
+      )))
+      return
+    }
+
+    if timestamp != nil && !foundEvent.hasRecurrenceRules {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Event \(eventId) is not recurring; pass a bare event ID instead"
       )))
       return
     }
@@ -849,9 +869,10 @@ class EventsService {
       }
     }
 
-    // Check if recurring or single event
-    let isRecurring = foundEvent.hasRecurrenceRules
-    let span: EKSpan = isRecurring ? .futureEvents : .thisEvent
+    // An occurrence edit saves .thisEvent, detaching it as an exception. A
+    // bare event ID follows the whole series (.futureEvents from the master;
+    // on a non-recurring event that behaves like .thisEvent).
+    let span: EKSpan = (timestamp != nil) ? .thisEvent : .futureEvents
 
     // Save updated event
     do {
@@ -871,8 +892,9 @@ class EventsService {
   /// millis). EventKit has no direct lookup for a single occurrence, so we
   /// query a tight ±1s window and pick the match whose start is closest.
   ///
-  /// Shared by `updateRecurring` and `deleteRecurring` for the
-  /// `thisAndFollowing` and `thisInstance` spans.
+  /// Shared by `updateEvent` (instance edits), `updateRecurring`
+  /// (`thisAndFollowing`) and `deleteRecurring` (`thisAndFollowing`,
+  /// `thisInstance`).
   private func findOccurrence(eventId: String, timestamp: Int64) -> EKEvent? {
     let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
     let predicate = eventStore.predicateForEvents(
@@ -924,11 +946,10 @@ class EventsService {
     }
 
     // Resolve the event to act on. "allEvents" works from the master (the
-    // whole series); "thisAndFollowing" and "thisInstance" work from the
-    // specific occurrence at `timestamp`.
-    let needsOccurrence = (span == "thisAndFollowing" || span == "thisInstance")
+    // whole series); "thisAndFollowing" works from the specific occurrence
+    // at `timestamp`.
     let targetEvent: EKEvent?
-    if needsOccurrence {
+    if span == "thisAndFollowing" {
       guard let timestamp = timestamp else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
@@ -970,25 +991,29 @@ class EventsService {
 
     // Apply time-of-day and/or duration changes. The existing date is
     // preserved; only the time component is replaced.
+    var newStart: Date?
     if let hour = startTimeHour {
-      let minute = startTimeMinute ?? 0
       let tz = foundEvent.timeZone ?? .current
       var components = Calendar.current.dateComponents(in: tz, from: foundEvent.startDate)
       components.hour = hour
-      components.minute = minute
+      components.minute = startTimeMinute ?? 0
       components.second = 0
       components.nanosecond = 0
-      if let newStart = Calendar.current.date(from: components) {
-        let existingDuration = foundEvent.endDate.timeIntervalSince(foundEvent.startDate)
-        foundEvent.startDate = newStart
-        if let dur = durationMinutes {
-          foundEvent.endDate = newStart.addingTimeInterval(TimeInterval(dur * 60))
-        } else {
-          foundEvent.endDate = newStart.addingTimeInterval(existingDuration)
-        }
+      guard let replaced = Calendar.current.date(from: components) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "Could not apply start time \(hour):\(startTimeMinute ?? 0) to the event's start date"
+        )))
+        return
       }
-    } else if let dur = durationMinutes {
-      foundEvent.endDate = foundEvent.startDate.addingTimeInterval(TimeInterval(dur * 60))
+      newStart = replaced
+    }
+    if newStart != nil || durationMinutes != nil {
+      let duration = durationMinutes.map { TimeInterval($0 * 60) }
+        ?? foundEvent.endDate.timeIntervalSince(foundEvent.startDate)
+      let start: Date = newStart ?? foundEvent.startDate
+      foundEvent.startDate = start
+      foundEvent.endDate = start.addingTimeInterval(duration)
     }
 
     if foundEvent.isAllDay {
@@ -1021,17 +1046,13 @@ class EventsService {
       foundEvent.recurrenceRules = [rule]
     }
 
-    // "thisInstance" detaches only the fetched occurrence (.thisEvent).
-    // "allEvents" and "thisAndFollowing" use .futureEvents: from the master
-    // that is the whole series; from an occurrence it splits the series so
-    // that occurrence onward becomes the new series. .futureEvents is also
-    // what drops recurrence across a whole series — .thisEvent would only
-    // detach one occurrence. (.futureEvents on a non-recurring event behaves
-    // like .thisEvent.)
-    let saveSpan: EKSpan = (span == "thisInstance") ? .thisEvent : .futureEvents
-
+    // Both series spans save with .futureEvents: from the master that is the
+    // whole series; from an occurrence it splits the series so that
+    // occurrence onward becomes the new series. .futureEvents is also what
+    // drops recurrence across a whole series — .thisEvent would only detach
+    // one occurrence.
     do {
-      try eventStore.save(foundEvent, span: saveSpan, commit: true)
+      try eventStore.save(foundEvent, span: .futureEvents, commit: true)
       completion(.success(foundEvent.eventIdentifier ?? eventId))
     } catch {
       completion(.failure(CalendarError(

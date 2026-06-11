@@ -195,9 +195,10 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// [eventId] is the event identifier.
   ///
-  /// **For recurring events**: This will update the ENTIRE series (all past and
-  /// future occurrences). Single-instance updates are not supported to maintain
-  /// consistent behavior across platforms.
+  /// [timestamp] selects a single occurrence of a recurring series (epoch
+  /// milliseconds). When given, the platform detaches that occurrence as an
+  /// exception and applies the changes to it alone. When `null`, the update
+  /// targets the event itself — the whole series for a recurring event.
   ///
   /// All field parameters are optional - only provided fields will be updated:
   /// - [title] - new event title
@@ -217,6 +218,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// Requires calendar write permissions.
   Future<void> updateEvent(
     String eventId, {
+    int? timestamp,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -228,18 +230,20 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? availability,
   });
 
-  /// Updates a recurring event, choosing which occurrences the edit affects.
+  /// Updates a recurring event's series, choosing which occurrences the edit
+  /// affects.
   ///
   /// [eventId] is the event identifier. [timestamp] is the occurrence
-  /// timestamp in milliseconds — required for every [span] except `allEvents`.
+  /// timestamp in milliseconds — required for `thisAndFollowing`.
   ///
-  /// [span] is the `EventSpan` name: `allEvents` updates the whole
-  /// series; `thisAndFollowing` splits it at [timestamp]; `thisInstance`
-  /// detaches and edits only that occurrence.
+  /// [span] is the `EventSpan` name and must be series-level: `allEvents`
+  /// updates the whole series; `thisAndFollowing` splits it at [timestamp].
+  /// Single-occurrence edits go through [updateEvent] with a [timestamp]
+  /// instead.
   ///
   /// Time fields:
-  /// - [startTimeHour] and [startTimeMinute] set the time-of-day for every
-  ///   occurrence in scope, preserving each occurrence's date.
+  /// - [startTime] sets the time-of-day for every occurrence in scope,
+  ///   preserving each occurrence's date.
   /// - [durationMinutes] sets the event duration in minutes.
   ///
   /// [description], [location] and [url] take a [Patch] of the field value.
@@ -253,8 +257,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     int? timestamp,
     String span, {
     String? title,
-    int? startTimeHour,
-    int? startTimeMinute,
+    ({int hour, int minute})? startTime,
     int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,

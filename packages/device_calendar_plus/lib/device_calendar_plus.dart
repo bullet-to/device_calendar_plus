@@ -705,7 +705,8 @@ class DeviceCalendar {
   ///   event, or the master of a recurring series (all occurrences).
   /// - **Instance ID** (e.g., `event.instanceId`, format
   ///   `eventId@timestamp`): detaches that single occurrence from the series
-  ///   and applies the changes to it alone.
+  ///   and applies the changes to it alone. [startDate] and [endDate] are
+  ///   absolute instants, so the occurrence can move to a different day.
   ///
   /// To change a property across an entire recurring series or from a split
   /// point forward, use [updateRecurring] instead.
@@ -805,63 +806,25 @@ class DeviceCalendar {
     final normalizedEndDate =
         (isAllDay == true && endDate != null) ? _stripTime(endDate) : endDate;
 
+    // A bare event ID carries no timestamp and targets the event itself (the
+    // whole series when recurring); an instance ID carries the occurrence
+    // timestamp, which the platform uses to detach and edit that occurrence.
     final parsed = InstanceIdParser.parse(eventId);
 
     try {
-      if (parsed.timestamp != null) {
-        // Instance ID with timestamp → detach and edit this occurrence only.
-        // Compute startTime and duration from the provided dates so the
-        // platform interface's time-of-day semantics are satisfied.
-        int? startTimeHour;
-        int? startTimeMinute;
-        int? durationMinutes;
-        if (normalizedStartDate != null) {
-          startTimeHour = normalizedStartDate.hour;
-          startTimeMinute = normalizedStartDate.minute;
-        }
-        if (normalizedStartDate != null && normalizedEndDate != null) {
-          durationMinutes =
-              normalizedEndDate.difference(normalizedStartDate).inMinutes;
-        } else if (normalizedEndDate != null) {
-          // End date without start date: compute duration from the occurrence
-          // timestamp so the native layer can derive the new end time.
-          final occurrenceStart =
-              DateTime.fromMillisecondsSinceEpoch(parsed.timestamp!);
-          durationMinutes =
-              normalizedEndDate.difference(occurrenceStart).inMinutes;
-        }
-
-        await DeviceCalendarPlusPlatform.instance.updateRecurring(
-          parsed.eventId,
-          parsed.timestamp,
-          'thisInstance',
-          title: title,
-          startTimeHour: startTimeHour,
-          startTimeMinute: startTimeMinute,
-          durationMinutes: durationMinutes,
-          description: description,
-          location: location,
-          url: url,
-          isAllDay: isAllDay,
-          timeZone: timeZone,
-          availability: availability?.name,
-        );
-      } else {
-        // Bare event ID → update the event directly (whole series for
-        // recurring, single event for non-recurring).
-        await DeviceCalendarPlusPlatform.instance.updateEvent(
-          parsed.eventId,
-          title: title,
-          startDate: normalizedStartDate,
-          endDate: normalizedEndDate,
-          description: description,
-          location: location,
-          url: url,
-          isAllDay: isAllDay,
-          timeZone: timeZone,
-          availability: availability?.name,
-        );
-      }
+      await DeviceCalendarPlusPlatform.instance.updateEvent(
+        parsed.eventId,
+        timestamp: parsed.timestamp,
+        title: title,
+        startDate: normalizedStartDate,
+        endDate: normalizedEndDate,
+        description: description,
+        location: location,
+        url: url,
+        isAllDay: isAllDay,
+        timeZone: timeZone,
+        availability: availability?.name,
+      );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
           PlatformExceptionConverter.convertPlatformException(e);
@@ -1008,7 +971,9 @@ class DeviceCalendar {
     }
 
     // All-day events only accept whole-day durations.
-    if (isAllDay == true && duration != null && duration.inMinutes % 1440 != 0) {
+    if (isAllDay == true &&
+        duration != null &&
+        duration.inMinutes % 1440 != 0) {
       throw ArgumentError.value(
         duration,
         'duration',
@@ -1045,8 +1010,7 @@ class DeviceCalendar {
         parsed.timestamp,
         span.name,
         title: title,
-        startTimeHour: startTime?.hour,
-        startTimeMinute: startTime?.minute,
+        startTime: startTime,
         durationMinutes: duration?.inMinutes,
         description: description,
         location: location,

@@ -540,6 +540,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
     
     // Parse optional parameters
+    let timestamp = args["timestamp"] as? Int64
     let title = args["title"] as? String
     let description = args["description"] as? String
     let location = args["location"] as? String
@@ -556,16 +557,17 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     } else {
       startDate = nil
     }
-    
+
     let endDate: Date?
     if let endDateMillis = args["endDate"] as? Int64 {
       endDate = Date(timeIntervalSince1970: TimeInterval(endDateMillis) / 1000.0)
     } else {
       endDate = nil
     }
-    
+
     eventsService.updateEvent(
       eventId: eventId,
+      timestamp: timestamp,
       title: title,
       startDate: startDate,
       endDate: endDate,

@@ -480,6 +480,7 @@ class DeviceCalendarPlusAndroidPlugin :
         }
         
         // Parse optional arguments (all can be null)
+        val timestamp = call.argument<Long>("timestamp")
         val title = call.argument<String>("title")
         val startDateMillis = call.argument<Long>("startDate")
         val endDateMillis = call.argument<Long>("endDate")
@@ -490,13 +491,14 @@ class DeviceCalendarPlusAndroidPlugin :
         val timeZone = call.argument<String>("timeZone")
         val availability = call.argument<String>("availability")
         val clearedFields = call.argument<List<String>>("clearedFields") ?: emptyList()
-        
+
         // Convert dates if provided
         val startDate = startDateMillis?.let { java.util.Date(it) }
         val endDate = endDateMillis?.let { java.util.Date(it) }
-        
+
         val serviceResult = service.updateEvent(
             eventId,
+            timestamp,
             title,
             startDate,
             endDate,

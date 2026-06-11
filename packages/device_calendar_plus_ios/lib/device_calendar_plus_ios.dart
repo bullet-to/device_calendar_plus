@@ -179,6 +179,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   @override
   Future<void> updateEvent(
     String eventId, {
+    int? timestamp,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -191,6 +192,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }) async {
     final args = <String, dynamic>{
       'eventId': eventId,
+      'timestamp': timestamp,
       'title': title,
       'startDate': startDate?.millisecondsSinceEpoch,
       'endDate': endDate?.millisecondsSinceEpoch,
@@ -212,8 +214,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     int? timestamp,
     String span, {
     String? title,
-    int? startTimeHour,
-    int? startTimeMinute,
+    ({int hour, int minute})? startTime,
     int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
@@ -228,8 +229,8 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       'timestamp': timestamp,
       'span': span,
       'title': title,
-      'startTimeHour': startTimeHour,
-      'startTimeMinute': startTimeMinute,
+      'startTimeHour': startTime?.hour,
+      'startTimeMinute': startTime?.minute,
       'durationMinutes': durationMinutes,
       'isAllDay': isAllDay,
       'timeZone': timeZone,

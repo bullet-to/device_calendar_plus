@@ -73,6 +73,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   @override
   Future<void> updateEvent(
     String eventId, {
+    int? timestamp,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -90,8 +91,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     int? timestamp,
     String span, {
     String? title,
-    int? startTimeHour,
-    int? startTimeMinute,
+    ({int hour, int minute})? startTime,
     int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
