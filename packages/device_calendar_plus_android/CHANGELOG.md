@@ -1,3 +1,8 @@
+## Unreleased
+
+### Fixed
+- Calendar Provider work now runs on a background thread. Method-channel handlers were doing blocking provider queries on the main thread, which could ANR on large calendars (#73). Thanks @mauriziopinotti for the report and a working proof-of-fix.
+
 ## 0.4.0 - 2026-05-25
 
 ### Added
