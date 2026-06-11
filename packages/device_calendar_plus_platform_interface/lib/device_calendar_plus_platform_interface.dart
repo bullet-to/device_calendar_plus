@@ -7,6 +7,11 @@ export 'src/create_calendar_options.dart';
 export 'src/instance_id_parser.dart';
 export 'src/patch.dart';
 
+/// A time-of-day for a recurring event's occurrences: hour 0-23, minute 0-59.
+///
+/// Passed as a record literal, e.g. `(hour: 15, minute: 30)`.
+typedef EventTimeOfDay = ({int hour, int minute});
+
 /// The interface that implementations of device_calendar_plus must implement.
 ///
 /// Platform implementations should extend this class rather than implement it
@@ -257,7 +262,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     int? timestamp,
     String span, {
     String? title,
-    ({int hour, int minute})? startTime,
+    EventTimeOfDay? startTime,
     int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,

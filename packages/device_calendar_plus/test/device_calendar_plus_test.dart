@@ -29,7 +29,7 @@ typedef UpdateRecurringCall = ({
   int? timestamp,
   String span,
   String? title,
-  ({int hour, int minute})? startTime,
+  EventTimeOfDay? startTime,
   int? durationMinutes,
   Patch<String>? description,
   Patch<String>? location,
@@ -270,7 +270,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     int? timestamp,
     String span, {
     String? title,
-    ({int hour, int minute})? startTime,
+    EventTimeOfDay? startTime,
     int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
@@ -843,6 +843,75 @@ void main() {
           duration: const Duration(days: 3),
         );
         expect(result, 'mock-event-id');
+      });
+
+      test(
+          'throws ArgumentError when isAllDay duration is a whole day plus '
+          'a sub-minute remainder', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            isAllDay: true,
+            duration: const Duration(days: 1, seconds: 30),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when startTime hour is out of range', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            startTime: (hour: 24, minute: 0),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when startTime minute is out of range', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            startTime: (hour: 10, minute: 60),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when duration is zero', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            duration: Duration.zero,
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when duration is negative', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            duration: const Duration(minutes: -30),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when duration is not whole minutes', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            duration: const Duration(minutes: 90, seconds: 30),
+          ),
+          throwsArgumentError,
+        );
       });
 
       test('allEvents accepts a bare event ID (no occurrence timestamp)',

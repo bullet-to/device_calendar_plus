@@ -214,7 +214,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     int? timestamp,
     String span, {
     String? title,
-    ({int hour, int minute})? startTime,
+    EventTimeOfDay? startTime,
     int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,

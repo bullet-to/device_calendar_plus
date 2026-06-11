@@ -918,6 +918,23 @@ class EventsService {
   /// series at `timestamp`). On success returns the event ID for the affected
   /// scope — the same ID for "allEvents", the new series' ID for
   /// "thisAndFollowing".
+  /// Keeps the calendar date of `date` but replaces the time-of-day with
+  /// `hour`:`minute`, interpreted in `timeZone`. The Swift counterpart of
+  /// Android's `replaceTimeOfDay`.
+  private func replaceTimeOfDay(
+    of date: Date,
+    hour: Int,
+    minute: Int,
+    timeZone: TimeZone
+  ) -> Date? {
+    var components = Calendar.current.dateComponents(in: timeZone, from: date)
+    components.hour = hour
+    components.minute = minute
+    components.second = 0
+    components.nanosecond = 0
+    return Calendar.current.date(from: components)
+  }
+
   func updateRecurring(
     eventId: String,
     timestamp: Int64?,
@@ -970,6 +987,25 @@ class EventsService {
       return
     }
 
+    // All-day events have no time-of-day and only whole-day durations. The
+    // Dart layer can only check these against fields in the same call; the
+    // stored event's state is enforced here.
+    let effectiveIsAllDay = isAllDay ?? foundEvent.isAllDay
+    if startTimeHour != nil && effectiveIsAllDay {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "startTime cannot be set on an all-day event"
+      )))
+      return
+    }
+    if let durationMinutes = durationMinutes, effectiveIsAllDay, durationMinutes % 1440 != 0 {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "All-day events require whole-day durations"
+      )))
+      return
+    }
+
     // Apply field changes.
     if let title = title { foundEvent.title = title }
     if clearedFields.contains("description") {
@@ -993,16 +1029,16 @@ class EventsService {
     // preserved; only the time component is replaced.
     var newStart: Date?
     if let hour = startTimeHour {
-      let tz = foundEvent.timeZone ?? .current
-      var components = Calendar.current.dateComponents(in: tz, from: foundEvent.startDate)
-      components.hour = hour
-      components.minute = startTimeMinute ?? 0
-      components.second = 0
-      components.nanosecond = 0
-      guard let replaced = Calendar.current.date(from: components) else {
+      let minute = startTimeMinute ?? 0
+      guard let replaced = replaceTimeOfDay(
+        of: foundEvent.startDate,
+        hour: hour,
+        minute: minute,
+        timeZone: foundEvent.timeZone ?? .current
+      ) else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.operationFailed,
-          message: "Could not apply start time \(hour):\(startTimeMinute ?? 0) to the event's start date"
+          message: "Could not apply start time \(hour):\(minute) to the event's start date"
         )))
         return
       }

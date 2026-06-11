@@ -793,145 +793,155 @@ class EventsService(private val context: Context) {
             )
         }
 
-        if (timestamp != null) {
-            return try {
+        return try {
+            if (timestamp != null) {
                 updateEventInstance(
                     eventId, timestamp, title, startDate, endDate, description,
                     location, url, isAllDay, timeZone, availability, clearedFields
                 )
-            } catch (e: SecurityException) {
-                Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.PERMISSION_DENIED,
-                        "Calendar permission denied: ${e.message}"
-                    )
-                )
-            } catch (e: Exception) {
-                Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.OPERATION_FAILED,
-                        "Failed to update event: ${e.message}"
-                    )
+            } else {
+                updateEventMaster(
+                    eventId, title, startDate, endDate, description,
+                    location, url, isAllDay, timeZone, availability, clearedFields
                 )
             }
-        }
-
-        try {
-            // Need to fetch existing event to determine if it's all-day
-            // This is required for proper date normalization
-            val existingEventResult = getEvent(eventId, null)
-            val existingEvent = existingEventResult.getOrNull()
-            val wasAllDay = existingEvent?.get("isAllDay") as? Boolean ?: false
-            
-            // Build ContentValues with only provided fields
-            val values = android.content.ContentValues()
-            
-            // Update title if provided
-            if (title != null) {
-                values.put(CalendarContract.Events.TITLE, title)
-            }
-            
-            // Update description
-            if ("description" in clearedFields) {
-                values.putNull(CalendarContract.Events.DESCRIPTION)
-            } else if (description != null) {
-                values.put(CalendarContract.Events.DESCRIPTION, description)
-            }
-
-            // Update location
-            if ("location" in clearedFields) {
-                values.putNull(CalendarContract.Events.EVENT_LOCATION)
-            } else if (location != null) {
-                values.put(CalendarContract.Events.EVENT_LOCATION, location)
-            }
-
-            // Update URL
-            if ("url" in clearedFields) {
-                values.putNull(CalendarContract.Events.CUSTOM_APP_URI)
-            } else if (url != null) {
-                values.put(CalendarContract.Events.CUSTOM_APP_URI, url)
-            }
-
-            // Update isAllDay if provided
-            val effectiveIsAllDay = isAllDay ?: wasAllDay
-            if (isAllDay != null) {
-                values.put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
-            }
-            
-            // Update dates if provided
-            // If event is/becomes all-day, need to normalize to UTC midnight
-            if (startDate != null || endDate != null) {
-                val startMillis: Long?
-                val endMillis: Long?
-                
-                if (effectiveIsAllDay) {
-                    startMillis = startDate?.let { localDateToUtcMidnight(it.time) }
-                    endMillis = endDate?.let { localDateToUtcMidnight(it.time) }
-                } else {
-                    startMillis = startDate?.time
-                    endMillis = endDate?.time
-                }
-                
-                if (startMillis != null) {
-                    values.put(CalendarContract.Events.DTSTART, startMillis)
-                }
-                if (endMillis != null) {
-                    values.put(CalendarContract.Events.DTEND, endMillis)
-                }
-            }
-            
-            // Update timezone if provided
-            // Note: For all-day events, timezone should be set but is less relevant
-            if (timeZone != null) {
-                values.put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
-            } else if (isAllDay == true) {
-                // If changing to all-day, set device timezone
-                values.put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
-            }
-            
-            // Update availability if provided
-            if (availability != null) {
-                val availabilityValue = when (availability) {
-                    "free" -> CalendarContract.Events.AVAILABILITY_FREE
-                    "tentative" -> CalendarContract.Events.AVAILABILITY_TENTATIVE
-                    "unavailable" -> CalendarContract.Events.AVAILABILITY_BUSY
-                    else -> CalendarContract.Events.AVAILABILITY_BUSY // "busy" or default
-                }
-                values.put(CalendarContract.Events.AVAILABILITY, availabilityValue)
-            }
-            
-            // Perform the update
-            val updatedRows = context.contentResolver.update(
-                CalendarContract.Events.CONTENT_URI,
-                values,
-                "${CalendarContract.Events._ID} = ?",
-                arrayOf(eventId)
-            )
-            
-            if (updatedRows == 0) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.NOT_FOUND,
-                        "Event with ID $eventId not found"
-                    )
-                )
-            }
-            
-            return Result.success(Unit)
         } catch (e: SecurityException) {
-            return Result.failure(
+            Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.PERMISSION_DENIED,
                     "Calendar permission denied: ${e.message}"
                 )
             )
         } catch (e: Exception) {
-            return Result.failure(
+            Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
                     "Failed to update event: ${e.message}"
                 )
             )
+        }
+    }
+
+    /**
+     * The bare-event-ID path of [updateEvent]: updates the event row itself —
+     * the whole series when recurring.
+     */
+    private fun updateEventMaster(
+        eventId: String,
+        title: String?,
+        startDate: java.util.Date?,
+        endDate: java.util.Date?,
+        description: String?,
+        location: String?,
+        url: String?,
+        isAllDay: Boolean?,
+        timeZone: String?,
+        availability: String?,
+        clearedFields: List<String>
+    ): Result<Unit> {
+        // Need to fetch existing event to determine if it's all-day
+        // This is required for proper date normalization
+        val existingEventResult = getEvent(eventId, null)
+        val existingEvent = existingEventResult.getOrNull()
+        val wasAllDay = existingEvent?.get("isAllDay") as? Boolean ?: false
+
+        // Build ContentValues with only provided fields
+        val values = android.content.ContentValues()
+        applyEventFieldValues(
+            values, title, description, location, url, isAllDay,
+            availability, clearedFields
+        )
+
+        // Update dates if provided
+        // If event is/becomes all-day, need to normalize to UTC midnight
+        val effectiveIsAllDay = isAllDay ?: wasAllDay
+        if (startDate != null || endDate != null) {
+            val startMillis: Long?
+            val endMillis: Long?
+
+            if (effectiveIsAllDay) {
+                startMillis = startDate?.let { localDateToUtcMidnight(it.time) }
+                endMillis = endDate?.let { localDateToUtcMidnight(it.time) }
+            } else {
+                startMillis = startDate?.time
+                endMillis = endDate?.time
+            }
+
+            if (startMillis != null) {
+                values.put(CalendarContract.Events.DTSTART, startMillis)
+            }
+            if (endMillis != null) {
+                values.put(CalendarContract.Events.DTEND, endMillis)
+            }
+        }
+
+        // Update timezone if provided
+        // Note: For all-day events, timezone should be set but is less relevant
+        if (timeZone != null) {
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
+        } else if (isAllDay == true) {
+            // If changing to all-day, set device timezone
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
+        }
+
+        // Perform the update
+        val updatedRows = context.contentResolver.update(
+            CalendarContract.Events.CONTENT_URI,
+            values,
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(eventId)
+        )
+
+        if (updatedRows == 0) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+        }
+
+        return Result.success(Unit)
+    }
+
+    /**
+     * Applies the shared patch fields — title, description, location, url,
+     * all-day flag and availability — to [values]. Fields named in
+     * [clearedFields] are nulled; null parameters are left untouched.
+     */
+    private fun applyEventFieldValues(
+        values: android.content.ContentValues,
+        title: String?,
+        description: String?,
+        location: String?,
+        url: String?,
+        isAllDay: Boolean?,
+        availability: String?,
+        clearedFields: List<String>
+    ) {
+        if (title != null) {
+            values.put(CalendarContract.Events.TITLE, title)
+        }
+        if ("description" in clearedFields) {
+            values.putNull(CalendarContract.Events.DESCRIPTION)
+        } else if (description != null) {
+            values.put(CalendarContract.Events.DESCRIPTION, description)
+        }
+        if ("location" in clearedFields) {
+            values.putNull(CalendarContract.Events.EVENT_LOCATION)
+        } else if (location != null) {
+            values.put(CalendarContract.Events.EVENT_LOCATION, location)
+        }
+        if ("url" in clearedFields) {
+            values.putNull(CalendarContract.Events.CUSTOM_APP_URI)
+        } else if (url != null) {
+            values.put(CalendarContract.Events.CUSTOM_APP_URI, url)
+        }
+        if (isAllDay != null) {
+            values.put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+        }
+        if (availability != null) {
+            values.put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
         }
     }
 
@@ -978,10 +988,12 @@ class EventsService(private val context: Context) {
         } else {
             timestamp
         }
+        // Without an explicit endDate the occurrence's own end stays put —
+        // matching iOS, where setting startDate leaves endDate untouched.
         val newEnd = if (endDate != null) {
             toStorageMillis(endDate, effectiveIsAllDay)
         } else {
-            newStart + eventDurationMillis(row)
+            timestamp + eventDurationMillis(row)
         }
         if (newEnd <= newStart) {
             return Result.failure(
@@ -999,34 +1011,13 @@ class EventsService(private val context: Context) {
             put(CalendarContract.Events.DTSTART, newStart)
             put(CalendarContract.Events.DURATION, "P${(newEnd - newStart) / 1000}S")
             put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
-
-            if (title != null) {
-                put(CalendarContract.Events.TITLE, title)
-            }
-            if ("description" in clearedFields) {
-                putNull(CalendarContract.Events.DESCRIPTION)
-            } else if (description != null) {
-                put(CalendarContract.Events.DESCRIPTION, description)
-            }
-            if ("location" in clearedFields) {
-                putNull(CalendarContract.Events.EVENT_LOCATION)
-            } else if (location != null) {
-                put(CalendarContract.Events.EVENT_LOCATION, location)
-            }
-            if ("url" in clearedFields) {
-                putNull(CalendarContract.Events.CUSTOM_APP_URI)
-            } else if (url != null) {
-                put(CalendarContract.Events.CUSTOM_APP_URI, url)
-            }
-            if (isAllDay != null) {
-                put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
-            }
-            if (timeZone != null) {
-                put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
-            }
-            if (availability != null) {
-                put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
-            }
+        }
+        applyEventFieldValues(
+            values, title, description, location, url, isAllDay,
+            availability, clearedFields
+        )
+        if (timeZone != null) {
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
         }
 
         val exceptionUri = android.content.ContentUris.withAppendedId(
@@ -1143,36 +1134,27 @@ class EventsService(private val context: Context) {
             )
 
         val values = android.content.ContentValues()
-
-        if (title != null) {
-            values.put(CalendarContract.Events.TITLE, title)
-        }
-
-        if ("description" in clearedFields) {
-            values.putNull(CalendarContract.Events.DESCRIPTION)
-        } else if (description != null) {
-            values.put(CalendarContract.Events.DESCRIPTION, description)
-        }
-
-        if ("location" in clearedFields) {
-            values.putNull(CalendarContract.Events.EVENT_LOCATION)
-        } else if (location != null) {
-            values.put(CalendarContract.Events.EVENT_LOCATION, location)
-        }
-
-        if ("url" in clearedFields) {
-            values.putNull(CalendarContract.Events.CUSTOM_APP_URI)
-        } else if (url != null) {
-            values.put(CalendarContract.Events.CUSTOM_APP_URI, url)
-        }
-
-        if (availability != null) {
-            values.put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
-        }
+        applyEventFieldValues(
+            values, title, description, location, url, isAllDay,
+            availability, clearedFields
+        )
 
         val effectiveIsAllDay = isAllDay ?: row.allDay
-        if (isAllDay != null) {
-            values.put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+        if (startTimeHour != null && effectiveIsAllDay) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "startTime cannot be set on an all-day event"
+                )
+            )
+        }
+        if (durationMinutes != null && effectiveIsAllDay && durationMinutes % 1440 != 0) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "All-day events require whole-day durations"
+                )
+            )
         }
 
         // Recurrence rule column and the resulting recurring state.
@@ -1279,6 +1261,22 @@ class EventsService(private val context: Context) {
         // Effective field values for the new series: the patch value when one
         // is given, otherwise the master's existing value.
         val effectiveIsAllDay = isAllDay ?: row.allDay
+        if (startTimeHour != null && effectiveIsAllDay) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "startTime cannot be set on an all-day event"
+                )
+            )
+        }
+        if (durationMinutes != null && effectiveIsAllDay && durationMinutes % 1440 != 0) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "All-day events require whole-day durations"
+                )
+            )
+        }
         val effectiveTitle = title ?: row.title
         val effectiveDescription =
             if ("description" in clearedFields) null else (description ?: row.description)

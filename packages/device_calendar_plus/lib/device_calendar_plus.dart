@@ -18,6 +18,7 @@ export 'package:device_calendar_plus_ios/device_calendar_plus_ios.dart'
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
     show
         CreateCalendarPlatformOptions,
+        EventTimeOfDay,
         InstanceIdParser,
         ParsedInstanceId,
         Patch,
@@ -859,11 +860,12 @@ class DeviceCalendar {
   ///
   /// Time fields:
   /// - [startTime] sets the time-of-day for every occurrence in scope,
-  ///   preserving each occurrence's date. Duration is preserved unless
-  ///   [duration] is also passed.
-  /// - [duration] sets the event duration. For all-day events, only
-  ///   whole-day durations are valid (e.g., `Duration(days: 3)` for a
-  ///   three-day conference).
+  ///   preserving each occurrence's date (hour 0-23, minute 0-59). Duration
+  ///   is preserved unless [duration] is also passed. Cannot be used on
+  ///   all-day events.
+  /// - [duration] sets the event duration; it must be positive and a whole
+  ///   number of minutes. For all-day events, only whole-day durations are
+  ///   valid (e.g., `Duration(days: 3)` for a three-day conference).
   ///
   /// [recurrenceRule] takes a [Patch]: omit it to leave recurrence unchanged,
   /// [Patch.set] to change the rule, [Patch.clear] to remove it (the event
@@ -919,7 +921,7 @@ class DeviceCalendar {
     String instanceId,
     EventSpan span, {
     String? title,
-    ({int hour, int minute})? startTime,
+    EventTimeOfDay? startTime,
     Duration? duration,
     Patch<String>? description,
     Patch<String>? location,
@@ -961,6 +963,38 @@ class DeviceCalendar {
       );
     }
 
+    // startTime must be a real time-of-day. java.util.Calendar is lenient
+    // and would silently roll an out-of-range value into the next day.
+    if (startTime != null &&
+        (startTime.hour < 0 ||
+            startTime.hour > 23 ||
+            startTime.minute < 0 ||
+            startTime.minute > 59)) {
+      throw ArgumentError.value(
+        startTime,
+        'startTime',
+        'hour must be 0-23 and minute 0-59',
+      );
+    }
+
+    // The platform contract is whole minutes; reject rather than silently
+    // truncate, and rule out zero/negative durations.
+    if (duration != null && duration <= Duration.zero) {
+      throw ArgumentError.value(
+        duration,
+        'duration',
+        'duration must be positive',
+      );
+    }
+    if (duration != null &&
+        duration.inMicroseconds % Duration.microsecondsPerMinute != 0) {
+      throw ArgumentError.value(
+        duration,
+        'duration',
+        'duration must be a whole number of minutes',
+      );
+    }
+
     // All-day events have no time-of-day.
     if (isAllDay == true && startTime != null) {
       throw ArgumentError.value(
@@ -973,7 +1007,7 @@ class DeviceCalendar {
     // All-day events only accept whole-day durations.
     if (isAllDay == true &&
         duration != null &&
-        duration.inMinutes % 1440 != 0) {
+        duration.inMicroseconds % Duration.microsecondsPerDay != 0) {
       throw ArgumentError.value(
         duration,
         'duration',
