@@ -541,43 +541,19 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     
     // Parse optional parameters
     let timestamp = args["timestamp"] as? Int64
-    let title = args["title"] as? String
-    let description = args["description"] as? String
-    let location = args["location"] as? String
-    let url = args["url"] as? String
-    let isAllDay = args["isAllDay"] as? Bool
-    let timeZone = args["timeZone"] as? String
-    let availability = args["availability"] as? String
-    let clearedFields = args["clearedFields"] as? [String] ?? []
-
-    // Parse dates if provided
-    let startDate: Date?
-    if let startDateMillis = args["startDate"] as? Int64 {
-      startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
-    } else {
-      startDate = nil
+    let startDate = (args["startDate"] as? Int64).map {
+      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
     }
-
-    let endDate: Date?
-    if let endDateMillis = args["endDate"] as? Int64 {
-      endDate = Date(timeIntervalSince1970: TimeInterval(endDateMillis) / 1000.0)
-    } else {
-      endDate = nil
+    let endDate = (args["endDate"] as? Int64).map {
+      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
     }
 
     eventsService.updateEvent(
       eventId: eventId,
       timestamp: timestamp,
-      title: title,
       startDate: startDate,
       endDate: endDate,
-      description: description,
-      location: location,
-      url: url,
-      isAllDay: isAllDay,
-      timeZone: timeZone,
-      availability: availability,
-      clearedFields: clearedFields
+      patch: EventFieldPatch(args: args)
     ) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
@@ -622,35 +598,20 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
 
     // Parse optional parameters
     let timestamp = args["timestamp"] as? Int64
-    let title = args["title"] as? String
     let startTimeHour = args["startTimeHour"] as? Int
     let startTimeMinute = args["startTimeMinute"] as? Int
     let durationMinutes = args["durationMinutes"] as? Int
-    let description = args["description"] as? String
-    let location = args["location"] as? String
-    let url = args["url"] as? String
-    let isAllDay = args["isAllDay"] as? Bool
-    let timeZone = args["timeZone"] as? String
-    let availability = args["availability"] as? String
     let recurrenceRule = args["recurrenceRule"] as? String
-    let clearedFields = args["clearedFields"] as? [String] ?? []
 
     eventsService.updateRecurring(
       eventId: eventId,
       timestamp: timestamp,
       span: span,
-      title: title,
       startTimeHour: startTimeHour,
       startTimeMinute: startTimeMinute,
       durationMinutes: durationMinutes,
-      description: description,
-      location: location,
-      url: url,
-      isAllDay: isAllDay,
-      timeZone: timeZone,
-      availability: availability,
       recurrenceRule: recurrenceRule,
-      clearedFields: clearedFields
+      patch: EventFieldPatch(args: args)
     ) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {

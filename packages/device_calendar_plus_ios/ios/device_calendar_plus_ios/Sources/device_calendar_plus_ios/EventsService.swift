@@ -1,6 +1,10 @@
 import EventKit
 import EventKitUI
 
+/// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
+/// two platforms must stay in lockstep.
+private let minutesPerDay = 1440
+
 extension EKEventAvailability {
   var stringValue: String {
     switch self {
@@ -786,16 +790,9 @@ class EventsService {
   func updateEvent(
     eventId: String,
     timestamp: Int64?,
-    title: String?,
     startDate: Date?,
     endDate: Date?,
-    description: String?,
-    location: String?,
-    url: String?,
-    isAllDay: Bool?,
-    timeZone: String?,
-    availability: String?,
-    clearedFields: [String],
+    patch: EventFieldPatch,
     completion: @escaping (Result<Void, CalendarError>) -> Void)
   {
     // Permission Check
@@ -833,41 +830,10 @@ class EventsService {
     }
 
     // Get new data into event
-    if let title = title { foundEvent.title = title }
-    if clearedFields.contains("description") {
-      foundEvent.notes = nil
-    } else if let description = description {
-      foundEvent.notes = description
-    }
-    if clearedFields.contains("location") {
-      foundEvent.location = nil
-    } else if let location = location {
-      foundEvent.location = location
-    }
-    if clearedFields.contains("url") {
-      foundEvent.url = nil
-    } else if let url = url {
-      foundEvent.url = URL(string: url)
-    }
-    if let isAllDay = isAllDay { foundEvent.isAllDay = isAllDay }
+    patch.apply(to: foundEvent)
     if let startDate = startDate { foundEvent.startDate = startDate }
     if let endDate = endDate { foundEvent.endDate = endDate }
-
-    if foundEvent.isAllDay {
-      foundEvent.timeZone = nil
-    } else if let timeZoneIdentifier = timeZone {
-      foundEvent.timeZone = TimeZone(identifier: timeZoneIdentifier)
-    }
-
-    if let availabilityStr = availability {
-      switch availabilityStr {
-      case "free": foundEvent.availability = .free
-      case "tentative": foundEvent.availability = .tentative
-      case "unavailable": foundEvent.availability = .unavailable
-      case "busy": foundEvent.availability = .busy
-      default: break
-      }
-    }
+    patch.applyTimeZone(to: foundEvent)
 
     // An occurrence edit saves .thisEvent, detaching it as an exception. A
     // bare event ID follows the whole series (.futureEvents from the master;
@@ -939,18 +905,11 @@ class EventsService {
     eventId: String,
     timestamp: Int64?,
     span: String,
-    title: String?,
     startTimeHour: Int?,
     startTimeMinute: Int?,
     durationMinutes: Int?,
-    description: String?,
-    location: String?,
-    url: String?,
-    isAllDay: Bool?,
-    timeZone: String?,
-    availability: String?,
     recurrenceRule: String?,
-    clearedFields: [String],
+    patch: EventFieldPatch,
     completion: @escaping (Result<String, CalendarError>) -> Void
   ) {
     // Permission Check
@@ -990,7 +949,7 @@ class EventsService {
     // All-day events have no time-of-day and only whole-day durations. The
     // Dart layer can only check these against fields in the same call; the
     // stored event's state is enforced here.
-    let effectiveIsAllDay = isAllDay ?? foundEvent.isAllDay
+    let effectiveIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
     if startTimeHour != nil && effectiveIsAllDay {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.invalidArguments,
@@ -998,7 +957,8 @@ class EventsService {
       )))
       return
     }
-    if let durationMinutes = durationMinutes, effectiveIsAllDay, durationMinutes % 1440 != 0 {
+    if let durationMinutes = durationMinutes, effectiveIsAllDay,
+       durationMinutes % minutesPerDay != 0 {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.invalidArguments,
         message: "All-day events require whole-day durations"
@@ -1029,7 +989,7 @@ class EventsService {
     }
 
     var parsedRecurrenceRule: EKRecurrenceRule?
-    if !clearedFields.contains("recurrenceRule"), let rruleString = recurrenceRule {
+    if !patch.clearedFields.contains("recurrenceRule"), let rruleString = recurrenceRule {
       guard let rule = parseRecurrenceRule(rruleString) else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
@@ -1041,23 +1001,7 @@ class EventsService {
     }
 
     // Apply field changes.
-    if let title = title { foundEvent.title = title }
-    if clearedFields.contains("description") {
-      foundEvent.notes = nil
-    } else if let description = description {
-      foundEvent.notes = description
-    }
-    if clearedFields.contains("location") {
-      foundEvent.location = nil
-    } else if let location = location {
-      foundEvent.location = location
-    }
-    if clearedFields.contains("url") {
-      foundEvent.url = nil
-    } else if let url = url {
-      foundEvent.url = URL(string: url)
-    }
-    if let isAllDay = isAllDay { foundEvent.isAllDay = isAllDay }
+    patch.apply(to: foundEvent)
 
     // Apply time-of-day and/or duration changes. The existing date is
     // preserved; only the time component is replaced.
@@ -1069,24 +1013,10 @@ class EventsService {
       foundEvent.endDate = start.addingTimeInterval(duration)
     }
 
-    if foundEvent.isAllDay {
-      foundEvent.timeZone = nil
-    } else if let timeZoneIdentifier = timeZone {
-      foundEvent.timeZone = TimeZone(identifier: timeZoneIdentifier)
-    }
-
-    if let availabilityStr = availability {
-      switch availabilityStr {
-      case "free": foundEvent.availability = .free
-      case "tentative": foundEvent.availability = .tentative
-      case "unavailable": foundEvent.availability = .unavailable
-      case "busy": foundEvent.availability = .busy
-      default: break
-      }
-    }
+    patch.applyTimeZone(to: foundEvent)
 
     // Apply the recurrence-rule patch.
-    if clearedFields.contains("recurrenceRule") {
+    if patch.clearedFields.contains("recurrenceRule") {
       foundEvent.recurrenceRules = nil
     } else if let rule = parsedRecurrenceRule {
       foundEvent.recurrenceRules = [rule]
