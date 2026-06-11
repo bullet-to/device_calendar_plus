@@ -1006,6 +1006,40 @@ class EventsService {
       return
     }
 
+    // Compute the new start and parse the recurrence rule before touching
+    // the event. EventKit keeps the fetched EKEvent live in its cache, so
+    // every failure exit must happen while it is still unmodified — orphaned
+    // mutations could otherwise ride along with a later save.
+    var newStart: Date?
+    if let hour = startTimeHour {
+      let minute = startTimeMinute ?? 0
+      guard let replaced = replaceTimeOfDay(
+        of: foundEvent.startDate,
+        hour: hour,
+        minute: minute,
+        timeZone: foundEvent.timeZone ?? .current
+      ) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "Could not apply start time \(hour):\(minute) to the event's start date"
+        )))
+        return
+      }
+      newStart = replaced
+    }
+
+    var parsedRecurrenceRule: EKRecurrenceRule?
+    if !clearedFields.contains("recurrenceRule"), let rruleString = recurrenceRule {
+      guard let rule = parseRecurrenceRule(rruleString) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "Invalid recurrence rule: \(rruleString)"
+        )))
+        return
+      }
+      parsedRecurrenceRule = rule
+    }
+
     // Apply field changes.
     if let title = title { foundEvent.title = title }
     if clearedFields.contains("description") {
@@ -1027,23 +1061,6 @@ class EventsService {
 
     // Apply time-of-day and/or duration changes. The existing date is
     // preserved; only the time component is replaced.
-    var newStart: Date?
-    if let hour = startTimeHour {
-      let minute = startTimeMinute ?? 0
-      guard let replaced = replaceTimeOfDay(
-        of: foundEvent.startDate,
-        hour: hour,
-        minute: minute,
-        timeZone: foundEvent.timeZone ?? .current
-      ) else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.operationFailed,
-          message: "Could not apply start time \(hour):\(minute) to the event's start date"
-        )))
-        return
-      }
-      newStart = replaced
-    }
     if newStart != nil || durationMinutes != nil {
       let duration = durationMinutes.map { TimeInterval($0 * 60) }
         ?? foundEvent.endDate.timeIntervalSince(foundEvent.startDate)
@@ -1071,14 +1088,7 @@ class EventsService {
     // Apply the recurrence-rule patch.
     if clearedFields.contains("recurrenceRule") {
       foundEvent.recurrenceRules = nil
-    } else if let rruleString = recurrenceRule {
-      guard let rule = parseRecurrenceRule(rruleString) else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "Invalid recurrence rule: \(rruleString)"
-        )))
-        return
-      }
+    } else if let rule = parsedRecurrenceRule {
       foundEvent.recurrenceRules = [rule]
     }
 
