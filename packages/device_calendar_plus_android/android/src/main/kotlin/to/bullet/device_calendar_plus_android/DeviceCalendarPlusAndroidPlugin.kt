@@ -481,34 +481,15 @@ class DeviceCalendarPlusAndroidPlugin :
         
         // Parse optional arguments (all can be null)
         val timestamp = call.argument<Long>("timestamp")
-        val title = call.argument<String>("title")
-        val startDateMillis = call.argument<Long>("startDate")
-        val endDateMillis = call.argument<Long>("endDate")
-        val description = call.argument<String>("description")
-        val location = call.argument<String>("location")
-        val url = call.argument<String>("url")
-        val isAllDay = call.argument<Boolean>("isAllDay")
-        val timeZone = call.argument<String>("timeZone")
-        val availability = call.argument<String>("availability")
-        val clearedFields = call.argument<List<String>>("clearedFields") ?: emptyList()
-
-        // Convert dates if provided
-        val startDate = startDateMillis?.let { java.util.Date(it) }
-        val endDate = endDateMillis?.let { java.util.Date(it) }
+        val startDate = call.argument<Long>("startDate")?.let { java.util.Date(it) }
+        val endDate = call.argument<Long>("endDate")?.let { java.util.Date(it) }
 
         val serviceResult = service.updateEvent(
             eventId,
             timestamp,
-            title,
             startDate,
             endDate,
-            description,
-            location,
-            url,
-            isAllDay,
-            timeZone,
-            availability,
-            clearedFields
+            EventFieldPatch.fromCall(call)
         )
         
         serviceResult.fold(
@@ -548,35 +529,20 @@ class DeviceCalendarPlusAndroidPlugin :
 
         // Parse optional arguments (all can be null)
         val timestamp = call.argument<Long>("timestamp")
-        val title = call.argument<String>("title")
         val startTimeHour = call.argument<Int>("startTimeHour")
         val startTimeMinute = call.argument<Int>("startTimeMinute")
         val durationMinutes = call.argument<Int>("durationMinutes")
-        val description = call.argument<String>("description")
-        val location = call.argument<String>("location")
-        val url = call.argument<String>("url")
-        val isAllDay = call.argument<Boolean>("isAllDay")
-        val timeZone = call.argument<String>("timeZone")
-        val availability = call.argument<String>("availability")
         val recurrenceRule = call.argument<String>("recurrenceRule")
-        val clearedFields = call.argument<List<String>>("clearedFields") ?: emptyList()
 
         val serviceResult = service.updateRecurring(
             eventId,
             timestamp,
             span,
-            title,
             startTimeHour,
             startTimeMinute,
             durationMinutes,
-            description,
-            location,
-            url,
-            isAllDay,
-            timeZone,
-            availability,
             recurrenceRule,
-            clearedFields
+            EventFieldPatch.fromCall(call)
         )
 
         serviceResult.fold(

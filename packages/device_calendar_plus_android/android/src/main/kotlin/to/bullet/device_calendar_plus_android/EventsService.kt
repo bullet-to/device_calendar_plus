@@ -773,16 +773,9 @@ class EventsService(private val context: Context) {
     fun updateEvent(
         eventId: String,
         timestamp: Long?,
-        title: String?,
         startDate: java.util.Date?,
         endDate: java.util.Date?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ): Result<Unit> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -797,15 +790,9 @@ class EventsService(private val context: Context) {
 
         return try {
             if (timestamp != null) {
-                updateEventInstance(
-                    eventId, timestamp, title, startDate, endDate, description,
-                    location, url, isAllDay, timeZone, availability, clearedFields
-                )
+                updateEventInstance(eventId, timestamp, startDate, endDate, patch)
             } else {
-                updateEventMaster(
-                    eventId, title, startDate, endDate, description,
-                    location, url, isAllDay, timeZone, availability, clearedFields
-                )
+                updateEventMaster(eventId, startDate, endDate, patch)
             }
         } catch (e: SecurityException) {
             Result.failure(
@@ -830,16 +817,9 @@ class EventsService(private val context: Context) {
      */
     private fun updateEventMaster(
         eventId: String,
-        title: String?,
         startDate: java.util.Date?,
         endDate: java.util.Date?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ): Result<Unit> {
         // Need to fetch existing event to determine if it's all-day
         // This is required for proper date normalization
@@ -849,14 +829,11 @@ class EventsService(private val context: Context) {
 
         // Build ContentValues with only provided fields
         val values = android.content.ContentValues()
-        applyEventFieldValues(
-            values, title, description, location, url, isAllDay,
-            availability, clearedFields
-        )
+        applyEventFieldValues(values, patch)
 
         // Update dates if provided
         // If event is/becomes all-day, need to normalize to UTC midnight
-        val effectiveIsAllDay = isAllDay ?: wasAllDay
+        val effectiveIsAllDay = patch.isAllDay ?: wasAllDay
         if (startDate != null || endDate != null) {
             val startMillis: Long?
             val endMillis: Long?
@@ -879,9 +856,9 @@ class EventsService(private val context: Context) {
 
         // Update timezone if provided
         // Note: For all-day events, timezone should be set but is less relevant
-        if (timeZone != null) {
-            values.put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
-        } else if (isAllDay == true) {
+        if (patch.timeZone != null) {
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)
+        } else if (patch.isAllDay == true) {
             // If changing to all-day, set device timezone
             values.put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
         }
@@ -907,43 +884,41 @@ class EventsService(private val context: Context) {
     }
 
     /**
-     * Applies the shared patch fields — title, description, location, url,
-     * all-day flag and availability — to [values]. Fields named in
-     * [clearedFields] are nulled; null parameters are left untouched.
+     * Applies [patch] — title, description, location, url, all-day flag and
+     * availability — to [values]. Fields named in the patch's clearedFields
+     * are nulled; null fields are left untouched. The patch's time zone is
+     * not applied here: each write path handles it differently.
      */
     private fun applyEventFieldValues(
         values: android.content.ContentValues,
-        title: String?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        availability: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ) {
-        if (title != null) {
-            values.put(CalendarContract.Events.TITLE, title)
+        if (patch.title != null) {
+            values.put(CalendarContract.Events.TITLE, patch.title)
         }
-        if ("description" in clearedFields) {
+        if ("description" in patch.clearedFields) {
             values.putNull(CalendarContract.Events.DESCRIPTION)
-        } else if (description != null) {
-            values.put(CalendarContract.Events.DESCRIPTION, description)
+        } else if (patch.description != null) {
+            values.put(CalendarContract.Events.DESCRIPTION, patch.description)
         }
-        if ("location" in clearedFields) {
+        if ("location" in patch.clearedFields) {
             values.putNull(CalendarContract.Events.EVENT_LOCATION)
-        } else if (location != null) {
-            values.put(CalendarContract.Events.EVENT_LOCATION, location)
+        } else if (patch.location != null) {
+            values.put(CalendarContract.Events.EVENT_LOCATION, patch.location)
         }
-        if ("url" in clearedFields) {
+        if ("url" in patch.clearedFields) {
             values.putNull(CalendarContract.Events.CUSTOM_APP_URI)
-        } else if (url != null) {
-            values.put(CalendarContract.Events.CUSTOM_APP_URI, url)
+        } else if (patch.url != null) {
+            values.put(CalendarContract.Events.CUSTOM_APP_URI, patch.url)
         }
-        if (isAllDay != null) {
-            values.put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
+        if (patch.isAllDay != null) {
+            values.put(CalendarContract.Events.ALL_DAY, if (patch.isAllDay) 1 else 0)
         }
-        if (availability != null) {
-            values.put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
+        if (patch.availability != null) {
+            values.put(
+                CalendarContract.Events.AVAILABILITY,
+                availabilityToInt(patch.availability)
+            )
         }
     }
 
@@ -956,16 +931,9 @@ class EventsService(private val context: Context) {
     private fun updateEventInstance(
         eventId: String,
         timestamp: Long,
-        title: String?,
         startDate: java.util.Date?,
         endDate: java.util.Date?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ): Result<Unit> {
         val row = readEventRow(eventId)
             ?: return Result.failure(
@@ -984,7 +952,7 @@ class EventsService(private val context: Context) {
             )
         }
 
-        val effectiveIsAllDay = isAllDay ?: row.allDay
+        val effectiveIsAllDay = patch.isAllDay ?: row.allDay
         val newStart = if (startDate != null) {
             toStorageMillis(startDate, effectiveIsAllDay)
         } else {
@@ -1014,12 +982,9 @@ class EventsService(private val context: Context) {
             put(CalendarContract.Events.DURATION, "P${(newEnd - newStart) / 1000}S")
             put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
         }
-        applyEventFieldValues(
-            values, title, description, location, url, isAllDay,
-            availability, clearedFields
-        )
-        if (timeZone != null) {
-            values.put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
+        applyEventFieldValues(values, patch)
+        if (patch.timeZone != null) {
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)
         }
 
         val exceptionUri = android.content.ContentUris.withAppendedId(
@@ -1053,18 +1018,11 @@ class EventsService(private val context: Context) {
         eventId: String,
         timestamp: Long?,
         span: String,
-        title: String?,
         startTimeHour: Int?,
         startTimeMinute: Int?,
         durationMinutes: Int?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
         recurrenceRule: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ): Result<String> {
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
             context.checkSelfPermission(android.Manifest.permission.WRITE_CALENDAR)) {
@@ -1097,7 +1055,7 @@ class EventsService(private val context: Context) {
             // All-day events have no time-of-day and only whole-day durations.
             // The Dart layer can only check these against fields in the same
             // call; the stored event's state is enforced here.
-            val effectiveIsAllDay = isAllDay ?: row.allDay
+            val effectiveIsAllDay = patch.isAllDay ?: row.allDay
             if (startTimeHour != null && effectiveIsAllDay) {
                 return Result.failure(
                     CalendarException(
@@ -1118,15 +1076,12 @@ class EventsService(private val context: Context) {
 
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    eventId, row, timestamp, title, startTimeHour,
-                    startTimeMinute, durationMinutes, description, location,
-                    url, isAllDay, timeZone, availability, recurrenceRule,
-                    clearedFields
+                    eventId, row, timestamp, startTimeHour, startTimeMinute,
+                    durationMinutes, recurrenceRule, patch
                 )
                 else -> updateRecurringAllEvents(
-                    eventId, row, title, startTimeHour, startTimeMinute,
-                    durationMinutes, description, location, url, isAllDay,
-                    timeZone, availability, recurrenceRule, clearedFields
+                    eventId, row, startTimeHour, startTimeMinute,
+                    durationMinutes, recurrenceRule, patch
                 )
             }
         } catch (e: SecurityException) {
@@ -1149,28 +1104,18 @@ class EventsService(private val context: Context) {
     private fun updateRecurringAllEvents(
         eventId: String,
         row: EventRow,
-        title: String?,
         startTimeHour: Int?,
         startTimeMinute: Int?,
         durationMinutes: Int?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
         recurrenceRule: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ): Result<String> {
         val values = android.content.ContentValues()
-        applyEventFieldValues(
-            values, title, description, location, url, isAllDay,
-            availability, clearedFields
-        )
+        applyEventFieldValues(values, patch)
 
         // Recurrence rule column and the resulting recurring state.
         val wasRecurring = row.rrule != null
-        val clearRrule = "recurrenceRule" in clearedFields
+        val clearRrule = "recurrenceRule" in patch.clearedFields
         val willBeRecurring = when {
             clearRrule -> false
             recurrenceRule != null -> true
@@ -1204,9 +1149,9 @@ class EventsService(private val context: Context) {
             }
         }
 
-        if (timeZone != null) {
-            values.put(CalendarContract.Events.EVENT_TIMEZONE, timeZone)
-        } else if (isAllDay == true) {
+        if (patch.timeZone != null) {
+            values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)
+        } else if (patch.isAllDay == true) {
             values.put(
                 CalendarContract.Events.EVENT_TIMEZONE,
                 java.util.TimeZone.getDefault().id
@@ -1231,18 +1176,11 @@ class EventsService(private val context: Context) {
         eventId: String,
         row: EventRow,
         timestamp: Long?,
-        title: String?,
         startTimeHour: Int?,
         startTimeMinute: Int?,
         durationMinutes: Int?,
-        description: String?,
-        location: String?,
-        url: String?,
-        isAllDay: Boolean?,
-        timeZone: String?,
-        availability: String?,
         recurrenceRule: String?,
-        clearedFields: List<String>
+        patch: EventFieldPatch
     ): Result<String> {
         if (timestamp == null) {
             return Result.failure(
@@ -1264,18 +1202,24 @@ class EventsService(private val context: Context) {
 
         // Effective field values for the new series: the patch value when one
         // is given, otherwise the master's existing value.
-        val effectiveIsAllDay = isAllDay ?: row.allDay
-        val effectiveTitle = title ?: row.title
-        val effectiveDescription =
-            if ("description" in clearedFields) null else (description ?: row.description)
-        val effectiveLocation =
-            if ("location" in clearedFields) null else (location ?: row.location)
+        val effectiveIsAllDay = patch.isAllDay ?: row.allDay
+        val effectiveTitle = patch.title ?: row.title
+        val effectiveDescription = if ("description" in patch.clearedFields) {
+            null
+        } else {
+            patch.description ?: row.description
+        }
+        val effectiveLocation = if ("location" in patch.clearedFields) {
+            null
+        } else {
+            patch.location ?: row.location
+        }
         val effectiveUrl =
-            if ("url" in clearedFields) null else (url ?: row.url)
-        val effectiveTimeZone = timeZone ?: row.timeZone
-        val effectiveAvailability = availability ?: row.availability
+            if ("url" in patch.clearedFields) null else (patch.url ?: row.url)
+        val effectiveTimeZone = patch.timeZone ?: row.timeZone
+        val effectiveAvailability = patch.availability ?: row.availability
         val effectiveRrule = when {
-            "recurrenceRule" in clearedFields -> null
+            "recurrenceRule" in patch.clearedFields -> null
             recurrenceRule != null -> recurrenceRule
             else -> {
                 // Rule unchanged: the new series inherits the original rule. A
