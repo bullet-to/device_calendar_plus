@@ -529,8 +529,7 @@ class DeviceCalendarPlusAndroidPlugin :
 
         // Parse optional arguments (all can be null)
         val timestamp = call.argument<Long>("timestamp")
-        val startTimeHour = call.argument<Int>("startTimeHour")
-        val startTimeMinute = call.argument<Int>("startTimeMinute")
+        val startMinuteOfDay = call.argument<Int>("startMinuteOfDay")
         val durationMinutes = call.argument<Int>("durationMinutes")
         val recurrenceRule = call.argument<String>("recurrenceRule")
 
@@ -538,8 +537,7 @@ class DeviceCalendarPlusAndroidPlugin :
             eventId,
             timestamp,
             span,
-            startTimeHour,
-            startTimeMinute,
+            startMinuteOfDay,
             durationMinutes,
             recurrenceRule,
             EventFieldPatch.fromCall(call)

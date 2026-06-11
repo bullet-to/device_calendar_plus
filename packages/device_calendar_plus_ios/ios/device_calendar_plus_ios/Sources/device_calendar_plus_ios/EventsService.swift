@@ -905,8 +905,7 @@ class EventsService {
     eventId: String,
     timestamp: Int64?,
     span: String,
-    startTimeHour: Int?,
-    startTimeMinute: Int?,
+    startMinuteOfDay: Int?,
     durationMinutes: Int?,
     recurrenceRule: String?,
     patch: EventFieldPatch,
@@ -950,7 +949,7 @@ class EventsService {
     // Dart layer can only check these against fields in the same call; the
     // stored event's state is enforced here.
     let effectiveIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
-    if startTimeHour != nil && effectiveIsAllDay {
+    if startMinuteOfDay != nil && effectiveIsAllDay {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.invalidArguments,
         message: "startTime cannot be set on an all-day event"
@@ -971,8 +970,9 @@ class EventsService {
     // every failure exit must happen while it is still unmodified — orphaned
     // mutations could otherwise ride along with a later save.
     var newStart: Date?
-    if let hour = startTimeHour {
-      let minute = startTimeMinute ?? 0
+    if let minuteOfDay = startMinuteOfDay {
+      let hour = minuteOfDay / 60
+      let minute = minuteOfDay % 60
       guard let replaced = replaceTimeOfDay(
         of: foundEvent.startDate,
         hour: hour,

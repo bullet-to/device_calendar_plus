@@ -598,8 +598,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
 
     // Parse optional parameters
     let timestamp = args["timestamp"] as? Int64
-    let startTimeHour = args["startTimeHour"] as? Int
-    let startTimeMinute = args["startTimeMinute"] as? Int
+    let startMinuteOfDay = args["startMinuteOfDay"] as? Int
     let durationMinutes = args["durationMinutes"] as? Int
     let recurrenceRule = args["recurrenceRule"] as? String
 
@@ -607,8 +606,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       eventId: eventId,
       timestamp: timestamp,
       span: span,
-      startTimeHour: startTimeHour,
-      startTimeMinute: startTimeMinute,
+      startMinuteOfDay: startMinuteOfDay,
       durationMinutes: durationMinutes,
       recurrenceRule: recurrenceRule,
       patch: EventFieldPatch(args: args)

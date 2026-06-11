@@ -19,6 +19,10 @@ final class EventTimeOfDay {
   /// The minute past the hour, 0-59.
   final int minute;
 
+  /// Minutes past midnight, 0-1439 — the single value sent over the
+  /// platform channel.
+  int get minuteOfDay => hour * 60 + minute;
+
   @override
   bool operator ==(Object other) =>
       other is EventTimeOfDay && other.hour == hour && other.minute == minute;

@@ -1022,8 +1022,7 @@ class EventsService(private val context: Context) {
         eventId: String,
         timestamp: Long?,
         span: String,
-        startTimeHour: Int?,
-        startTimeMinute: Int?,
+        startMinuteOfDay: Int?,
         durationMinutes: Int?,
         recurrenceRule: String?,
         patch: EventFieldPatch
@@ -1060,7 +1059,7 @@ class EventsService(private val context: Context) {
             // The Dart layer can only check these against fields in the same
             // call; the stored event's state is enforced here.
             val effectiveIsAllDay = patch.isAllDay ?: row.allDay
-            if (startTimeHour != null && effectiveIsAllDay) {
+            if (startMinuteOfDay != null && effectiveIsAllDay) {
                 return Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.INVALID_ARGUMENTS,
@@ -1080,11 +1079,11 @@ class EventsService(private val context: Context) {
 
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    eventId, row, timestamp, startTimeHour, startTimeMinute,
+                    eventId, row, timestamp, startMinuteOfDay,
                     durationMinutes, recurrenceRule, patch
                 )
                 else -> updateRecurringAllEvents(
-                    eventId, row, startTimeHour, startTimeMinute,
+                    eventId, row, startMinuteOfDay,
                     durationMinutes, recurrenceRule, patch
                 )
             }
@@ -1108,8 +1107,7 @@ class EventsService(private val context: Context) {
     private fun updateRecurringAllEvents(
         eventId: String,
         row: EventRow,
-        startTimeHour: Int?,
-        startTimeMinute: Int?,
+        startMinuteOfDay: Int?,
         durationMinutes: Int?,
         recurrenceRule: String?,
         patch: EventFieldPatch
@@ -1134,11 +1132,11 @@ class EventsService(private val context: Context) {
         // Time columns. A recurring event must use DURATION (and no DTEND); a
         // single event must use DTEND (and no DURATION). Rewrite them when the
         // time-of-day, duration, or recurring state changes.
-        val hasTimeChange = startTimeHour != null || durationMinutes != null
+        val hasTimeChange = startMinuteOfDay != null || durationMinutes != null
         if (hasTimeChange || wasRecurring != willBeRecurring) {
             val (newStart, newDurationMs) = resolveSeriesTimes(
                 row.dtstart, eventDurationMillis(row),
-                startTimeHour, startTimeMinute, durationMinutes, row.timeZone
+                startMinuteOfDay, durationMinutes, row.timeZone
             )
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
@@ -1180,8 +1178,7 @@ class EventsService(private val context: Context) {
         eventId: String,
         row: EventRow,
         timestamp: Long?,
-        startTimeHour: Int?,
-        startTimeMinute: Int?,
+        startMinuteOfDay: Int?,
         durationMinutes: Int?,
         recurrenceRule: String?,
         patch: EventFieldPatch
@@ -1243,7 +1240,7 @@ class EventsService(private val context: Context) {
         // new time-of-day applied. Duration is the master's unless overridden.
         val (newStart, newDurationMs) = resolveSeriesTimes(
             timestamp, eventDurationMillis(row),
-            startTimeHour, startTimeMinute, durationMinutes, row.timeZone
+            startMinuteOfDay, durationMinutes, row.timeZone
         )
         val newEnd = newStart + newDurationMs
 
@@ -1609,19 +1606,20 @@ class EventsService(private val context: Context) {
 
     /**
      * Resolves the start and duration for a series-level time edit: the
-     * time-of-day of [baseMillis] is replaced when [startTimeHour] is given,
-     * and the duration overridden when [durationMinutes] is given.
+     * time-of-day of [baseMillis] is replaced when [startMinuteOfDay] is
+     * given, and the duration overridden when [durationMinutes] is given.
      */
     private fun resolveSeriesTimes(
         baseMillis: Long,
         existingDurationMillis: Long,
-        startTimeHour: Int?,
-        startTimeMinute: Int?,
+        startMinuteOfDay: Int?,
         durationMinutes: Int?,
         timeZoneId: String?
     ): Pair<Long, Long> {
-        val newStart = if (startTimeHour != null) {
-            replaceTimeOfDay(baseMillis, startTimeHour, startTimeMinute ?: 0, timeZoneId)
+        val newStart = if (startMinuteOfDay != null) {
+            replaceTimeOfDay(
+                baseMillis, startMinuteOfDay / 60, startMinuteOfDay % 60, timeZoneId
+            )
         } else {
             baseMillis
         }
