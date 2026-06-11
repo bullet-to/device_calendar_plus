@@ -851,6 +851,22 @@ class EventsService {
       return
     }
 
+    // An occurrence edit leaves an omitted date at the occurrence's own
+    // value, so a startDate alone can overtake the end. Reject the inverted
+    // range here, before mutating the live EKEvent — matching Android, which
+    // computes the same effective range and fails with invalidArguments.
+    if timestamp != nil {
+      let newStart = startDate ?? foundEvent.startDate!
+      let newEnd = endDate ?? foundEvent.endDate!
+      if newEnd <= newStart {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "End date must be after the occurrence's start date"
+        )))
+        return
+      }
+    }
+
     // Get new data into event
     patch.apply(to: foundEvent)
     if let startDate = startDate { foundEvent.startDate = startDate }

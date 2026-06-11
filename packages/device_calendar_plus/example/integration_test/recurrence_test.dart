@@ -573,6 +573,33 @@ void main() {
           reason: 'the master event row must keep its original title');
     });
 
+    test(
+        'updateEvent with an instance ID rejects a startDate past the '
+        'occurrence end', () async {
+      // With no endDate, the occurrence's own end stays put — so a startDate
+      // beyond it would invert the range. Both platforms must refuse with
+      // invalidArguments rather than save an inverted event.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
+
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final target = occurrences[4];
+
+      await expectLater(
+        plugin.updateEvent(
+          eventId: target.instanceId,
+          startDate: target.startDate.add(const Duration(days: 2)),
+        ),
+        throwsA(isA<DeviceCalendarException>().having(
+          (e) => e.errorCode,
+          'errorCode',
+          DeviceCalendarError.invalidArguments,
+        )),
+      );
+    });
+
     test('updateEvent on a recurring eventId updates the whole series',
         () async {
       // Per the v0.3.0 contract, `updateEvent` on a recurring event always
