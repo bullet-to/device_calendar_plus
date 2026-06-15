@@ -1,3 +1,10 @@
+## 0.5.2 - 2026-06-15
+
+### Fixed
+- `listEvents` now returns a zero-duration (instantaneous) event that sits
+  exactly on the query's start time; the half-open overlap check previously
+  excluded it (#416)
+
 ## 0.5.1 - 2026-06-15
 
 - No functional changes; version aligned with the rest of the suite for the

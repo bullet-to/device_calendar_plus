@@ -994,6 +994,67 @@ class EventsService {
     return Calendar.current.date(from: components)
   }
 
+  /// Splits a `thisAndFollowing` series at `occurrence` and turns that
+  /// occurrence into a standalone non-recurring event, dropping every later
+  /// occurrence (earlier ones stay in the original series).
+  ///
+  /// EventKit can't do this natively: setting `recurrenceRules = nil` and
+  /// saving `.futureEvents` has no future series to detach, so it edits the
+  /// master and collapses the WHOLE series into one event at the original
+  /// start (the `allEvents` outcome). So mirror Android: truncate the master
+  /// before the occurrence, then create a fresh standalone event at the split
+  /// point.
+  ///
+  /// `occurrence` must already carry the caller's patched field values; it is
+  /// only read here (never saved), so its mutations don't touch the master.
+  private func detachThisAndFollowing(
+    occurrence: EKEvent,
+    eventId: String,
+    occurrenceDate: Date,
+    completion: @escaping (Result<String, CalendarError>) -> Void
+  ) {
+    guard let master = eventStore.event(withIdentifier: eventId),
+          let masterRule = master.recurrenceRules?.first else {
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "Could not resolve the master series to split"
+      )))
+      return
+    }
+
+    // Truncate the original series to end just before the split occurrence.
+    master.recurrenceRules = [ruleTruncated(masterRule, endingBefore: occurrenceDate)]
+
+    // The standalone carries the occurrence's fields with no recurrence. This
+    // field set mirrors Android's `insertEvent` in `updateRecurringThisAndFollowing`.
+    let standalone = EKEvent(eventStore: eventStore)
+    standalone.calendar = occurrence.calendar
+    standalone.title = occurrence.title
+    standalone.isAllDay = occurrence.isAllDay
+    standalone.startDate = occurrence.startDate
+    standalone.endDate = occurrence.endDate
+    standalone.notes = occurrence.notes
+    standalone.location = occurrence.location
+    standalone.url = occurrence.url
+    standalone.timeZone = occurrence.timeZone
+    standalone.availability = occurrence.availability
+
+    // Two-phase save: stage the truncation uncommitted, then commit both with
+    // the standalone. On failure `reset()` discards both so the calendar is
+    // left untouched (mirrors Android's roll-back of the new series).
+    do {
+      try eventStore.save(master, span: .futureEvents, commit: false)
+      try eventStore.save(standalone, span: .thisEvent, commit: true)
+      completion(.success(standalone.eventIdentifier ?? eventId))
+    } catch {
+      eventStore.reset()
+      completion(.failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "Failed to detach occurrence into a standalone event: \(error.localizedDescription)"
+      )))
+    }
+  }
+
   /// Updates a recurring event, choosing which occurrences the edit affects.
   ///
   /// `span` is "allEvents" (the whole series) or "thisAndFollowing" (split the
@@ -1114,56 +1175,19 @@ class EventsService {
 
     patch.applyTimeZone(to: foundEvent)
 
-    // Clearing the rule on a `thisAndFollowing` split needs special handling.
-    // Setting `recurrenceRules = nil` and saving `.futureEvents` does NOT
-    // split — with no rule there is no future series for EventKit to detach,
-    // so it edits the underlying master and collapses the WHOLE series into a
-    // single event at the original start (the `allEvents` outcome). Instead,
-    // mirror Android: truncate the master before the occurrence, then create a
-    // fresh standalone non-recurring event at the split point (#93).
+    // Clearing the rule on a `thisAndFollowing` split is the one case EventKit
+    // gets wrong natively (it collapses the whole series), so it splits the
+    // series by hand rather than through the shared save below — mirror
+    // Android's dedicated `updateRecurringThisAndFollowing` (#93).
     if span == "thisAndFollowing",
        patch.clearedFields.contains("recurrenceRule"),
        let timestamp = timestamp {
-      let occurrenceDate =
-        Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
-      guard let master = eventStore.event(withIdentifier: eventId),
-            let masterRule = master.recurrenceRules?.first else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.operationFailed,
-          message: "Could not resolve the master series to split"
-        )))
-        return
-      }
-
-      // Truncate the original series to end just before the split occurrence.
-      master.recurrenceRules = [ruleTruncated(masterRule, endingBefore: occurrenceDate)]
-
-      // The standalone event carries the occurrence's (already patched) fields
-      // with no recurrence. `foundEvent` is the occurrence and is never saved,
-      // so its mutations don't touch the master.
-      let standalone = EKEvent(eventStore: eventStore)
-      standalone.calendar = foundEvent.calendar
-      standalone.title = foundEvent.title
-      standalone.isAllDay = foundEvent.isAllDay
-      standalone.startDate = foundEvent.startDate
-      standalone.endDate = foundEvent.endDate
-      standalone.notes = foundEvent.notes
-      standalone.location = foundEvent.location
-      standalone.url = foundEvent.url
-      standalone.timeZone = foundEvent.timeZone
-      standalone.availability = foundEvent.availability
-
-      do {
-        try eventStore.save(master, span: .futureEvents, commit: false)
-        try eventStore.save(standalone, span: .thisEvent, commit: true)
-        completion(.success(standalone.eventIdentifier ?? eventId))
-      } catch {
-        eventStore.reset()
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.operationFailed,
-          message: "Failed to detach occurrence into a standalone event: \(error.localizedDescription)"
-        )))
-      }
+      detachThisAndFollowing(
+        occurrence: foundEvent,
+        eventId: eventId,
+        occurrenceDate: Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0),
+        completion: completion
+      )
       return
     }
 
