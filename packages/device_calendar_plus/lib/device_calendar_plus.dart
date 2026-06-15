@@ -393,9 +393,9 @@ class DeviceCalendar {
   /// events that overlap this range are returned, but an event starting
   /// exactly at [endDate] is excluded.
   ///
-  /// **Important iOS Limitation**: iOS automatically limits event queries to a
-  /// maximum span of 4 years. If you specify a range exceeding 4 years, iOS
-  /// will truncate it to the first 4 years automatically.
+  /// Ranges longer than 4 years are supported. iOS's underlying query caps a
+  /// single span at ~4 years, so wide ranges are transparently split into
+  /// smaller windows and merged — every event in the range is returned once.
   ///
   /// [calendarIds] is an optional parameter to filter events to specific
   /// calendars. If null or empty, events from all calendars are returned.

@@ -79,23 +79,57 @@ class EventsService {
       }
     }
     
-    // Create predicate for events
-    // Note: iOS automatically limits to 4-year spans
-    let predicate = eventStore.predicateForEvents(
-      withStart: startDate,
-      end: endDate,
-      calendars: calendars
-    )
-    
-    // Fetch events
-    let events = eventStore.events(matching: predicate)
-    
-    // Convert to maps
-    let eventMaps = events.map { event in
-      eventToMap(event: event)
+    // EKEventStore.predicateForEvents silently truncates ranges longer than
+    // ~4 years to the first 4 years (#452), so split wide ranges into smaller
+    // windows, query each, and merge. A boundary instant can match two adjacent
+    // windows, so dedupe by instanceId; listEvents returns events sorted by
+    // start date.
+    var eventMaps: [[String: Any]] = []
+    var seenInstanceIds = Set<String>()
+    for window in Self.dateWindows(from: startDate, to: endDate) {
+      let predicate = eventStore.predicateForEvents(
+        withStart: window.start,
+        end: window.end,
+        calendars: calendars
+      )
+      for event in eventStore.events(matching: predicate) {
+        let map = eventToMap(event: event)
+        let instanceId = map["instanceId"] as? String ?? UUID().uuidString
+        if seenInstanceIds.insert(instanceId).inserted {
+          eventMaps.append(map)
+        }
+      }
     }
-    
+
+    eventMaps.sort { lhs, rhs in
+      (lhs["startDate"] as? Int64 ?? 0) < (rhs["startDate"] as? Int64 ?? 0)
+    }
+
     completion(.success(eventMaps))
+  }
+
+  /// Splits `[start, end]` into consecutive windows no longer than `maxWindow`.
+  ///
+  /// EKEventStore.predicateForEvents silently truncates ranges longer than
+  /// ~4 years to the first 4 years (#452). A conservative ~3-year window stays
+  /// safely under that limit (with margin for leap years). For the common case
+  /// of a range within one window this returns a single window equal to
+  /// `[start, end]`, so there is no extra work. Adjacent windows share their
+  /// boundary instant, so callers must dedupe events that match two windows.
+  static func dateWindows(
+    from start: Date,
+    to end: Date,
+    maxWindow: TimeInterval = 3 * 365 * 24 * 60 * 60
+  ) -> [(start: Date, end: Date)] {
+    guard end > start else { return [(start, end)] }
+    var windows: [(start: Date, end: Date)] = []
+    var cursor = start
+    while cursor < end {
+      let next = min(cursor.addingTimeInterval(maxWindow), end)
+      windows.append((start: cursor, end: next))
+      cursor = next
+    }
+    return windows
   }
   
   private func eventToMap(event: EKEvent) -> [String: Any] {
