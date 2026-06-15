@@ -1,3 +1,10 @@
+## 0.5.1 - 2026-06-15
+
+### Docs
+- Clarified `showEventModal` docs: the `edit` flag only sets the modal's
+  starting mode; the native view screen still lets the user edit on both
+  platforms
+
 ## 0.5.0 - 2026-06-11
 
 ### Changed

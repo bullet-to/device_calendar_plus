@@ -352,6 +352,8 @@ class EventsService {
     } else {
       let eventViewController = EKEventViewController()
       eventViewController.event = foundEvent
+      // Keep the Edit button: Android's ACTION_VIEW screen also lets the user
+      // edit from the view, so allowing it here preserves cross-platform parity.
       eventViewController.allowsEditing = true
       eventViewController.allowsCalendarPreview = true
       completion(.success(eventViewController))
