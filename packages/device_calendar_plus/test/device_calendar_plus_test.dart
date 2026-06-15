@@ -709,11 +709,9 @@ void main() {
     });
 
     group('updateCalendar', () {
-      test('throws ArgumentError when no parameters provided', () async {
-        expect(
-          () => DeviceCalendar.instance.updateCalendar('calendar-123'),
-          throwsArgumentError,
-        );
+      test('is a no-op when no parameters provided', () async {
+        // Nothing to change -> returns quietly without a platform write.
+        await DeviceCalendar.instance.updateCalendar('calendar-123');
       });
 
       test('throws ArgumentError when name is empty', () async {
@@ -749,11 +747,10 @@ void main() {
         );
       });
 
-      test('throws ArgumentError when no fields provided', () async {
-        expect(
-          () => DeviceCalendar.instance.updateEvent(eventId: 'event-123'),
-          throwsArgumentError,
-        );
+      test('is a no-op when no fields provided', () async {
+        await DeviceCalendar.instance.updateEvent(eventId: 'event-123');
+        // Short-circuits before any platform write.
+        expect(mockPlatform.lastUpdateEvent, isNull);
       });
 
       test('throws ArgumentError when endDate is before startDate', () async {
@@ -780,14 +777,15 @@ void main() {
         );
       });
 
-      test('throws ArgumentError when no fields provided', () {
-        expect(
-          () => DeviceCalendar.instance.updateRecurring(
-            'event-123',
-            EventSpan.allEvents,
-          ),
-          throwsArgumentError,
+      test('is a no-op returning the targeted event id when no fields provided',
+          () async {
+        final result = await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventSpan.allEvents,
         );
+        // Returns the scope the caller named, and skips the platform write.
+        expect(result, 'event-123');
+        expect(mockPlatform.lastUpdateRecurring, isNull);
       });
 
       test('throws ArgumentError when thisAndFollowing given a bare event ID',
@@ -851,15 +849,17 @@ void main() {
         );
       });
 
-      test('throws ArgumentError when duration is zero', () {
-        expect(
-          () => DeviceCalendar.instance.updateRecurring(
-            'event-123',
-            EventSpan.allEvents,
-            duration: Duration.zero,
-          ),
-          throwsArgumentError,
+      test('accepts a zero duration (instantaneous event)', () async {
+        // Zero-duration events are supported (createEvent allows
+        // endDate == startDate; listEvents returns them, #416), so updating a
+        // series to one must not be rejected. Negative durations still throw.
+        final result = await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventSpan.allEvents,
+          duration: Duration.zero,
         );
+        expect(result, 'mock-event-id');
+        expect(mockPlatform.lastUpdateRecurring?.durationMinutes, 0);
       });
 
       test('throws ArgumentError when duration is negative', () {
