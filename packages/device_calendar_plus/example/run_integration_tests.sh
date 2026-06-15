@@ -159,19 +159,35 @@ if [ "$PLATFORM" == "android" ]; then
     fi
 fi
 
+# A simulator's UDID appears in `simctl list devices`; a physical device's does
+# not. Used to decide whether we can auto-grant (simctl is simulator-only) and
+# whether the simctl cleanup at the end applies.
+IOS_IS_SIMULATOR=false
+if [ "$PLATFORM" == "ios" ] && xcrun simctl list devices 2>/dev/null | grep -q "$DEVICE_ID"; then
+    IOS_IS_SIMULATOR=true
+fi
+
 # Grant permissions based on platform
 if [ "$PLATFORM" == "ios" ]; then
     echo "🍎 iOS detected"
-    echo "📱 Granting calendar permissions via xcrun..."
-    
-    xcrun simctl privacy "$DEVICE_ID" grant calendar to.bullet.example
-    
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}✓${NC} Calendar permissions granted"
+
+    if [ "$IOS_IS_SIMULATOR" == true ]; then
+        echo "📱 Granting calendar permissions via xcrun..."
+        # `|| true`: a transient grant failure must not abort the run under `set -e`.
+        if xcrun simctl privacy "$DEVICE_ID" grant calendar to.bullet.example; then
+            echo -e "${GREEN}✓${NC} Calendar permissions granted"
+        else
+            echo -e "${YELLOW}⚠️  Warning: Could not grant permissions${NC}"
+            echo "   The simulator may need to be booted first"
+            echo "   Tests may prompt for permissions on first run"
+        fi
     else
-        echo -e "${YELLOW}⚠️  Warning: Could not grant permissions${NC}"
-        echo "   The simulator may need to be booted first"
-        echo "   Tests may prompt for permissions on first run"
+        # Physical device: simctl can't touch its TCC database, so there's no way
+        # to pre-grant from the CLI. The first run prompts on-device; tap Allow
+        # once and the grant persists across reinstalls for this bundle id.
+        echo -e "${YELLOW}📱 Physical device detected — calendar permission cannot be auto-granted${NC}"
+        echo -e "${YELLOW}   👉 Watch the device and tap \"Allow\" on the calendar prompt the first time.${NC}"
+        echo -e "${YELLOW}   (Once granted it persists for to.bullet.example, so later runs won't prompt.)${NC}"
     fi
     echo ""
 
@@ -302,9 +318,13 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 if [ "$PLATFORM" == "android" ]; then
     echo -e "${CYAN}🧹 Uninstalling app from $DEVICE_ID${NC}"
     adb -s "$DEVICE_ID" uninstall to.bullet.example > /dev/null 2>&1 || true
-elif [ "$PLATFORM" == "ios" ]; then
+elif [ "$PLATFORM" == "ios" ] && [ "$IOS_IS_SIMULATOR" == true ]; then
     echo -e "${CYAN}🧹 Uninstalling app from $DEVICE_ID${NC}"
     xcrun simctl uninstall "$DEVICE_ID" to.bullet.example > /dev/null 2>&1 || true
+elif [ "$PLATFORM" == "ios" ]; then
+    # Physical device: keep the app installed so the on-device calendar grant
+    # persists and later runs don't prompt again.
+    echo -e "${CYAN}🧹 Leaving app installed on physical device (preserves the permission grant)${NC}"
 fi
 
 exit $EXIT_CODE
