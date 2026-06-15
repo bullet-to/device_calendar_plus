@@ -401,11 +401,17 @@ class DeviceCalendar {
   /// calendars. If null or empty, events from all calendars are returned.
   ///
   /// Recurring events are automatically expanded into individual instances
-  /// within the date range. Each instance has:
-  /// - The same [Event.eventId]
+  /// within the date range — you get one [Event] per occurrence, not a single
+  /// master. Each instance has:
+  /// - The same [Event.eventId] (shared by the whole series)
   /// - Different [Event.startDate] and [Event.endDate]
+  /// - A distinct [Event.instanceId] (format `eventId@timestamp`) that pins
+  ///   the occurrence
   ///
-  /// This combination uniquely identifies each occurrence of a recurring event.
+  /// Pass that [Event.instanceId] to [getEvent], [updateEvent], [deleteEvent],
+  /// or [showEventModal] to act on a single occurrence. (For non-recurring
+  /// events `instanceId == eventId`.) The id is plugin-derived and unstable —
+  /// it changes if the occurrence's start date moves, so re-fetch after edits.
   ///
   /// Returns a list of [Event] objects sorted by start date.
   ///
