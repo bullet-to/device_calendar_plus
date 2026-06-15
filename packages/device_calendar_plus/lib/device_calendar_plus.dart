@@ -306,7 +306,7 @@ class DeviceCalendar {
   /// [name] is the new display name for the calendar (optional).
   /// [colorHex] is the new color in #RRGGBB format (optional, e.g., "#FF5733").
   ///
-  /// At least one of [name] or [colorHex] must be provided.
+  /// Passing neither [name] nor [colorHex] is a no-op (nothing to change).
   /// Requires calendar write permissions - call [requestPermissions] first.
   ///
   /// Example:
@@ -331,11 +331,20 @@ class DeviceCalendar {
     String? name,
     String? colorHex,
   }) async {
-    // Validate that at least one parameter is provided
-    if (name == null && colorHex == null) {
-      throw ArgumentError(
-        'At least one of name or colorHex must be provided',
+    // Validate calendarId — an empty id targets no calendar (matches the
+    // empty-id guards on updateEvent/updateRecurring).
+    if (calendarId.trim().isEmpty) {
+      throw ArgumentError.value(
+        calendarId,
+        'calendarId',
+        'Calendar ID cannot be empty',
       );
+    }
+
+    // No changed fields is a valid no-op: nothing to write, so return without
+    // a platform call.
+    if (name == null && colorHex == null) {
+      return;
     }
 
     // Validate name if provided
@@ -754,7 +763,7 @@ class DeviceCalendar {
   /// pass `null`) to leave the field unchanged, [Patch.set] to assign a new
   /// value, [Patch.clear] to remove the existing value.
   ///
-  /// At least one field must be provided.
+  /// Providing no fields is a no-op (nothing to change).
   /// Requires calendar write permissions - call [requestPermissions] first.
   ///
   /// Example:
@@ -796,7 +805,9 @@ class DeviceCalendar {
       );
     }
 
-    // Validate at least one field is provided
+    // No changed fields is a valid no-op (e.g. the user pressed Save without
+    // editing): the event already matches the requested values, so there is
+    // nothing to write — return without a platform call.
     if (title == null &&
         startDate == null &&
         endDate == null &&
@@ -806,9 +817,7 @@ class DeviceCalendar {
         isAllDay == null &&
         timeZone == null &&
         availability == null) {
-      throw ArgumentError(
-        'At least one field must be provided to update',
-      );
+      return;
     }
 
     // Validate dates if both are provided
@@ -881,9 +890,10 @@ class DeviceCalendar {
   ///   preserving each occurrence's date (hour 0-23, minute 0-59). Duration
   ///   is preserved unless [duration] is also passed. Cannot be used on
   ///   all-day events.
-  /// - [duration] sets the event duration; it must be positive and a whole
-  ///   number of minutes. For all-day events, only whole-day durations are
-  ///   valid (e.g., `Duration(days: 3)` for a three-day conference).
+  /// - [duration] sets the event duration; it must be non-negative (zero is
+  ///   allowed for an instantaneous event) and a whole number of minutes. For
+  ///   all-day events, only whole-day durations are valid (e.g.,
+  ///   `Duration(days: 3)` for a three-day conference).
   ///
   /// [recurrenceRule] takes a [Patch]: omit it to leave recurrence unchanged,
   /// [Patch.set] to change the rule, [Patch.clear] to remove it (the event
@@ -899,7 +909,7 @@ class DeviceCalendar {
   /// Returns the event ID for the affected scope — the same ID for
   /// `allEvents`, the new series' ID for `thisAndFollowing`.
   ///
-  /// At least one field must be provided.
+  /// Providing no fields is a no-op (nothing to change).
   /// Requires calendar write permissions - call [requestPermissions] first.
   ///
   /// Example:
@@ -970,13 +980,15 @@ class DeviceCalendar {
       );
     }
 
-    // The platform contract is whole minutes; reject rather than silently
-    // truncate, and rule out zero/negative durations.
-    if (duration != null && duration <= Duration.zero) {
+    // A negative duration is invalid, but zero is allowed: zero-duration
+    // (instantaneous) events are supported — createEvent accepts
+    // endDate == startDate, and listEvents returns them (#416). The
+    // whole-minute check below still applies (0 is a whole minute).
+    if (duration != null && duration < Duration.zero) {
       throw ArgumentError.value(
         duration,
         'duration',
-        'duration must be positive',
+        'duration cannot be negative',
       );
     }
     if (duration != null &&
@@ -1008,7 +1020,9 @@ class DeviceCalendar {
       );
     }
 
-    // Validate at least one field is provided
+    // No changed fields is a valid no-op: there is nothing to write, and
+    // nothing to split for thisAndFollowing. Return the targeted event id —
+    // the scope the caller named, unchanged.
     if (title == null &&
         startTime == null &&
         duration == null &&
@@ -1019,9 +1033,7 @@ class DeviceCalendar {
         timeZone == null &&
         availability == null &&
         recurrenceRule == null) {
-      throw ArgumentError(
-        'At least one field must be provided to update',
-      );
+      return parsed.eventId;
     }
 
     // The platform layer works in RRULE strings; map the typed Patch across.

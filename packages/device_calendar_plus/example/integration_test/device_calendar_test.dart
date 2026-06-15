@@ -316,20 +316,20 @@ void main() {
       expect(updatedCalendar.colorHex!.toUpperCase(), isNot(equals('#FF0000')));
     });
 
-    test('Error Handling - Update with No Parameters', () async {
+    test('updateCalendar with no parameters is a no-op', () async {
       // Create a calendar first
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId =
-          await plugin.createCalendar(name: 'Error Test $timestamp');
+          await plugin.createCalendar(name: 'No-op Test $timestamp');
       createdCalendarIds.add(calendarId);
 
-      // Try to update without providing any parameters
-      try {
-        await plugin.updateCalendar(calendarId);
-        fail('Should have thrown an error when no parameters provided');
-      } on ArgumentError catch (e) {
-        expect(e.message, contains('At least one'));
-      }
+      // Updating with nothing to change must succeed quietly and leave the
+      // calendar untouched (a save with no edits is a legitimate no-op).
+      await plugin.updateCalendar(calendarId);
+
+      final calendars = await plugin.listCalendars();
+      final unchanged = calendars.firstWhere((c) => c.id == calendarId);
+      expect(unchanged.name, 'No-op Test $timestamp');
     });
 
     test('Error Handling - Update with Empty Name', () async {
@@ -934,7 +934,7 @@ void main() {
       expect(event, isNotNull);
     });
 
-    test('Update Event with No Fields Throws Error', () async {
+    test('Update Event with No Fields is a no-op', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
         name: 'No Fields Test $timestamp',
@@ -949,11 +949,13 @@ void main() {
         endDate: DateTime.now().add(Duration(hours: 2)),
       );
 
-      // Attempt to update with no fields - should throw
-      expect(
-        () async => await plugin.updateEvent(eventId: eventId),
-        throwsA(isA<ArgumentError>()),
-      );
+      // Updating with no fields must succeed quietly and leave the event
+      // unchanged (a save with no edits is a legitimate no-op).
+      await plugin.updateEvent(eventId: eventId);
+
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.title, 'No Fields Test');
     });
 
     test('Update Event URL', () async {
