@@ -955,6 +955,28 @@ class EventsService {
 
   // MARK: - updateRecurring (issue #36)
 
+  /// Copies `rule` but caps it to end just before `date`, so the series stops
+  /// at the occurrence before `date`. Used to truncate a master series at a
+  /// `thisAndFollowing` split point. `EKRecurrenceEnd(end:)` is inclusive, so
+  /// the cap sits one second early to keep the split occurrence off the
+  /// original series (mirrors Android's `timestamp - 1000`).
+  private func ruleTruncated(
+    _ rule: EKRecurrenceRule,
+    endingBefore date: Date
+  ) -> EKRecurrenceRule {
+    return EKRecurrenceRule(
+      recurrenceWith: rule.frequency,
+      interval: rule.interval,
+      daysOfTheWeek: rule.daysOfTheWeek,
+      daysOfTheMonth: rule.daysOfTheMonth,
+      monthsOfTheYear: rule.monthsOfTheYear,
+      weeksOfTheYear: rule.weeksOfTheYear,
+      daysOfTheYear: rule.daysOfTheYear,
+      setPositions: rule.setPositions,
+      end: EKRecurrenceEnd(end: date.addingTimeInterval(-1))
+    )
+  }
+
   /// Keeps the calendar date of `date` but replaces the time-of-day with
   /// `hour`:`minute`, interpreted in `timeZone`. The Swift counterpart of
   /// Android's `replaceTimeOfDay`.
@@ -1091,6 +1113,59 @@ class EventsService {
     }
 
     patch.applyTimeZone(to: foundEvent)
+
+    // Clearing the rule on a `thisAndFollowing` split needs special handling.
+    // Setting `recurrenceRules = nil` and saving `.futureEvents` does NOT
+    // split — with no rule there is no future series for EventKit to detach,
+    // so it edits the underlying master and collapses the WHOLE series into a
+    // single event at the original start (the `allEvents` outcome). Instead,
+    // mirror Android: truncate the master before the occurrence, then create a
+    // fresh standalone non-recurring event at the split point (#93).
+    if span == "thisAndFollowing",
+       patch.clearedFields.contains("recurrenceRule"),
+       let timestamp = timestamp {
+      let occurrenceDate =
+        Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
+      guard let master = eventStore.event(withIdentifier: eventId),
+            let masterRule = master.recurrenceRules?.first else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "Could not resolve the master series to split"
+        )))
+        return
+      }
+
+      // Truncate the original series to end just before the split occurrence.
+      master.recurrenceRules = [ruleTruncated(masterRule, endingBefore: occurrenceDate)]
+
+      // The standalone event carries the occurrence's (already patched) fields
+      // with no recurrence. `foundEvent` is the occurrence and is never saved,
+      // so its mutations don't touch the master.
+      let standalone = EKEvent(eventStore: eventStore)
+      standalone.calendar = foundEvent.calendar
+      standalone.title = foundEvent.title
+      standalone.isAllDay = foundEvent.isAllDay
+      standalone.startDate = foundEvent.startDate
+      standalone.endDate = foundEvent.endDate
+      standalone.notes = foundEvent.notes
+      standalone.location = foundEvent.location
+      standalone.url = foundEvent.url
+      standalone.timeZone = foundEvent.timeZone
+      standalone.availability = foundEvent.availability
+
+      do {
+        try eventStore.save(master, span: .futureEvents, commit: false)
+        try eventStore.save(standalone, span: .thisEvent, commit: true)
+        completion(.success(standalone.eventIdentifier ?? eventId))
+      } catch {
+        eventStore.reset()
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "Failed to detach occurrence into a standalone event: \(error.localizedDescription)"
+        )))
+      }
+      return
+    }
 
     // Apply the recurrence-rule patch.
     if patch.clearedFields.contains("recurrenceRule") {
