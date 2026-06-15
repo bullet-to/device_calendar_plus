@@ -153,6 +153,14 @@ class EventsService(private val context: Context) {
             val effectiveEnd = if (eventEnd <= eventBegin) eventBegin + 86_400_000L else eventEnd
             return effectiveEnd > startUtcMidnight && eventBegin < endUtcMidnight
         }
+        // Zero-duration (instantaneous) timed events have no span for the strict
+        // overlap check below to catch, so one sitting exactly on the query start
+        // is dropped. iOS EventKit includes it, so include it here too when its
+        // instant falls within the window (half-open at the end, like timed
+        // events). See builttoroam/device_calendar#416.
+        if (eventEnd == eventBegin) {
+            return eventBegin >= startMillis && eventBegin < endMillis
+        }
         // Timed events: standard overlap check against original query range
         return eventEnd > startMillis && eventBegin < endMillis
     }
