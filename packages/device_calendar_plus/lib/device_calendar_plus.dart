@@ -883,7 +883,10 @@ class DeviceCalendar {
   ///   Clearing [recurrenceRule] collapses the series into a single event.
   /// - [EventSpan.thisAndFollowing] — the series is split at the
   ///   occurrence timestamp: that occurrence and every later one carry the
-  ///   edit; earlier occurrences are untouched.
+  ///   edit; earlier occurrences are untouched. Clearing [recurrenceRule] here
+  ///   turns the occurrence into a standalone non-recurring event and drops
+  ///   every later one, leaving the earlier occurrences in the original series
+  ///   (the "this and future, made non-recurring" case).
   ///
   /// Time fields:
   /// - [startTime] sets the time-of-day for every occurrence in scope,

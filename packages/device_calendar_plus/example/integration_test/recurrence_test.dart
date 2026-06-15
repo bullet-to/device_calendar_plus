@@ -525,6 +525,58 @@ void main() {
           reason: 'the new series must start at the split point');
     });
 
+    test(
+        'thisAndFollowing with Patch.clear turns the anchor into a standalone '
+        'non-recurring event and drops future occurrences (#93)', () async {
+      // Issue #93's "this and future" case: split the series at the chosen
+      // occurrence, make that occurrence a standalone non-recurring event,
+      // and remove every later occurrence. Past occurrences stay in the
+      // original series.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
+
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final splitPoint = occurrences[4];
+      final splitMillis = splitPoint.startDate.millisecondsSinceEpoch;
+
+      final standaloneId = await plugin.updateRecurring(
+        splitPoint.instanceId,
+        EventSpan.thisAndFollowing,
+        recurrenceRule: const Patch.clear(),
+      );
+
+      // The original master keeps only the occurrences before the split.
+      final remainingMaster = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(remainingMaster, isNotEmpty,
+          reason: 'occurrences before the split must survive');
+      expect(
+        remainingMaster
+            .every((e) => e.startDate.millisecondsSinceEpoch < splitMillis),
+        isTrue,
+        reason: 'the original series must not extend past the split point',
+      );
+
+      // The anchor is now a standalone non-recurring event at the split point.
+      final standalone = await plugin.getEvent(standaloneId);
+      expect(standalone, isNotNull);
+      expect(standalone!.recurrenceRule, isNull,
+          reason: 'the detached event must carry no recurrence rule');
+      expect(standalone.startDate.millisecondsSinceEpoch, splitMillis,
+          reason: 'the standalone event must sit at the split point');
+
+      // No future occurrences: the detached event expands to exactly one,
+      // and nothing past the split survives under the new id.
+      final detachedOccurrences = await occurrencesOf(
+          plugin, calendarId!, standaloneId, series.start);
+      expect(detachedOccurrences.length, 1,
+          reason: 'a non-recurring event expands to a single occurrence');
+      expect(detachedOccurrences.single.startDate.millisecondsSinceEpoch,
+          splitMillis);
+    });
+
     test('updateEvent with an instance ID edits only the one occurrence',
         skip: _isAndroidEmulator
             ? 'Android emulator Calendar Provider drops master occurrences '
