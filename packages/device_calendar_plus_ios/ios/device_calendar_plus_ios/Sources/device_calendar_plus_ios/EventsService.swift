@@ -92,17 +92,18 @@ class EventsService {
         end: window.end,
         calendars: calendars
       )
-      for event in eventStore.events(matching: predicate) {
-        let map = eventToMap(event: event)
-        let instanceId = map["instanceId"] as? String ?? UUID().uuidString
-        if seenInstanceIds.insert(instanceId).inserted {
-          eventMaps.append(map)
-        }
+      for event in eventStore.events(matching: predicate)
+      where seenInstanceIds.insert(instanceId(for: event)).inserted {
+        eventMaps.append(eventToMap(event: event))
       }
     }
 
+    // Sort on the map's startDate, not event.startDate: eventToMap rewrites
+    // all-day starts from UTC-floating to local midnight, so the two aren't
+    // order-equivalent once all-day and timed events mix. startDate is always
+    // present in the map, so the cast is a hard invariant, not a fallback.
     eventMaps.sort { lhs, rhs in
-      (lhs["startDate"] as? Int64 ?? 0) < (rhs["startDate"] as? Int64 ?? 0)
+      (lhs["startDate"] as! Int64) < (rhs["startDate"] as! Int64)
     }
 
     completion(.success(eventMaps))
@@ -116,7 +117,7 @@ class EventsService {
   /// of a range within one window this returns a single window equal to
   /// `[start, end]`, so there is no extra work. Adjacent windows share their
   /// boundary instant, so callers must dedupe events that match two windows.
-  static func dateWindows(
+  private static func dateWindows(
     from start: Date,
     to end: Date,
     maxWindow: TimeInterval = 3 * 365 * 24 * 60 * 60
@@ -132,20 +133,23 @@ class EventsService {
     return windows
   }
   
-  private func eventToMap(event: EKEvent) -> [String: Any] {
-    // Generate instanceId
-    let startMillis = Int64(event.startDate.timeIntervalSince1970 * 1000)
+  /// Stable identifier for a single fetched event. For a recurring series each
+  /// occurrence is distinguished by its start (`eventId@startMillis`); a
+  /// non-recurring event is just its `eventId`. Used both to populate the event
+  /// map and to dedupe occurrences that match two adjacent query windows.
+  private func instanceId(for event: EKEvent) -> String {
     let eventId = event.eventIdentifier ?? ""
-    let instanceId: String
-    if event.hasRecurrenceRules {
-      instanceId = "\(eventId)@\(startMillis)"
-    } else {
-      instanceId = eventId
-    }
-    
+    guard event.hasRecurrenceRules else { return eventId }
+    let startMillis = Int64(event.startDate.timeIntervalSince1970 * 1000)
+    return "\(eventId)@\(startMillis)"
+  }
+
+  private func eventToMap(event: EKEvent) -> [String: Any] {
+    let eventId = event.eventIdentifier ?? ""
+
     var eventMap: [String: Any] = [
       "eventId": eventId,
-      "instanceId": instanceId,
+      "instanceId": instanceId(for: event),
       "calendarId": event.calendar.calendarIdentifier,
       "title": event.title ?? "",
       "isAllDay": event.isAllDay

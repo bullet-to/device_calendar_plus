@@ -6,7 +6,7 @@ import 'package:integration_test/integration_test.dart';
 ///
 /// iOS EventKit's `predicateForEvents` silently truncates a date range longer
 /// than ~4 years to the first 4 years, so a naive single query drops the later
-/// events. The fix chunks wide ranges into <=4-year windows and merges the
+/// events. The fix chunks wide ranges into <=3-year windows and merges the
 /// results — which must return every event exactly once, in start-date order,
 /// even for recurring series whose occurrences straddle a window boundary.
 ///
