@@ -146,6 +146,19 @@ echo -e "${GREEN}✓${NC} Device ID: ${YELLOW}$DEVICE_ID${NC}"
 echo -e "${GREEN}✓${NC} Platform: ${YELLOW}$PLATFORM${NC}"
 echo ""
 
+# Detect Android emulators so the suite can skip tests that only fail on the
+# emulator's Calendar Provider (e.g. recurrence exception inserts that wipe the
+# master's instances). Physical devices and iOS run the full suite.
+DART_DEFINES=""
+if [ "$PLATFORM" == "android" ]; then
+    QEMU=$(adb -s "$DEVICE_ID" shell getprop ro.boot.qemu 2>/dev/null | tr -d '\r')
+    if [ "$QEMU" == "1" ] || [[ "$DEVICE_ID" == emulator-* ]]; then
+        DART_DEFINES="--dart-define=DC_ANDROID_EMULATOR=true"
+        echo -e "${YELLOW}⚠️  Android emulator detected — emulator-only flaky tests will be skipped${NC}"
+        echo ""
+    fi
+fi
+
 # Grant permissions based on platform
 if [ "$PLATFORM" == "ios" ]; then
     echo "🍎 iOS detected"
@@ -220,13 +233,13 @@ run_tests() {
             done
         ) &
         local grant_pid=$!
-        flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
+        flutter test integration_test/all_tests.dart -d "$DEVICE_ID" $DART_DEFINES
         local result=$?
         kill "$grant_pid" 2>/dev/null || true
         wait "$grant_pid" 2>/dev/null || true
         return $result
     fi
-    flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
+    flutter test integration_test/all_tests.dart -d "$DEVICE_ID" $DART_DEFINES
 }
 
 # Timezones to cycle through on Android (covers positive, negative, and zero offsets).

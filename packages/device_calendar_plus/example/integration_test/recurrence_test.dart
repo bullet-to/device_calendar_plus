@@ -2,6 +2,15 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+/// Set by `run_integration_tests.sh` when the target is an Android emulator.
+/// The emulator's Calendar Provider permanently drops a recurring series'
+/// instances after a CONTENT_EXCEPTION_URI insert (verified: 10 occurrences
+/// before the insert, then 0 for 10s of polling — it never recovers), which
+/// breaks the per-instance edit/delete tests below. The behaviour is correct
+/// on physical Android devices and iOS, so those run the tests; only the
+/// emulator skips. See builttoroam/device_calendar#416 follow-up.
+const bool _isAndroidEmulator = bool.fromEnvironment('DC_ANDROID_EMULATOR');
+
 /// Creates a daily recurring event starting one hour from now (UTC), with
 /// `count` total occurrences. Returns the event ID and the start time.
 Future<({String eventId, DateTime start})> createDailySeries(
@@ -516,11 +525,11 @@ void main() {
           reason: 'the new series must start at the split point');
     });
 
-    // Known failure on Android emulator: after inserting a
-    // CONTENT_EXCEPTION_URI, the emulator's Calendar Provider returns 0
-    // occurrences for the master series. Passes on real Android devices.
     test('updateEvent with an instance ID edits only the one occurrence',
-        () async {
+        skip: _isAndroidEmulator
+            ? 'Android emulator Calendar Provider drops master occurrences '
+                'after a CONTENT_EXCEPTION_URI insert; runs on physical devices'
+            : false, () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 
@@ -689,11 +698,11 @@ void main() {
           reason: 'occurrences before the anchor must survive');
     });
 
-    // Known failure on Android emulator: after inserting a
-    // CONTENT_EXCEPTION_URI, the emulator's Calendar Provider returns 0
-    // occurrences for the master series. Passes on real Android devices.
     test('deleteEvent with an instance ID removes only the one occurrence',
-        () async {
+        skip: _isAndroidEmulator
+            ? 'Android emulator Calendar Provider drops master occurrences '
+                'after a CONTENT_EXCEPTION_URI insert; runs on physical devices'
+            : false, () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 
