@@ -1,3 +1,33 @@
+## 0.5.2 - 2026-06-15
+
+### Changed
+- No-op updates are now valid instead of throwing. `updateEvent`,
+  `updateRecurring` and `updateCalendar` return without a platform write when
+  no fields are provided, so "save with no edits" is a harmless no-op rather
+  than an `ArgumentError` (#95). `updateRecurring` returns the targeted scope's
+  event id. `updateRecurring`'s `duration` now accepts zero (an instantaneous
+  event); only a negative duration is rejected.
+
+### Fixed
+- Recurrence parsing accepts a negative `BYMONTHDAY` (e.g. `-1` for the last
+  day of the month) instead of rejecting the rule (#91)
+- Turning a recurring occurrence non-recurring with `thisAndFollowing` +
+  `Patch.clear()` now splits the series on iOS instead of collapsing the whole
+  series into one event (#93) — see the `device_calendar_plus_ios` changelog
+- `listEvents` returns every event across spans longer than ~4 years without
+  dropping or duplicating recurring instances (iOS, #94), and includes
+  zero-duration events sitting exactly on the query start (Android, #416) — see
+  the platform changelogs
+- `createCalendar` fails with a clear error on iOS sources that can't hold
+  calendars, instead of an opaque failure (#96) — see the
+  `device_calendar_plus_ios` changelog
+- iOS EventKit operations run off the main thread, preventing UI stalls on
+  large calendars (#79) — see the `device_calendar_plus_ios` changelog
+
+### Docs
+- Documented `listEvents` per-instance expansion and the `eventId@timestamp`
+  instanceId format (#97)
+
 ## 0.5.1 - 2026-06-15
 
 ### Fixed

@@ -1,3 +1,8 @@
+## 0.5.2 - 2026-06-15
+
+- No functional changes; version aligned with the rest of the suite for the
+  0.5.2 release
+
 ## 0.5.1 - 2026-06-15
 
 ### Docs

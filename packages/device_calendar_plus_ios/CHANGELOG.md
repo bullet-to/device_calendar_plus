@@ -1,3 +1,20 @@
+## 0.5.2 - 2026-06-15
+
+### Fixed
+- EventKit reads and writes now run on a background serial queue instead of the
+  main thread, so operations on large calendars no longer stall the UI (#79)
+- `listEvents` over a span longer than EventKit's ~4-year predicate limit now
+  chunks the query into windows and de-duplicates recurring instances across
+  window boundaries, so long ranges return every event exactly once, sorted
+  (#94)
+- `createCalendar` now fails with a clear error on sources that can't hold
+  calendars (e.g. subscribed/holiday sources) instead of an opaque EventKit
+  failure (#96)
+- `updateRecurring(thisAndFollowing, recurrenceRule: Patch.clear())` now splits
+  the series — truncating the master before the occurrence and detaching a
+  standalone non-recurring event at the split point — instead of collapsing the
+  whole series into a single event. Matches Android's behavior (#93)
+
 ## 0.5.1 - 2026-06-15
 
 ### Fixed
