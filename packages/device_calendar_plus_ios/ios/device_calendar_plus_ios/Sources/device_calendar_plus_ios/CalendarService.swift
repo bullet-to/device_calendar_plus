@@ -75,6 +75,17 @@ class CalendarService {
         )))
         return
       }
+      // Google/Exchange (and other non-iCloud) sources reject new calendars with
+      // EKError 500. Reject early with a clear error rather than letting
+      // saveCalendar throw an opaque "operation failed".
+      guard sourceSupportsCreation(found) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.readOnly,
+          message: "Source '\(found.title)' does not allow calendars to be created. "
+            + "Use iCloud or the local source."
+        )))
+        return
+      }
       source = found
     } else {
       // No sourceId provided — prefer iCloud (syncs across devices), then local.
