@@ -1,5 +1,6 @@
 import 'attendee_test.dart' as attendee;
 import 'device_calendar_test.dart' as device_calendar;
+import 'range_test.dart' as range;
 import 'recurrence_test.dart' as recurrence;
 import 'sources_test.dart' as sources;
 
@@ -8,4 +9,5 @@ void main() {
   recurrence.main();
   attendee.main();
   sources.main();
+  range.main();
 }
