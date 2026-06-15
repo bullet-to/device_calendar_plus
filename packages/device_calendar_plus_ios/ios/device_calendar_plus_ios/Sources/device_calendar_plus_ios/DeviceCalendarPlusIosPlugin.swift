@@ -10,7 +10,20 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   private lazy var eventsService = EventsService(eventStore: eventStore, permissionService: permissionService)
   private var eventModalResult: FlutterResult?
   private var createEventModalResult: FlutterResult?
-  
+
+  /// Serial queue for EventKit data operations. EventKit calls block the
+  /// calling thread (listEvents fans out across the store, create/update/delete
+  /// touch the calendar database), and method-channel handlers run on the main
+  /// thread, so query-heavy calls jank the UI there (#181). A single serial
+  /// queue keeps the data operations in call order and serializes them against
+  /// each other, mirroring the Android plugin's single-thread provider
+  /// executor. The permission and modal handlers deliberately stay on the main
+  /// thread — they're light and must touch UIKit — so the `eventStore` they
+  /// reach is not serialized against this queue. That's the same boundary
+  /// Android draws; in practice those paths are user-driven and don't overlap a
+  /// bulk data operation.
+  private let providerQueue = DispatchQueue(label: "to.bullet.device_calendar_plus.provider")
+
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "device_calendar_plus_ios", binaryMessenger: registrar.messenger())
     let instance = DeviceCalendarPlusIosPlugin()
@@ -57,7 +70,50 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       result(FlutterMethodNotImplemented)
     }
   }
-  
+
+  /// Runs an EventKit service call on the serial provider queue (off the main
+  /// thread — see `providerQueue`) and delivers its Result back on the main
+  /// thread, mapping `CalendarError` to `FlutterError`. Callers parse and
+  /// validate arguments on the main thread first, then hand the service call
+  /// here so the threading contract lives in exactly one place.
+  private func runOnProvider<T>(
+    _ result: @escaping FlutterResult,
+    _ work: @escaping (@escaping (Result<T, CalendarError>) -> Void) -> Void
+  ) {
+    providerQueue.async {
+      work { serviceResult in
+        DispatchQueue.main.async {
+          switch serviceResult {
+          case .success(let value):
+            result(value)
+          case .failure(let error):
+            result(FlutterError(code: error.code, message: error.message, details: nil))
+          }
+        }
+      }
+    }
+  }
+
+  /// `Void`-success overload of `runOnProvider`. Swift resolves to this for
+  /// `Result<Void, CalendarError>` service calls, replying `nil` on success.
+  private func runOnProvider(
+    _ result: @escaping FlutterResult,
+    _ work: @escaping (@escaping (Result<Void, CalendarError>) -> Void) -> Void
+  ) {
+    providerQueue.async {
+      work { serviceResult in
+        DispatchQueue.main.async {
+          switch serviceResult {
+          case .success:
+            result(nil)
+          case .failure(let error):
+            result(FlutterError(code: error.code, message: error.message, details: nil))
+          }
+        }
+      }
+    }
+  }
+
   private func handleRequestPermissions(result: @escaping FlutterResult) {
     permissionService.requestPermissions { serviceResult in
       DispatchQueue.main.async {
@@ -113,29 +169,11 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   }
   
   private func handleListCalendars(result: @escaping FlutterResult) {
-    calendarService.listCalendars { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success(let calendars):
-          result(calendars)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
-    }
+    runOnProvider(result) { self.calendarService.listCalendars(completion: $0) }
   }
-  
+
   private func handleListSources(result: @escaping FlutterResult) {
-    calendarService.listSources { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success(let sources):
-          result(sources)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
-    }
+    runOnProvider(result) { self.calendarService.listSources(completion: $0) }
   }
 
   private func handleCreateCalendar(call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -164,15 +202,9 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     // Parse sourceId (optional — if nil, uses tiered fallback)
     let sourceId = args["sourceId"] as? String
 
-    calendarService.createCalendar(name: name, colorHex: colorHex, sourceId: sourceId) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success(let calendarId):
-          result(calendarId)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
+    runOnProvider(result) {
+      self.calendarService.createCalendar(
+        name: name, colorHex: colorHex, sourceId: sourceId, completion: $0)
     }
   }
   
@@ -202,15 +234,9 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     // Parse colorHex (optional)
     let colorHex = args["colorHex"] as? String
     
-    calendarService.updateCalendar(calendarId: calendarId, name: name, colorHex: colorHex) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success:
-          result(nil)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
+    runOnProvider(result) {
+      self.calendarService.updateCalendar(
+        calendarId: calendarId, name: name, colorHex: colorHex, completion: $0)
     }
   }
   
@@ -234,15 +260,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       return
     }
     
-    calendarService.deleteCalendar(calendarId: calendarId) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success:
-          result(nil)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
+    runOnProvider(result) {
+      self.calendarService.deleteCalendar(calendarId: calendarId, completion: $0)
     }
   }
   
@@ -283,19 +302,9 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     // Parse calendar IDs (optional)
     let calendarIds = args["calendarIds"] as? [String]
     
-    eventsService.retrieveEvents(
-      startDate: startDate,
-      endDate: endDate,
-      calendarIds: calendarIds
-    ) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success(let events):
-          result(events)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
+    runOnProvider(result) {
+      self.eventsService.retrieveEvents(
+        startDate: startDate, endDate: endDate, calendarIds: calendarIds, completion: $0)
     }
   }
   
@@ -322,15 +331,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     // Parse timestamp (optional, for recurring events)
     let timestamp = args["timestamp"] as? Int64
     
-    eventsService.getEvent(eventId: eventId, timestamp: timestamp) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success(let event):
-          result(event)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
+    runOnProvider(result) {
+      self.eventsService.getEvent(eventId: eventId, timestamp: timestamp, completion: $0)
     }
   }
   
@@ -469,27 +471,20 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
     let endDate = Date(timeIntervalSince1970: TimeInterval(endDateMillis) / 1000.0)
 
-    eventsService.createEvent(
-      calendarId: calendarId,
-      title: title,
-      startDate: startDate,
-      endDate: endDate,
-      isAllDay: isAllDay,
-      description: description,
-      location: location,
-      url: url,
-      timeZone: timeZone,
-      availability: availability,
-      recurrenceRule: recurrenceRule
-    ) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success(let eventId):
-          result(eventId)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
+    runOnProvider(result) {
+      self.eventsService.createEvent(
+        calendarId: calendarId,
+        title: title,
+        startDate: startDate,
+        endDate: endDate,
+        isAllDay: isAllDay,
+        description: description,
+        location: location,
+        url: url,
+        timeZone: timeZone,
+        availability: availability,
+        recurrenceRule: recurrenceRule,
+        completion: $0)
     }
   }
   
@@ -515,18 +510,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     
     let timestamp = args["timestamp"] as? Int64
 
-    eventsService.deleteEvent(
-      eventId: eventId,
-      timestamp: timestamp
-    ) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success:
-          result(nil)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
+    runOnProvider(result) {
+      self.eventsService.deleteEvent(eventId: eventId, timestamp: timestamp, completion: $0)
     }
   }
   
@@ -559,21 +544,15 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
     }
 
-    eventsService.updateEvent(
-      eventId: eventId,
-      timestamp: timestamp,
-      startDate: startDate,
-      endDate: endDate,
-      patch: EventFieldPatch(args: args)
-    ) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success:
-          result(nil)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
+    let patch = EventFieldPatch(args: args)
+    runOnProvider(result) {
+      self.eventsService.updateEvent(
+        eventId: eventId,
+        timestamp: timestamp,
+        startDate: startDate,
+        endDate: endDate,
+        patch: patch,
+        completion: $0)
     }
   }
   
@@ -613,23 +592,17 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let durationMinutes = args["durationMinutes"] as? Int
     let recurrenceRule = args["recurrenceRule"] as? String
 
-    eventsService.updateRecurring(
-      eventId: eventId,
-      timestamp: timestamp,
-      span: span,
-      startMinuteOfDay: startMinuteOfDay,
-      durationMinutes: durationMinutes,
-      recurrenceRule: recurrenceRule,
-      patch: EventFieldPatch(args: args)
-    ) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success(let affectedEventId):
-          result(affectedEventId)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
+    let patch = EventFieldPatch(args: args)
+    runOnProvider(result) {
+      self.eventsService.updateRecurring(
+        eventId: eventId,
+        timestamp: timestamp,
+        span: span,
+        startMinuteOfDay: startMinuteOfDay,
+        durationMinutes: durationMinutes,
+        recurrenceRule: recurrenceRule,
+        patch: patch,
+        completion: $0)
     }
   }
 
@@ -665,19 +638,9 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
 
     let timestamp = args["timestamp"] as? Int64
 
-    eventsService.deleteRecurring(
-      eventId: eventId,
-      timestamp: timestamp,
-      span: span
-    ) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success:
-          result(nil)
-        case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
-        }
-      }
+    runOnProvider(result) {
+      self.eventsService.deleteRecurring(
+        eventId: eventId, timestamp: timestamp, span: span, completion: $0)
     }
   }
 
