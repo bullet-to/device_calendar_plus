@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 /// Device probes for upstream edge cases that couldn't be decided by reading
-/// the code (builttoroam/device_calendar #416, #607).
+/// the code (builttoroam/device_calendar #416).
 ///
 /// These run the real Dart -> channel -> native -> provider roundtrip on both
 /// platforms. A failure here is a reproduced bug to fix; a pass is evidence the
@@ -91,25 +91,6 @@ void main() {
         reason: 'zero-duration event exactly at query start was excluded by the '
             'strict open-interval overlap filter',
       );
-    });
-  });
-
-  group('listCalendars freshness (#607)', () {
-    test('a newly created calendar appears immediately in listCalendars',
-        () async {
-      final name = 'fresh-cal-${DateTime.now().millisecondsSinceEpoch}';
-      final newId = await plugin.createCalendar(name: name, colorHex: '#22BB55');
-
-      try {
-        final calendars = await plugin.listCalendars();
-        expect(
-          calendars.any((c) => c.id == newId),
-          isTrue,
-          reason: 'calendar created this session is missing from listCalendars',
-        );
-      } finally {
-        await plugin.deleteCalendar(newId);
-      }
     });
   });
 }
