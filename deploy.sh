@@ -2,6 +2,24 @@
 
 set -e
 
+# Skip the interactive confirmation with -y / --yes (for CI or scripted runs).
+ASSUME_YES=false
+for arg in "$@"; do
+  case "$arg" in
+    -y|--yes) ASSUME_YES=true ;;
+    -h|--help)
+      echo "Usage: ./deploy.sh [-y|--yes]"
+      echo "  -y, --yes   Publish without the interactive prompt."
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $arg" >&2
+      echo "Usage: ./deploy.sh [-y|--yes]" >&2
+      exit 1
+      ;;
+  esac
+done
+
 echo "🔍 Running dry-run for all packages..."
 echo ""
 
@@ -33,15 +51,19 @@ dart pub publish --dry-run
 cd ../..
 echo ""
 
-# Prompt for confirmation
+# Prompt for confirmation (skipped with -y / --yes)
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-read -p "Do you want to publish all packages to pub.dev? (y/N): " -n 1 -r
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [ "$ASSUME_YES" = true ]; then
+    echo "✅ -y/--yes given; publishing without prompt."
+else
+    read -p "Do you want to publish all packages to pub.dev? (y/N): " -n 1 -r
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "❌ Publication cancelled."
-    exit 0
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "❌ Publication cancelled."
+        exit 0
+    fi
 fi
 
 echo ""
