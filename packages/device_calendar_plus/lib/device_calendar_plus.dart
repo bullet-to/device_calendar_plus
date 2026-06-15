@@ -331,6 +331,16 @@ class DeviceCalendar {
     String? name,
     String? colorHex,
   }) async {
+    // Validate calendarId — an empty id targets no calendar (matches the
+    // empty-id guards on updateEvent/updateRecurring).
+    if (calendarId.trim().isEmpty) {
+      throw ArgumentError.value(
+        calendarId,
+        'calendarId',
+        'Calendar ID cannot be empty',
+      );
+    }
+
     // No changed fields is a valid no-op: nothing to write, so return without
     // a platform call.
     if (name == null && colorHex == null) {

@@ -48,9 +48,10 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   PlatformException? _exceptionToThrow;
 
   /// The arguments of the most recent updateEvent / updateRecurring /
-  /// deleteEvent call.
+  /// updateCalendar / deleteEvent call.
   UpdateEventCall? lastUpdateEvent;
   UpdateRecurringCall? lastUpdateRecurring;
+  ({String calendarId, String? name, String? colorHex})? lastUpdateCalendar;
   ({String eventId, int? timestamp})? lastDeleteEvent;
 
   /// What updateRecurring returns (the affected scope's event ID).
@@ -169,6 +170,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   Future<void> updateCalendar(
       String calendarId, String? name, String? colorHex) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
+    lastUpdateCalendar = (calendarId: calendarId, name: name, colorHex: colorHex);
   }
 
   @override
@@ -710,14 +712,22 @@ void main() {
 
     group('updateCalendar', () {
       test('is a no-op when no parameters provided', () async {
-        // Nothing to change -> returns quietly without a platform write.
         await DeviceCalendar.instance.updateCalendar('calendar-123');
+        // Nothing to change -> short-circuits before any platform write.
+        expect(mockPlatform.lastUpdateCalendar, isNull);
       });
 
       test('throws ArgumentError when name is empty', () async {
         expect(
           () =>
               DeviceCalendar.instance.updateCalendar('calendar-123', name: ''),
+          throwsArgumentError,
+        );
+      });
+
+      test('throws ArgumentError when calendarId is empty', () async {
+        expect(
+          () => DeviceCalendar.instance.updateCalendar('   ', name: 'x'),
           throwsArgumentError,
         );
       });
