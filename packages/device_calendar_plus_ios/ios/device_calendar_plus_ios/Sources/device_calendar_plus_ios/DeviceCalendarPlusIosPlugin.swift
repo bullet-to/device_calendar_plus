@@ -376,10 +376,18 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
 
             self.eventModalResult = result
 
-            let navigationController = UINavigationController(rootViewController: viewController)
-            navigationController.modalPresentationStyle = .pageSheet
+            // EKEventEditViewController is itself a UINavigationController subclass,
+            // so present it directly. EKEventViewController needs wrapping in a
+            // navigation controller for its action buttons and dismissal to work.
+            let presentedViewController: UIViewController
+            if let navigationController = viewController as? UINavigationController {
+              presentedViewController = navigationController
+            } else {
+              presentedViewController = UINavigationController(rootViewController: viewController)
+            }
+            presentedViewController.modalPresentationStyle = .pageSheet
 
-            rootViewController.present(navigationController, animated: true, completion: nil)
+            rootViewController.present(presentedViewController, animated: true, completion: nil)
           } else {
             result(nil)
           }

@@ -142,7 +142,9 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// [eventId] is the event identifier.
   /// [timestamp] is the occurrence timestamp in milliseconds for recurring events.
-  /// [edit] opens the native editor directly instead of the read-only view.
+  /// [edit] opens the native editor directly. When `false`, opens the native
+  /// view screen, which is still not read-only: on both platforms the user can
+  /// edit the event from there. `edit` only controls the modal's starting mode.
   ///
   /// On iOS, presents EKEventViewController (view) or EKEventEditViewController (edit).
   /// On Android, fires ACTION_VIEW or ACTION_EDIT.

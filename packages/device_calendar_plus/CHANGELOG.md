@@ -1,3 +1,14 @@
+## 0.5.1 - 2026-06-15
+
+### Fixed
+- iOS: `showEventModal(edit: true)` no longer crashes (#77) — see the
+  `device_calendar_plus_ios` 0.5.1 changelog
+
+### Docs
+- Clarified `showEventModal` docs: the view modal (`edit: false`) is **not**
+  read-only — on both iOS and Android the native screen lets the user edit the
+  event, and those edits are saved directly by the OS
+
 ## 0.5.0 - 2026-06-11
 
 ### Changed

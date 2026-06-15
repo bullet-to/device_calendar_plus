@@ -505,18 +505,26 @@ class DeviceCalendar {
   /// - **Event ID**: Shows the master event definition (for recurring events)
   /// - **Instance ID**: Shows a specific occurrence (for recurring events)
   ///
-  /// When [edit] is `true`, opens the native editor directly instead of the
-  /// read-only view. Useful when the user has already expressed intent to edit.
+  /// When [edit] is `true`, opens the native editor directly. When `false`
+  /// (the default), opens the native view screen — but note this is **not
+  /// read-only**: on both platforms the native screen exposes an Edit affordance
+  /// that lets the user modify the event from there. `edit` only controls
+  /// whether the modal *starts* in the editor; it cannot prevent editing.
+  ///
+  /// Either way, edits made by the user are saved to the device calendar
+  /// directly by the OS. This method completes when the modal is dismissed and
+  /// does not report back whether (or what) the user changed.
   ///
   /// **Platform Differences:**
-  /// - **iOS**: Presents `EKEventViewController` (view) or
+  /// - **iOS**: Presents `EKEventViewController` (view, with `allowsEditing`) or
   ///   `EKEventEditViewController` (edit) in a native modal.
-  /// - **Android**: Fires `ACTION_VIEW` or `ACTION_EDIT`.
+  /// - **Android**: Fires `ACTION_VIEW` or `ACTION_EDIT`; the system calendar
+  ///   app renders the screen, and its view screen offers an edit button.
   ///
   /// Example:
   /// ```dart
   /// final plugin = DeviceCalendar.instance;
-  /// // View an event (read-only, user can tap Edit)
+  /// // Open the view screen (the user can still tap Edit from here)
   /// await plugin.showEventModal(event.instanceId);
   ///
   /// // Open directly in the editor

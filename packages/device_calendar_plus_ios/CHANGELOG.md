@@ -1,3 +1,11 @@
+## 0.5.1 - 2026-06-15
+
+### Fixed
+- `showEventModal(edit: true)` no longer crashes with `NSInvalidArgumentException`
+  ("Pushing a navigation controller is not supported"). `EKEventEditViewController`
+  is a `UINavigationController` subclass and is now presented directly instead of
+  being wrapped in another navigation controller (#77)
+
 ## 0.5.0 - 2026-06-11
 
 ### Changed
