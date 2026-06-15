@@ -307,7 +307,10 @@ sealed class MonthlyRecurrence extends RecurrenceRule {
 
 /// Monthly recurrence on specific days of the month (BYMONTHDAY).
 class MonthlyByDate extends MonthlyRecurrence {
-  /// Days of the month (1-31) on which the event recurs.
+  /// Days of the month on which the event recurs.
+  ///
+  /// Per RFC 5545, values are 1..31 or -31..-1 (negative counts back from the
+  /// end of the month, so -1 is the last day). 0 is invalid.
   ///
   /// If null, the event recurs on the same day as the start date.
   final List<int>? daysOfMonth;
@@ -319,8 +322,9 @@ class MonthlyByDate extends MonthlyRecurrence {
     super.end,
     super.rawRrule,
   })  : assert(
-          daysOfMonth == null || daysOfMonth.every((d) => d >= 1 && d <= 31),
-          'daysOfMonth values must be between 1 and 31',
+          daysOfMonth == null ||
+              daysOfMonth.every((d) => d >= -31 && d <= 31 && d != 0),
+          'daysOfMonth values must be between -31 and 31, excluding 0',
         ),
         super._();
 
@@ -465,7 +469,9 @@ class YearlyByDate extends YearlyRecurrence {
   /// Months of the year (1-12). If null, uses the event's start date month.
   final List<int>? months;
 
-  /// Days of the month (1-31). If null, uses the event's start date day.
+  /// Days of the month. Per RFC 5545, values are 1..31 or -31..-1 (negative
+  /// counts back from the end of the month, so -1 is the last day); 0 is
+  /// invalid. If null, uses the event's start date day.
   final List<int>? daysOfMonth;
 
   YearlyByDate({
@@ -480,8 +486,9 @@ class YearlyByDate extends YearlyRecurrence {
           'months values must be between 1 and 12',
         ),
         assert(
-          daysOfMonth == null || daysOfMonth.every((d) => d >= 1 && d <= 31),
-          'daysOfMonth values must be between 1 and 31',
+          daysOfMonth == null ||
+              daysOfMonth.every((d) => d >= -31 && d <= 31 && d != 0),
+          'daysOfMonth values must be between -31 and 31, excluding 0',
         ),
         super._();
 

@@ -322,6 +322,12 @@ void main() {
       expect((rule as MonthlyByDate).daysOfMonth, [1, 15]);
     });
 
+    test('parses monthly with last-day-of-month BYMONTHDAY=-1', () {
+      final rule = RecurrenceRule.fromRruleString('FREQ=MONTHLY;BYMONTHDAY=-1');
+      expect(rule, isA<MonthlyByDate>());
+      expect((rule as MonthlyByDate).daysOfMonth, [-1]);
+    });
+
     test('parses monthly with positional BYDAY', () {
       final rule = RecurrenceRule.fromRruleString('FREQ=MONTHLY;BYDAY=2TU');
       expect(rule, isA<MonthlyByWeekday>());
@@ -369,6 +375,15 @@ void main() {
       final yearly = rule as YearlyByDate;
       expect(yearly.months, [6, 12]);
       expect(yearly.daysOfMonth, [15]);
+    });
+
+    test('parses yearly with last-day-of-month BYMONTHDAY=-1', () {
+      final rule = RecurrenceRule.fromRruleString(
+          'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1');
+      expect(rule, isA<YearlyByDate>());
+      final yearly = rule as YearlyByDate;
+      expect(yearly.months, [2]);
+      expect(yearly.daysOfMonth, [-1]);
     });
 
     test('parses yearly with BYMONTH and positional BYDAY', () {
@@ -503,6 +518,23 @@ void main() {
       final parsed = RecurrenceRule.fromRruleString(original.toRruleString());
       expect(parsed, isA<MonthlyByDate>());
       expect((parsed as MonthlyByDate).daysOfMonth, [1, 15]);
+    });
+
+    test('monthly by date roundtrip - last day of month (-1)', () {
+      final original = MonthlyRecurrence(daysOfMonth: [-1]);
+      expect(original.toRruleString(), 'FREQ=MONTHLY;BYMONTHDAY=-1');
+      final parsed = RecurrenceRule.fromRruleString(original.toRruleString());
+      expect(parsed, isA<MonthlyByDate>());
+      expect((parsed as MonthlyByDate).daysOfMonth, [-1]);
+    });
+
+    test('yearly by date roundtrip - last day of month (-1)', () {
+      final original = YearlyRecurrence(months: [2], daysOfMonth: [-1]);
+      final parsed = RecurrenceRule.fromRruleString(original.toRruleString());
+      expect(parsed, isA<YearlyByDate>());
+      final yearly = parsed as YearlyByDate;
+      expect(yearly.months, [2]);
+      expect(yearly.daysOfMonth, [-1]);
     });
 
     test('monthly by weekday roundtrip - positional', () {
@@ -838,7 +870,16 @@ void main() {
         throwsA(isA<AssertionError>()),
       );
       expect(
+        () => MonthlyRecurrence(daysOfMonth: [-32]),
+        throwsA(isA<AssertionError>()),
+      );
+      expect(
         () => MonthlyRecurrence(daysOfMonth: [1, 15, 31]),
+        returnsNormally,
+      );
+      // RFC 5545 allows negative days (counted from month end): -1 = last day.
+      expect(
+        () => MonthlyRecurrence(daysOfMonth: [-1, -31]),
         returnsNormally,
       );
     });
@@ -866,6 +907,15 @@ void main() {
       expect(
         () => YearlyRecurrence(daysOfMonth: [32]),
         throwsA(isA<AssertionError>()),
+      );
+      expect(
+        () => YearlyRecurrence(daysOfMonth: [-32]),
+        throwsA(isA<AssertionError>()),
+      );
+      // RFC 5545 allows negative days (counted from month end): -1 = last day.
+      expect(
+        () => YearlyRecurrence(daysOfMonth: [-1, -31]),
+        returnsNormally,
       );
     });
 
