@@ -977,21 +977,115 @@ class EventsService {
     )
   }
 
-  /// Keeps the calendar date of `date` but replaces the time-of-day with
-  /// `hour`:`minute`, interpreted in `timeZone`. The Swift counterpart of
-  /// Android's `replaceTimeOfDay`.
-  private func replaceTimeOfDay(
-    of date: Date,
-    hour: Int,
-    minute: Int,
+  /// Whether moving the anchor from `reference` to `target` would change the
+  /// day-spec that `rule` pins explicitly: the weekday for a BYDAY rule, the
+  /// day-of-month for a BYMONTHDAY rule, or the month for a BYMONTH rule. When
+  /// it would, an anchor shift alone can't say what the new pattern should be
+  /// (see updateRecurring docs), so the caller must supply a new rule. Rules
+  /// with no explicit anchor return false — they follow the anchor freely.
+  /// Android's counterpart is `dayMoveConflictsWithRule`.
+  private func dayMoveConflictsWithRule(
+    rule: EKRecurrenceRule,
+    reference: Date,
+    target: Date,
+    timeZone: TimeZone
+  ) -> Bool {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    func changed(_ unit: Calendar.Component) -> Bool {
+      return calendar.component(unit, from: reference)
+        != calendar.component(unit, from: target)
+    }
+    if let days = rule.daysOfTheWeek, !days.isEmpty { return changed(.weekday) }
+    if let dom = rule.daysOfTheMonth, !dom.isEmpty { return changed(.day) }
+    if let months = rule.monthsOfTheYear, !months.isEmpty { return changed(.month) }
+    return false
+  }
+
+  /// Translates `base` by the wall-clock delta from `reference` to `target`,
+  /// computed in `timeZone`: shifts by the whole-day difference and sets the
+  /// time-of-day to `target`'s. DST-safe — it counts calendar days and sets a
+  /// wall-clock time rather than adding a raw interval. For all-day events the
+  /// day shifts but the time-of-day is left at the start of day.
+  ///
+  /// This is the anchor-shift that lets a single `updateRecurring` move both
+  /// the time and the day of a series (issue #103). Android's counterpart is
+  /// `shiftDate`.
+  private func shiftStart(
+    _ base: Date,
+    reference: Date,
+    to target: Date,
+    isAllDay: Bool,
     timeZone: TimeZone
   ) -> Date? {
-    var components = Calendar.current.dateComponents(in: timeZone, from: date)
-    components.hour = hour
-    components.minute = minute
-    components.second = 0
-    components.nanosecond = 0
-    return Calendar.current.date(from: components)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    let refDay = calendar.startOfDay(for: reference)
+    let targetDay = calendar.startOfDay(for: target)
+    let dayDelta = calendar.dateComponents([.day], from: refDay, to: targetDay).day ?? 0
+    guard let shiftedDay = calendar.date(byAdding: .day, value: dayDelta, to: base) else {
+      return nil
+    }
+    if isAllDay {
+      return calendar.startOfDay(for: shiftedDay)
+    }
+    let tod = calendar.dateComponents([.hour, .minute, .second], from: target)
+    return calendar.date(
+      bySettingHour: tod.hour ?? 0,
+      minute: tod.minute ?? 0,
+      second: tod.second ?? 0,
+      of: shiftedDay
+    )
+  }
+
+  /// Resolves the anchor-shifted start for an `updateRecurring` call that
+  /// passed a new `start` (`newStartMillis`): moves `event`'s start by the
+  /// wall-clock delta from the reference occurrence (the one at `timestamp`,
+  /// or the series anchor when none) to the target.
+  ///
+  /// Fails with `invalidArguments` when the move would change a day the rule
+  /// pins explicitly and the caller didn't also change the rule (the move is
+  /// ambiguous — see updateRecurring docs), and with `operationFailed` if the
+  /// shift can't be computed.
+  private func resolveShiftedStart(
+    for event: EKEvent,
+    newStartMillis: Int64,
+    timestamp: Int64?,
+    isAllDay: Bool,
+    changingRule: Bool
+  ) -> Result<Date, CalendarError> {
+    let target = Date(timeIntervalSince1970: TimeInterval(newStartMillis) / 1000.0)
+    let reference: Date
+    if let timestamp = timestamp {
+      reference = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
+    } else {
+      reference = event.startDate
+    }
+    let timeZone = event.timeZone ?? .current
+
+    if !changingRule,
+       let rule = event.recurrenceRules?.first,
+       dayMoveConflictsWithRule(
+         rule: rule, reference: reference, target: target, timeZone: timeZone
+       ) {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "start moves this series to a different day, but its "
+          + "recurrence rule pins specific days. Pass a recurrenceRule to "
+          + "specify the new pattern."
+      ))
+    }
+
+    guard let shifted = shiftStart(
+      event.startDate, reference: reference, to: target,
+      isAllDay: isAllDay, timeZone: timeZone
+    ) else {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "Could not apply the new start to the event"
+      ))
+    }
+    return .success(shifted)
   }
 
   /// Splits a `thisAndFollowing` series at `occurrence` and turns that
@@ -1065,7 +1159,7 @@ class EventsService {
     eventId: String,
     timestamp: Int64?,
     span: String,
-    startMinuteOfDay: Int?,
+    newStartMillis: Int64?,
     durationMinutes: Int?,
     recurrenceRule: String?,
     patch: EventFieldPatch,
@@ -1109,13 +1203,6 @@ class EventsService {
     // Dart layer can only check these against fields in the same call; the
     // stored event's state is enforced here.
     let effectiveIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
-    if startMinuteOfDay != nil && effectiveIsAllDay {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
-        message: "startTime cannot be set on an all-day event"
-      )))
-      return
-    }
     if let durationMinutes = durationMinutes, effectiveIsAllDay,
        durationMinutes % minutesPerDay != 0 {
       completion(.failure(CalendarError(
@@ -1129,23 +1216,25 @@ class EventsService {
     // the event. EventKit keeps the fetched EKEvent live in its cache, so
     // every failure exit must happen while it is still unmodified — orphaned
     // mutations could otherwise ride along with a later save.
+    // Anchor shift: move the reference occurrence to `newStartMillis` and
+    // translate this event's start by the same wall-clock delta (day + time).
     var newStart: Date?
-    if let minuteOfDay = startMinuteOfDay {
-      let hour = minuteOfDay / 60
-      let minute = minuteOfDay % 60
-      guard let replaced = replaceTimeOfDay(
-        of: foundEvent.startDate,
-        hour: hour,
-        minute: minute,
-        timeZone: foundEvent.timeZone ?? .current
-      ) else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.operationFailed,
-          message: "Could not apply start time \(hour):\(minute) to the event's start date"
-        )))
+    if let newStartMillis = newStartMillis {
+      let changingRule = recurrenceRule != nil
+        || patch.clearedFields.contains("recurrenceRule")
+      switch resolveShiftedStart(
+        for: foundEvent,
+        newStartMillis: newStartMillis,
+        timestamp: timestamp,
+        isAllDay: effectiveIsAllDay,
+        changingRule: changingRule
+      ) {
+      case .success(let shifted):
+        newStart = shifted
+      case .failure(let error):
+        completion(.failure(error))
         return
       }
-      newStart = replaced
     }
 
     var parsedRecurrenceRule: EKRecurrenceRule?

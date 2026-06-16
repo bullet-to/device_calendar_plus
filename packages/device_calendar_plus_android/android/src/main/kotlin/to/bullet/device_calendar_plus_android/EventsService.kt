@@ -1049,7 +1049,7 @@ class EventsService(private val context: Context) {
         eventId: String,
         timestamp: Long?,
         span: String,
-        startMinuteOfDay: Int?,
+        newStartMillis: Long?,
         durationMinutes: Int?,
         recurrenceRule: String?,
         patch: EventFieldPatch
@@ -1086,14 +1086,6 @@ class EventsService(private val context: Context) {
             // The Dart layer can only check these against fields in the same
             // call; the stored event's state is enforced here.
             val effectiveIsAllDay = patch.isAllDay ?: row.allDay
-            if (startMinuteOfDay != null && effectiveIsAllDay) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.INVALID_ARGUMENTS,
-                        "startTime cannot be set on an all-day event"
-                    )
-                )
-            }
             if (durationMinutes != null && effectiveIsAllDay &&
                 durationMinutes % MINUTES_PER_DAY != 0) {
                 return Result.failure(
@@ -1104,13 +1096,34 @@ class EventsService(private val context: Context) {
                 )
             }
 
+            // A `start` that moves the day of a series whose rule pins that day
+            // explicitly is ambiguous (see updateRecurring docs) — refuse it
+            // unless the caller also supplies the new rule. Implicit rules (no
+            // BYDAY/BYMONTHDAY) just follow the anchor, so they pass through.
+            val changingRule = recurrenceRule != null ||
+                "recurrenceRule" in patch.clearedFields
+            if (newStartMillis != null && !changingRule && row.rrule != null &&
+                dayMoveConflictsWithRule(
+                    row.rrule, timestamp ?: row.dtstart, newStartMillis, row.timeZone
+                )
+            ) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "start moves this series to a different day, but its " +
+                            "recurrence rule pins specific days. Pass a " +
+                            "recurrenceRule to specify the new pattern."
+                    )
+                )
+            }
+
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    eventId, row, timestamp, startMinuteOfDay,
+                    eventId, row, timestamp, newStartMillis,
                     durationMinutes, recurrenceRule, patch
                 )
                 else -> updateRecurringAllEvents(
-                    eventId, row, startMinuteOfDay,
+                    eventId, row, timestamp, newStartMillis,
                     durationMinutes, recurrenceRule, patch
                 )
             }
@@ -1134,7 +1147,8 @@ class EventsService(private val context: Context) {
     private fun updateRecurringAllEvents(
         eventId: String,
         row: EventRow,
-        startMinuteOfDay: Int?,
+        timestamp: Long?,
+        newStartMillis: Long?,
         durationMinutes: Int?,
         recurrenceRule: String?,
         patch: EventFieldPatch
@@ -1158,12 +1172,15 @@ class EventsService(private val context: Context) {
 
         // Time columns. A recurring event must use DURATION (and no DTEND); a
         // single event must use DTEND (and no DURATION). Rewrite them when the
-        // time-of-day, duration, or recurring state changes.
-        val hasTimeChange = startMinuteOfDay != null || durationMinutes != null
+        // start, duration, or recurring state changes.
+        val effectiveIsAllDay = patch.isAllDay ?: row.allDay
+        val hasTimeChange = newStartMillis != null || durationMinutes != null
         if (hasTimeChange || wasRecurring != willBeRecurring) {
+            // The anchor shifts relative to the occurrence the caller pointed
+            // at (timestamp), or the series anchor itself when none was given.
             val (newStart, newDurationMs) = resolveSeriesTimes(
-                row.dtstart, eventDurationMillis(row),
-                startMinuteOfDay, durationMinutes, row.timeZone
+                row.dtstart, timestamp ?: row.dtstart, eventDurationMillis(row),
+                newStartMillis, durationMinutes, row.timeZone, effectiveIsAllDay
             )
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
@@ -1172,6 +1189,14 @@ class EventsService(private val context: Context) {
                     "P${newDurationMs / 1000}S"
                 )
                 values.putNull(CalendarContract.Events.DTEND)
+                // Moving DTSTART alone doesn't reliably invalidate the
+                // Instances cache, so the series can read back as a single
+                // occurrence. Re-writing the (unchanged) RRULE forces the
+                // CalendarProvider to re-expand — the mirror of the
+                // DTSTART/DURATION rewrite used when only the rule changes.
+                if (!clearRrule && recurrenceRule == null && row.rrule != null) {
+                    values.put(CalendarContract.Events.RRULE, row.rrule)
+                }
             } else {
                 values.put(CalendarContract.Events.DTEND, newStart + newDurationMs)
                 values.putNull(CalendarContract.Events.DURATION)
@@ -1205,7 +1230,7 @@ class EventsService(private val context: Context) {
         eventId: String,
         row: EventRow,
         timestamp: Long?,
-        startMinuteOfDay: Int?,
+        newStartMillis: Long?,
         durationMinutes: Int?,
         recurrenceRule: String?,
         patch: EventFieldPatch
@@ -1263,11 +1288,12 @@ class EventsService(private val context: Context) {
             }
         }
 
-        // The new series starts at the anchor occurrence, optionally with a
-        // new time-of-day applied. Duration is the master's unless overridden.
+        // The new series is anchored at the split occurrence, shifted to the
+        // caller's new start (the reference and base are both the occurrence).
+        // Duration is the master's unless overridden.
         val (newStart, newDurationMs) = resolveSeriesTimes(
-            timestamp, eventDurationMillis(row),
-            startMinuteOfDay, durationMinutes, row.timeZone
+            timestamp, timestamp, eventDurationMillis(row),
+            newStartMillis, durationMinutes, row.timeZone, effectiveIsAllDay
         )
         val newEnd = newStart + newDurationMs
 
@@ -1631,21 +1657,22 @@ class EventsService(private val context: Context) {
     }
 
     /**
-     * Resolves the start and duration for a series-level time edit: the
-     * time-of-day of [baseMillis] is replaced when [startMinuteOfDay] is
-     * given, and the duration overridden when [durationMinutes] is given.
+     * Resolves the start and duration for a series-level time edit. When
+     * [newStartMillis] is given the start is shifted by the wall-clock delta
+     * from [referenceMillis] to [newStartMillis] (see [shiftDate]); the
+     * duration is overridden when [durationMinutes] is given.
      */
     private fun resolveSeriesTimes(
         baseMillis: Long,
+        referenceMillis: Long,
         existingDurationMillis: Long,
-        startMinuteOfDay: Int?,
+        newStartMillis: Long?,
         durationMinutes: Int?,
-        timeZoneId: String?
+        timeZoneId: String?,
+        isAllDay: Boolean
     ): Pair<Long, Long> {
-        val newStart = if (startMinuteOfDay != null) {
-            replaceTimeOfDay(
-                baseMillis, startMinuteOfDay / 60, startMinuteOfDay % 60, timeZoneId
-            )
+        val newStart = if (newStartMillis != null) {
+            shiftDate(baseMillis, referenceMillis, newStartMillis, timeZoneId, isAllDay)
         } else {
             baseMillis
         }
@@ -1658,25 +1685,102 @@ class EventsService(private val context: Context) {
     }
 
     /**
-     * Keeps the calendar date of [baseMillis] but replaces the time-of-day
-     * with [hour]:[minute]. The date is interpreted in the event's timezone
-     * (or the device default when [timeZoneId] is null).
+     * Translates [baseMillis] by the wall-clock delta from [referenceMillis]
+     * to [newStartMillis]: shifts by the whole-day difference and sets the
+     * time-of-day to [newStartMillis]'s. DST-safe — it counts calendar days
+     * and sets a wall-clock time rather than adding a raw interval.
+     *
+     * Dates are interpreted in the event's timezone (device default when
+     * [timeZoneId] is null). All-day events are stored as UTC midnight, so
+     * they shift in UTC by whole days with the time-of-day left at midnight.
+     * The anchor-shift that lets [updateRecurring] move both the time and the
+     * day of a series (issue #103); iOS's counterpart is `shiftStart`.
      */
-    private fun replaceTimeOfDay(
+    private fun shiftDate(
         baseMillis: Long,
-        hour: Int,
-        minute: Int,
-        timeZoneId: String?
+        referenceMillis: Long,
+        newStartMillis: Long,
+        timeZoneId: String?,
+        isAllDay: Boolean
     ): Long {
-        val tz = if (timeZoneId != null) java.util.TimeZone.getTimeZone(timeZoneId)
-                 else java.util.TimeZone.getDefault()
+        val tz = when {
+            isAllDay -> java.util.TimeZone.getTimeZone("UTC")
+            timeZoneId != null -> java.util.TimeZone.getTimeZone(timeZoneId)
+            else -> java.util.TimeZone.getDefault()
+        }
+        val dayDelta = calendarDaysBetween(referenceMillis, newStartMillis, tz)
         val cal = java.util.Calendar.getInstance(tz)
         cal.timeInMillis = baseMillis
-        cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
-        cal.set(java.util.Calendar.MINUTE, minute)
-        cal.set(java.util.Calendar.SECOND, 0)
-        cal.set(java.util.Calendar.MILLISECOND, 0)
+        cal.add(java.util.Calendar.DAY_OF_YEAR, dayDelta)
+        if (isAllDay) {
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0)
+            cal.set(java.util.Calendar.MILLISECOND, 0)
+        } else {
+            // Carry the full wall-clock time-of-day (down to millis) from the
+            // target, matching iOS's shiftStart so the platforms agree.
+            val target = java.util.Calendar.getInstance(tz)
+            target.timeInMillis = newStartMillis
+            cal.set(java.util.Calendar.HOUR_OF_DAY, target.get(java.util.Calendar.HOUR_OF_DAY))
+            cal.set(java.util.Calendar.MINUTE, target.get(java.util.Calendar.MINUTE))
+            cal.set(java.util.Calendar.SECOND, target.get(java.util.Calendar.SECOND))
+            cal.set(java.util.Calendar.MILLISECOND, target.get(java.util.Calendar.MILLISECOND))
+        }
         return cal.timeInMillis
+    }
+
+    /**
+     * Whether moving the anchor from [referenceMillis] to [targetMillis] would
+     * change the day-spec that [rrule] pins explicitly: the weekday for a
+     * BYDAY rule, the day-of-month for a BYMONTHDAY rule, or the month for a
+     * BYMONTH rule. When it would, an anchor shift alone can't say what the new
+     * pattern should be (see updateRecurring docs), so the caller must supply a
+     * new rule. Rules with no explicit anchor return false — they follow the
+     * anchor freely. iOS's counterpart is `dayMoveConflictsWithRule`.
+     */
+    private fun dayMoveConflictsWithRule(
+        rrule: String,
+        referenceMillis: Long,
+        targetMillis: Long,
+        timeZoneId: String?
+    ): Boolean {
+        val hasByDay = rruleHasPart(rrule, "BYDAY")
+        val hasByMonthDay = rruleHasPart(rrule, "BYMONTHDAY")
+        val hasByMonth = rruleHasPart(rrule, "BYMONTH")
+        if (!hasByDay && !hasByMonthDay && !hasByMonth) return false
+        val tz = if (timeZoneId != null) java.util.TimeZone.getTimeZone(timeZoneId)
+                 else java.util.TimeZone.getDefault()
+        val ref = java.util.Calendar.getInstance(tz).apply { timeInMillis = referenceMillis }
+        val tgt = java.util.Calendar.getInstance(tz).apply { timeInMillis = targetMillis }
+        fun changed(field: Int) = ref.get(field) != tgt.get(field)
+        if (hasByDay && changed(java.util.Calendar.DAY_OF_WEEK)) return true
+        if (hasByMonthDay && changed(java.util.Calendar.DAY_OF_MONTH)) return true
+        if (hasByMonth && changed(java.util.Calendar.MONTH)) return true
+        return false
+    }
+
+    /**
+     * Whole calendar days from [fromMillis] to [toMillis] in [tz]. Rounds the
+     * start-of-day difference so a DST transition (a 23- or 25-hour day) still
+     * yields an integer day count.
+     */
+    private fun calendarDaysBetween(
+        fromMillis: Long,
+        toMillis: Long,
+        tz: java.util.TimeZone
+    ): Int {
+        fun startOfDay(millis: Long): Long {
+            val c = java.util.Calendar.getInstance(tz)
+            c.timeInMillis = millis
+            c.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            c.set(java.util.Calendar.MINUTE, 0)
+            c.set(java.util.Calendar.SECOND, 0)
+            c.set(java.util.Calendar.MILLISECOND, 0)
+            return c.timeInMillis
+        }
+        val diff = startOfDay(toMillis) - startOfDay(fromMillis)
+        return Math.round(diff.toDouble() / 86_400_000.0).toInt()
     }
 
     /** Storage millis for a date: UTC midnight for all-day, the instant otherwise. */
@@ -1772,6 +1876,18 @@ class EventsService(private val context: Context) {
             }
         }
         return count
+    }
+
+    /**
+     * Whether [rrule] carries the part named [key] (e.g. "BYDAY"). Matches on
+     * the part key rather than a raw substring, so "BYMONTH" doesn't spuriously
+     * match "BYMONTHDAY". Mirrors the key parsing in [rruleCount]/[setRruleUntil].
+     */
+    private fun rruleHasPart(rrule: String, key: String): Boolean {
+        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
+        return body.split(";").any {
+            it.substringBefore('=').uppercase() == key
+        }
     }
 
     /** The COUNT value of an RRULE, or null if it has none. */
