@@ -977,21 +977,40 @@ class EventsService {
     )
   }
 
-  /// Keeps the calendar date of `date` but replaces the time-of-day with
-  /// `hour`:`minute`, interpreted in `timeZone`. The Swift counterpart of
-  /// Android's `replaceTimeOfDay`.
-  private func replaceTimeOfDay(
-    of date: Date,
-    hour: Int,
-    minute: Int,
+  /// Translates `base` by the wall-clock delta from `reference` to `target`,
+  /// computed in `timeZone`: shifts by the whole-day difference and sets the
+  /// time-of-day to `target`'s. DST-safe — it counts calendar days and sets a
+  /// wall-clock time rather than adding a raw interval. For all-day events the
+  /// day shifts but the time-of-day is left at the start of day.
+  ///
+  /// This is the anchor-shift that lets a single `updateRecurring` move both
+  /// the time and the day of a series (issue #103). Android's counterpart is
+  /// `shiftDate`.
+  private func shiftStart(
+    _ base: Date,
+    reference: Date,
+    to target: Date,
+    isAllDay: Bool,
     timeZone: TimeZone
   ) -> Date? {
-    var components = Calendar.current.dateComponents(in: timeZone, from: date)
-    components.hour = hour
-    components.minute = minute
-    components.second = 0
-    components.nanosecond = 0
-    return Calendar.current.date(from: components)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    let refDay = calendar.startOfDay(for: reference)
+    let targetDay = calendar.startOfDay(for: target)
+    let dayDelta = calendar.dateComponents([.day], from: refDay, to: targetDay).day ?? 0
+    guard let shiftedDay = calendar.date(byAdding: .day, value: dayDelta, to: base) else {
+      return nil
+    }
+    if isAllDay {
+      return calendar.startOfDay(for: shiftedDay)
+    }
+    let tod = calendar.dateComponents([.hour, .minute, .second], from: target)
+    return calendar.date(
+      bySettingHour: tod.hour ?? 0,
+      minute: tod.minute ?? 0,
+      second: tod.second ?? 0,
+      of: shiftedDay
+    )
   }
 
   /// Splits a `thisAndFollowing` series at `occurrence` and turns that
@@ -1065,7 +1084,7 @@ class EventsService {
     eventId: String,
     timestamp: Int64?,
     span: String,
-    startMinuteOfDay: Int?,
+    newStartMillis: Int64?,
     durationMinutes: Int?,
     recurrenceRule: String?,
     patch: EventFieldPatch,
@@ -1109,13 +1128,6 @@ class EventsService {
     // Dart layer can only check these against fields in the same call; the
     // stored event's state is enforced here.
     let effectiveIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
-    if startMinuteOfDay != nil && effectiveIsAllDay {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
-        message: "startTime cannot be set on an all-day event"
-      )))
-      return
-    }
     if let durationMinutes = durationMinutes, effectiveIsAllDay,
        durationMinutes % minutesPerDay != 0 {
       completion(.failure(CalendarError(
@@ -1129,23 +1141,33 @@ class EventsService {
     // the event. EventKit keeps the fetched EKEvent live in its cache, so
     // every failure exit must happen while it is still unmodified — orphaned
     // mutations could otherwise ride along with a later save.
+    // Anchor shift: move the reference occurrence to `newStartMillis` and
+    // translate this event's start by the same wall-clock delta (day + time).
+    // The reference is the occurrence at `timestamp`, or the series anchor
+    // (foundEvent is the master) for `allEvents` with no timestamp.
     var newStart: Date?
-    if let minuteOfDay = startMinuteOfDay {
-      let hour = minuteOfDay / 60
-      let minute = minuteOfDay % 60
-      guard let replaced = replaceTimeOfDay(
-        of: foundEvent.startDate,
-        hour: hour,
-        minute: minute,
+    if let newStartMillis = newStartMillis {
+      let target = Date(timeIntervalSince1970: TimeInterval(newStartMillis) / 1000.0)
+      let reference: Date
+      if let timestamp = timestamp {
+        reference = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
+      } else {
+        reference = foundEvent.startDate
+      }
+      guard let shifted = shiftStart(
+        foundEvent.startDate,
+        reference: reference,
+        to: target,
+        isAllDay: effectiveIsAllDay,
         timeZone: foundEvent.timeZone ?? .current
       ) else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.operationFailed,
-          message: "Could not apply start time \(hour):\(minute) to the event's start date"
+          message: "Could not apply the new start to the event"
         )))
         return
       }
-      newStart = replaced
+      newStart = shifted
     }
 
     var parsedRecurrenceRule: EKRecurrenceRule?

@@ -18,7 +18,6 @@ export 'package:device_calendar_plus_ios/device_calendar_plus_ios.dart'
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
     show
         CreateCalendarPlatformOptions,
-        EventTimeOfDay,
         InstanceIdParser,
         ParsedInstanceId,
         Patch,
@@ -889,10 +888,15 @@ class DeviceCalendar {
   ///   (the "this and future, made non-recurring" case).
   ///
   /// Time fields:
-  /// - [startTime] sets the time-of-day for every occurrence in scope,
-  ///   preserving each occurrence's date (hour 0-23, minute 0-59). Duration
-  ///   is preserved unless [duration] is also passed. Cannot be used on
-  ///   all-day events.
+  /// - [start] moves the anchored occurrence to a new start, and translates
+  ///   the whole scope by the same wall-clock delta — so it changes the
+  ///   time-of-day **and** the day together. Moving Monday 11 PM to Tuesday
+  ///   1 AM shifts every occurrence one day later and to 1 AM. The delta is
+  ///   measured against the occurrence the [instanceId] points at (or the
+  ///   series anchor, for `allEvents` with a bare event ID), in the event's
+  ///   timezone, so it is DST-safe. Duration is preserved unless [duration]
+  ///   is also passed. On all-day events only the date moves; the time-of-day
+  ///   is ignored.
   /// - [duration] sets the event duration; it must be non-negative (zero is
   ///   allowed for an instantaneous event) and a whole number of minutes. For
   ///   all-day events, only whole-day durations are valid (e.g.,
@@ -901,6 +905,15 @@ class DeviceCalendar {
   /// [recurrenceRule] takes a [Patch]: omit it to leave recurrence unchanged,
   /// [Patch.set] to change the rule, [Patch.clear] to remove it (the event
   /// stops recurring).
+  ///
+  /// [start] moves the series **anchor**; the recurrence **rule** is yours to
+  /// keep coherent. For rules whose day is implied by the start (the default
+  /// `WeeklyRecurrence()`, `MonthlyRecurrence()`, …), moving the day with
+  /// [start] is enough — the pattern follows. For rules that pin specific days
+  /// (`WeeklyRecurrence(daysOfWeek: …)`, `MonthlyRecurrence(daysOfMonth: …)`,
+  /// positional rules), move the day by passing a matching [recurrenceRule] in
+  /// the same call; otherwise the anchor and the rule disagree and the result
+  /// is platform-defined.
   ///
   /// **Secondary effects** — what happens to occurrences the user had
   /// individually customised — are best-effort and differ by platform.
@@ -919,11 +932,11 @@ class DeviceCalendar {
   /// ```dart
   /// final plugin = DeviceCalendar.instance;
   ///
-  /// // Change every occurrence to start at 3 PM
+  /// // Move a nightshift series from 11 PM to 1 AM the next day
   /// await plugin.updateRecurring(
-  ///   event.instanceId,
+  ///   event.instanceId, // an occurrence currently at 11 PM
   ///   EventSpan.allEvents,
-  ///   startTime: EventTimeOfDay(hour: 15, minute: 0),
+  ///   start: DateTime(2024, 3, 19, 1, 0), // the day after, 1 AM
   /// );
   ///
   /// // Change the duration of all occurrences to 90 minutes
@@ -933,11 +946,11 @@ class DeviceCalendar {
   ///   duration: Duration(minutes: 90),
   /// );
   ///
-  /// // Split: this occurrence and later ones move to a new time
+  /// // Split: this occurrence and later ones move to a new start
   /// final newSeriesId = await plugin.updateRecurring(
   ///   event.instanceId,
   ///   EventSpan.thisAndFollowing,
-  ///   startTime: EventTimeOfDay(hour: 15, minute: 0),
+  ///   start: DateTime(2024, 3, 18, 15, 0),
   ///   duration: Duration(hours: 1),
   /// );
   ///
@@ -952,7 +965,7 @@ class DeviceCalendar {
     String instanceId,
     EventSpan span, {
     String? title,
-    EventTimeOfDay? startTime,
+    DateTime? start,
     Duration? duration,
     Patch<String>? description,
     Patch<String>? location,
@@ -1003,14 +1016,9 @@ class DeviceCalendar {
       );
     }
 
-    // All-day events have no time-of-day.
-    if (isAllDay == true && startTime != null) {
-      throw ArgumentError.value(
-        startTime,
-        'startTime',
-        'startTime cannot be set when isAllDay is true',
-      );
-    }
+    // [start] is accepted on all-day events too — only its date is used, the
+    // time-of-day is ignored at the platform layer (an all-day event has no
+    // time-of-day to set). So no startTime/all-day contradiction to reject.
 
     // All-day events only accept whole-day durations.
     if (isAllDay == true &&
@@ -1027,7 +1035,7 @@ class DeviceCalendar {
     // nothing to split for thisAndFollowing. Return the targeted event id —
     // the scope the caller named, unchanged.
     if (title == null &&
-        startTime == null &&
+        start == null &&
         duration == null &&
         description == null &&
         location == null &&
@@ -1052,7 +1060,7 @@ class DeviceCalendar {
         parsed.timestamp,
         span.name,
         title: title,
-        startTime: startTime,
+        start: start,
         durationMinutes: duration?.inMinutes,
         description: description,
         location: location,

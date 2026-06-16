@@ -1,11 +1,9 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'src/create_calendar_options.dart';
-import 'src/event_time_of_day.dart';
 import 'src/patch.dart';
 
 export 'src/create_calendar_options.dart';
-export 'src/event_time_of_day.dart';
 export 'src/instance_id_parser.dart';
 export 'src/patch.dart';
 
@@ -247,8 +245,10 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// instead.
   ///
   /// Time fields:
-  /// - [startTime] sets the time-of-day for every occurrence in scope,
-  ///   preserving each occurrence's date.
+  /// - [start] is the anchored occurrence's new start instant. The whole
+  ///   scope translates by the wall-clock delta between [start] and the
+  ///   reference occurrence (the one at [timestamp], or the series anchor when
+  ///   [timestamp] is null), computed in the event's timezone.
   /// - [durationMinutes] sets the event duration in minutes.
   ///
   /// [description], [location] and [url] take a [Patch] of the field value.
@@ -262,7 +262,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     int? timestamp,
     String span, {
     String? title,
-    EventTimeOfDay? startTime,
+    DateTime? start,
     int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,

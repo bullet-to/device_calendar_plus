@@ -219,7 +219,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     int? timestamp,
     String span, {
     String? title,
-    EventTimeOfDay? startTime,
+    DateTime? start,
     int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
@@ -234,7 +234,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
       'timestamp': timestamp,
       'span': span,
       'title': title,
-      'startMinuteOfDay': startTime?.minuteOfDay,
+      'newStartMillis': start?.millisecondsSinceEpoch,
       'durationMinutes': durationMinutes,
       'isAllDay': isAllDay,
       'timeZone': timeZone,

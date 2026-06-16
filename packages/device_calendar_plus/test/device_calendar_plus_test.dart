@@ -29,7 +29,7 @@ typedef UpdateRecurringCall = ({
   int? timestamp,
   String span,
   String? title,
-  EventTimeOfDay? startTime,
+  DateTime? start,
   int? durationMinutes,
   Patch<String>? description,
   Patch<String>? location,
@@ -275,7 +275,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     int? timestamp,
     String span, {
     String? title,
-    EventTimeOfDay? startTime,
+    DateTime? start,
     int? durationMinutes,
     Patch<String>? description,
     Patch<String>? location,
@@ -291,7 +291,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       timestamp: timestamp,
       span: span,
       title: title,
-      startTime: startTime,
+      start: start,
       durationMinutes: durationMinutes,
       description: description,
       location: location,
@@ -810,16 +810,18 @@ void main() {
         );
       });
 
-      test('throws ArgumentError when isAllDay is true with startTime', () {
-        expect(
-          () => DeviceCalendar.instance.updateRecurring(
-            'event-123',
-            EventSpan.allEvents,
-            isAllDay: true,
-            startTime: EventTimeOfDay(hour: 10, minute: 0),
-          ),
-          throwsArgumentError,
+      test('accepts start on an all-day event (only the date is used)',
+          () async {
+        // start carries a time, but all-day events have no time-of-day; the
+        // platform layer uses only the date. No contradiction to reject.
+        final result = await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventSpan.allEvents,
+          isAllDay: true,
+          start: DateTime(2024, 3, 19, 10, 0),
         );
+        expect(result, 'mock-event-id');
+        expect(mockPlatform.lastUpdateRecurring?.start, DateTime(2024, 3, 19, 10, 0));
       });
 
       test('throws ArgumentError when isAllDay is true with sub-day duration',
@@ -904,16 +906,16 @@ void main() {
         expect(result, 'mock-event-id');
       });
 
-      test('passes startTime to the platform', () async {
+      test('passes start to the platform', () async {
         await DeviceCalendar.instance.updateRecurring(
           'event-123',
           EventSpan.allEvents,
-          startTime: EventTimeOfDay(hour: 15, minute: 30),
+          start: DateTime(2024, 3, 18, 15, 30),
         );
 
         expect(
-          mockPlatform.lastUpdateRecurring?.startTime,
-          EventTimeOfDay(hour: 15, minute: 30),
+          mockPlatform.lastUpdateRecurring?.start,
+          DateTime(2024, 3, 18, 15, 30),
         );
       });
 
