@@ -1,3 +1,12 @@
+## 0.6.0 - 2026-06-16
+
+### Changed
+- **Breaking:** `updateRecurring` takes `start: DateTime` (sent as
+  `newStartMillis`) instead of `startTime: EventTimeOfDay`; the anchored
+  occurrence moves to `start` and the scope translates by that wall-clock
+  delta (#103).
+- **Breaking:** `EventTimeOfDay` is removed.
+
 ## 0.5.2 - 2026-06-15
 
 - No functional changes; version aligned with the rest of the suite for the

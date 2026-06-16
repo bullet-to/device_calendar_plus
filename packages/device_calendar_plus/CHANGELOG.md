@@ -1,3 +1,29 @@
+## 0.6.0 - 2026-06-16
+
+### Changed
+- **Breaking:** `updateRecurring()` now takes `start: DateTime` instead of
+  `startTime: EventTimeOfDay`. `start` is the anchored occurrence's new start;
+  the whole scope translates by the wall-clock delta, so a single call can move
+  the **time and the day together** — a nightshift 11 PM → 1 AM (crosses
+  midnight) or a weekly meeting Monday → Tuesday. The delta is measured in the
+  event's timezone, so it is DST-safe. (#103, thanks @SuperKrallan)
+- **Breaking:** `EventTimeOfDay` is removed.
+- **Breaking:** all-day events now accept `start` (only its date is used)
+  instead of throwing.
+
+### Added
+- `updateRecurring()` translates implicit-day rules for free: a
+  `WeeklyRecurrence()` / `MonthlyRecurrence()` with no pinned day follows the
+  anchor when you move the day.
+
+### Behaviour
+- Moving the day of a rule that **pins** it explicitly (`daysOfWeek`,
+  `daysOfMonth`, positional) without also passing a `recurrenceRule` throws
+  `DeviceCalendarException(invalidArguments)`. Moving one day of a multi-day
+  rule is genuinely ambiguous (Mon of Mon/Wed/Fri → Tue could mean Tue/Wed/Fri
+  or Tue/Thu/Sat), so the API hands the decision back to you. Time-only,
+  duration-only and whole-week shifts never throw.
+
 ## 0.5.2 - 2026-06-15
 
 ### Changed

@@ -1,3 +1,18 @@
+## 0.6.0 - 2026-06-16
+
+### Changed
+- **Breaking:** `updateRecurring` takes the anchored occurrence's new start
+  (`newStartMillis`) instead of `startMinuteOfDay`. `shiftStart` translates the
+  series anchor by the wall-clock delta (calendar-day count + time-of-day) in
+  the event's `EKEvent.timeZone`, so a move can change the day and time
+  together and stays correct across DST (#103).
+
+### Behaviour
+- `updateRecurring` rejects a `start` that moves the day of a series whose
+  `EKRecurrenceRule` pins it (`daysOfTheWeek` / `daysOfTheMonth` /
+  `monthsOfTheYear`) unless a new rule is also supplied
+  (`dayMoveConflictsWithRule`).
+
 ## 0.5.2 - 2026-06-15
 
 ### Fixed
