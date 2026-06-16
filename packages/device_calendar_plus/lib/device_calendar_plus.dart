@@ -906,14 +906,38 @@ class DeviceCalendar {
   /// [Patch.set] to change the rule, [Patch.clear] to remove it (the event
   /// stops recurring).
   ///
-  /// [start] moves the series **anchor**; the recurrence **rule** is yours to
-  /// keep coherent. For rules whose day is implied by the start (the default
-  /// `WeeklyRecurrence()`, `MonthlyRecurrence()`, …), moving the day with
-  /// [start] is enough — the pattern follows. For rules that pin specific days
-  /// (`WeeklyRecurrence(daysOfWeek: …)`, `MonthlyRecurrence(daysOfMonth: …)`,
-  /// positional rules), move the day by passing a matching [recurrenceRule] in
-  /// the same call; otherwise the anchor and the rule disagree and the result
-  /// is platform-defined.
+  /// **[start] moves the series anchor; the recurrence rule is yours.**
+  ///
+  /// - Rules whose day is *implied by the start* — the defaults
+  ///   `WeeklyRecurrence()`, `MonthlyRecurrence()`, `DailyRecurrence()` — have
+  ///   no explicit day pinned, so moving the day with [start] is enough: the
+  ///   pattern follows the anchor (a Monday-anchored weekly becomes a Tuesday
+  ///   one). Nothing else to do.
+  /// - Rules that *pin a day explicitly* — `WeeklyRecurrence(daysOfWeek: …)`,
+  ///   `MonthlyRecurrence(daysOfMonth: …)`, positional rules like "2nd Tuesday"
+  ///   — cannot be moved to a different day by [start] alone. If [start] would
+  ///   change the pinned weekday (or day-of-month, or month) and you do **not**
+  ///   pass a [recurrenceRule], this throws [DeviceCalendarException] with
+  ///   [DeviceCalendarError.invalidArguments]. Pass the new rule in the same
+  ///   call to say what the pattern should become.
+  ///
+  /// *Why throw instead of guessing?* Moving one day of a multi-day rule is
+  /// genuinely ambiguous: dragging the Monday of a Mon/Wed/Fri series to
+  /// Tuesday could mean Tue/Wed/Fri (that day reassigned) or Tue/Thu/Sat (the
+  /// whole pattern shifted) — there is no single right answer, and Google
+  /// Calendar itself mishandles it. Silently picking one would surprise half
+  /// the callers; silently doing nothing reads as a broken drag and behaves
+  /// differently on iOS vs Android. So the API refuses and hands the decision
+  /// back to you, who can express it exactly via [recurrenceRule].
+  ///
+  /// Edge cases that do **not** throw (the day-spec is unchanged):
+  /// - changing only the time-of-day, or only [duration];
+  /// - a whole-week shift of a weekly rule (e.g. +7 days keeps the weekday);
+  /// - any move on an implicit rule (it has no pinned day to contradict).
+  ///
+  /// Watch for the converse: a **cross-midnight** retime of a pinned series
+  /// (11 PM → 1 AM) rolls the date forward a day, so it *does* change the
+  /// weekday and will throw — pass a [recurrenceRule] for those too.
   ///
   /// **Secondary effects** — what happens to occurrences the user had
   /// individually customised — are best-effort and differ by platform.

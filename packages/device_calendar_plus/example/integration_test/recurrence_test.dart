@@ -856,25 +856,20 @@ void main() {
       );
     });
 
-    // Divergence check (not a guard): shifting the anchor onto a weekday the
-    // explicit BYDAY does not include, with no recurrenceRule, is incoherent.
-    // We do not guard it — this asserts only that the call succeeds and the
-    // series is not destroyed. Compare the resulting pattern across the iOS
-    // and Android runs: if they diverge materially, revisit the no-guard call.
-    test('explicit-rule day shift without a rule update does not crash',
-        () async {
+    const weekdays = [
+      DayOfWeek.monday,
+      DayOfWeek.tuesday,
+      DayOfWeek.wednesday,
+      DayOfWeek.thursday,
+      DayOfWeek.friday,
+      DayOfWeek.saturday,
+      DayOfWeek.sunday,
+    ];
+
+    test('day shift on an explicit-BYDAY rule without a rule throws', () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       // Pin the rule to the start's own weekday so the +1-day shift lands on a
-      // weekday the rule does not list.
-      const weekdays = [
-        DayOfWeek.monday,
-        DayOfWeek.tuesday,
-        DayOfWeek.wednesday,
-        DayOfWeek.thursday,
-        DayOfWeek.friday,
-        DayOfWeek.saturday,
-        DayOfWeek.sunday,
-      ];
+      // weekday the rule does not list — an ambiguous move we refuse.
       final startDay = DateTime.now().add(const Duration(hours: 1));
       final series = await createWeeklySeries(plugin, calendarId!,
           count: 4, daysOfWeek: [weekdays[startDay.weekday - 1]]);
@@ -883,19 +878,74 @@ void main() {
           windowDays: 45);
       expect(before, isNotEmpty);
 
+      await expectLater(
+        plugin.updateRecurring(
+          before.first.instanceId,
+          EventSpan.allEvents,
+          start: before.first.startDate.add(const Duration(days: 1)),
+        ),
+        throwsA(isA<DeviceCalendarException>().having((e) => e.errorCode,
+            'errorCode', DeviceCalendarError.invalidArguments)),
+      );
+    });
+
+    test('time-only shift on an explicit-BYDAY rule is allowed', () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final startDay = DateTime.now().add(const Duration(hours: 1));
+      final series = await createWeeklySeries(plugin, calendarId!,
+          count: 4, daysOfWeek: [weekdays[startDay.weekday - 1]]);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 45);
+      expect(before, isNotEmpty);
+
+      // +2h same calendar day — weekday unchanged, so no rule conflict.
+      final newStart = before.first.startDate.add(const Duration(hours: 2));
+      // Guard against the +2h accidentally crossing midnight in this run.
+      if (newStart.weekday == before.first.startDate.weekday) {
+        await plugin.updateRecurring(
+          before.first.instanceId,
+          EventSpan.allEvents,
+          start: newStart,
+        );
+        final after = await occurrencesOf(
+            plugin, calendarId!, series.eventId, series.start,
+            windowDays: 45);
+        expectShifted(before, after, const Duration(hours: 2));
+      }
+    });
+
+    test('day shift on an explicit-BYDAY rule WITH a matching rule succeeds',
+        () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final startDay = DateTime.now().add(const Duration(hours: 1));
+      final oldDay = weekdays[startDay.weekday - 1];
+      final newDay = weekdays[startDay.weekday % 7]; // next weekday
+      final series = await createWeeklySeries(plugin, calendarId!,
+          count: 4, daysOfWeek: [oldDay]);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 45);
+      expect(before, isNotEmpty);
+
+      // Passing the new rule alongside start resolves the ambiguity.
       final result = await plugin.updateRecurring(
         before.first.instanceId,
         EventSpan.allEvents,
         start: before.first.startDate.add(const Duration(days: 1)),
+        recurrenceRule: Patch.set(WeeklyRecurrence(
+          daysOfWeek: [newDay],
+          end: const CountEnd(4),
+        )),
       );
-      expect(result, isNotEmpty,
-          reason: 'the call must complete without throwing');
-
+      expect(result, isNotEmpty);
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start,
           windowDays: 45);
-      expect(after, isNotEmpty,
-          reason: 'the series must still expand into occurrences');
+      expect(after, isNotEmpty);
+      expect(after.every((e) => e.startDate.weekday == startDay.weekday % 7 + 1),
+          isTrue,
+          reason: 'every occurrence should now fall on the new weekday');
     });
   });
 

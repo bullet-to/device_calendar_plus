@@ -977,6 +977,31 @@ class EventsService {
     )
   }
 
+  /// Whether moving the anchor from `reference` to `target` would change the
+  /// day-spec that `rule` pins explicitly: the weekday for a BYDAY rule, the
+  /// day-of-month for a BYMONTHDAY rule, or the month for a BYMONTH rule. When
+  /// it would, an anchor shift alone can't say what the new pattern should be
+  /// (see updateRecurring docs), so the caller must supply a new rule. Rules
+  /// with no explicit anchor return false — they follow the anchor freely.
+  /// Android's counterpart is `dayMoveConflictsWithRule`.
+  private func dayMoveConflictsWithRule(
+    rule: EKRecurrenceRule,
+    reference: Date,
+    target: Date,
+    timeZone: TimeZone
+  ) -> Bool {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    func changed(_ unit: Calendar.Component) -> Bool {
+      return calendar.component(unit, from: reference)
+        != calendar.component(unit, from: target)
+    }
+    if let days = rule.daysOfTheWeek, !days.isEmpty { return changed(.weekday) }
+    if let dom = rule.daysOfTheMonth, !dom.isEmpty { return changed(.day) }
+    if let months = rule.monthsOfTheYear, !months.isEmpty { return changed(.month) }
+    return false
+  }
+
   /// Translates `base` by the wall-clock delta from `reference` to `target`,
   /// computed in `timeZone`: shifts by the whole-day difference and sets the
   /// time-of-day to `target`'s. DST-safe — it counts calendar days and sets a
@@ -1153,6 +1178,28 @@ class EventsService {
         reference = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
       } else {
         reference = foundEvent.startDate
+      }
+      // A `start` that moves the day of a series whose rule pins that day
+      // explicitly is ambiguous (see updateRecurring docs) — refuse it unless
+      // the caller also supplies the new rule. Implicit rules (no BYDAY/
+      // BYMONTHDAY) just follow the anchor, so they pass through.
+      let changingRule = recurrenceRule != nil
+        || patch.clearedFields.contains("recurrenceRule")
+      if !changingRule,
+         let rule = foundEvent.recurrenceRules?.first,
+         dayMoveConflictsWithRule(
+           rule: rule,
+           reference: reference,
+           target: target,
+           timeZone: foundEvent.timeZone ?? .current
+         ) {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "start moves this series to a different day, but its "
+            + "recurrence rule pins specific days. Pass a recurrenceRule to "
+            + "specify the new pattern."
+        )))
+        return
       }
       guard let shifted = shiftStart(
         foundEvent.startDate,

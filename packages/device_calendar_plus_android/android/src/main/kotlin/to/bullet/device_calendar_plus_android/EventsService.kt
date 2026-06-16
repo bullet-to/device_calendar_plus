@@ -1096,6 +1096,27 @@ class EventsService(private val context: Context) {
                 )
             }
 
+            // A `start` that moves the day of a series whose rule pins that day
+            // explicitly is ambiguous (see updateRecurring docs) — refuse it
+            // unless the caller also supplies the new rule. Implicit rules (no
+            // BYDAY/BYMONTHDAY) just follow the anchor, so they pass through.
+            val changingRule = recurrenceRule != null ||
+                "recurrenceRule" in patch.clearedFields
+            if (newStartMillis != null && !changingRule && row.rrule != null &&
+                dayMoveConflictsWithRule(
+                    row.rrule, timestamp ?: row.dtstart, newStartMillis, row.timeZone
+                )
+            ) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "start moves this series to a different day, but its " +
+                            "recurrence rule pins specific days. Pass a " +
+                            "recurrenceRule to specify the new pattern."
+                    )
+                )
+            }
+
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
                     eventId, row, timestamp, newStartMillis,
@@ -1707,6 +1728,37 @@ class EventsService(private val context: Context) {
             cal.set(java.util.Calendar.MILLISECOND, target.get(java.util.Calendar.MILLISECOND))
         }
         return cal.timeInMillis
+    }
+
+    /**
+     * Whether moving the anchor from [referenceMillis] to [targetMillis] would
+     * change the day-spec that [rrule] pins explicitly: the weekday for a
+     * BYDAY rule, the day-of-month for a BYMONTHDAY rule, or the month for a
+     * BYMONTH rule. When it would, an anchor shift alone can't say what the new
+     * pattern should be (see updateRecurring docs), so the caller must supply a
+     * new rule. Rules with no explicit anchor return false — they follow the
+     * anchor freely. iOS's counterpart is `dayMoveConflictsWithRule`.
+     */
+    private fun dayMoveConflictsWithRule(
+        rrule: String,
+        referenceMillis: Long,
+        targetMillis: Long,
+        timeZoneId: String?
+    ): Boolean {
+        val upper = rrule.uppercase()
+        val hasByDay = upper.contains("BYDAY=")
+        val hasByMonthDay = upper.contains("BYMONTHDAY=")
+        val hasByMonth = upper.contains("BYMONTH=")
+        if (!hasByDay && !hasByMonthDay && !hasByMonth) return false
+        val tz = if (timeZoneId != null) java.util.TimeZone.getTimeZone(timeZoneId)
+                 else java.util.TimeZone.getDefault()
+        val ref = java.util.Calendar.getInstance(tz).apply { timeInMillis = referenceMillis }
+        val tgt = java.util.Calendar.getInstance(tz).apply { timeInMillis = targetMillis }
+        fun changed(field: Int) = ref.get(field) != tgt.get(field)
+        if (hasByDay && changed(java.util.Calendar.DAY_OF_WEEK)) return true
+        if (hasByMonthDay && changed(java.util.Calendar.DAY_OF_MONTH)) return true
+        if (hasByMonth && changed(java.util.Calendar.MONTH)) return true
+        return false
     }
 
     /**
