@@ -1,3 +1,22 @@
+## 0.6.0 - 2026-06-16
+
+### Changed
+- **Breaking:** `updateRecurring` takes the anchored occurrence's new start
+  (`newStartMillis`) instead of `startMinuteOfDay`. `shiftDate` translates the
+  series anchor by the wall-clock delta (calendar-day count + time-of-day) in
+  the event's `EVENT_TIMEZONE`, so a move can change the day and time together
+  and stays correct across DST (#103).
+
+### Fixed
+- A time-only `allEvents` edit now re-writes the unchanged RRULE so the
+  CalendarProvider re-expands the Instances cache; without it a moved DTSTART
+  could read back as a single occurrence.
+
+### Behaviour
+- `updateRecurring` rejects a `start` that moves the day of a series whose
+  RRULE pins it (`BYDAY` / `BYMONTHDAY` / `BYMONTH`) unless a new rule is also
+  supplied (`dayMoveConflictsWithRule`).
+
 ## 0.5.2 - 2026-06-15
 
 ### Fixed
