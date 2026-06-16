@@ -1038,6 +1038,56 @@ class EventsService {
     )
   }
 
+  /// Resolves the anchor-shifted start for an `updateRecurring` call that
+  /// passed a new `start` (`newStartMillis`): moves `event`'s start by the
+  /// wall-clock delta from the reference occurrence (the one at `timestamp`,
+  /// or the series anchor when none) to the target.
+  ///
+  /// Fails with `invalidArguments` when the move would change a day the rule
+  /// pins explicitly and the caller didn't also change the rule (the move is
+  /// ambiguous — see updateRecurring docs), and with `operationFailed` if the
+  /// shift can't be computed.
+  private func resolveShiftedStart(
+    for event: EKEvent,
+    newStartMillis: Int64,
+    timestamp: Int64?,
+    isAllDay: Bool,
+    changingRule: Bool
+  ) -> Result<Date, CalendarError> {
+    let target = Date(timeIntervalSince1970: TimeInterval(newStartMillis) / 1000.0)
+    let reference: Date
+    if let timestamp = timestamp {
+      reference = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
+    } else {
+      reference = event.startDate
+    }
+    let timeZone = event.timeZone ?? .current
+
+    if !changingRule,
+       let rule = event.recurrenceRules?.first,
+       dayMoveConflictsWithRule(
+         rule: rule, reference: reference, target: target, timeZone: timeZone
+       ) {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "start moves this series to a different day, but its "
+          + "recurrence rule pins specific days. Pass a recurrenceRule to "
+          + "specify the new pattern."
+      ))
+    }
+
+    guard let shifted = shiftStart(
+      event.startDate, reference: reference, to: target,
+      isAllDay: isAllDay, timeZone: timeZone
+    ) else {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "Could not apply the new start to the event"
+      ))
+    }
+    return .success(shifted)
+  }
+
   /// Splits a `thisAndFollowing` series at `occurrence` and turns that
   /// occurrence into a standalone non-recurring event, dropping every later
   /// occurrence (earlier ones stay in the original series).
@@ -1168,53 +1218,23 @@ class EventsService {
     // mutations could otherwise ride along with a later save.
     // Anchor shift: move the reference occurrence to `newStartMillis` and
     // translate this event's start by the same wall-clock delta (day + time).
-    // The reference is the occurrence at `timestamp`, or the series anchor
-    // (foundEvent is the master) for `allEvents` with no timestamp.
     var newStart: Date?
     if let newStartMillis = newStartMillis {
-      let target = Date(timeIntervalSince1970: TimeInterval(newStartMillis) / 1000.0)
-      let reference: Date
-      if let timestamp = timestamp {
-        reference = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
-      } else {
-        reference = foundEvent.startDate
-      }
-      // A `start` that moves the day of a series whose rule pins that day
-      // explicitly is ambiguous (see updateRecurring docs) — refuse it unless
-      // the caller also supplies the new rule. Implicit rules (no BYDAY/
-      // BYMONTHDAY) just follow the anchor, so they pass through.
       let changingRule = recurrenceRule != nil
         || patch.clearedFields.contains("recurrenceRule")
-      if !changingRule,
-         let rule = foundEvent.recurrenceRules?.first,
-         dayMoveConflictsWithRule(
-           rule: rule,
-           reference: reference,
-           target: target,
-           timeZone: foundEvent.timeZone ?? .current
-         ) {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "start moves this series to a different day, but its "
-            + "recurrence rule pins specific days. Pass a recurrenceRule to "
-            + "specify the new pattern."
-        )))
-        return
-      }
-      guard let shifted = shiftStart(
-        foundEvent.startDate,
-        reference: reference,
-        to: target,
+      switch resolveShiftedStart(
+        for: foundEvent,
+        newStartMillis: newStartMillis,
+        timestamp: timestamp,
         isAllDay: effectiveIsAllDay,
-        timeZone: foundEvent.timeZone ?? .current
-      ) else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.operationFailed,
-          message: "Could not apply the new start to the event"
-        )))
+        changingRule: changingRule
+      ) {
+      case .success(let shifted):
+        newStart = shifted
+      case .failure(let error):
+        completion(.failure(error))
         return
       }
-      newStart = shifted
     }
 
     var parsedRecurrenceRule: EKRecurrenceRule?

@@ -1745,10 +1745,9 @@ class EventsService(private val context: Context) {
         targetMillis: Long,
         timeZoneId: String?
     ): Boolean {
-        val upper = rrule.uppercase()
-        val hasByDay = upper.contains("BYDAY=")
-        val hasByMonthDay = upper.contains("BYMONTHDAY=")
-        val hasByMonth = upper.contains("BYMONTH=")
+        val hasByDay = rruleHasPart(rrule, "BYDAY")
+        val hasByMonthDay = rruleHasPart(rrule, "BYMONTHDAY")
+        val hasByMonth = rruleHasPart(rrule, "BYMONTH")
         if (!hasByDay && !hasByMonthDay && !hasByMonth) return false
         val tz = if (timeZoneId != null) java.util.TimeZone.getTimeZone(timeZoneId)
                  else java.util.TimeZone.getDefault()
@@ -1877,6 +1876,18 @@ class EventsService(private val context: Context) {
             }
         }
         return count
+    }
+
+    /**
+     * Whether [rrule] carries the part named [key] (e.g. "BYDAY"). Matches on
+     * the part key rather than a raw substring, so "BYMONTH" doesn't spuriously
+     * match "BYMONTHDAY". Mirrors the key parsing in [rruleCount]/[setRruleUntil].
+     */
+    private fun rruleHasPart(rrule: String, key: String): Boolean {
+        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
+        return body.split(";").any {
+            it.substringBefore('=').uppercase() == key
+        }
     }
 
     /** The COUNT value of an RRULE, or null if it has none. */

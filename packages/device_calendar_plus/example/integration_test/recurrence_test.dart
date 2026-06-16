@@ -709,8 +709,10 @@ void main() {
 
   // Anchor-shift: `start` moves the anchored occurrence to a new instant and
   // translates the whole scope by the wall-clock delta — time and day
-  // together (issue #103). The series is created in UTC, so wall-clock deltas
-  // equal absolute deltas and the assertions are timezone-independent.
+  // together (issue #103). Most cases create the series in UTC, so wall-clock
+  // deltas equal absolute deltas and the assertions are timezone-independent;
+  // the final case deliberately pins a DST-observing *event* timezone to cover
+  // the wall-clock path the UTC cases can't.
   group('Recurrence Anchor-Shift Tests (#103)', () {
     late DeviceCalendar plugin;
     String? calendarId;
@@ -946,6 +948,68 @@ void main() {
       expect(after.every((e) => e.startDate.weekday == startDay.weekday % 7 + 1),
           isTrue,
           reason: 'every occurrence should now fall on the new weekday');
+    });
+
+    test(
+        'allEvents shift keeps wall-clock across DST in a non-UTC event '
+        'timezone', () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+
+      // Every other case here runs in UTC (no DST). This one pins a
+      // DST-observing *event* timezone — distinct from the device timezone the
+      // harness varies — to exercise the path where the shift counts calendar
+      // days and re-applies the wall-clock time in the event's zone, and where
+      // listEvents must expand a series whose UTC offset changes mid-stream.
+      //
+      // US Pacific falls back on 2026-11-01 (PDT UTC-7 -> PST UTC-8). At 09:00
+      // local that is 16:00 UTC before the switch and 17:00 UTC after it.
+      const pacific = 'America/Los_Angeles';
+      final fallBack = DateTime.utc(2026, 11, 1);
+      int expectedUtcHour(Event occ) =>
+          occ.startDate.toUtc().isBefore(fallBack) ? 16 : 17;
+
+      // Anchor at 2026-10-30 09:00 PDT = 16:00 UTC, daily, straddling the
+      // fall-back so the series carries 09:00 Pacific on both offsets.
+      final anchor = DateTime.utc(2026, 10, 30, 16, 0);
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId!,
+        title: 'Pacific DST Series',
+        startDate: anchor,
+        endDate: anchor.add(const Duration(hours: 1)),
+        recurrenceRule: DailyRecurrence(end: const CountEnd(6)),
+        timeZone: pacific,
+      );
+
+      final before =
+          await occurrencesOf(plugin, calendarId!, eventId, anchor, windowDays: 10);
+      expect(before.length, greaterThanOrEqualTo(4),
+          reason: 'the daily series must expand across the transition');
+      for (final occ in before) {
+        expect(occ.startDate.toUtc().hour, expectedUtcHour(occ),
+            reason: 'the created series must stay at 09:00 Pacific across DST');
+      }
+
+      // Shift the anchor one calendar day later (2026-10-31 09:00 PDT = 16:00
+      // UTC). The shifted series still crosses the fall-back, so a DST-safe
+      // shift keeps every occurrence at 09:00 Pacific.
+      final newAnchor = DateTime.utc(2026, 10, 31, 16, 0);
+      await plugin.updateRecurring(
+        before.first.instanceId,
+        EventSpan.allEvents,
+        start: newAnchor,
+      );
+
+      final after =
+          await occurrencesOf(plugin, calendarId!, eventId, anchor, windowDays: 10);
+      expect(after, isNotEmpty);
+      expect(after.first.startDate.toUtc().millisecondsSinceEpoch,
+          newAnchor.millisecondsSinceEpoch,
+          reason: 'the new anchor must land exactly at 09:00 PDT');
+      for (final occ in after) {
+        expect(occ.startDate.toUtc().hour, expectedUtcHour(occ),
+            reason: 'after the shift the series must stay at 09:00 Pacific '
+                '(DST-safe day count, not a flat 24h add)');
+      }
     });
   });
 
