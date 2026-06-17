@@ -634,10 +634,16 @@ class EventsService(
         }
         
         // Resolve the target calendar. A null calendarId means "default
-        // calendar" — resolve the primary (or first) writable calendar.
-        val resolvedCalendarId = calendarId ?: calendarService.resolveDefaultWritableCalendarId()
-        if (resolvedCalendarId == null) {
-            return Result.failure(
+        // calendar" — resolve the primary (or first) writable calendar. The
+        // resolver fails with permissionDenied if it can't read the calendar
+        // list, so propagate that rather than flattening it into "no calendar".
+        val resolvedCalendarId: String
+        if (calendarId != null) {
+            resolvedCalendarId = calendarId
+        } else {
+            val resolution = calendarService.resolveDefaultWritableCalendarId()
+            resolution.exceptionOrNull()?.let { return Result.failure(it) }
+            resolvedCalendarId = resolution.getOrNull() ?: return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
                     "No writable calendar available"
