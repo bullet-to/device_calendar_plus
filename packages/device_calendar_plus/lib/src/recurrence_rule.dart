@@ -185,11 +185,11 @@ class WeeklyRecurrence extends RecurrenceRule {
   ///
   /// iOS can read this from events but cannot set it when creating them; the
   /// value still round-trips via [rruleString].
-  final DayOfWeek? wkst;
+  final DayOfWeek? weekStart;
 
   const WeeklyRecurrence({
     this.daysOfWeek,
-    this.wkst,
+    this.weekStart,
     super.interval,
     super.end,
     super.rawRrule,
@@ -203,7 +203,7 @@ class WeeklyRecurrence extends RecurrenceRule {
       buf.write(';BYDAY=${daysOfWeek!.map((d) => d.toRruleDay()).join(',')}');
     }
     buf.write(_endParts());
-    if (wkst != null) buf.write(';WKST=${wkst!.toRruleDay()}');
+    if (weekStart != null) buf.write(';WKST=${weekStart!.toRruleDay()}');
     return buf.toString();
   }
 
@@ -213,20 +213,20 @@ class WeeklyRecurrence extends RecurrenceRule {
     return other is WeeklyRecurrence &&
         other.interval == interval &&
         other.end == end &&
-        other.wkst == wkst &&
+        other.weekStart == weekStart &&
         _listEquals(other.daysOfWeek, daysOfWeek);
   }
 
   @override
   int get hashCode => Object.hash(
         super.hashCode,
-        wkst,
+        weekStart,
         daysOfWeek != null ? Object.hashAll(daysOfWeek!) : null,
       );
 
   @override
   String toString() =>
-      'WeeklyRecurrence(interval: $interval, daysOfWeek: $daysOfWeek, wkst: $wkst, end: $end)';
+      'WeeklyRecurrence(interval: $interval, daysOfWeek: $daysOfWeek, weekStart: $weekStart, end: $end)';
 }
 
 /// Event repeats every N months.
@@ -707,7 +707,7 @@ class _RruleParser {
         'WEEKLY' => WeeklyRecurrence(
             interval: interval,
             daysOfWeek: _parseDaysOfWeek(params['BYDAY']),
-            wkst: params['WKST'] != null
+            weekStart: params['WKST'] != null
                 ? DayOfWeek.fromRruleDay(params['WKST']!)
                 : null,
             end: end,

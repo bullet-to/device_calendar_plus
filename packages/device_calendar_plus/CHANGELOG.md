@@ -1,3 +1,12 @@
+## Unreleased
+
+### Changed
+- **Breaking:** `WeeklyRecurrence`'s `wkst` field and constructor parameter are
+  renamed to `weekStart`, matching the spelled-out naming of the other
+  recurrence fields (`daysOfWeek`, `daysOfMonth`, `setPositions`, …). The
+  emitted RRULE is unchanged (still uses the `WKST=` token). Update
+  `WeeklyRecurrence(wkst: …)` call sites and `.wkst` reads to `weekStart`.
+
 ## 0.7.1 - 2026-06-17
 
 ### Changed
