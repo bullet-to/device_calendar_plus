@@ -718,9 +718,10 @@ class DeviceCalendar {
   ///   When omitted (`null`), the event is written to the platform's default
   ///   calendar for new events — on iOS `defaultCalendarForNewEvents`, on
   ///   Android the primary writable calendar (falling back to the first
-  ///   writable calendar). Throws a [DeviceCalendarException] if no
-  ///   default/writable calendar is available. Passing a non-null but
-  ///   empty/whitespace ID is still an error.
+  ///   writable calendar). On Android this reads the calendar list to pick a
+  ///   default, so it needs full access — not write-only. Throws a
+  ///   [DeviceCalendarException] if no default/writable calendar is available.
+  ///   Passing a non-null but empty/whitespace ID is still an error.
   /// [title] is the event title (required).
   /// [startDate] is the start date/time (required).
   /// [endDate] is the end date/time (required).

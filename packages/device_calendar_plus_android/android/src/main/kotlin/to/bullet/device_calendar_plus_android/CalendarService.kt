@@ -93,15 +93,32 @@ class CalendarService(private val context: Context) {
     /**
      * Resolves the id of a calendar to write new events into when the caller
      * omits one. Prefers the primary writable calendar; otherwise falls back to
-     * the first writable calendar. Returns null when no writable calendar
-     * exists. Reuses [listCalendars] so the writability definition and the
-     * permission/error handling stay in one place.
+     * the first writable calendar. `success(null)` means no writable calendar
+     * exists; `failure(permissionDenied)` means we couldn't read the calendar
+     * list to pick one. The two are distinct so the caller surfaces an honest
+     * error instead of reporting "no calendar" for a missing READ_CALENDAR.
+     *
+     * Reuses [listCalendars] so the writability definition stays in one place.
      */
-    fun resolveDefaultWritableCalendarId(): String? {
-        val calendars = listCalendars().getOrNull() ?: return null
-        val writable = calendars.filter { it["readOnly"] == false }
-        val chosen = writable.firstOrNull { it["isPrimary"] == true } ?: writable.firstOrNull()
-        return chosen?.get("id") as String?
+    fun resolveDefaultWritableCalendarId(): Result<String?> {
+        // Picking a default reads the calendar list, so it needs READ_CALENDAR.
+        // Guard it explicitly: a denied read can surface as either a thrown
+        // SecurityException or a silently empty cursor, and only the explicit
+        // check distinguishes "can't read" from "genuinely no calendars".
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR)
+            != PackageManager.PERMISSION_GRANTED) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Reading calendars to resolve a default requires READ_CALENDAR"
+                )
+            )
+        }
+        return listCalendars().map { calendars ->
+            val writable = calendars.filter { it["readOnly"] == false }
+            (writable.firstOrNull { it["isPrimary"] == true } ?: writable.firstOrNull())
+                ?.get("id") as? String
+        }
     }
 
     fun listSources(): Result<List<Map<String, Any>>> {
