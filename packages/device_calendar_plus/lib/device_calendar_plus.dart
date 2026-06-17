@@ -312,8 +312,7 @@ class DeviceCalendar {
   /// }
   /// ```
   ///
-  /// Access: requires full access ([CalendarAccessLevel.full]) — it reads
-  /// calendar data, which write-only (add-only) access cannot do.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   Future<List<Calendar>> listCalendars() async {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -350,8 +349,7 @@ class DeviceCalendar {
   /// }
   /// ```
   ///
-  /// Access: requires full access ([CalendarAccessLevel.full]) — it reads
-  /// calendar data, which write-only (add-only) access cannot do.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   Future<List<CalendarSource>> listSources() async {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -377,9 +375,8 @@ class DeviceCalendar {
   /// Returns the ID of the newly created calendar.
   ///
   /// The calendar is created in the device's local storage by default.
-  /// Access: requires full access ([CalendarAccessLevel.full]). Write-only
-  /// access is add-only on iOS and cannot read or modify existing calendar
-  /// data, so it does not satisfy this call.
+  /// Requires full calendar access ([CalendarAccessLevel.full]) — unlike
+  /// [createEvent], write-only access does not extend to creating calendars.
   ///
   /// Example:
   /// ```dart
@@ -435,9 +432,7 @@ class DeviceCalendar {
   /// [colorHex] is the new color in #RRGGBB format (optional, e.g., "#FF5733").
   ///
   /// Passing neither [name] nor [colorHex] is a no-op (nothing to change).
-  /// Access: requires full access ([CalendarAccessLevel.full]). Write-only
-  /// access is add-only on iOS and cannot read or modify existing calendar
-  /// data, so it does not satisfy this call.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   ///
   /// Example:
   /// ```dart
@@ -505,9 +500,7 @@ class DeviceCalendar {
   /// [calendarId] is the ID of the calendar to delete.
   ///
   /// This will also delete all events within the calendar.
-  /// Access: requires full access ([CalendarAccessLevel.full]). Write-only
-  /// access is add-only on iOS and cannot read or modify existing calendar
-  /// data, so it does not satisfy this call.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   ///
   /// Example:
   /// ```dart
@@ -582,8 +575,7 @@ class DeviceCalendar {
   /// }
   /// ```
   ///
-  /// Access: requires full access ([CalendarAccessLevel.full]) — it reads
-  /// events, which write-only (add-only) access cannot do.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   Future<List<Event>> listEvents(
     DateTime startDate,
     DateTime endDate, {
@@ -627,8 +619,7 @@ class DeviceCalendar {
   /// final masterEvent = await plugin.getEvent(event.eventId);
   /// ```
   ///
-  /// Access: requires full access ([CalendarAccessLevel.full]) — it reads an
-  /// event, which write-only (add-only) access cannot do.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   Future<Event?> getEvent(String id) async {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -698,8 +689,7 @@ class DeviceCalendar {
   /// await plugin.showEventModal(event.instanceId, edit: true);
   /// ```
   ///
-  /// Access: requires full access ([CalendarAccessLevel.full]) — it binds to an
-  /// existing event, which write-only (add-only) access cannot read.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   Future<void> showEventModal(String id, {bool edit = false}) async {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -740,10 +730,7 @@ class DeviceCalendar {
   ///
   /// Returns the system-generated event ID.
   ///
-  /// Access: needs only write-only access ([CalendarAccessLevel.writeOnly]) —
-  /// it just adds a new event — though full access works too. This is one of
-  /// the few operations the add-only tier covers; reading or changing existing
-  /// events requires [CalendarAccessLevel.full].
+  /// Works with write-only access ([CalendarAccessLevel.writeOnly]), or full.
   ///
   /// Example:
   /// ```dart
@@ -846,9 +833,7 @@ class DeviceCalendar {
   /// To delete an entire recurring series or truncate it from a split point
   /// forward, use [deleteRecurring] instead.
   ///
-  /// Access: requires full access ([CalendarAccessLevel.full]). Write-only
-  /// access is add-only on iOS and cannot read or modify existing calendar
-  /// data, so it does not satisfy this call.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   ///
   /// Example:
   /// ```dart
@@ -928,9 +913,7 @@ class DeviceCalendar {
   /// value, [Patch.clear] to remove the existing value.
   ///
   /// Providing no fields is a no-op (nothing to change).
-  /// Access: requires full access ([CalendarAccessLevel.full]). Write-only
-  /// access is add-only on iOS and cannot read or modify existing calendar
-  /// data, so it does not satisfy this call.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   ///
   /// Example:
   /// ```dart
@@ -1118,9 +1101,7 @@ class DeviceCalendar {
   /// `allEvents`, the new series' ID for `thisAndFollowing`.
   ///
   /// Providing no fields is a no-op (nothing to change).
-  /// Access: requires full access ([CalendarAccessLevel.full]). Write-only
-  /// access is add-only on iOS and cannot read or modify existing calendar
-  /// data, so it does not satisfy this call.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   ///
   /// Example:
   /// ```dart
@@ -1296,9 +1277,7 @@ class DeviceCalendar {
   ///   every later one are removed; the series is truncated to end before it.
   ///   Earlier occurrences are untouched.
   ///
-  /// Access: requires full access ([CalendarAccessLevel.full]). Write-only
-  /// access is add-only on iOS and cannot read or modify existing calendar
-  /// data, so it does not satisfy this call.
+  /// Requires full calendar access ([CalendarAccessLevel.full]).
   ///
   /// Example:
   /// ```dart
@@ -1384,8 +1363,7 @@ class DeviceCalendar {
   /// );
   /// ```
   ///
-  /// Access: needs only write-only access ([CalendarAccessLevel.writeOnly]) —
-  /// it opens an editor to add a new event — though full access works too.
+  /// Works with write-only access ([CalendarAccessLevel.writeOnly]), or full.
   Future<void> showCreateEventModal({
     String? title,
     DateTime? startDate,
