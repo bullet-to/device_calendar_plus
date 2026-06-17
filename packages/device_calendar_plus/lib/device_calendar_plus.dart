@@ -1,10 +1,12 @@
 import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
 import 'package:flutter/services.dart';
 
+import 'src/auto_permission_mode.dart';
 import 'src/calendar.dart';
 import 'src/calendar_access_level.dart';
 import 'src/calendar_permission_status.dart';
 import 'src/calendar_source.dart';
+import 'src/device_calendar_error.dart';
 import 'src/event.dart';
 import 'src/event_availability.dart';
 import 'src/event_span.dart';
@@ -26,6 +28,7 @@ export 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
         PatchClear;
 
 export 'src/attendee.dart';
+export 'src/auto_permission_mode.dart';
 export 'src/calendar.dart';
 export 'src/calendar_access_level.dart';
 export 'src/calendar_source.dart';
@@ -45,6 +48,22 @@ class DeviceCalendar {
   static final DeviceCalendar instance = DeviceCalendar._internal();
 
   factory DeviceCalendar() => instance;
+
+  /// Opts methods into requesting calendar permission automatically.
+  ///
+  /// When `null` (the default) nothing changes — methods never prompt on their
+  /// own and you call [requestPermissions] yourself. When set to an
+  /// [AutoPermissionMode], each method ensures the access it needs before
+  /// touching the platform: it requests permission once when the status is
+  /// [CalendarPermissionStatus.notDetermined], and throws a
+  /// [DeviceCalendarException] with [DeviceCalendarError.permissionDenied] if
+  /// access is not granted.
+  ///
+  /// Set this once, typically at app start:
+  /// ```dart
+  /// DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
+  /// ```
+  AutoPermissionMode? autoPermissions;
 
   /// Requests calendar permissions from the user.
   ///
@@ -193,6 +212,51 @@ class DeviceCalendar {
     }
   }
 
+  /// Ensures the access an operation needs is held, requesting it when
+  /// [autoPermissions] is set. A no-op in manual mode (`autoPermissions ==
+  /// null`).
+  ///
+  /// [requiredTier] is the minimum access the calling operation needs:
+  /// [CalendarAccessLevel.writeOnly] for add-only operations, otherwise
+  /// [CalendarAccessLevel.full]. In [AutoPermissionMode.full] every request is
+  /// upgraded to full regardless of [requiredTier].
+  ///
+  /// Only a [CalendarPermissionStatus.notDetermined] status triggers a prompt;
+  /// a tier already held is never silently escalated. Throws
+  /// [DeviceCalendarException] ([DeviceCalendarError.permissionDenied]) when the
+  /// resulting access does not satisfy [requiredTier].
+  Future<void> _ensurePermission(CalendarAccessLevel requiredTier) async {
+    final mode = autoPermissions;
+    if (mode == null) return;
+
+    var status = await hasPermissions();
+    if (status == CalendarPermissionStatus.notDetermined) {
+      status = await requestPermissions(
+        level: mode == AutoPermissionMode.full
+            ? CalendarAccessLevel.full
+            : requiredTier,
+      );
+    }
+
+    if (!_satisfies(status, requiredTier)) {
+      throw DeviceCalendarException(
+        errorCode: DeviceCalendarError.permissionDenied,
+        message: 'Calendar access required for this operation was not granted '
+            '(autoPermissions: ${mode.name}).',
+      );
+    }
+  }
+
+  /// Whether [status] grants enough access for [tier]. Full access satisfies
+  /// any tier; write-only satisfies only a write-only requirement.
+  bool _satisfies(CalendarPermissionStatus status, CalendarAccessLevel tier) {
+    if (status == CalendarPermissionStatus.granted) return true;
+    if (status == CalendarPermissionStatus.writeOnly) {
+      return tier == CalendarAccessLevel.writeOnly;
+    }
+    return false;
+  }
+
   /// Converts a status value string to CalendarPermissionStatus
   CalendarPermissionStatus _convertStatusValue(String? statusValue) {
     // Default to denied if status is null or unrecognized
@@ -227,6 +291,7 @@ class DeviceCalendar {
   /// }
   /// ```
   Future<List<Calendar>> listCalendars() async {
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       final List<Map<String, dynamic>> rawCalendars =
           await DeviceCalendarPlusPlatform.instance.listCalendars();
@@ -261,6 +326,7 @@ class DeviceCalendar {
   /// }
   /// ```
   Future<List<CalendarSource>> listSources() async {
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       final List<Map<String, dynamic>> rawSources =
           await DeviceCalendarPlusPlatform.instance.listSources();
@@ -318,6 +384,7 @@ class DeviceCalendar {
       );
     }
 
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       final String calendarId = await DeviceCalendarPlusPlatform.instance
           .createCalendar(name, colorHex, platformOptions);
@@ -388,6 +455,7 @@ class DeviceCalendar {
       );
     }
 
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       await DeviceCalendarPlusPlatform.instance
           .updateCalendar(calendarId, name, colorHex);
@@ -416,6 +484,7 @@ class DeviceCalendar {
   /// await plugin.deleteCalendar(calendarId);
   /// ```
   Future<void> deleteCalendar(String calendarId) async {
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       await DeviceCalendarPlusPlatform.instance.deleteCalendar(calendarId);
     } on PlatformException catch (e, stackTrace) {
@@ -484,6 +553,7 @@ class DeviceCalendar {
     DateTime endDate, {
     List<String>? calendarIds,
   }) async {
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       final List<Map<String, dynamic>> rawEvents =
           await DeviceCalendarPlusPlatform.instance.listEvents(
@@ -521,6 +591,7 @@ class DeviceCalendar {
   /// final masterEvent = await plugin.getEvent(event.eventId);
   /// ```
   Future<Event?> getEvent(String id) async {
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       // Parse the ID to extract eventId and optional timestamp
       final parsed = InstanceIdParser.parse(id);
@@ -588,6 +659,7 @@ class DeviceCalendar {
   /// await plugin.showEventModal(event.instanceId, edit: true);
   /// ```
   Future<void> showEventModal(String id, {bool edit = false}) async {
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       final parsed = InstanceIdParser.parse(id);
 
@@ -689,6 +761,7 @@ class DeviceCalendar {
     final normalizedStartDate = isAllDay ? _stripTime(startDate) : startDate;
     final normalizedEndDate = isAllDay ? _stripTime(endDate) : endDate;
 
+    await _ensurePermission(CalendarAccessLevel.writeOnly);
     try {
       final String eventId =
           await DeviceCalendarPlusPlatform.instance.createEvent(
@@ -753,6 +826,7 @@ class DeviceCalendar {
     // timestamp, which the platform uses to remove that occurrence alone.
     final parsed = InstanceIdParser.parse(eventId);
 
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       await DeviceCalendarPlusPlatform.instance.deleteEvent(
         parsed.eventId,
@@ -881,6 +955,7 @@ class DeviceCalendar {
     // timestamp, which the platform uses to detach and edit that occurrence.
     final parsed = InstanceIdParser.parse(eventId);
 
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       await DeviceCalendarPlusPlatform.instance.updateEvent(
         parsed.eventId,
@@ -1121,6 +1196,7 @@ class DeviceCalendar {
       PatchClear() => const Patch.clear(),
     };
 
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       return await DeviceCalendarPlusPlatform.instance.updateRecurring(
         parsed.eventId,
@@ -1205,6 +1281,7 @@ class DeviceCalendar {
       );
     }
 
+    await _ensurePermission(CalendarAccessLevel.full);
     try {
       await DeviceCalendarPlusPlatform.instance.deleteRecurring(
         parsed.eventId,
@@ -1274,6 +1351,7 @@ class DeviceCalendar {
     final normalizedEnd =
         (isAllDay == true && endDate != null) ? _stripTime(endDate) : endDate;
 
+    await _ensurePermission(CalendarAccessLevel.writeOnly);
     try {
       await DeviceCalendarPlusPlatform.instance.showCreateEventModal(
         title: title,

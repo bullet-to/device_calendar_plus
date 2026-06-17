@@ -44,6 +44,13 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     with MockPlatformInterfaceMixin {
   String? _permissionStatusCode = "notDetermined";
 
+  /// When set, the status [requestPermissions] returns (simulating the result
+  /// of a prompt), distinct from the [hasPermissions] status.
+  String? _postRequestStatusCode;
+
+  /// How many times [requestPermissions] has been called.
+  int requestPermissionsCallCount = 0;
+
   /// The `writeOnly` argument of the most recent requestPermissions call.
   bool? lastWriteOnly;
   List<Map<String, dynamic>> _events = [];
@@ -84,6 +91,12 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   void setPermissionStatus(CalendarPermissionStatus status) {
     _permissionStatusCode = status.name;
+  }
+
+  /// Sets the status [requestPermissions] returns, as if a prompt resolved to
+  /// it. Leave unset to have requestPermissions echo [setPermissionStatus].
+  void setPostRequestStatus(CalendarPermissionStatus status) {
+    _postRequestStatusCode = status.name;
   }
 
   void setEvents(List<Map<String, dynamic>> events) {
@@ -133,8 +146,9 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   @override
   Future<String?> requestPermissions(bool writeOnly) async {
     lastWriteOnly = writeOnly;
+    requestPermissionsCallCount++;
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
-    return _permissionStatusCode;
+    return _postRequestStatusCode ?? _permissionStatusCode;
   }
 
   @override
@@ -380,6 +394,8 @@ void main() {
   setUp(() {
     mockPlatform = MockDeviceCalendarPlusPlatform();
     DeviceCalendarPlusPlatform.instance = mockPlatform;
+    // DeviceCalendar is a singleton, so reset the opt-in flag between tests.
+    DeviceCalendar.instance.autoPermissions = null;
   });
 
   group('DeviceCalendar', () {
@@ -454,6 +470,139 @@ void main() {
               'SOME_OTHER_ERROR',
             ),
           ),
+        );
+      });
+    });
+
+    group('autoPermissions', () {
+      Future<String> createAnEvent() => DeviceCalendar.instance.createEvent(
+            calendarId: 'cal',
+            title: 'Standup',
+            startDate: DateTime(2026, 1, 1, 9),
+            endDate: DateTime(2026, 1, 1, 10),
+          );
+
+      test('manual mode (null) never prompts, even when notDetermined',
+          () async {
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        await DeviceCalendar.instance.listCalendars();
+        expect(mockPlatform.requestPermissionsCallCount, 0);
+      });
+
+      test('full mode requests full access for a read op when notDetermined',
+          () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPostRequestStatus(CalendarPermissionStatus.granted);
+
+        await DeviceCalendar.instance.listCalendars();
+
+        expect(mockPlatform.requestPermissionsCallCount, 1);
+        expect(mockPlatform.lastWriteOnly, isFalse);
+      });
+
+      test('asNeeded mode requests write-only for an add-only op', () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPostRequestStatus(CalendarPermissionStatus.writeOnly);
+
+        await createAnEvent();
+
+        expect(mockPlatform.lastWriteOnly, isTrue);
+      });
+
+      test('asNeeded mode requests full access for a read op', () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPostRequestStatus(CalendarPermissionStatus.granted);
+
+        await DeviceCalendar.instance.listCalendars();
+
+        expect(mockPlatform.lastWriteOnly, isFalse);
+      });
+
+      test('full mode requests full access even for an add-only op', () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPostRequestStatus(CalendarPermissionStatus.granted);
+
+        await createAnEvent();
+
+        expect(mockPlatform.lastWriteOnly, isFalse);
+      });
+
+      test('does not prompt when access is already granted', () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.granted);
+
+        await DeviceCalendar.instance.listCalendars();
+
+        expect(mockPlatform.requestPermissionsCallCount, 0);
+      });
+
+      test('a held write-only tier satisfies an add-only op without prompting',
+          () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.writeOnly);
+
+        await createAnEvent();
+
+        expect(mockPlatform.requestPermissionsCallCount, 0);
+      });
+
+      test('does not auto-escalate a held write-only tier for a read op',
+          () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.writeOnly);
+
+        await expectLater(
+          DeviceCalendar.instance.listCalendars(),
+          throwsA(isA<DeviceCalendarException>().having(
+            (e) => e.errorCode,
+            'errorCode',
+            DeviceCalendarError.permissionDenied,
+          )),
+        );
+        expect(mockPlatform.requestPermissionsCallCount, 0);
+      });
+
+      test('a no-op update does not prompt (guard runs after the no-op return)',
+          () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+
+        // No changed fields: a valid no-op that must not trigger a prompt.
+        await DeviceCalendar.instance.updateEvent(eventId: 'evt');
+
+        expect(mockPlatform.requestPermissionsCallCount, 0);
+      });
+
+      test('throws permissionDenied when access is denied', () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.denied);
+
+        await expectLater(
+          DeviceCalendar.instance.listCalendars(),
+          throwsA(isA<DeviceCalendarException>().having(
+            (e) => e.errorCode,
+            'errorCode',
+            DeviceCalendarError.permissionDenied,
+          )),
+        );
+      });
+
+      test('throws permissionDenied when the prompt is declined', () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPostRequestStatus(CalendarPermissionStatus.denied);
+
+        await expectLater(
+          DeviceCalendar.instance.listCalendars(),
+          throwsA(isA<DeviceCalendarException>().having(
+            (e) => e.errorCode,
+            'errorCode',
+            DeviceCalendarError.permissionDenied,
+          )),
         );
       });
     });
