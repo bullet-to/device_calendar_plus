@@ -903,8 +903,10 @@ void main() {
 
       // +2h same calendar day — weekday unchanged, so no rule conflict.
       final newStart = before.first.startDate.add(const Duration(hours: 2));
-      // Guard against the +2h accidentally crossing midnight in this run.
-      if (newStart.weekday == before.first.startDate.weekday) {
+      // Guard against the +2h crossing midnight in this run. Production checks
+      // the day move in the event's UTC timezone, so guard in UTC too — a
+      // local-frame guard flakes when only the UTC date rolls over.
+      if (newStart.toUtc().weekday == before.first.startDate.toUtc().weekday) {
         await plugin.updateRecurring(
           before.first.instanceId,
           EventSpan.allEvents,
@@ -922,7 +924,6 @@ void main() {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final startDay = DateTime.now().add(const Duration(hours: 1));
       final oldDay = weekdays[startDay.weekday - 1];
-      final newDay = weekdays[startDay.weekday % 7]; // next weekday
       final series = await createWeeklySeries(plugin, calendarId!,
           count: 4, daysOfWeek: [oldDay]);
       final before = await occurrencesOf(
@@ -930,11 +931,19 @@ void main() {
           windowDays: 45);
       expect(before, isNotEmpty);
 
+      // The series is stored in UTC and the rule's BYDAY is expanded in that
+      // frame (production checks the day move in the event's timezone too), so
+      // derive the new weekday and assert in UTC. Reading weekdays in device-
+      // local time flakes whenever local and UTC fall on different calendar
+      // days — e.g. the early-morning hours in Australia/Sydney (#103).
+      final newStart = before.first.startDate.add(const Duration(days: 1));
+      final newDay = weekdays[newStart.toUtc().weekday - 1];
+
       // Passing the new rule alongside start resolves the ambiguity.
       final result = await plugin.updateRecurring(
         before.first.instanceId,
         EventSpan.allEvents,
-        start: before.first.startDate.add(const Duration(days: 1)),
+        start: newStart,
         recurrenceRule: Patch.set(WeeklyRecurrence(
           daysOfWeek: [newDay],
           end: const CountEnd(4),
@@ -945,7 +954,9 @@ void main() {
           plugin, calendarId!, series.eventId, series.start,
           windowDays: 45);
       expect(after, isNotEmpty);
-      expect(after.every((e) => e.startDate.weekday == startDay.weekday % 7 + 1),
+      expect(
+          after.every(
+              (e) => e.startDate.toUtc().weekday == newStart.toUtc().weekday),
           isTrue,
           reason: 'every occurrence should now fall on the new weekday');
     });
