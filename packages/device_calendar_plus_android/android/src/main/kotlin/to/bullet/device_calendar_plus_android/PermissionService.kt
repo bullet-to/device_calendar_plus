@@ -63,6 +63,31 @@ class PermissionService(private val context: Context) {
     }
 
     /**
+     * The access tier implied purely by which calendar permissions are
+     * currently granted: [STATUS_GRANTED] (read + write), [STATUS_WRITE_ONLY]
+     * (write alone — genuine add-only access, mirroring iOS 17+), or `null` when
+     * write access isn't held. A `null` means there is no positive tier, so the
+     * caller decides whether that reads as denied or not-yet-determined.
+     */
+    private fun grantedTier(): String? {
+        val readGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_CALENDAR
+        ) == PackageManager.PERMISSION_GRANTED
+
+        val writeGranted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.WRITE_CALENDAR
+        ) == PackageManager.PERMISSION_GRANTED
+
+        return when {
+            readGranted && writeGranted -> STATUS_GRANTED
+            writeGranted -> STATUS_WRITE_ONLY
+            else -> null
+        }
+    }
+
+    /**
      * Determines the current calendar permission status, distinguishing between
      * "never asked" ([STATUS_NOT_DETERMINED]) and "denied" ([STATUS_DENIED]).
      *
@@ -80,7 +105,8 @@ class PermissionService(private val context: Context) {
      * | Denied once        | Dismiss | true                | true             |
      * | Permanently denied | Denied | false              | true             |
      *
-     * Decision logic when [PackageManager.PERMISSION_DENIED]:
+     * Decision logic when write access isn't held (keyed off WRITE_CALENDAR
+     * alone — the capability that defines whether any tier is reachable):
      * - `shouldShowRationale == false` AND SharedPrefs flag set --> [STATUS_DENIED] (permanently denied, must use app settings)
      * - everything else --> [STATUS_NOT_DETERMINED] (permission dialog can still be shown)
      *
@@ -88,42 +114,24 @@ class PermissionService(private val context: Context) {
      * https://github.com/Baseflow/flutter-permission-handler/blob/39fba431428e5d82d35f4999663461468fe3a728/permission_handler_android/android/src/main/java/com/baseflow/permissionhandler/PermissionUtils.java#L400-L536
      */
     private fun getCurrentPermissionStatus(): String {
-        val readPermission = Manifest.permission.READ_CALENDAR
+        // Holding write access is a positive tier (full or write-only).
+        grantedTier()?.let { return it }
+
+        // Otherwise write isn't granted. Distinguish "never asked / can ask
+        // again" (NOT_DETERMINED) from "permanently denied" (DENIED). WRITE is
+        // the capability that defines whether any tier is reachable (a held
+        // READ-only state isn't possible — grantedTier already returned for any
+        // write-bearing tier), so the decision keys off WRITE alone.
         val writePermission = Manifest.permission.WRITE_CALENDAR
-
-        val readGranted = ContextCompat.checkSelfPermission(
-            context,
-            readPermission
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val writeGranted = ContextCompat.checkSelfPermission(
-            context,
-            writePermission
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (readGranted && writeGranted) return STATUS_GRANTED
-
-        // Write granted but not read is genuine write-only access — the add-only
-        // tier requested via CalendarAccessLevel.writeOnly. (Reported on Android
-        // too, mirroring iOS 17+.)
-        if (writeGranted) return STATUS_WRITE_ONLY
-
-        val deniedPermissions = mutableListOf<String>()
-        if (!readGranted) deniedPermissions.add(readPermission)
-        if (!writeGranted) deniedPermissions.add(writePermission)
 
         // Without an Activity we can't check shouldShowRequestPermissionRationale,
         // so fall back to NOT_DETERMINED (safe default — caller can still request).
         val currentActivity = activity ?: return STATUS_NOT_DETERMINED
 
-        val permanentlyDenied = deniedPermissions.any { wasPermissionDeniedBefore(it) } &&
-            deniedPermissions.none {
-                ActivityCompat.shouldShowRequestPermissionRationale(currentActivity, it)
-            }
+        val permanentlyDenied = wasPermissionDeniedBefore(writePermission) &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(currentActivity, writePermission)
 
-        if (permanentlyDenied) return STATUS_DENIED
-
-        return STATUS_NOT_DETERMINED
+        return if (permanentlyDenied) STATUS_DENIED else STATUS_NOT_DETERMINED
     }
 
     private fun wasPermissionDeniedBefore(permissionName: String): Boolean {
@@ -213,26 +221,32 @@ class PermissionService(private val context: Context) {
         
         val callback = pendingCallback ?: return false
         pendingCallback = null
-        
-        // Every requested permission granted? (A write-only request asks for
-        // WRITE_CALENDAR alone, so "all" is just that one.)
-        val allGranted = grantResults.isNotEmpty() &&
-            grantResults.all { it == PackageManager.PERMISSION_GRANTED }
 
-        if (!allGranted) {
-            permissions.forEachIndexed { index, permission ->
-                if (grantResults.getOrNull(index) != PackageManager.PERMISSION_GRANTED) {
-                    setPermissionDenied(permission)
-                }
-            }
-            callback(Result.success(STATUS_DENIED))
+        // A dismissed dialog delivers empty arrays — no grant, no denial. Report
+        // the real current status (can-ask-again) instead of a hard denial, so a
+        // later hasPermissions() doesn't disagree. Mirrors iOS, which re-reads
+        // the real status on a dismissed prompt.
+        if (grantResults.isEmpty()) {
+            callback(Result.success(getCurrentPermissionStatus()))
             return true
         }
 
-        // Report the tier actually held — getCurrentPermissionStatus distinguishes
-        // full (read + write) from write-only (write alone), so a granted
-        // write-only request resolves to STATUS_WRITE_ONLY.
-        callback(Result.success(getCurrentPermissionStatus()))
+        // Record any denials so a later hasPermissions() can tell a permanent
+        // denial from a can-ask-again one.
+        permissions.forEachIndexed { index, permission ->
+            if (grantResults.getOrNull(index) != PackageManager.PERMISSION_GRANTED) {
+                setPermissionDenied(permission)
+            }
+        }
+
+        // Report the tier actually held. WRITE_CALENDAR is the capability that
+        // matters: hold it and the app has at least write-only access, so a
+        // full request that granted write but denied read reads as writeOnly —
+        // not denied — matching iOS, which reports the real tier on a non-full
+        // grant. Lacking write, the request was denied. We use STATUS_DENIED
+        // here (not getCurrentPermissionStatus's can-ask-again NOT_DETERMINED)
+        // because a just-denied request should read as denied, again as on iOS.
+        callback(Result.success(grantedTier() ?: STATUS_DENIED))
         return true
     }
 }

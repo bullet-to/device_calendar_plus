@@ -68,6 +68,26 @@ class PermissionService {
     return !(value?.isEmpty ?? true)
   }
 
+  private func missingWriteOnlyDescriptionError() -> PermissionError {
+    var errorMessage = "Write-only calendar usage description not declared in Info.plist.\n\n"
+    errorMessage += "Add the following to ios/Runner/Info.plist:\n"
+    errorMessage += "<key>NSCalendarsWriteOnlyAccessUsageDescription</key>\n"
+    errorMessage += "<string>Add events without reading existing events.</string>"
+
+    return PermissionError(code: PlatformExceptionCodes.permissionsNotDeclared, message: errorMessage)
+  }
+
+  private func missingUsageDescriptionError() -> PermissionError {
+    var errorMessage = "Calendar usage description not declared in Info.plist.\n\n"
+    errorMessage += "Add the following to ios/Runner/Info.plist:\n"
+    errorMessage += "<key>NSCalendarsUsageDescription</key>\n"
+    errorMessage += "<string>Access your calendar to view and manage events.</string>\n"
+    errorMessage += "<key>NSCalendarsWriteOnlyAccessUsageDescription</key>\n"
+    errorMessage += "<string>Add events without reading existing events.</string>"
+
+    return PermissionError(code: PlatformExceptionCodes.permissionsNotDeclared, message: errorMessage)
+  }
+
   /// Verifies the Info.plist declares the usage description the request needs.
   ///
   /// A write-only request on iOS 17+ goes through `requestWriteOnlyAccessToEvents`,
@@ -76,29 +96,12 @@ class PermissionService {
   /// Every other path uses `NSCalendarsUsageDescription`.
   private func checkUsageDescriptionDeclared(writeOnly: Bool) -> PermissionError? {
     if writeOnly, #available(iOS 17.0, *) {
-      if !isDescriptionDeclared("NSCalendarsWriteOnlyAccessUsageDescription") {
-        var errorMessage = "Write-only calendar usage description not declared in Info.plist.\n\n"
-        errorMessage += "Add the following to ios/Runner/Info.plist:\n"
-        errorMessage += "<key>NSCalendarsWriteOnlyAccessUsageDescription</key>\n"
-        errorMessage += "<string>Add events without reading existing events.</string>"
-
-        return PermissionError(code: PlatformExceptionCodes.permissionsNotDeclared, message: errorMessage)
-      }
-      return nil
+      return isDescriptionDeclared("NSCalendarsWriteOnlyAccessUsageDescription")
+        ? nil : missingWriteOnlyDescriptionError()
     }
 
-    if !isDescriptionDeclared("NSCalendarsUsageDescription") {
-      var errorMessage = "Calendar usage description not declared in Info.plist.\n\n"
-      errorMessage += "Add the following to ios/Runner/Info.plist:\n"
-      errorMessage += "<key>NSCalendarsUsageDescription</key>\n"
-      errorMessage += "<string>Access your calendar to view and manage events.</string>\n"
-      errorMessage += "<key>NSCalendarsWriteOnlyAccessUsageDescription</key>\n"
-      errorMessage += "<string>Add events without reading existing events.</string>"
-
-      return PermissionError(code: PlatformExceptionCodes.permissionsNotDeclared, message: errorMessage)
-    }
-
-    return nil
+    return isDescriptionDeclared("NSCalendarsUsageDescription")
+      ? nil : missingUsageDescriptionError()
   }
   
   private func getCurrentPermissionStatus() -> String {
@@ -141,10 +144,9 @@ class PermissionService {
     // A status check triggers no prompt, so any declared calendar usage
     // description — full or write-only — satisfies the configuration guard. An
     // add-only app that declares only the write-only key can still check status.
-    let declared = isDescriptionDeclared("NSCalendarsUsageDescription")
-      || isDescriptionDeclared("NSCalendarsWriteOnlyAccessUsageDescription")
-    if !declared, let error = checkUsageDescriptionDeclared(writeOnly: false) {
-      return .failure(error)
+    guard isDescriptionDeclared("NSCalendarsUsageDescription")
+      || isDescriptionDeclared("NSCalendarsWriteOnlyAccessUsageDescription") else {
+      return .failure(missingUsageDescriptionError())
     }
 
     return .success(getCurrentPermissionStatus())
@@ -182,35 +184,31 @@ class PermissionService {
       return
     }
 
-    // Otherwise attempt the request. This prompts on a fresh notDetermined.
-    //
-    // The one case that can't actually prompt: a full request while write-only
-    // is held. iOS treats write-only as a *determined* status, so
-    // requestFullAccessToEvents returns immediately without UI and not-granted —
-    // upgrading write-only → full requires Settings. On a non-grant we re-read
-    // the real status so the caller still sees writeOnly (route them to
-    // openAppSettings), not a misleading denied.
+    // Otherwise attempt the request. This prompts on a fresh notDetermined, and
+    // also on a full request while only write-only is held — iOS re-presents the
+    // dialog asking for full access and upgrades the app in-app if the user
+    // agrees. On a non-grant we re-read the real status so the caller still sees
+    // the tier they actually hold (e.g. writeOnly), not a misleading denied.
+    // Report the tier we asked for on a grant; on a non-grant re-read the real
+    // status. One handler serves all three request variants.
     if #available(iOS 17.0, *) {
+      let grantedStatus = writeOnly
+        ? PermissionService.statusWriteOnly
+        : PermissionService.statusGranted
+      let handler: (Bool, Error?) -> Void = { granted, _ in
+        completion(.success(granted ? grantedStatus : self.getCurrentPermissionStatus()))
+      }
       if writeOnly {
-        eventStore.requestWriteOnlyAccessToEvents { granted, error in
-          completion(.success(granted
-            ? PermissionService.statusWriteOnly
-            : self.getCurrentPermissionStatus()))
-        }
+        eventStore.requestWriteOnlyAccessToEvents(completion: handler)
       } else {
-        eventStore.requestFullAccessToEvents { granted, error in
-          completion(.success(granted
-            ? PermissionService.statusGranted
-            : self.getCurrentPermissionStatus()))
-        }
+        eventStore.requestFullAccessToEvents(completion: handler)
       }
     } else {
-      // iOS 16 and below has only the single full-access tier.
-      eventStore.requestAccess(to: .event) { granted, error in
-        completion(.success(granted
-          ? PermissionService.statusGranted
-          : self.getCurrentPermissionStatus()))
+      // iOS 16 and below: only full access exists, so any grant is full access.
+      let handler: (Bool, Error?) -> Void = { granted, _ in
+        completion(.success(granted ? PermissionService.statusGranted : self.getCurrentPermissionStatus()))
       }
+      eventStore.requestAccess(to: .event, completion: handler)
     }
   }
 }
