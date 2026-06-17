@@ -172,8 +172,12 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// Returns the ID of the newly created event (system-generated).
   /// Requires calendar write permissions.
+  ///
+  /// [calendarId] selects the target calendar. When `null`, the platform
+  /// writes to its default calendar for new events (failing with
+  /// `OPERATION_FAILED` if none is available).
   Future<String> createEvent(
-    String calendarId,
+    String? calendarId,
     String title,
     DateTime startDate,
     DateTime endDate,

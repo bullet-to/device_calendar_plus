@@ -49,7 +49,7 @@ class DeviceCalendarPlusAndroidPlugin :
         val context = flutterPluginBinding.applicationContext
         appContext = context
         calendarService = CalendarService(context)
-        eventsService = EventsService(context)
+        eventsService = EventsService(context, calendarService!!)
         permissionService = PermissionService(context)
         providerExecutor = Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "DeviceCalendarPlusProvider").apply { isDaemon = true }
@@ -370,8 +370,9 @@ class DeviceCalendarPlusAndroidPlugin :
         val availability = call.argument<String>("availability")
         val recurrenceRule = call.argument<String>("recurrenceRule")
         
-        // Validate required arguments
-        if (calendarId == null || title == null || startDateMillis == null || 
+        // Validate required arguments.
+        // calendarId is optional: null routes the event to the default calendar.
+        if (title == null || startDateMillis == null ||
             endDateMillis == null || isAllDay == null || availability == null) {
             result.error(
                 PlatformExceptionCodes.INVALID_ARGUMENTS,

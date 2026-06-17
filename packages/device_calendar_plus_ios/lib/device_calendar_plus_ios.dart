@@ -138,7 +138,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
 
   @override
   Future<String> createEvent(
-    String calendarId,
+    String? calendarId,
     String title,
     DateTime startDate,
     DateTime endDate,

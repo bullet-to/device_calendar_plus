@@ -448,8 +448,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
     
     // Parse required parameters
-    guard let calendarId = args["calendarId"] as? String,
-          let title = args["title"] as? String,
+    guard let title = args["title"] as? String,
           let startDateMillis = args["startDate"] as? Int64,
           let endDateMillis = args["endDate"] as? Int64,
           let isAllDay = args["isAllDay"] as? Bool,
@@ -461,8 +460,10 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       ))
       return
     }
-    
+
     // Parse optional parameters
+    // calendarId is optional: nil routes the event to the default calendar.
+    let calendarId = args["calendarId"] as? String
     let description = args["description"] as? String
     let location = args["location"] as? String
     let url = args["url"] as? String

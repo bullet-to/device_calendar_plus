@@ -8,8 +8,13 @@ import java.util.Date
 
 private const val MINUTES_PER_DAY = 1440
 
-class EventsService(private val context: Context) {
-    
+// Default-calendar resolution reuses CalendarService rather than duplicating
+// its cursor logic, so it's injected by the plugin.
+class EventsService(
+    private val context: Context,
+    private val calendarService: CalendarService,
+) {
+
     fun retrieveEvents(
         startDate: Date,
         endDate: Date,
@@ -605,7 +610,7 @@ class EventsService(private val context: Context) {
     }
 
     fun createEvent(
-        calendarId: String,
+        calendarId: String?,
         title: String,
         startDate: java.util.Date,
         endDate: java.util.Date,
@@ -628,6 +633,18 @@ class EventsService(private val context: Context) {
             )
         }
         
+        // Resolve the target calendar. A null calendarId means "default
+        // calendar" — resolve the primary (or first) writable calendar.
+        val resolvedCalendarId = calendarId ?: calendarService.resolveDefaultWritableCalendarId()
+        if (resolvedCalendarId == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.OPERATION_FAILED,
+                    "No writable calendar available"
+                )
+            )
+        }
+
         try {
             // For all-day events, Android interprets timestamps as UTC to determine the calendar date
             // We need to convert local date components to UTC midnight to preserve the calendar date
@@ -643,7 +660,7 @@ class EventsService(private val context: Context) {
             }
             
             val values = android.content.ContentValues().apply {
-                put(CalendarContract.Events.CALENDAR_ID, calendarId.toLong())
+                put(CalendarContract.Events.CALENDAR_ID, resolvedCalendarId.toLong())
                 put(CalendarContract.Events.TITLE, title)
                 put(CalendarContract.Events.DTSTART, startMillis)
                 put(CalendarContract.Events.ALL_DAY, if (isAllDay) 1 else 0)
