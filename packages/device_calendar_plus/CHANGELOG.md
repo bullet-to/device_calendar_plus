@@ -1,3 +1,9 @@
+## 0.7.1 - 2026-06-17
+
+### Changed
+- Add the `device` pub.dev topic (dropped `federated` to stay within the
+  five-topic limit).
+
 ## 0.7.0 - 2026-06-17
 
 ### Added

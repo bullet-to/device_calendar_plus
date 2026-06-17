@@ -771,7 +771,7 @@ For `thisAndFollowing`, pass an instance ID (`event.instanceId`) that carries an
 - [x] **Update recurrence rules** — change, add or remove a recurrence rule via `updateRecurring`
 - [x] **Delete recurring events** — delete a whole series, this-and-following, or a single occurrence via `deleteRecurring`
 - [x] **Attendees** — read-only on both platforms; use `showCreateEventModal` / `showEventModal(edit: true)` to add via native UI
-- [ ] **Reminders / alarms** — read/write on both platforms
+- [x] **Reminders / alarms** — relative-time reminders, read/write on both platforms
 - [ ] **Platform-specific extras** — organizer and other platform-native fields exposed where supported (event URL is now supported)
 
 ## 🤝 Contributing
