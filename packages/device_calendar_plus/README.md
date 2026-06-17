@@ -196,16 +196,18 @@ if (status == CalendarPermissionStatus.writeOnly ||
   (`requestWriteOnlyAccessToEvents`). Add `NSCalendarsWriteOnlyAccessUsageDescription`
   to `Info.plist`. On iOS 16 and below there is no write-only tier, so this
   falls back to a full-access request and a grant reports `granted`. Write-only
-  is a durable tier here — escalating to full requires the user to change it in
-  Settings.
-- **Android**: requests only `WRITE_CALENDAR`. This is a softer boundary than on
-  iOS: `WRITE_CALENDAR` and `READ_CALENDAR` are in the same `CALENDAR`
-  permission group, so after a write-only grant a later
-  `requestPermissions()` (full) escalates to read access **immediately, with no
-  dialog**, and returns `granted`.
+  is not a ceiling — a later `requestPermissions()` (full) re-prompts and
+  upgrades the app to full access in-app if the user agrees.
+- **Android**: requests only `WRITE_CALENDAR`. `WRITE_CALENDAR` and
+  `READ_CALENDAR` are in the same `CALENDAR` permission group, so after a
+  write-only grant a later `requestPermissions()` (full) escalates to read
+  access **immediately, with no dialog** (where iOS shows a second prompt), and
+  returns `granted`.
 
-On iOS, request the level you need up front — once granted, the OS won't
-re-prompt to change the tier in-app.
+If you start with write-only and later need full read access, just call
+`requestPermissions()` again — iOS shows a second prompt for the upgrade and
+Android escalates silently. Either way the upgrade happens in-app; no trip to
+Settings required.
 
 ### Check Permissions
 
