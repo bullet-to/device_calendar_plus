@@ -432,7 +432,8 @@ class DeviceCalendar {
   /// [colorHex] is the new color in #RRGGBB format (optional, e.g., "#FF5733").
   ///
   /// Passing neither [name] nor [colorHex] is a no-op (nothing to change).
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
+  /// add-only (new events), not editing calendars.
   ///
   /// Example:
   /// ```dart
@@ -500,7 +501,8 @@ class DeviceCalendar {
   /// [calendarId] is the ID of the calendar to delete.
   ///
   /// This will also delete all events within the calendar.
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
+  /// add-only (new events), not deleting calendars.
   ///
   /// Example:
   /// ```dart
@@ -833,7 +835,8 @@ class DeviceCalendar {
   /// To delete an entire recurring series or truncate it from a split point
   /// forward, use [deleteRecurring] instead.
   ///
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
+  /// add-only and can't delete existing events.
   ///
   /// Example:
   /// ```dart
@@ -913,7 +916,8 @@ class DeviceCalendar {
   /// value, [Patch.clear] to remove the existing value.
   ///
   /// Providing no fields is a no-op (nothing to change).
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
+  /// add-only and can't modify existing events.
   ///
   /// Example:
   /// ```dart
@@ -1101,7 +1105,8 @@ class DeviceCalendar {
   /// `allEvents`, the new series' ID for `thisAndFollowing`.
   ///
   /// Providing no fields is a no-op (nothing to change).
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
+  /// add-only and can't modify an existing series.
   ///
   /// Example:
   /// ```dart
@@ -1277,7 +1282,8 @@ class DeviceCalendar {
   ///   every later one are removed; the series is truncated to end before it.
   ///   Earlier occurrences are untouched.
   ///
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
+  /// add-only and can't delete an existing series.
   ///
   /// Example:
   /// ```dart
