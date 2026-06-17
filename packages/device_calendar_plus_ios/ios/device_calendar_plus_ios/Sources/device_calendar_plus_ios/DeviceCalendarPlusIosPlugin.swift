@@ -33,7 +33,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "requestPermissions":
-      handleRequestPermissions(result: result)
+      handleRequestPermissions(call: call, result: result)
     case "hasPermissions":
       handleHasPermissions(result: result)
     case "openAppSettings":
@@ -114,8 +114,10 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
 
-  private func handleRequestPermissions(result: @escaping FlutterResult) {
-    permissionService.requestPermissions { serviceResult in
+  private func handleRequestPermissions(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let args = call.arguments as? [String: Any]
+    let writeOnly = (args?["writeOnly"] as? Bool) ?? false
+    permissionService.requestPermissions(writeOnly: writeOnly) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
         case .success(let status):

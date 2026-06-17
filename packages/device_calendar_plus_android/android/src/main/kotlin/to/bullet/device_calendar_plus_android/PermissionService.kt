@@ -17,6 +17,7 @@ class PermissionService(private val context: Context) {
         
         // Permission status values matching CalendarPermissionStatus enum
         const val STATUS_GRANTED = "granted"
+        const val STATUS_WRITE_ONLY = "writeOnly"
         const val STATUS_DENIED = "denied"
         const val STATUS_NOT_DETERMINED = "notDetermined"
 
@@ -26,7 +27,14 @@ class PermissionService(private val context: Context) {
     
     private var pendingCallback: ((Result<String>) -> Unit)? = null
     
-    private fun checkPermissionsDeclared(): PermissionException? {
+    /**
+     * Verifies the manifest declares the permissions the request needs.
+     *
+     * A write-only request only asks for (and therefore only requires)
+     * [Manifest.permission.WRITE_CALENDAR], so an add-only app need not declare
+     * [Manifest.permission.READ_CALENDAR]. A full request requires both.
+     */
+    private fun checkPermissionsDeclared(writeOnly: Boolean): PermissionException? {
         val readPermission = Manifest.permission.READ_CALENDAR
         val writePermission = Manifest.permission.WRITE_CALENDAR
 
@@ -34,18 +42,23 @@ class PermissionService(private val context: Context) {
             context.packageName,
             PackageManager.GET_PERMISSIONS
         )
-        
+
         val declaredPermissions = packageInfo.requestedPermissions?.toList() ?: emptyList()
-        
-        if (!declaredPermissions.contains(readPermission) || !declaredPermissions.contains(writePermission)) {
+
+        val required = if (writeOnly) {
+            listOf(writePermission)
+        } else {
+            listOf(readPermission, writePermission)
+        }
+
+        if (required.any { it !in declaredPermissions }) {
             val errorMessage = "Calendar permissions must be declared in AndroidManifest.xml.\n\n" +
                 "Add the following to android/app/src/main/AndroidManifest.xml:\n" +
-                "<uses-permission android:name=\"android.permission.READ_CALENDAR\"/>\n" +
-                "<uses-permission android:name=\"android.permission.WRITE_CALENDAR\"/>"
-            
+                required.joinToString("\n") { "<uses-permission android:name=\"$it\"/>" }
+
             return PermissionException(PlatformExceptionCodes.PERMISSIONS_NOT_DECLARED, errorMessage)
         }
-        
+
         return null
     }
 
@@ -90,6 +103,11 @@ class PermissionService(private val context: Context) {
 
         if (readGranted && writeGranted) return STATUS_GRANTED
 
+        // Write granted but not read is genuine write-only access — the add-only
+        // tier requested via CalendarAccessLevel.writeOnly. (Reported on Android
+        // too, mirroring iOS 17+.)
+        if (writeGranted) return STATUS_WRITE_ONLY
+
         val deniedPermissions = mutableListOf<String>()
         if (!readGranted) deniedPermissions.add(readPermission)
         if (!writeGranted) deniedPermissions.add(writePermission)
@@ -119,24 +137,38 @@ class PermissionService(private val context: Context) {
     }
     
     fun hasPermissions(): Result<String> {
-        val error = checkPermissionsDeclared()
+        // A status check triggers no request, so only the minimal calendar
+        // permission (WRITE) need be declared — an add-only app that omits
+        // READ_CALENDAR can still check its status.
+        val error = checkPermissionsDeclared(writeOnly = true)
         if (error != null) {
             return Result.failure(error)
         }
-        
+
         return Result.success(getCurrentPermissionStatus())
     }
     
-    fun requestPermissions(callback: (Result<String>) -> Unit) {
-        val error = checkPermissionsDeclared()
+    /**
+     * Requests calendar permissions from the user.
+     *
+     * @param writeOnly when `true`, requests only [Manifest.permission.WRITE_CALENDAR]
+     *   (the add-only tier — mirrors iOS 17+ write-only). When `false`, requests
+     *   both [Manifest.permission.READ_CALENDAR] and
+     *   [Manifest.permission.WRITE_CALENDAR] for full access.
+     */
+    fun requestPermissions(writeOnly: Boolean, callback: (Result<String>) -> Unit) {
+        val error = checkPermissionsDeclared(writeOnly)
         if (error != null) {
             callback(Result.failure(error))
             return
         }
 
         val currentStatus = getCurrentPermissionStatus()
-        if (currentStatus == STATUS_GRANTED) {
-            callback(Result.success(STATUS_GRANTED))
+        // Full access already satisfies any request. A write-only request is
+        // also satisfied when write access is already held.
+        if (currentStatus == STATUS_GRANTED ||
+            (writeOnly && currentStatus == STATUS_WRITE_ONLY)) {
+            callback(Result.success(currentStatus))
             return
         }
 
@@ -153,12 +185,19 @@ class PermissionService(private val context: Context) {
         // Store the callback to be completed when permission result is received
         pendingCallback = callback
 
-        // Request both permissions
+        // Write-only asks for WRITE_CALENDAR alone; full access asks for both.
+        // A full request while write-only is already held only re-prompts for
+        // READ_CALENDAR, upgrading the tier.
         val readPermission = Manifest.permission.READ_CALENDAR
         val writePermission = Manifest.permission.WRITE_CALENDAR
+        val requested = if (writeOnly) {
+            arrayOf(writePermission)
+        } else {
+            arrayOf(readPermission, writePermission)
+        }
         ActivityCompat.requestPermissions(
             currentActivity,
-            arrayOf(readPermission, writePermission),
+            requested,
             CALENDAR_PERMISSION_REQUEST_CODE
         )
     }
@@ -175,8 +214,9 @@ class PermissionService(private val context: Context) {
         val callback = pendingCallback ?: return false
         pendingCallback = null
         
-        // Check if both permissions were granted
-        val allGranted = grantResults.isNotEmpty() && 
+        // Every requested permission granted? (A write-only request asks for
+        // WRITE_CALENDAR alone, so "all" is just that one.)
+        val allGranted = grantResults.isNotEmpty() &&
             grantResults.all { it == PackageManager.PERMISSION_GRANTED }
 
         if (!allGranted) {
@@ -185,9 +225,14 @@ class PermissionService(private val context: Context) {
                     setPermissionDenied(permission)
                 }
             }
+            callback(Result.success(STATUS_DENIED))
+            return true
         }
-        
-        callback(Result.success(if (allGranted) STATUS_GRANTED else STATUS_DENIED))
+
+        // Report the tier actually held — getCurrentPermissionStatus distinguishes
+        // full (read + write) from write-only (write alone), so a granted
+        // write-only request resolves to STATUS_WRITE_ONLY.
+        callback(Result.success(getCurrentPermissionStatus()))
         return true
     }
 }

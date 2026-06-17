@@ -1,6 +1,8 @@
 import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter/material.dart';
 
+import 'manual_checks_screen.dart';
+
 void main() {
   runApp(const MyApp());
 }
@@ -66,9 +68,12 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
   }
 
-  Future<void> _requestPermissions() async {
+  Future<void> _requestPermissions({
+    CalendarAccessLevel level = CalendarAccessLevel.full,
+  }) async {
     try {
-      final status = await DeviceCalendar.instance.requestPermissions();
+      final status =
+          await DeviceCalendar.instance.requestPermissions(level: level);
 
       if (!mounted) return;
 
@@ -592,6 +597,17 @@ class _MyHomePageState extends State<MyHomePage> {
         // Here we take the value from the MyHomePage object that was created by
         // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.checklist),
+            tooltip: 'Manual checks',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const ManualChecksScreen(),
+              ),
+            ),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -608,6 +624,13 @@ class _MyHomePageState extends State<MyHomePage> {
                     ElevatedButton(
                       onPressed: _requestPermissions,
                       child: const Text('Request Calendar Permissions'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: () => _requestPermissions(
+                        level: CalendarAccessLevel.writeOnly,
+                      ),
+                      child: const Text('Request Write-Only Access'),
                     ),
                   ],
                 ),

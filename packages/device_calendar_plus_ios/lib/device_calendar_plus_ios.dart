@@ -17,8 +17,11 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }
 
   @override
-  Future<String?> requestPermissions() async {
-    return await methodChannel.invokeMethod<String>('requestPermissions');
+  Future<String?> requestPermissions(bool writeOnly) async {
+    return await methodChannel.invokeMethod<String>(
+      'requestPermissions',
+      <String, dynamic>{'writeOnly': writeOnly},
+    );
   }
 
   @override

@@ -177,6 +177,36 @@ if (status != CalendarPermissionStatus.granted) {
 }
 ```
 
+#### Write-only access
+
+Apps that only add events (and never read existing ones) can request the
+gentler add-only prompt instead of full read/write:
+
+```dart
+final status = await plugin.requestPermissions(
+  level: CalendarAccessLevel.writeOnly,
+);
+if (status == CalendarPermissionStatus.writeOnly ||
+    status == CalendarPermissionStatus.granted) {
+  // Can create events
+}
+```
+
+- **iOS 17+**: shows the "Add Events Only" prompt
+  (`requestWriteOnlyAccessToEvents`). Add `NSCalendarsWriteOnlyAccessUsageDescription`
+  to `Info.plist`. On iOS 16 and below there is no write-only tier, so this
+  falls back to a full-access request and a grant reports `granted`. Write-only
+  is a durable tier here — escalating to full requires the user to change it in
+  Settings.
+- **Android**: requests only `WRITE_CALENDAR`. This is a softer boundary than on
+  iOS: `WRITE_CALENDAR` and `READ_CALENDAR` are in the same `CALENDAR`
+  permission group, so after a write-only grant a later
+  `requestPermissions()` (full) escalates to read access **immediately, with no
+  dialog**, and returns `granted`.
+
+On iOS, request the level you need up front — once granted, the OS won't
+re-prompt to change the tier in-app.
+
 ### Check Permissions
 
 Use `hasPermissions()` to check the current permission status without prompting the user:
@@ -380,6 +410,14 @@ await plugin.showEventModal(event.eventId);
 // Open the native editor directly (skip the read-only viewer)
 await plugin.showEventModal(event.instanceId, edit: true);
 ```
+
+> **Android `edit: true` caveat:** `ACTION_EDIT` is honored inconsistently
+> across calendar apps. Google Calendar ignores it for an existing event and
+> opens a blank new-event editor, while the AOSP/stock calendar opens the
+> editor as expected. There's no intent that reliably launches Google Calendar
+> straight into edit mode on an existing event, so for a dependable edit flow
+> use `showEventModal(id)` (view) and let the user tap the edit button. iOS is
+> unaffected.
 
 ### Create Event via Native Editor
 

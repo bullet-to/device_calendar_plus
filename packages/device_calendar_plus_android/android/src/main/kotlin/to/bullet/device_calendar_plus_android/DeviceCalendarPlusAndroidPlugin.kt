@@ -89,7 +89,7 @@ class DeviceCalendarPlusAndroidPlugin :
 
     override fun onMethodCall(call: MethodCall, result: Result) {
         when (call.method) {
-            "requestPermissions" -> handleRequestPermissions(result)
+            "requestPermissions" -> handleRequestPermissions(call, result)
             "hasPermissions" -> handleHasPermissions(result)
             "openAppSettings" -> handleOpenAppSettings(result)
             "listCalendars" -> handleListCalendars(result)
@@ -110,10 +110,11 @@ class DeviceCalendarPlusAndroidPlugin :
         }
     }
 
-    private fun handleRequestPermissions(result: Result) {
+    private fun handleRequestPermissions(call: MethodCall, result: Result) {
         val service = permissionService!!
-        
-        service.requestPermissions { serviceResult ->
+        val writeOnly = call.argument<Boolean>("writeOnly") ?: false
+
+        service.requestPermissions(writeOnly) { serviceResult ->
             serviceResult.fold(
                 onSuccess = { status -> result.success(status) },
                 onFailure = { error ->

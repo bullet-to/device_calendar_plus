@@ -12,12 +12,16 @@ enum CalendarPermissionStatus {
   /// On iOS, this maps to `EKAuthorizationStatus.denied`.
   denied,
 
-  /// Write-only access to calendars (iOS 17+ only).
+  /// Write-only access to calendars — add events without reading existing data.
   ///
-  /// On iOS 17 and later, apps can request write-only access to add events
-  /// without being able to read existing calendar data.
+  /// Request it with
+  /// `requestPermissions(level: CalendarAccessLevel.writeOnly)`.
   ///
-  /// This status is never returned on Android.
+  /// - On iOS 17 and later, this maps to `EKAuthorizationStatus.writeOnly`.
+  ///   iOS 16 and below has no write-only tier, so a write-only request there
+  ///   resolves to [granted] instead.
+  /// - On Android, this is returned when `WRITE_CALENDAR` is granted but
+  ///   `READ_CALENDAR` is not (e.g. after a write-only request).
   writeOnly,
 
   /// Access is restricted by device policies (iOS only).
