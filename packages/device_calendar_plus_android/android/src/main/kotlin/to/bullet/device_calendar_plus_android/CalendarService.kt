@@ -89,7 +89,21 @@ class CalendarService(private val context: Context) {
         
         return Result.success(calendars)
     }
-    
+
+    /**
+     * Resolves the id of a calendar to write new events into when the caller
+     * omits one. Prefers the primary writable calendar; otherwise falls back to
+     * the first writable calendar. Returns null when no writable calendar
+     * exists. Reuses [listCalendars] so the writability definition and the
+     * permission/error handling stay in one place.
+     */
+    fun resolveDefaultWritableCalendarId(): String? {
+        val calendars = listCalendars().getOrNull() ?: return null
+        val writable = calendars.filter { it["readOnly"] == false }
+        val chosen = writable.firstOrNull { it["isPrimary"] == true } ?: writable.firstOrNull()
+        return chosen?.get("id") as String?
+    }
+
     fun listSources(): Result<List<Map<String, Any>>> {
         val sources = mutableListOf<Map<String, Any>>()
         val seen = mutableSetOf<String>()

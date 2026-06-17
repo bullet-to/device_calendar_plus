@@ -69,7 +69,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   // Callback to capture createEvent arguments
   Future<String> Function(
-    String calendarId,
+    String? calendarId,
     String title,
     DateTime startDate,
     DateTime endDate,
@@ -117,7 +117,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   void setCreateEventCallback(
     Future<String> Function(
-      String calendarId,
+      String? calendarId,
       String title,
       DateTime startDate,
       DateTime endDate,
@@ -220,7 +220,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
 
   @override
   Future<String> createEvent(
-    String calendarId,
+    String? calendarId,
     String title,
     DateTime startDate,
     DateTime endDate,
@@ -843,6 +843,51 @@ void main() {
           ),
           throwsArgumentError,
         );
+      });
+
+      test('throws ArgumentError when calendar ID is whitespace', () async {
+        expect(
+          () => DeviceCalendar.instance.createEvent(
+            calendarId: '   ',
+            title: 'Meeting',
+            startDate: DateTime.now(),
+            endDate: DateTime.now().add(Duration(hours: 1)),
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('forwards null calendarId to the platform when omitted', () async {
+        const sentinel = 'unset';
+        Object? capturedCalendarId = sentinel;
+
+        final mock = MockDeviceCalendarPlusPlatform();
+        mock.setCreateEventCallback((
+          calendarId,
+          title,
+          startDate,
+          endDate,
+          isAllDay,
+          description,
+          location,
+          url,
+          timeZone,
+          availability,
+          recurrenceRule,
+        ) {
+          capturedCalendarId = calendarId;
+          return Future.value('event-id');
+        });
+
+        DeviceCalendarPlusPlatform.instance = mock;
+
+        await DeviceCalendar.instance.createEvent(
+          title: 'Default Calendar Event',
+          startDate: DateTime.now(),
+          endDate: DateTime.now().add(Duration(hours: 1)),
+        );
+
+        expect(capturedCalendarId, isNull);
       });
 
       test('throws ArgumentError when title is empty', () async {

@@ -398,8 +398,33 @@ class EventsService {
     }
   }
   
+  /// Resolves the calendar to write a new event into.
+  ///
+  /// A non-nil `calendarId` looks up that specific calendar (not found is an
+  /// error). A nil `calendarId` uses the store's default calendar for new
+  /// events (no default available is an error).
+  private func resolveCalendar(calendarId: String?) -> Result<EKCalendar, CalendarError> {
+    if let calendarId = calendarId {
+      guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.notFound,
+          message: "Calendar with ID \(calendarId) not found"
+        ))
+      }
+      return .success(calendar)
+    }
+
+    guard let calendar = eventStore.defaultCalendarForNewEvents else {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "No default calendar available for new events"
+      ))
+    }
+    return .success(calendar)
+  }
+
   func createEvent(
-    calendarId: String,
+    calendarId: String?,
     title: String,
     startDate: Date,
     endDate: Date,
@@ -421,15 +446,16 @@ class EventsService {
       return
     }
     
-    // Get the calendar
-    guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.notFound,
-        message: "Calendar with ID \(calendarId) not found"
-      )))
+    // Resolve the target calendar (specific id, or the default for new events)
+    let calendar: EKCalendar
+    switch resolveCalendar(calendarId: calendarId) {
+    case .success(let resolved):
+      calendar = resolved
+    case .failure(let error):
+      completion(.failure(error))
       return
     }
-    
+
     // Create the event
     let event = EKEvent(eventStore: eventStore)
     event.calendar = calendar

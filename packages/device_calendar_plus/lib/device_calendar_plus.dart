@@ -712,9 +712,15 @@ class DeviceCalendar {
     }
   }
 
-  /// Creates a new event in the specified calendar.
+  /// Creates a new event in a calendar.
   ///
-  /// [calendarId] is the ID of the calendar to create the event in (required).
+  /// [calendarId] is the ID of the calendar to create the event in (optional).
+  ///   When omitted (`null`), the event is written to the platform's default
+  ///   calendar for new events — on iOS `defaultCalendarForNewEvents`, on
+  ///   Android the primary writable calendar (falling back to the first
+  ///   writable calendar). Throws a [DeviceCalendarException] if no
+  ///   default/writable calendar is available. Passing a non-null but
+  ///   empty/whitespace ID is still an error.
   /// [title] is the event title (required).
   /// [startDate] is the start date/time (required).
   /// [endDate] is the end date/time (required).
@@ -755,9 +761,16 @@ class DeviceCalendar {
   ///   endDate: DateTime(2024, 3, 15, 9, 15),
   ///   recurrenceRule: DailyRecurrence(end: CountEnd(30)),
   /// );
+  ///
+  /// // Create an event in the default calendar (no calendarId)
+  /// final defaultId = await plugin.createEvent(
+  ///   title: 'Lunch',
+  ///   startDate: DateTime.now(),
+  ///   endDate: DateTime.now().add(Duration(hours: 1)),
+  /// );
   /// ```
   Future<String> createEvent({
-    required String calendarId,
+    String? calendarId,
     required String title,
     required DateTime startDate,
     required DateTime endDate,
@@ -769,8 +782,9 @@ class DeviceCalendar {
     EventAvailability availability = EventAvailability.busy,
     RecurrenceRule? recurrenceRule,
   }) async {
-    // Validate required fields
-    if (calendarId.trim().isEmpty) {
+    // Validate fields. A null calendarId is valid (use the default calendar);
+    // an explicit but empty/whitespace ID targets nothing — a programmer error.
+    if (calendarId != null && calendarId.trim().isEmpty) {
       throw ArgumentError.value(
         calendarId,
         'calendarId',

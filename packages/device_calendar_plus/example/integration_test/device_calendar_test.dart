@@ -431,6 +431,36 @@ void main() {
       expect(createdEvent.location, 'Test Location');
     });
 
+    test('Create Event without calendarId (default calendar)', () async {
+      // Omitting calendarId routes the event to the platform's default
+      // calendar (iOS: defaultCalendarForNewEvents, Android: primary/first
+      // writable calendar resolved from the calendar list).
+      final now = DateTime.now();
+      final startDate = DateTime(now.year, now.month, now.day, 16, 0);
+      final endDate = DateTime(now.year, now.month, now.day, 17, 0);
+
+      final eventId = await plugin.createEvent(
+        title: 'Default Calendar Event',
+        startDate: startDate,
+        endDate: endDate,
+        description: 'Created without a calendarId',
+      );
+
+      expect(eventId, isNotEmpty);
+
+      try {
+        final fetched = await plugin.getEvent(eventId);
+        expect(fetched, isNotNull);
+        expect(fetched!.eventId, isNotEmpty);
+        expect(fetched.title, 'Default Calendar Event');
+        expect(fetched.description, 'Created without a calendarId');
+        // The platform resolved a concrete calendar for us.
+        expect(fetched.calendarId, isNotEmpty);
+      } finally {
+        await plugin.deleteEvent(eventId: eventId);
+      }
+    });
+
     test('Create Event with URL', () async {
       // Verifies the url field round-trips through the plugin on both
       // platforms. iOS maps to EKEvent.url; Android maps to CUSTOM_APP_URI.
