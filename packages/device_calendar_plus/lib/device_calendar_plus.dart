@@ -2,6 +2,7 @@ import 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 import 'package:flutter/services.dart';
 
 import 'src/calendar.dart';
+import 'src/calendar_access_level.dart';
 import 'src/calendar_permission_status.dart';
 import 'src/calendar_source.dart';
 import 'src/event.dart';
@@ -26,6 +27,7 @@ export 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 
 export 'src/attendee.dart';
 export 'src/calendar.dart';
+export 'src/calendar_access_level.dart';
 export 'src/calendar_source.dart';
 export 'src/calendar_permission_status.dart';
 export 'src/device_calendar_error.dart';
@@ -49,6 +51,29 @@ class DeviceCalendar {
   /// On first call, this will show the system permission dialog.
   /// On subsequent calls, it returns the current permission status.
   ///
+  /// [level] chooses how much access to ask for:
+  /// - [CalendarAccessLevel.full] (the default) — full read and write access.
+  /// - [CalendarAccessLevel.writeOnly] — the gentler add-only prompt, for apps
+  ///   that only create events and never read existing calendar data. A
+  ///   granted write-only request returns [CalendarPermissionStatus.writeOnly].
+  ///   On iOS 16 and below write-only does not exist, so this falls back to a
+  ///   full-access request and a grant returns
+  ///   [CalendarPermissionStatus.granted].
+  ///
+  /// If you already hold a tier that satisfies the request, this returns
+  /// immediately without prompting (full access satisfies a write-only ask).
+  /// Requesting [CalendarAccessLevel.full] while only write-only is held
+  /// behaves differently per platform:
+  /// - **Android**: `READ_CALENDAR` and `WRITE_CALENDAR` belong to the same
+  ///   `CALENDAR` permission group, so once write-only has granted
+  ///   `WRITE_CALENDAR` the OS grants the read upgrade **immediately, with no
+  ///   dialog**, and this returns [CalendarPermissionStatus.granted]. Write-only
+  ///   is therefore not a hard boundary on Android — an app can escalate to full
+  ///   silently just by asking.
+  /// - **iOS**: treats the write-only choice as final and can't re-prompt
+  ///   in-app, so it returns the existing [CalendarPermissionStatus.writeOnly] —
+  ///   send the user to [openAppSettings] to grant full access there.
+  ///
   /// Returns a [CalendarPermissionStatus] indicating the result
   ///
   /// Example:
@@ -62,10 +87,19 @@ class DeviceCalendar {
   /// } else if (status == CalendarPermissionStatus.restricted) {
   ///   // Show "Contact administrator" message
   /// }
+  ///
+  /// // Add-only app: ask for the gentler write-only prompt.
+  /// final writeStatus = await plugin.requestPermissions(
+  ///   level: CalendarAccessLevel.writeOnly,
+  /// );
   /// ```
-  Future<CalendarPermissionStatus> requestPermissions() async {
+  Future<CalendarPermissionStatus> requestPermissions({
+    CalendarAccessLevel level = CalendarAccessLevel.full,
+  }) async {
     return _handlePermissionRequest(
-      () => DeviceCalendarPlusPlatform.instance.requestPermissions(),
+      () => DeviceCalendarPlusPlatform.instance.requestPermissions(
+        level == CalendarAccessLevel.writeOnly,
+      ),
     );
   }
 
@@ -531,9 +565,19 @@ class DeviceCalendar {
   ///
   /// **Platform Differences:**
   /// - **iOS**: Presents `EKEventViewController` (view, with `allowsEditing`) or
-  ///   `EKEventEditViewController` (edit) in a native modal.
+  ///   `EKEventEditViewController` (edit) in a native modal. Both reliably bind
+  ///   to the existing event.
   /// - **Android**: Fires `ACTION_VIEW` or `ACTION_EDIT`; the system calendar
   ///   app renders the screen, and its view screen offers an edit button.
+  ///
+  ///   **Caveat (`edit: true` on Android):** `ACTION_EDIT` is honored
+  ///   inconsistently across calendar apps. Notably, **Google Calendar ignores
+  ///   it for an existing event and opens a blank new-event editor instead** —
+  ///   the AOSP/stock calendar lands in the editor as expected. There is no
+  ///   intent that reliably opens Google Calendar directly into edit mode on an
+  ///   existing event. For a dependable "edit this event" flow, use
+  ///   `edit: false` (`ACTION_VIEW`) and let the user tap the edit button on the
+  ///   details screen. `iOS` is unaffected.
   ///
   /// Example:
   /// ```dart

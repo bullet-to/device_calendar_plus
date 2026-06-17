@@ -5,7 +5,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     with MockPlatformInterfaceMixin {
   @override
-  Future<String?> requestPermissions() async => "granted";
+  Future<String?> requestPermissions(bool writeOnly) async => "granted";
 
   @override
   Future<String?> hasPermissions() async => "granted";

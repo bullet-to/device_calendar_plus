@@ -47,9 +47,13 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// On first call, this will show the system permission dialog.
   /// On subsequent calls, it returns the current permission status.
   ///
+  /// When [writeOnly] is `true`, requests add-only access where the platform
+  /// supports it (iOS 17+, Android `WRITE_CALENDAR` alone); otherwise it falls
+  /// back to a full request. When `false`, requests full read/write access.
+  ///
   /// Returns the raw string status value from the platform.
   /// The main API layer converts this to [CalendarPermissionStatus].
-  Future<String?> requestPermissions();
+  Future<String?> requestPermissions(bool writeOnly);
 
   /// Checks the current calendar permission status WITHOUT requesting permissions.
   ///

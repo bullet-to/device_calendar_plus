@@ -43,6 +43,9 @@ typedef UpdateRecurringCall = ({
 class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     with MockPlatformInterfaceMixin {
   String? _permissionStatusCode = "notDetermined";
+
+  /// The `writeOnly` argument of the most recent requestPermissions call.
+  bool? lastWriteOnly;
   List<Map<String, dynamic>> _events = [];
   Map<String, dynamic>? _event;
   PlatformException? _exceptionToThrow;
@@ -128,7 +131,8 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }
 
   @override
-  Future<String?> requestPermissions() async {
+  Future<String?> requestPermissions(bool writeOnly) async {
+    lastWriteOnly = writeOnly;
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
     return _permissionStatusCode;
   }
@@ -384,6 +388,26 @@ void main() {
         mockPlatform.setPermissionStatus(CalendarPermissionStatus.granted);
         final result = await DeviceCalendar.instance.requestPermissions();
         expect(result, CalendarPermissionStatus.granted);
+      });
+
+      test('defaults to requesting full access', () async {
+        await DeviceCalendar.instance.requestPermissions();
+        expect(mockPlatform.lastWriteOnly, isFalse);
+      });
+
+      test('forwards the requested access level to the platform', () async {
+        await DeviceCalendar.instance.requestPermissions(
+          level: CalendarAccessLevel.writeOnly,
+        );
+        expect(mockPlatform.lastWriteOnly, isTrue);
+      });
+
+      test('converts a granted write-only request to writeOnly', () async {
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.writeOnly);
+        final result = await DeviceCalendar.instance.requestPermissions(
+          level: CalendarAccessLevel.writeOnly,
+        );
+        expect(result, CalendarPermissionStatus.writeOnly);
       });
 
       test('defaults to denied when status is null', () async {

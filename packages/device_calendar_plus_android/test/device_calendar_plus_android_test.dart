@@ -73,6 +73,13 @@ void main() {
       expect(calendarId, equals('android-calendar-id-456'));
     });
 
+    test('requestPermissions serializes the access level', () async {
+      await plugin.requestPermissions(true);
+
+      expect(log[0].method, equals('requestPermissions'));
+      expect(log[0].arguments['writeOnly'], isTrue);
+    });
+
     test('listEvents serializes dates and calendarIds correctly', () async {
       final now = DateTime.now();
       final later = now.add(Duration(days: 7));

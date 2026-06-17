@@ -468,7 +468,17 @@ class EventsService(private val context: Context) {
     }
 
     /**
-     * Shows a calendar event in a modal dialog.
+     * Shows a calendar event using the system calendar app.
+     *
+     * Fires [Intent.ACTION_VIEW] (details, with an edit button) or, when [edit]
+     * is true, [Intent.ACTION_EDIT].
+     *
+     * Caveat: `ACTION_EDIT` is honored inconsistently by calendar apps. The
+     * AOSP/stock calendar opens the existing event in its editor, but **Google
+     * Calendar ignores the event URI and opens a blank new-event editor** — and
+     * there is no intent that reliably launches it straight into edit mode on an
+     * existing event. `ACTION_VIEW` (the [edit] == false path) binds to the
+     * event everywhere, so a dependable edit flow is view-then-tap-edit.
      */
     fun showEvent(activityContext: Activity, eventId: String, timestamp: Long?, edit: Boolean, requestCode: Int): Result<Unit> {
         return try {
