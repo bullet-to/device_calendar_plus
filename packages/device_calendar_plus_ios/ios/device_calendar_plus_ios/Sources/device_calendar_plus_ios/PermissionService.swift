@@ -189,30 +189,25 @@ class PermissionService {
     // dialog asking for full access and upgrades the app in-app if the user
     // agrees. On a non-grant we re-read the real status so the caller still sees
     // the tier they actually hold (e.g. writeOnly), not a misleading denied.
-    let writeOnlySupported: Bool
-    if #available(iOS 17.0, *) {
-      writeOnlySupported = true
-    } else {
-      writeOnlySupported = false
-    }
-
     // Report the tier we asked for on a grant; on a non-grant re-read the real
-    // status. (iOS 16 has only full access, so a write-only ask there grants
-    // full.) One handler serves all three request variants.
-    let grantedStatus = (writeOnly && writeOnlySupported)
-      ? PermissionService.statusWriteOnly
-      : PermissionService.statusGranted
-    let handler: (Bool, Error?) -> Void = { granted, _ in
-      completion(.success(granted ? grantedStatus : self.getCurrentPermissionStatus()))
-    }
-
+    // status. One handler serves all three request variants.
     if #available(iOS 17.0, *) {
+      let grantedStatus = writeOnly
+        ? PermissionService.statusWriteOnly
+        : PermissionService.statusGranted
+      let handler: (Bool, Error?) -> Void = { granted, _ in
+        completion(.success(granted ? grantedStatus : self.getCurrentPermissionStatus()))
+      }
       if writeOnly {
         eventStore.requestWriteOnlyAccessToEvents(completion: handler)
       } else {
         eventStore.requestFullAccessToEvents(completion: handler)
       }
     } else {
+      // iOS 16 and below: only full access exists, so any grant is full access.
+      let handler: (Bool, Error?) -> Void = { granted, _ in
+        completion(.success(granted ? PermissionService.statusGranted : self.getCurrentPermissionStatus()))
+      }
       eventStore.requestAccess(to: .event, completion: handler)
     }
   }

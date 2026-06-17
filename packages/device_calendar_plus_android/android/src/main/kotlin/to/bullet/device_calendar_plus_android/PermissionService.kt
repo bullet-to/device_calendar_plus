@@ -105,7 +105,8 @@ class PermissionService(private val context: Context) {
      * | Denied once        | Dismiss | true                | true             |
      * | Permanently denied | Denied | false              | true             |
      *
-     * Decision logic when [PackageManager.PERMISSION_DENIED]:
+     * Decision logic when write access isn't held (keyed off WRITE_CALENDAR
+     * alone — the capability that defines whether any tier is reachable):
      * - `shouldShowRationale == false` AND SharedPrefs flag set --> [STATUS_DENIED] (permanently denied, must use app settings)
      * - everything else --> [STATUS_NOT_DETERMINED] (permission dialog can still be shown)
      *
@@ -117,22 +118,18 @@ class PermissionService(private val context: Context) {
         grantedTier()?.let { return it }
 
         // Otherwise write isn't granted. Distinguish "never asked / can ask
-        // again" (NOT_DETERMINED) from "permanently denied" (DENIED).
-        val deniedPermissions = listOf(
-            Manifest.permission.READ_CALENDAR,
-            Manifest.permission.WRITE_CALENDAR
-        ).filter {
-            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-        }
+        // again" (NOT_DETERMINED) from "permanently denied" (DENIED). WRITE is
+        // the capability that defines whether any tier is reachable (a held
+        // READ-only state isn't possible — grantedTier already returned for any
+        // write-bearing tier), so the decision keys off WRITE alone.
+        val writePermission = Manifest.permission.WRITE_CALENDAR
 
         // Without an Activity we can't check shouldShowRequestPermissionRationale,
         // so fall back to NOT_DETERMINED (safe default — caller can still request).
         val currentActivity = activity ?: return STATUS_NOT_DETERMINED
 
-        val permanentlyDenied = deniedPermissions.any { wasPermissionDeniedBefore(it) } &&
-            deniedPermissions.none {
-                ActivityCompat.shouldShowRequestPermissionRationale(currentActivity, it)
-            }
+        val permanentlyDenied = wasPermissionDeniedBefore(writePermission) &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(currentActivity, writePermission)
 
         return if (permanentlyDenied) STATUS_DENIED else STATUS_NOT_DETERMINED
     }
@@ -224,7 +221,16 @@ class PermissionService(private val context: Context) {
         
         val callback = pendingCallback ?: return false
         pendingCallback = null
-        
+
+        // A dismissed dialog delivers empty arrays — no grant, no denial. Report
+        // the real current status (can-ask-again) instead of a hard denial, so a
+        // later hasPermissions() doesn't disagree. Mirrors iOS, which re-reads
+        // the real status on a dismissed prompt.
+        if (grantResults.isEmpty()) {
+            callback(Result.success(getCurrentPermissionStatus()))
+            return true
+        }
+
         // Record any denials so a later hasPermissions() can tell a permanent
         // denial from a can-ask-again one.
         permissions.forEachIndexed { index, permission ->
