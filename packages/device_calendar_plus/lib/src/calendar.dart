@@ -2,7 +2,7 @@ import 'dart:ui' show Color;
 
 /// Represents a user's calendar
 class Calendar {
-  /// Identifier returned by the platform (Android `Calendars._ID`, iOS `EKCalendar.calendarIdentifier`).
+  /// Identifier returned by the platform.
   final String id;
 
   /// User-facing label shown in native calendar pickers.
@@ -30,9 +30,8 @@ class Calendar {
   /// Platform-specific account type (for example `com.google`, `CalDAV`, or `local` on Android).
   final String? accountType;
 
-  /// Indicates that the calendar is the default destination for new events on that account/device.
-  ///
-  /// Android maps this to `Calendars.IS_PRIMARY`; iOS matches `eventStore.defaultCalendarForNewEvents`.
+  /// Whether the calendar is the default destination for new events on that
+  /// account/device.
   final bool isPrimary;
 
   /// Marks calendars hidden in the Android Calendar UI. iOS always reports `false`.

@@ -1,3 +1,15 @@
+## 0.7.1 - 2026-06-17
+
+### Changed
+- Add the `device` pub.dev topic (dropped `federated` to stay within the
+  five-topic limit).
+
+### Docs
+- Slimmed the README to an overview plus a getting-started snippet, and moved
+  the worked examples into focused topic guides under `doc/`. Trimmed the API
+  doc comments to the consumer-facing contract and removed native-API
+  implementation details. No code or behavior changes.
+
 ## 0.7.0 - 2026-06-17
 
 ### Added

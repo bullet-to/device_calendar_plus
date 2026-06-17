@@ -11,35 +11,12 @@ class Event {
   /// For recurring events, all instances share the same eventId.
   final String eventId;
 
-  /// Instance identifier that uniquely identifies this specific event instance.
+  /// Identifies this specific occurrence; pass it to act on one occurrence of a
+  /// recurring series.
   ///
-  /// **UNSTABLE ID:** This is a plugin-generated identifier, not a system ID.
-  /// It is derived from the [eventId] and the event's start date.
-  ///
-  /// Use this with [DeviceCalendar.instance.getEvent] and [DeviceCalendar.instance.showEventModal]
-  /// to fetch or display this specific event occurrence.
-  ///
-  /// For non-recurring events, this equals [eventId].
-  /// For recurring events, this is a unique identifier for each occurrence.
-  ///
-  /// **Important:** This ID becomes invalid when the event's start date changes.
-  /// You are responsible for keeping instanceId up to date by re-fetching events.
-  ///
-  /// Example scenario where instanceId becomes invalid:
-  /// ```dart
-  /// // 1. You fetch some events
-  /// final events = await plugin.retrieveEvents(calendarId, ...);
-  ///
-  /// // 2. User opens native modal from one of the events and changes the start date
-  /// await plugin.showEventModal(event.instanceId);
-  /// // User changes date from Nov 5 to Nov 6 and saves
-  ///
-  /// // 3. Your stored instanceId is now invalid!
-  /// // The savedInstanceId no longer points to any event
-  ///
-  /// // 4. You must re-fetch to get the updated instanceId
-  /// final events = await plugin.retrieveEvents(calendarId, ...);
-  /// ```
+  /// Equals [eventId] for non-recurring events. This is a plugin-derived,
+  /// **unstable** ID: it becomes invalid when the occurrence's start date
+  /// changes, so re-fetch events after edits.
   final String instanceId;
 
   /// ID of the calendar this event belongs to.
@@ -98,33 +75,16 @@ class Event {
   /// supports programmatic write via this plugin.
   final List<Attendee>? attendees;
 
-  /// Relative-time reminders (alarms) for this event.
+  /// Relative-time reminders for this event, each a lead time **before** start
+  /// (e.g. `Duration(minutes: 15)`). Null when there are none.
   ///
-  /// Each [Duration] is the lead time **before** the event's start at which the
-  /// alarm fires (e.g. `Duration(minutes: 15)` fires 15 minutes before start).
-  ///
-  /// Null when the event has no reminders. Reminders are **minute-granular** on
-  /// both platforms: sub-minute durations round to the nearest minute, so a
+  /// Minute-granular: sub-minute durations round to the nearest minute, so
   /// `Duration(seconds: 90)` round-trips as `Duration(minutes: 2)`.
-  ///
-  /// **Platform mapping:**
-  /// - **iOS**: `EKAlarm(relativeOffset:)` on `EKEvent.alarms` (seconds before
-  ///   start).
-  /// - **Android**: rows in `CalendarContract.Reminders` (`MINUTES` before
-  ///   start, `METHOD_ALERT`).
   final List<Duration>? reminders;
 
-  /// Optional URL associated with this event.
-  ///
-  /// A typical use is a meeting link, a ticket page, or a deep link into the
-  /// app that created the event.
-  ///
-  /// **Platform mapping:**
-  /// - **iOS**: stored on `EKEvent.url`. Visible as the URL field in the
-  ///   native Calendar app and editable there.
-  /// - **Android**: stored on `CalendarContract.Events.CUSTOM_APP_URI`. Not
-  ///   surfaced in the default Calendar UI, but round-trips correctly through
-  ///   the plugin and is available to other apps reading the calendar.
+  /// Optional URL associated with this event — typically a meeting link, ticket
+  /// page, or deep link. Visible in the native Calendar UI on iOS; round-trips
+  /// through the plugin on Android.
   final String? url;
 
   Event({

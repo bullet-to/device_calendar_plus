@@ -79,52 +79,18 @@ class DeviceCalendar {
   /// [autoPermissions] is set.
   final Set<CalendarAccessLevel> _autoRequestedTiers = {};
 
-  /// Requests calendar permissions from the user.
+  /// Requests calendar permission, showing the system dialog on first use.
   ///
-  /// On first call, this will show the system permission dialog.
-  /// On subsequent calls, it returns the current permission status.
+  /// [level] chooses how much to ask for: [CalendarAccessLevel.full] (the
+  /// default, read and write) or [CalendarAccessLevel.writeOnly] (the gentler
+  /// add-only tier, for apps that only create events — a grant returns
+  /// [CalendarPermissionStatus.writeOnly]).
   ///
-  /// [level] chooses how much access to ask for:
-  /// - [CalendarAccessLevel.full] (the default) — full read and write access.
-  /// - [CalendarAccessLevel.writeOnly] — the gentler add-only prompt, for apps
-  ///   that only create events and never read existing calendar data. A
-  ///   granted write-only request returns [CalendarPermissionStatus.writeOnly].
-  ///   On iOS 16 and below write-only does not exist, so this falls back to a
-  ///   full-access request and a grant returns
-  ///   [CalendarPermissionStatus.granted].
+  /// Requesting a tier you already hold returns immediately without prompting.
+  /// Requesting [CalendarAccessLevel.full] while holding only write-only
+  /// upgrades the app in-app.
   ///
-  /// If you already hold a tier that satisfies the request, this returns
-  /// immediately without prompting (full access satisfies a write-only ask).
-  /// Requesting [CalendarAccessLevel.full] while only write-only is held
-  /// upgrades the app on both platforms — only the prompt differs:
-  /// - **Android**: `READ_CALENDAR` and `WRITE_CALENDAR` belong to the same
-  ///   `CALENDAR` permission group, so once write-only has granted
-  ///   `WRITE_CALENDAR` the OS grants the read upgrade **immediately, with no
-  ///   dialog**, and this returns [CalendarPermissionStatus.granted].
-  /// - **iOS**: re-presents the system dialog, this time asking for full
-  ///   access. If the user agrees this returns [CalendarPermissionStatus.granted];
-  ///   if they decline it returns the still-held
-  ///   [CalendarPermissionStatus.writeOnly].
-  ///
-  /// Returns a [CalendarPermissionStatus] indicating the result
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  /// final status = await plugin.requestPermissions();
-  /// if (status == CalendarPermissionStatus.granted) {
-  ///   // Access calendars
-  /// } else if (status == CalendarPermissionStatus.denied) {
-  ///   // Show "Enable in Settings" message
-  /// } else if (status == CalendarPermissionStatus.restricted) {
-  ///   // Show "Contact administrator" message
-  /// }
-  ///
-  /// // Add-only app: ask for the gentler write-only prompt.
-  /// final writeStatus = await plugin.requestPermissions(
-  ///   level: CalendarAccessLevel.writeOnly,
-  /// );
-  /// ```
+  /// See [doc/permissions.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/permissions.md).
   Future<CalendarPermissionStatus> requestPermissions({
     CalendarAccessLevel level = CalendarAccessLevel.full,
   }) async {
@@ -135,67 +101,18 @@ class DeviceCalendar {
     );
   }
 
-  /// Checks the current calendar permission status WITHOUT requesting permissions.
+  /// Returns the current [CalendarPermissionStatus] without prompting.
   ///
-  /// Unlike [requestPermissions], this method will NOT prompt the user for
-  /// permissions if they haven't been granted yet. It only checks the current status.
-  ///
-  /// Use this method if you want to check permissions before deciding whether
-  /// to call [requestPermissions], or when you want to verify permissions without
-  /// triggering the system permission dialog.
-  ///
-  /// Returns the current [CalendarPermissionStatus].
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  /// final status = await plugin.hasPermissions();
-  /// if (status == CalendarPermissionStatus.granted) {
-  ///   // Permissions already granted
-  ///   final calendars = await plugin.listCalendars();
-  /// } else if (status == CalendarPermissionStatus.notDetermined) {
-  ///   // User hasn't been asked yet
-  ///   final newStatus = await plugin.requestPermissions();
-  /// }
-  /// ```
+  /// Unlike [requestPermissions], this never shows the system dialog — use it to
+  /// decide whether to prompt.
   Future<CalendarPermissionStatus> hasPermissions() async {
     return _handlePermissionRequest(
       () => DeviceCalendarPlusPlatform.instance.hasPermissions(),
     );
   }
 
-  /// Opens the app's settings page in the system settings.
-  ///
-  /// This is useful when permissions have been denied and you want to guide
-  /// the user to manually enable calendar permissions in the system settings.
-  ///
-  /// On iOS, this opens the app's specific settings page directly.
-  /// On Android, this opens the app info page where users can navigate to permissions.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  /// final status = await plugin.hasPermissions();
-  /// if (status == CalendarPermissionStatus.denied) {
-  ///   // Show dialog explaining why permission is needed
-  ///   showDialog(
-  ///     context: context,
-  ///     builder: (context) => AlertDialog(
-  ///       title: Text('Calendar Permission Required'),
-  ///       content: Text('Please enable calendar access in settings.'),
-  ///       actions: [
-  ///         TextButton(
-  ///           onPressed: () {
-  ///             Navigator.pop(context);
-  ///             plugin.openAppSettings();
-  ///           },
-  ///           child: Text('Open Settings'),
-  ///         ),
-  ///       ],
-  ///     ),
-  ///   );
-  /// }
-  /// ```
+  /// Opens the app's settings page, so the user can enable calendar access
+  /// after a denial.
   Future<void> openAppSettings() async {
     try {
       await DeviceCalendarPlusPlatform.instance.openAppSettings();
@@ -296,23 +213,7 @@ class DeviceCalendar {
     }
   }
 
-  /// Lists all calendars available on the device.
-  ///
-  /// Returns a list of [Calendar] objects representing each calendar.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  /// final calendars = await plugin.listCalendars();
-  /// for (final calendar in calendars) {
-  ///   print('${calendar.name} (${calendar.id})');
-  ///   print('  Read-only: ${calendar.readOnly}');
-  ///   print('  Primary: ${calendar.isPrimary}');
-  ///   print('  Color: ${calendar.colorHex}');
-  /// }
-  /// ```
-  ///
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// Lists all calendars on the device. Requires full access.
   Future<List<Calendar>> listCalendars() async {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -329,27 +230,12 @@ class DeviceCalendar {
     }
   }
 
-  /// Lists available calendar sources/accounts on the device.
+  /// Lists the accounts (iCloud, Google, local…) that calendars can be created
+  /// under. Pass a source to [createCalendar] via [CreateCalendarOptionsIos] or
+  /// [CreateCalendarOptionsAndroid] to target a specific account.
   ///
-  /// Returns the sources that calendars can be created under. Use a source's
-  /// [CalendarSource.id] with [CreateCalendarOptionsIos], or
-  /// [CalendarSource.accountName] + [CalendarSource.accountType] with
-  /// [CreateCalendarOptionsAndroid] to create calendars under a specific account.
-  ///
-  /// **Note:** On Android, only sources that already have calendars are returned.
-  /// A freshly-added account with no calendars will not appear until its first
-  /// calendar is created.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  /// final sources = await plugin.listSources();
-  /// for (final source in sources) {
-  ///   print('${source.accountName} (${source.type})');
-  /// }
-  /// ```
-  ///
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// On Android, only sources that already have a calendar are returned.
+  /// Requires full access.
   Future<List<CalendarSource>> listSources() async {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -366,37 +252,11 @@ class DeviceCalendar {
     }
   }
 
-  /// Creates a new calendar on the device.
+  /// Creates a calendar and returns its ID.
   ///
-  /// [name] is the display name for the calendar (required).
-  /// [colorHex] is an optional color in #RRGGBB format (e.g., "#FF5733").
-  /// [platformOptions] is an optional platform-specific options object.
-  ///
-  /// Returns the ID of the newly created calendar.
-  ///
-  /// The calendar is created in the device's local storage by default.
-  /// Requires full calendar access ([CalendarAccessLevel.full]) — unlike
-  /// [createEvent], write-only access does not extend to creating calendars.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  ///
-  /// // Create a calendar with just a name
-  /// final calendarId = await plugin.createCalendar(name: 'My Calendar');
-  ///
-  /// // Create a calendar with a name and color
-  /// final coloredCalendarId = await plugin.createCalendar(
-  ///   name: 'Work Calendar',
-  ///   colorHex: '#FF5733',
-  /// );
-  ///
-  /// // Android: Create a calendar with a custom account name
-  /// final androidCalendarId = await plugin.createCalendar(
-  ///   name: 'My App Calendar',
-  ///   platformOptions: CreateCalendarOptionsAndroid(accountName: 'MyApp'),
-  /// );
-  /// ```
+  /// [colorHex] is an optional `#RRGGBB` color. [platformOptions] targets a
+  /// specific account (see [listSources]); without it a sensible default
+  /// account is chosen. Requires full access.
   Future<String> createCalendar({
     required String name,
     String? colorHex,
@@ -425,33 +285,9 @@ class DeviceCalendar {
     }
   }
 
-  /// Updates an existing calendar on the device.
+  /// Updates a calendar's [name] and/or [colorHex] (`#RRGGBB`).
   ///
-  /// [calendarId] is the ID of the calendar to update.
-  /// [name] is the new display name for the calendar (optional).
-  /// [colorHex] is the new color in #RRGGBB format (optional, e.g., "#FF5733").
-  ///
-  /// Passing neither [name] nor [colorHex] is a no-op (nothing to change).
-  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
-  /// add-only (new events), not editing calendars.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  ///
-  /// // Update just the name
-  /// await plugin.updateCalendar(calendarId, name: 'New Name');
-  ///
-  /// // Update just the color
-  /// await plugin.updateCalendar(calendarId, colorHex: '#FF5733');
-  ///
-  /// // Update both name and color
-  /// await plugin.updateCalendar(
-  ///   calendarId,
-  ///   name: 'New Name',
-  ///   colorHex: '#FF5733',
-  /// );
-  /// ```
+  /// Passing neither is a no-op. Requires full access.
   Future<void> updateCalendar(
     String calendarId, {
     String? name,
@@ -496,21 +332,10 @@ class DeviceCalendar {
     }
   }
 
-  /// Deletes a calendar from the device.
+  /// Deletes a calendar and all of its events. Requires full access.
   ///
-  /// [calendarId] is the ID of the calendar to delete.
-  ///
-  /// This will also delete all events within the calendar.
-  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
-  /// add-only (new events), not deleting calendars.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  ///
-  /// // Delete a calendar by ID
-  /// await plugin.deleteCalendar(calendarId);
-  /// ```
+  /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) for a
+  /// calendar that can't be deleted (e.g. a system-managed account calendar).
   Future<void> deleteCalendar(String calendarId) async {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -525,59 +350,15 @@ class DeviceCalendar {
     }
   }
 
-  /// Lists events within the specified date range.
+  /// Lists events overlapping the half-open range `[startDate, endDate)`, sorted
+  /// by start date. An event starting exactly at [endDate] is excluded. Ranges
+  /// longer than 4 years are supported.
   ///
-  /// [startDate] and [endDate] define a half-open interval `[start, end)` —
-  /// events that overlap this range are returned, but an event starting
-  /// exactly at [endDate] is excluded.
+  /// [calendarIds] filters to specific calendars; null or empty means all.
   ///
-  /// Ranges longer than 4 years are supported. iOS's underlying query caps a
-  /// single span at ~4 years, so wide ranges are transparently split into
-  /// smaller windows and merged — every event in the range is returned once.
-  ///
-  /// [calendarIds] is an optional parameter to filter events to specific
-  /// calendars. If null or empty, events from all calendars are returned.
-  ///
-  /// Recurring events are automatically expanded into individual instances
-  /// within the date range — you get one [Event] per occurrence, not a single
-  /// master. Each instance has:
-  /// - The same [Event.eventId] (shared by the whole series)
-  /// - Different [Event.startDate] and [Event.endDate]
-  /// - A distinct [Event.instanceId] (format `eventId@timestamp`) that pins
-  ///   the occurrence
-  ///
-  /// Pass that [Event.instanceId] to [getEvent], [updateEvent], [deleteEvent],
-  /// or [showEventModal] to act on a single occurrence. (For non-recurring
-  /// events `instanceId == eventId`.) The id is plugin-derived and unstable —
-  /// it changes if the occurrence's start date moves, so re-fetch after edits.
-  ///
-  /// Returns a list of [Event] objects sorted by start date.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  /// final now = DateTime.now();
-  /// final nextMonth = now.add(Duration(days: 30));
-  ///
-  /// // Get all events in the next month
-  /// final events = await plugin.listEvents(
-  ///   now,
-  ///   nextMonth,
-  /// );
-  ///
-  /// // Get events from specific calendars only
-  /// final workEvents = await plugin.listEvents(
-  ///   now,
-  ///   nextMonth,
-  ///   calendarIds: ['work-calendar-id', 'project-calendar-id'],
-  /// );
-  ///
-  /// for (final event in events) {
-  ///   print('${event.title} at ${event.startDate}');
-  /// }
-  /// ```
-  ///
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// Recurring events are expanded into one [Event] per occurrence — each shares
+  /// the series' [Event.eventId] but carries a distinct [Event.instanceId] (see
+  /// [getEvent]). Requires full access.
   Future<List<Event>> listEvents(
     DateTime startDate,
     DateTime endDate, {
@@ -602,26 +383,12 @@ class DeviceCalendar {
     }
   }
 
-  /// Retrieves a single event by ID.
+  /// Retrieves a single event by [id], or null if not found.
   ///
-  /// The [id] can be either an event ID or an instance ID:
-  /// - **Event ID**: Returns the master event definition (for recurring events)
-  /// - **Instance ID**: Returns a specific occurrence (for recurring events)
-  ///
-  ///
-  /// Returns null if no matching event is found.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  /// // Get specific instance of a recurring event
-  /// final instance = await plugin.getEvent(event.instanceId);
-  ///
-  /// // Get master event definition for a recurring event
-  /// final masterEvent = await plugin.getEvent(event.eventId);
-  /// ```
-  ///
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// A bare event ID returns the master (the series, for a recurring event); an
+  /// instance ID (`eventId@timestamp`) returns a single occurrence. The instance
+  /// ID is unstable — it changes if the occurrence moves — so re-fetch after
+  /// edits. Requires full access.
   Future<Event?> getEvent(String id) async {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -649,49 +416,18 @@ class DeviceCalendar {
     }
   }
 
-  /// Shows a calendar event in a modal dialog.
+  /// Shows an event in the OS's native calendar screen, completing when it's
+  /// dismissed. Any edits the user makes are saved by the OS; this does not
+  /// report back what changed.
   ///
-  /// The [id] can be either an event ID or an instance ID:
-  /// - **Event ID**: Shows the master event definition (for recurring events)
-  /// - **Instance ID**: Shows a specific occurrence (for recurring events)
+  /// [id] may be a bare event ID (the series master) or an instance ID (one
+  /// occurrence). [edit] only controls whether the modal *starts* in the editor
+  /// — the view screen is not read-only and always offers an Edit affordance.
   ///
-  /// When [edit] is `true`, opens the native editor directly. When `false`
-  /// (the default), opens the native view screen — but note this is **not
-  /// read-only**: on both platforms the native screen exposes an Edit affordance
-  /// that lets the user modify the event from there. `edit` only controls
-  /// whether the modal *starts* in the editor; it cannot prevent editing.
-  ///
-  /// Either way, edits made by the user are saved to the device calendar
-  /// directly by the OS. This method completes when the modal is dismissed and
-  /// does not report back whether (or what) the user changed.
-  ///
-  /// **Platform Differences:**
-  /// - **iOS**: Presents `EKEventViewController` (view, with `allowsEditing`) or
-  ///   `EKEventEditViewController` (edit) in a native modal. Both reliably bind
-  ///   to the existing event.
-  /// - **Android**: Fires `ACTION_VIEW` or `ACTION_EDIT`; the system calendar
-  ///   app renders the screen, and its view screen offers an edit button.
-  ///
-  ///   **Caveat (`edit: true` on Android):** `ACTION_EDIT` is honored
-  ///   inconsistently across calendar apps. Notably, **Google Calendar ignores
-  ///   it for an existing event and opens a blank new-event editor instead** —
-  ///   the AOSP/stock calendar lands in the editor as expected. There is no
-  ///   intent that reliably opens Google Calendar directly into edit mode on an
-  ///   existing event. For a dependable "edit this event" flow, use
-  ///   `edit: false` (`ACTION_VIEW`) and let the user tap the edit button on the
-  ///   details screen. `iOS` is unaffected.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  /// // Open the view screen (the user can still tap Edit from here)
-  /// await plugin.showEventModal(event.instanceId);
-  ///
-  /// // Open directly in the editor
-  /// await plugin.showEventModal(event.instanceId, edit: true);
-  /// ```
-  ///
-  /// Requires full calendar access ([CalendarAccessLevel.full]).
+  /// On Android, `edit: true` is honored inconsistently (Google Calendar opens a
+  /// blank new-event editor instead); prefer the view modal and let the user tap
+  /// Edit. See [doc/native-ui.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/native-ui.md).
+  /// Requires full access.
   Future<void> showEventModal(String id, {bool edit = false}) async {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -712,71 +448,18 @@ class DeviceCalendar {
     }
   }
 
-  /// Creates a new event in a calendar.
+  /// Creates an event and returns its ID. Works with write-only access or full.
   ///
-  /// [calendarId] is the ID of the calendar to create the event in (optional).
-  ///   When omitted (`null`), the event is written to the platform's default
-  ///   calendar for new events — on iOS `defaultCalendarForNewEvents`, on
-  ///   Android the primary writable calendar (falling back to the first
-  ///   writable calendar). On Android this reads the calendar list to pick a
-  ///   default, so it needs full access — not write-only. Throws a
-  ///   [DeviceCalendarException] if no default/writable calendar is available.
-  ///   Passing a non-null but empty/whitespace ID is still an error.
-  /// [title] is the event title (required).
-  /// [startDate] is the start date/time (required).
-  /// [endDate] is the end date/time (required).
-  /// [isAllDay] indicates if this is an all-day event (default: false).
-  /// [description] is optional event notes/description.
-  /// [location] is optional event location.
-  /// [url] is an optional URL associated with the event. Round-trips through
-  ///   [Event.url]. On iOS this maps to `EKEvent.url` (visible in the native
-  ///   Calendar UI); on Android it maps to
-  ///   `CalendarContract.Events.CUSTOM_APP_URI`.
-  /// [timeZone] is optional timezone identifier (null for all-day events).
-  ///   The platform will validate the timezone string.
-  /// [availability] is the availability status (default: EventAvailability.busy).
-  /// [recurrenceRule] is an optional recurrence rule for repeating events.
-  /// [reminders] is an optional list of relative reminders, each a [Duration]
-  ///   of lead time **before** the event start at which an alarm fires (e.g.
-  ///   `Duration(minutes: 15)`). Reminders are **minute-granular** on both
-  ///   platforms: a sub-minute [Duration] rounds to the nearest minute. A
-  ///   negative [Duration] (after-start) throws [ArgumentError]; a zero
-  ///   [Duration] (at start) is allowed. Omitting it (or passing `null`) creates
-  ///   the event with no reminders.
+  /// Omit [calendarId] (or pass `null`) to write to the device's default
+  /// calendar; on Android resolving that default reads the calendar list, so it
+  /// needs full access. A non-null but empty ID is an error, as is an [endDate]
+  /// before [startDate].
   ///
-  /// Returns the system-generated event ID.
-  ///
-  /// Works with write-only access ([CalendarAccessLevel.writeOnly]), or full.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  ///
-  /// // Create a basic event
-  /// final eventId = await plugin.createEvent(
-  ///   calendarId: 'cal-123',
-  ///   title: 'Team Meeting',
-  ///   startDate: DateTime.now(),
-  ///   endDate: DateTime.now().add(Duration(hours: 1)),
-  ///   url: 'https://example.com/meeting/123',
-  /// );
-  ///
-  /// // Create a recurring event
-  /// final recurringId = await plugin.createEvent(
-  ///   calendarId: 'cal-123',
-  ///   title: 'Daily Standup',
-  ///   startDate: DateTime(2024, 3, 15, 9, 0),
-  ///   endDate: DateTime(2024, 3, 15, 9, 15),
-  ///   recurrenceRule: DailyRecurrence(end: CountEnd(30)),
-  /// );
-  ///
-  /// // Create an event in the default calendar (no calendarId)
-  /// final defaultId = await plugin.createEvent(
-  ///   title: 'Lunch',
-  ///   startDate: DateTime.now(),
-  ///   endDate: DateTime.now().add(Duration(hours: 1)),
-  /// );
-  /// ```
+  /// [recurrenceRule] makes the event recurring (see
+  /// [doc/recurring-events.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/recurring-events.md)).
+  /// [reminders] are lead times **before** start; each is minute-granular and
+  /// must be non-negative (see
+  /// [doc/reminders.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/reminders.md)).
   Future<String> createEvent({
     String? calendarId,
     required String title,
@@ -850,31 +533,11 @@ class DeviceCalendar {
     }
   }
 
-  /// Deletes a single event or a single occurrence of a recurring event.
+  /// Deletes an event. A bare event ID deletes the event (the whole series, if
+  /// recurring); an instance ID removes only that occurrence.
   ///
-  /// [eventId] identifies what to delete (required):
-  /// - **Bare event ID** (e.g., `event.eventId`): deletes the non-recurring
-  ///   event, or the master of a recurring series (all occurrences).
-  /// - **Instance ID** (e.g., `event.instanceId`, format
-  ///   `eventId@timestamp`): removes only that occurrence from the series,
-  ///   as a cancelled exception; the rest of the series is untouched.
-  ///
-  /// To delete an entire recurring series or truncate it from a split point
-  /// forward, use [deleteRecurring] instead.
-  ///
-  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
-  /// add-only and can't delete existing events.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  ///
-  /// // Delete a non-recurring event (or a whole recurring series)
-  /// await plugin.deleteEvent(eventId: event.eventId);
-  ///
-  /// // Delete only this one occurrence of a recurring event
-  /// await plugin.deleteEvent(eventId: event.instanceId);
-  /// ```
+  /// To truncate a series from a split point forward, use [deleteRecurring].
+  /// Requires full access.
   Future<void> deleteEvent({required String eventId}) async {
     if (eventId.trim().isEmpty) {
       throw ArgumentError.value(
@@ -905,71 +568,18 @@ class DeviceCalendar {
     }
   }
 
-  /// Updates a single event or a single occurrence of a recurring event.
+  /// Updates an event. A bare [eventId] updates the event (the whole series, if
+  /// recurring); an instance ID detaches and edits one occurrence (its
+  /// [startDate]/[endDate] are absolute, so it can move to another day).
   ///
-  /// [eventId] identifies what to update (required):
-  /// - **Bare event ID** (e.g., `event.eventId`): updates the non-recurring
-  ///   event, or the master of a recurring series (all occurrences).
-  /// - **Instance ID** (e.g., `event.instanceId`, format
-  ///   `eventId@timestamp`): detaches that single occurrence from the series
-  ///   and applies the changes to it alone. [startDate] and [endDate] are
-  ///   absolute instants, so the occurrence can move to a different day.
+  /// To change a property across a series or from a split point forward, use
+  /// [updateRecurring].
   ///
-  /// To change a property across an entire recurring series or from a split
-  /// point forward, use [updateRecurring] instead.
-  ///
-  /// All field parameters are optional - only provided fields will be updated:
-  /// - [title] - new event title
-  /// - [startDate] - new start date/time
-  /// - [endDate] - new end date/time
-  /// - [description] - event description ([Patch.set] to change, [Patch.clear]
-  ///   to remove)
-  /// - [location] - event location ([Patch.set] to change, [Patch.clear] to
-  ///   remove)
-  /// - [url] - URL associated with the event ([Patch.set] to change,
-  ///   [Patch.clear] to remove). Round-trips through [Event.url]. On iOS this
-  ///   maps to `EKEvent.url`; on Android it maps to
-  ///   `CalendarContract.Events.CUSTOM_APP_URI`.
-  /// - [isAllDay] - change between all-day and timed event
-  ///   - Changing timed → all-day: Time components are stripped to midnight
-  ///   - Changing all-day → timed: Midnight time is used
-  /// - [timeZone] - new timezone identifier
-  ///   - Note: This reinterprets the local time, not preserving the instant
-  ///   - Example: "3:00 PM EST" → "3:00 PM PST" (different instant in time)
-  /// - [availability] - new availability status
-  ///
-  /// - [reminders] - the event's reminder set ([Patch.set] to replace the whole
-  ///   set, [Patch.clear] to remove all reminders). Each [Duration] is lead
-  ///   time **before** start and is minute-granular; a negative [Duration]
-  ///   throws [ArgumentError] (zero is allowed).
-  ///
-  /// [description], [location] and [url] take a [Patch]: omit the argument (or
-  /// pass `null`) to leave the field unchanged, [Patch.set] to assign a new
-  /// value, [Patch.clear] to remove the existing value. [reminders] takes a
-  /// `Patch<List<Duration>>` with the same three states.
-  ///
-  /// Providing no fields is a no-op (nothing to change).
-  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
-  /// add-only and can't modify existing events.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  ///
-  /// // Update a non-recurring event (or all occurrences of a recurring one)
-  /// await plugin.updateEvent(
-  ///   eventId: event.eventId,
-  ///   title: 'Updated Meeting Title',
-  /// );
-  ///
-  /// // Edit only this one occurrence of a recurring event
-  /// await plugin.updateEvent(
-  ///   eventId: event.instanceId,
-  ///   title: 'Moved this week only',
-  ///   startDate: DateTime(2024, 3, 21, 15, 0),
-  ///   endDate: DateTime(2024, 3, 21, 16, 0),
-  /// );
-  /// ```
+  /// Only the fields you pass change. [description], [location], [url], and
+  /// [reminders] take a [Patch] — omit to leave unchanged, [Patch.set] to
+  /// assign, [Patch.clear] to remove. Setting [timeZone] reinterprets the
+  /// wall-clock time rather than preserving the instant. Passing no fields is a
+  /// no-op. Requires full access.
   Future<void> updateEvent({
     required String eventId,
     String? title,
@@ -1061,130 +671,32 @@ class DeviceCalendar {
     }
   }
 
-  /// Updates a recurring event's series, choosing which occurrences the edit
-  /// affects.
-  ///
-  /// Use this instead of [updateEvent] when you need to change a recurring
-  /// event's [recurrenceRule], its time-of-day or duration across a series, or
-  /// when an edit should split the series at a given point.
-  ///
-  /// To edit a single occurrence, pass its instance ID to [updateEvent]
-  /// instead.
-  ///
-  /// [instanceId] identifies the occurrence to act on — pass an instance ID
-  /// (`event.instanceId`). For [EventSpan.thisAndFollowing] it must carry an
-  /// occurrence timestamp (`eventId@timestamp`); a bare event ID throws
-  /// [ArgumentError].
+  /// Edits a recurring **series** — its [recurrenceRule], its time-of-day or
+  /// [duration], or any field across occurrences. To edit one occurrence, pass
+  /// its instance ID to [updateEvent] instead.
   ///
   /// [span] chooses the scope:
   /// - [EventSpan.allEvents] — the whole series follows the change.
-  ///   Clearing [recurrenceRule] collapses the series into a single event.
-  /// - [EventSpan.thisAndFollowing] — the series is split at the
-  ///   occurrence timestamp: that occurrence and every later one carry the
-  ///   edit; earlier occurrences are untouched. Clearing [recurrenceRule] here
-  ///   turns the occurrence into a standalone non-recurring event and drops
-  ///   every later one, leaving the earlier occurrences in the original series
-  ///   (the "this and future, made non-recurring" case).
+  /// - [EventSpan.thisAndFollowing] — splits the series at the occurrence; that
+  ///   one and every later one carry the change. Requires [instanceId] to carry
+  ///   an occurrence timestamp (a bare event ID throws [ArgumentError]).
   ///
-  /// Time fields:
-  /// - [start] moves the anchored occurrence to a new start, and translates
-  ///   the whole scope by the same wall-clock delta — so it changes the
-  ///   time-of-day **and** the day together. Moving Monday 11 PM to Tuesday
-  ///   1 AM shifts every occurrence one day later and to 1 AM. The delta is
-  ///   measured against the occurrence the [instanceId] points at (or the
-  ///   series anchor, for `allEvents` with a bare event ID), in the event's
-  ///   timezone, so it is DST-safe. Duration is preserved unless [duration]
-  ///   is also passed. On all-day events only the date moves; the time-of-day
-  ///   is ignored.
-  /// - [duration] sets the event duration; it must be non-negative (zero is
-  ///   allowed for an instantaneous event) and a whole number of minutes. For
-  ///   all-day events, only whole-day durations are valid (e.g.,
-  ///   `Duration(days: 3)` for a three-day conference).
+  /// [start] moves the anchor and translates the scope by the same wall-clock
+  /// delta — changing day and time together, measured in the event's timezone
+  /// (so DST-safe). [duration] must be non-negative whole minutes (whole days
+  /// for all-day events). [recurrenceRule] takes a [Patch]: [Patch.set] to
+  /// change the rule, [Patch.clear] to stop recurring.
   ///
-  /// [recurrenceRule] takes a [Patch]: omit it to leave recurrence unchanged,
-  /// [Patch.set] to change the rule, [Patch.clear] to remove it (the event
-  /// stops recurring).
+  /// Moving the day of a rule that pins it explicitly (e.g.
+  /// `WeeklyRecurrence(daysOfWeek: …)`) without also passing a [recurrenceRule]
+  /// throws [DeviceCalendarException] ([DeviceCalendarError.invalidArguments]),
+  /// because the result is ambiguous. Implicit rules and time-only changes
+  /// follow the anchor freely. See
+  /// [doc/recurring-events.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/recurring-events.md).
   ///
-  /// **[start] moves the series anchor; the recurrence rule is yours.**
-  ///
-  /// - Rules whose day is *implied by the start* — the defaults
-  ///   `WeeklyRecurrence()`, `MonthlyRecurrence()`, `DailyRecurrence()` — have
-  ///   no explicit day pinned, so moving the day with [start] is enough: the
-  ///   pattern follows the anchor (a Monday-anchored weekly becomes a Tuesday
-  ///   one). Nothing else to do.
-  /// - Rules that *pin a day explicitly* — `WeeklyRecurrence(daysOfWeek: …)`,
-  ///   `MonthlyRecurrence(daysOfMonth: …)`, positional rules like "2nd Tuesday"
-  ///   — cannot be moved to a different day by [start] alone. If [start] would
-  ///   change the pinned weekday (or day-of-month, or month) and you do **not**
-  ///   pass a [recurrenceRule], this throws [DeviceCalendarException] with
-  ///   [DeviceCalendarError.invalidArguments]. Pass the new rule in the same
-  ///   call to say what the pattern should become.
-  ///
-  /// *Why throw instead of guessing?* Moving one day of a multi-day rule is
-  /// genuinely ambiguous: dragging the Monday of a Mon/Wed/Fri series to
-  /// Tuesday could mean Tue/Wed/Fri (that day reassigned) or Tue/Thu/Sat (the
-  /// whole pattern shifted) — there is no single right answer, and Google
-  /// Calendar itself mishandles it. Silently picking one would surprise half
-  /// the callers; silently doing nothing reads as a broken drag and behaves
-  /// differently on iOS vs Android. So the API refuses and hands the decision
-  /// back to you, who can express it exactly via [recurrenceRule].
-  ///
-  /// Edge cases that do **not** throw (the day-spec is unchanged):
-  /// - changing only the time-of-day, or only [duration];
-  /// - a whole-week shift of a weekly rule (e.g. +7 days keeps the weekday);
-  /// - any move on an implicit rule (it has no pinned day to contradict).
-  ///
-  /// Watch for the converse: a **cross-midnight** retime of a pinned series
-  /// (11 PM → 1 AM) rolls the date forward a day, so it *does* change the
-  /// weekday and will throw — pass a [recurrenceRule] for those too.
-  ///
-  /// **Secondary effects** — what happens to occurrences the user had
-  /// individually customised — are best-effort and differ by platform.
-  /// Customisations before a `thisAndFollowing` split point survive.
-  /// Customisations after the split point (or anywhere, for `allEvents`) are
-  /// reset: a moved occurrence persists as a detached standalone event, and a
-  /// deleted occurrence may reappear if the new rule regenerates that date.
-  ///
-  /// Returns the event ID for the affected scope — the same ID for
-  /// `allEvents`, the new series' ID for `thisAndFollowing`.
-  ///
-  /// Providing no fields is a no-op (nothing to change).
-  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
-  /// add-only and can't modify an existing series.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  ///
-  /// // Move a nightshift series from 11 PM to 1 AM the next day
-  /// await plugin.updateRecurring(
-  ///   event.instanceId, // an occurrence currently at 11 PM
-  ///   EventSpan.allEvents,
-  ///   start: DateTime(2024, 3, 19, 1, 0), // the day after, 1 AM
-  /// );
-  ///
-  /// // Change the duration of all occurrences to 90 minutes
-  /// await plugin.updateRecurring(
-  ///   event.instanceId,
-  ///   EventSpan.allEvents,
-  ///   duration: Duration(minutes: 90),
-  /// );
-  ///
-  /// // Split: this occurrence and later ones move to a new start
-  /// final newSeriesId = await plugin.updateRecurring(
-  ///   event.instanceId,
-  ///   EventSpan.thisAndFollowing,
-  ///   start: DateTime(2024, 3, 18, 15, 0),
-  ///   duration: Duration(hours: 1),
-  /// );
-  ///
-  /// // Change the whole series to weekly
-  /// await plugin.updateRecurring(
-  ///   event.instanceId,
-  ///   EventSpan.allEvents,
-  ///   recurrenceRule: Patch.set(WeeklyRecurrence(end: CountEnd(10))),
-  /// );
-  /// ```
+  /// Returns the affected scope's event ID (the same ID for `allEvents`, the new
+  /// series' ID for `thisAndFollowing`). Passing no fields is a no-op. Requires
+  /// full access.
   Future<String> updateRecurring(
     String instanceId,
     EventSpan span, {
@@ -1305,43 +817,15 @@ class DeviceCalendar {
     }
   }
 
-  /// Deletes a recurring event's series, choosing which occurrences are
-  /// removed.
+  /// Deletes a recurring **series** by [span]:
+  /// - [EventSpan.allEvents] — deletes the whole series (same as [deleteEvent]
+  ///   with a bare event ID).
+  /// - [EventSpan.thisAndFollowing] — removes the occurrence and every later
+  ///   one, truncating the series. Requires [instanceId] to carry an occurrence
+  ///   timestamp (a bare event ID throws [ArgumentError]).
   ///
-  /// Use this instead of [deleteEvent] when a recurring series should be
-  /// truncated from a split point forward, or deleted outright.
-  ///
-  /// To delete a single occurrence, pass its instance ID to [deleteEvent]
-  /// instead.
-  ///
-  /// [instanceId] identifies the occurrence to act on — pass an instance ID
-  /// (`event.instanceId`). For [EventSpan.thisAndFollowing] it must carry an
-  /// occurrence timestamp (`eventId@timestamp`); a bare event ID throws
-  /// [ArgumentError].
-  ///
-  /// [span] chooses the scope:
-  /// - [EventSpan.allEvents] — the whole series is deleted (the same result
-  ///   as [deleteEvent] with a bare event ID).
-  /// - [EventSpan.thisAndFollowing] — the occurrence at the timestamp and
-  ///   every later one are removed; the series is truncated to end before it.
-  ///   Earlier occurrences are untouched.
-  ///
-  /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
-  /// add-only and can't delete an existing series.
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  ///
-  /// // Delete the whole series
-  /// await plugin.deleteRecurring(event.instanceId, EventSpan.allEvents);
-  ///
-  /// // Delete this occurrence and every later one
-  /// await plugin.deleteRecurring(
-  ///   event.instanceId,
-  ///   EventSpan.thisAndFollowing,
-  /// );
-  /// ```
+  /// To delete one occurrence, pass its instance ID to [deleteEvent]. Requires
+  /// full access.
   Future<void> deleteRecurring(String instanceId, EventSpan span) async {
     // Validate instanceId
     if (instanceId.trim().isEmpty) {
@@ -1381,39 +865,13 @@ class DeviceCalendar {
     }
   }
 
-  /// Opens the native platform calendar editor in create mode.
+  /// Opens the OS's native event editor in create mode, completing when it's
+  /// dismissed.
   ///
-  /// All parameters are optional pre-fill values. The native editor opens
-  /// with these fields populated (or blank if not provided). The user can
-  /// modify any field before saving or cancelling.
-  ///
-  /// The returned [Future] completes when the modal is dismissed (whether
-  /// the user saved or cancelled).
-  ///
-  /// If [isAllDay] is true, any provided dates are normalized to midnight.
-  /// If neither date is provided, the native editor uses its own defaults.
-  ///
-  /// **Platform APIs:**
-  /// - **iOS**: `EKEventEditViewController`
-  /// - **Android**: `Intent.ACTION_INSERT`
-  ///
-  /// Example:
-  /// ```dart
-  /// final plugin = DeviceCalendar.instance;
-  ///
-  /// // Open blank editor
-  /// await plugin.showCreateEventModal();
-  ///
-  /// // Open with pre-filled data
-  /// await plugin.showCreateEventModal(
-  ///   title: 'Team Meeting',
-  ///   startDate: DateTime.now().add(Duration(hours: 1)),
-  ///   endDate: DateTime.now().add(Duration(hours: 2)),
-  ///   location: 'Conference Room A',
-  /// );
-  /// ```
-  ///
-  /// Works with write-only access ([CalendarAccessLevel.writeOnly]), or full.
+  /// All parameters are optional pre-fill values; the user can change anything
+  /// before saving or cancelling. Useful for letting the user review, or to add
+  /// attendees (which can't be done programmatically). Works with write-only
+  /// access or full.
   Future<void> showCreateEventModal({
     String? title,
     DateTime? startDate,
