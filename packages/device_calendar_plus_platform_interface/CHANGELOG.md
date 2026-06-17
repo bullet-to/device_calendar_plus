@@ -1,3 +1,18 @@
+## 0.7.0 - 2026-06-17
+
+### Changed
+- **Breaking:** `createEvent`'s `calendarId` is now `String?` — a null targets
+  the platform's default calendar — and it gains a `List<int>? reminders`
+  parameter (whole-minute before-start offsets) (#88, #87).
+- **Breaking:** `updateEvent` gains a `Patch<List<int>>? reminders` parameter
+  (#87).
+- **Breaking:** `requestPermissions` takes a `writeOnly` flag to request the
+  add-only access tier (#89).
+
+### Added
+- `writePatchFields` accepts patches of any serializable value type, not just
+  strings, so non-string fields ride the same `clearedFields` convention.
+
 ## 0.6.0 - 2026-06-16
 
 ### Changed

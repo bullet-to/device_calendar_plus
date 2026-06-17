@@ -1,3 +1,24 @@
+## 0.7.0 - 2026-06-17
+
+### Added
+- Write-only calendar access. `requestPermissions(level:
+  CalendarAccessLevel.writeOnly)` asks for the gentler add-only prompt and a
+  grant reports `CalendarPermissionStatus.writeOnly`. On iOS this is not a
+  permanent ceiling — a later full request re-prompts and upgrades the app
+  in-app (#89).
+- Automatic permission handling. Set `DeviceCalendar.instance.autoPermissions`
+  to `AutoPermissionMode.asNeeded` or `.full` and methods request the access
+  they need on first use instead of throwing when permission is undetermined
+  (#90).
+- `createEvent`'s `calendarId` is now optional — omit it to write to the
+  platform's default calendar (iOS `defaultCalendarForNewEvents`, Android the
+  primary or first writable calendar). Resolving the default on Android reads
+  the calendar list, so that path needs full access (#88).
+- Event reminders. `createEvent` takes `reminders: List<Duration>`,
+  `updateEvent` takes `Patch<List<Duration>>`, and `Event.reminders` is read
+  back. Relative before-start offsets, normalized to whole minutes on both
+  platforms (#87).
+
 ## 0.6.0 - 2026-06-16
 
 ### Changed

@@ -1,3 +1,17 @@
+## 0.7.0 - 2026-06-17
+
+### Added
+- Write-only access via `requestWriteOnlyAccessToEvents` (iOS 17+). It is not a
+  permanent ceiling — a later full request re-prompts and upgrades the app
+  in-app (#89).
+- `createEvent` with no `calendarId` writes to `defaultCalendarForNewEvents`
+  (#88).
+- Event reminders via `EKAlarm(relativeOffset:)` on `EKEvent.alarms` (#87).
+
+### Changed
+- Simplified the permission request into a single iOS 17 availability dispatch
+  (#108).
+
 ## 0.6.0 - 2026-06-16
 
 ### Changed

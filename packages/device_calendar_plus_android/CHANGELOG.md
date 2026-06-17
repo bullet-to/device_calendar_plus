@@ -1,3 +1,21 @@
+## 0.7.0 - 2026-06-17
+
+### Added
+- Write-only access: a `writeOnly` request asks for `WRITE_CALENDAR` only.
+  `READ_CALENDAR` and `WRITE_CALENDAR` share the `CALENDAR` group, so a later
+  full request escalates to read access with no dialog (#89).
+- `createEvent` with no `calendarId` resolves a default calendar — the primary
+  writable calendar, falling back to the first writable one (#88).
+- Event reminders via `CalendarContract.Reminders` rows and `Events.HAS_ALARM`
+  (#87).
+
+### Fixed
+- Permanent-denial detection keys off `WRITE_CALENDAR`, and a cancelled
+  permission dialog no longer reports `denied` (#108).
+- `createEvent` with no `calendarId` reports `permissionDenied` rather than
+  "no writable calendar" when it can't read the calendar list to resolve a
+  default (#112).
+
 ## 0.6.0 - 2026-06-16
 
 ### Changed
