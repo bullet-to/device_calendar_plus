@@ -2,7 +2,7 @@
 
 A Flutter plugin for reading and writing calendar events on **Android** and **iOS**.
 
-The original [`device_calendar`](https://pub.dev/packages/device_calendar) plugin got abandoned, and I needed calendars that actually worked for [Bullet](https://bullet.to). So I rebuilt it: a cleaner Dart API, timezones that behave, and no `timezone` package tagging along. Getting EventKit and Android's Calendar Provider to agree on anything is a proper slog, but that's my problem to lose sleep over, not yours. You just get the tidy bit. 😎
+A maintained replacement for the abandoned [`device_calendar`](https://pub.dev/packages/device_calendar) plugin, built for [Bullet](https://bullet.to): a cleaner Dart API, timezones that behave, and no `timezone` package tagging along. Getting EventKit and Android's Calendar Provider to agree on anything is a slog - this package handles it so your app doesn't have to.
 
 [![pub package](https://img.shields.io/pub/v/device_calendar_plus.svg)](https://pub.dev/packages/device_calendar_plus)
 [![pub points](https://img.shields.io/pub/points/device_calendar_plus)](https://pub.dev/packages/device_calendar_plus/score)
@@ -23,9 +23,9 @@ Built for [Bullet](https://bullet.to), a calmer task + notes + calendar app, and
 
 ## One API, both platforms
 
-I only put things in this plugin that work the same on Android and iOS. If a feature is read-only on one platform, it's read-only here. If it doesn't exist on one, it doesn't go in. Where the two platforms naturally disagree, Android is bent to match iOS, which sets the contract.
+This plugin exposes only what works the same on Android and iOS. If a feature is read-only on one platform, it's read-only here. If it doesn't exist on one, it isn't included. Where the platforms naturally disagree, Android is conformed to iOS, which sets the contract.
 
-It's honest best-effort, though. A few platform realities I just can't paper over: older iOS has no write-only permission tier, and the native editor screens do their own thing across different calendar apps. I call those out in the docs where they show up, rather than hide them behind an API pretending everything's identical.
+It's best-effort, and honest about the gaps. A few platform realities can't be smoothed over: older iOS has no write-only permission tier, and the native editor screens behave differently across calendar apps. Those cases are flagged in the docs where they show up, not hidden behind an API pretending everything's identical.
 
 ## Supported versions
 
@@ -147,7 +147,7 @@ try {
 
 ## Contributing
 
-I'm keeping pull requests closed, and not to be precious about it. Holding the whole API and the iOS/Android parity in my own head is honestly the only way I keep it consistent. Bug reports and feature requests are very welcome though, so open an issue and let's chat. :)
+Pull requests are closed. Keeping the API surface and the iOS/Android parity consistent works best with a single hand on the wheel. Bug reports and feature requests are very welcome though, so open an issue and let's chat. :)
 
 ## License
 
