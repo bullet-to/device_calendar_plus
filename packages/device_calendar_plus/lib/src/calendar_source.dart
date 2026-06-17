@@ -49,25 +49,16 @@ enum CalendarSourceType {
 class CalendarSource {
   /// Stable identifier for this source.
   ///
-  /// - **iOS**: `EKSource.sourceIdentifier` — use with [CreateCalendarOptionsIos]
-  /// - **Android**: Synthetic `"encodedAccountName:encodedAccountType"` (URI-encoded)
-  ///   — informational only, not used for creation. Use [accountName] + [accountType]
-  ///   with [CreateCalendarOptionsAndroid] instead.
+  /// On iOS, pass it to [CreateCalendarOptionsIos]. On Android it is
+  /// informational only — use [accountName] + [accountType] with
+  /// [CreateCalendarOptionsAndroid] to create a calendar.
   final String id;
 
-  /// Display name or account identifier for this source.
-  ///
-  /// - **iOS**: `EKSource.title` (e.g. "iCloud", "Gmail")
-  /// - **Android**: `ACCOUNT_NAME` (e.g. "user@gmail.com", "local")
-  ///
+  /// Display name or account identifier (e.g. "iCloud", "user@gmail.com").
   /// Matches [Calendar.accountName].
   final String accountName;
 
-  /// Raw platform type string for this source.
-  ///
-  /// - **iOS**: e.g. "caldav", "local", "exchange"
-  /// - **Android**: e.g. "com.google", "LOCAL", "com.android.exchange"
-  ///
+  /// Raw platform type string (e.g. "caldav" on iOS, "com.google" on Android).
   /// Matches [Calendar.accountType].
   final String accountType;
 

@@ -83,10 +83,9 @@ class UntilEnd extends RecurrenceEnd {
 
 /// Recurrence rule for calendar events (RFC 5545 RRULE subset).
 ///
-/// This models the cross-platform subset of RRULE that both iOS (EKRecurrenceRule)
-/// and Android (CalendarContract) support reliably.
-///
-/// For full RRULE access (e.g. BYHOUR on Android), use [rruleString].
+/// Models the cross-platform subset of RRULE that both iOS and Android support
+/// reliably. For RRULE features beyond that subset (e.g. BYHOUR), use
+/// [rruleString].
 sealed class RecurrenceRule {
   /// Interval between recurrences. Defaults to 1.
   ///
@@ -103,16 +102,12 @@ sealed class RecurrenceRule {
       : _rawRrule = rawRrule,
         assert(interval >= 1, 'Interval must be at least 1');
 
-  /// The raw RRULE string.
+  /// The raw RRULE string — use it for RRULE properties beyond the typed model.
   ///
-  /// When parsed from a platform event, this is the original string as returned
-  /// by the platform. On Android this is the exact CalendarContract string
-  /// (full fidelity). On iOS this is reconstructed from EKRecurrenceRule
-  /// (may lose properties like BYHOUR that EventKit doesn't model).
-  ///
-  /// When constructed in Dart, this is generated from [toRruleString].
-  ///
-  /// Use this if you need RRULE properties beyond what the typed model exposes.
+  /// When parsed from a platform event this is the original string: full
+  /// fidelity on Android; on iOS it is reconstructed and may lose properties the
+  /// platform doesn't model (e.g. BYHOUR). When constructed in Dart, it is
+  /// generated from [toRruleString].
   String get rruleString => _rawRrule ?? toRruleString();
 
   /// Serializes this rule to an RRULE string (without the "RRULE:" prefix).
@@ -185,14 +180,11 @@ class WeeklyRecurrence extends RecurrenceRule {
   /// If null, defaults to the day of the event's start date (platform behavior).
   final List<DayOfWeek>? daysOfWeek;
 
-  /// The day the week starts on (WKST).
+  /// The day the week starts on (WKST). Affects how BYDAY is calculated for
+  /// weekly recurrences. Defaults to Monday per RFC 5545 when null.
   ///
-  /// Affects how BYDAY is calculated for weekly recurrences.
-  /// Defaults to Monday per RFC 5545 when null.
-  ///
-  /// **Note:** iOS can read this from events but cannot set it when creating
-  /// events (EKRecurrenceRule does not expose it in its initializer).
-  /// The value still round-trips via [rruleString].
+  /// iOS can read this from events but cannot set it when creating them; the
+  /// value still round-trips via [rruleString].
   final DayOfWeek? wkst;
 
   const WeeklyRecurrence({
@@ -597,8 +589,6 @@ class YearlyByWeekday extends YearlyRecurrence {
 ///
 /// Without [position]: "every Tuesday" (`BYDAY=TU`).
 /// With [position]: "2nd Tuesday" (`BYDAY=2TU`) or "last Friday" (`BYDAY=-1FR`).
-///
-/// Maps to RFC 5545 BYDAY and iOS `EKRecurrenceDayOfWeek`.
 class RecurrenceDay {
   /// The day of the week.
   final DayOfWeek day;

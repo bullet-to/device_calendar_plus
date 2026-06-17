@@ -3,25 +3,16 @@ enum CalendarPermissionStatus {
   /// Full read and write access to calendars.
   granted,
 
-  /// Permission has been permanently denied by the user.
-  ///
-  /// On Android, this means the user selected "Don't ask again" and the
-  /// permission dialog can no longer be shown. Use [DeviceCalendar.openAppSettings]
-  /// to direct the user to the system settings page.
-  ///
-  /// On iOS, this maps to `EKAuthorizationStatus.denied`.
+  /// Permission has been permanently denied — the system dialog can no longer
+  /// be shown (on Android, the user chose "Don't ask again"). Use
+  /// [DeviceCalendar.openAppSettings] to send the user to settings.
   denied,
 
-  /// Write-only access to calendars — add events without reading existing data.
+  /// Write-only access — add events without reading existing data. Request it
+  /// with `requestPermissions(level: CalendarAccessLevel.writeOnly)`.
   ///
-  /// Request it with
-  /// `requestPermissions(level: CalendarAccessLevel.writeOnly)`.
-  ///
-  /// - On iOS 17 and later, this maps to `EKAuthorizationStatus.writeOnly`.
-  ///   iOS 16 and below has no write-only tier, so a write-only request there
-  ///   resolves to [granted] instead.
-  /// - On Android, this is returned when `WRITE_CALENDAR` is granted but
-  ///   `READ_CALENDAR` is not (e.g. after a write-only request).
+  /// iOS 16 and below has no write-only tier, so a write-only request there
+  /// resolves to [granted] instead.
   writeOnly,
 
   /// Access is restricted by device policies (iOS only).
@@ -33,17 +24,10 @@ enum CalendarPermissionStatus {
   /// This status is never returned on Android.
   restricted,
 
-  /// Permission has not been granted yet, but can still be requested.
+  /// Permission has not been granted yet, but can still be requested — calling
+  /// [DeviceCalendar.requestPermissions] in this state shows the system dialog.
   ///
-  /// Calling [DeviceCalendar.requestPermissions] while in this state will show
-  /// the system permission dialog.
-  ///
-  /// On iOS, this maps directly to the `EKAuthorizationStatus.notDetermined` state.
-  ///
-  /// On Android, this covers both "never asked" and "denied once but can still
-  /// ask again". Android's `checkSelfPermission()` returns `PERMISSION_DENIED`
-  /// in both cases, so a `SharedPreferences` flag combined with
-  /// `shouldShowRequestPermissionRationale()` is used to detect when the
-  /// permission has been permanently denied (which returns [denied] instead).
+  /// On Android this covers both "never asked" and "denied once but can still
+  /// ask again"; a permanent denial returns [denied] instead.
   notDetermined,
 }
