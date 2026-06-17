@@ -92,6 +92,7 @@ void main() {
         'America/New_York',
         'busy',
         null,
+        [15, 60],
       );
 
       expect(log[0].arguments['calendarId'], equals('cal-123'));
@@ -106,6 +107,7 @@ void main() {
       expect(log[0].arguments['url'], equals('https://example.com/event/123'));
       expect(log[0].arguments['timeZone'], equals('America/New_York'));
       expect(log[0].arguments['availability'], equals('busy'));
+      expect(log[0].arguments['reminders'], equals([15, 60]));
     });
 
     test('updateEvent serializes only provided fields', () async {
@@ -123,6 +125,30 @@ void main() {
       expect(log[0].arguments['isAllDay'], isNull);
       expect(log[0].arguments['timeZone'], isNull);
       expect(log[0].arguments['availability'], isNull);
+      // Reminders unchanged: no key, not in clearedFields.
+      expect(log[0].arguments['reminders'], isNull);
+      expect(log[0].arguments['clearedFields'], isEmpty);
+    });
+
+    test('updateEvent serializes a reminders Patch.set as minutes', () async {
+      await plugin.updateEvent(
+        'event-123',
+        reminders: Patch.set([30, 60]),
+      );
+
+      expect(log[0].arguments['reminders'], equals([30, 60]));
+      expect(log[0].arguments['clearedFields'], isEmpty);
+    });
+
+    test('updateEvent serializes a reminders Patch.clear via clearedFields',
+        () async {
+      await plugin.updateEvent(
+        'event-123',
+        reminders: const Patch.clear(),
+      );
+
+      expect(log[0].arguments['reminders'], isNull);
+      expect(log[0].arguments['clearedFields'], contains('reminders'));
     });
   });
 }

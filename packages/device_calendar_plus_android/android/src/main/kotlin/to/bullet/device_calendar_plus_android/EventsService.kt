@@ -304,7 +304,60 @@ class EventsService(
             eventMap["attendees"] = attendees
         }
 
+        // Query relative reminders (minutes before start)
+        val reminders = queryReminderMinutes(eventId.toLong())
+        if (reminders.isNotEmpty()) {
+            eventMap["reminders"] = reminders
+        }
+
         return eventMap
+    }
+
+    /**
+     * Reads the relative reminders of an event as whole minutes before start.
+     *
+     * Keeps only alert/default-method rows (the ones the plugin writes); email
+     * and SMS reminders are out of scope and skipped. A row with MINUTES_DEFAULT
+     * (-1) carries no fixed offset, so it is skipped too. Returns an empty list
+     * when the event has no qualifying reminders.
+     */
+    private fun queryReminderMinutes(eventId: Long): List<Int> {
+        val minutes = mutableListOf<Int>()
+        try {
+            context.contentResolver.query(
+                CalendarContract.Reminders.CONTENT_URI,
+                arrayOf(
+                    CalendarContract.Reminders.MINUTES,
+                    CalendarContract.Reminders.METHOD,
+                ),
+                "${CalendarContract.Reminders.EVENT_ID} = ?",
+                arrayOf(eventId.toString()),
+                null
+            )?.use { cursor ->
+                val minutesIdx = cursor.getColumnIndexOrThrow(CalendarContract.Reminders.MINUTES)
+                val methodIdx = cursor.getColumnIndexOrThrow(CalendarContract.Reminders.METHOD)
+                while (cursor.moveToNext()) {
+                    val method = if (cursor.isNull(methodIdx)) {
+                        CalendarContract.Reminders.METHOD_DEFAULT
+                    } else {
+                        cursor.getInt(methodIdx)
+                    }
+                    if (method != CalendarContract.Reminders.METHOD_ALERT &&
+                        method != CalendarContract.Reminders.METHOD_DEFAULT) {
+                        continue
+                    }
+                    if (cursor.isNull(minutesIdx)) continue
+                    val value = cursor.getInt(minutesIdx)
+                    // MINUTES_DEFAULT (-1) means "use the calendar's default" —
+                    // it has no concrete offset to report.
+                    if (value < 0) continue
+                    minutes.add(value)
+                }
+            }
+        } catch (_: Exception) {
+            // Silently return what we have if the reminder query fails.
+        }
+        return minutes
     }
 
     private fun queryAttendees(eventId: Long): List<Map<String, Any?>> {
@@ -620,7 +673,8 @@ class EventsService(
         url: String?,
         timeZone: String?,
         availability: String,
-        recurrenceRule: String?
+        recurrenceRule: String?,
+        reminders: List<Int>?
     ): Result<String> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -632,7 +686,7 @@ class EventsService(
                 )
             )
         }
-        
+
         // Resolve the target calendar. A null calendarId means "default
         // calendar" — resolve the primary (or first) writable calendar. The
         // resolver fails with permissionDenied if it can't read the calendar
@@ -719,16 +773,26 @@ class EventsService(
                 
                 // Set status to confirmed
                 put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
+
+                // Flag the event as having alarms so the provider expands them.
+                val hasReminders = reminders != null && reminders.isNotEmpty()
+                put(CalendarContract.Events.HAS_ALARM, if (hasReminders) 1 else 0)
             }
-            
+
             val uri = context.contentResolver.insert(
                 CalendarContract.Events.CONTENT_URI,
                 values
             )
-            
+
             if (uri != null) {
                 val eventId = uri.lastPathSegment
                 if (eventId != null) {
+                    // Reminders attach as separate rows keyed by EVENT_ID — this
+                    // is the same whether or not the event recurs, so the
+                    // RRULE/DURATION handling above is untouched.
+                    if (reminders != null && reminders.isNotEmpty()) {
+                        insertReminderRows(eventId.toLong(), reminders)
+                    }
                     return Result.success(eventId)
                 }
             }
@@ -927,6 +991,10 @@ class EventsService(
             values.put(CalendarContract.Events.EVENT_TIMEZONE, java.util.TimeZone.getDefault().id)
         }
 
+        // A reminders set/clear also flips HAS_ALARM so the provider expands
+        // (or drops) the alarms. Unchanged leaves the column alone.
+        applyRemindersHasAlarm(values, patch.reminders)
+
         // Perform the update
         val updatedRows = context.contentResolver.update(
             CalendarContract.Events.CONTENT_URI,
@@ -943,6 +1011,10 @@ class EventsService(
                 )
             )
         }
+
+        // Reminder rows live in a separate table keyed by EVENT_ID — rewrite
+        // them after the event row update (no-op when unchanged).
+        applyRemindersRows(eventId.toLong(), patch.reminders)
 
         return Result.success(Unit)
     }
@@ -1050,13 +1122,17 @@ class EventsService(
         if (patch.timeZone != null) {
             values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)
         }
+        // The exception is a fresh event row, so a reminders set/clear sets its
+        // HAS_ALARM. Unchanged inherits the parent's value implicitly.
+        applyRemindersHasAlarm(values, patch.reminders)
 
         val exceptionUri = android.content.ContentUris.withAppendedId(
             CalendarContract.Events.CONTENT_EXCEPTION_URI,
             eventId.toLong()
         )
         val uri = context.contentResolver.insert(exceptionUri, values)
-        if (uri?.lastPathSegment == null) {
+        val exceptionId = uri?.lastPathSegment
+        if (exceptionId == null) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
@@ -1064,6 +1140,8 @@ class EventsService(
                 )
             )
         }
+        // Reminder rows attach to the detached exception's own event id.
+        applyRemindersRows(exceptionId.toLong(), patch.reminders)
         return Result.success(Unit)
     }
 
@@ -1245,6 +1323,8 @@ class EventsService(
             )
         }
 
+        applyRemindersHasAlarm(values, patch.reminders)
+
         // RRULE writes require sync-adapter context on Android — see
         // updateEventAsSyncAdapter for the rationale.
         val updatedRows = updateEventAsSyncAdapter(eventId, row.calendarId, values)
@@ -1256,6 +1336,10 @@ class EventsService(
                 )
             )
         }
+
+        // Reminder rows attach to the (master) event row by EVENT_ID — the same
+        // for recurring and non-recurring, so no DURATION/RRULE interaction.
+        applyRemindersRows(eventId.toLong(), patch.reminders)
         return Result.success(eventId)
     }
 
@@ -1346,6 +1430,18 @@ class EventsService(
             rrule = effectiveRrule
         )
         val newEventId = insertResult.getOrElse { return Result.failure(it) }
+
+        // The new series carries the patch's reminders when set/cleared, else
+        // it inherits the original series' reminders.
+        val effectiveReminders = when (val r = patch.reminders) {
+            is EventFieldPatch.RemindersPatch.Set -> r.minutes
+            is EventFieldPatch.RemindersPatch.Clear -> emptyList()
+            EventFieldPatch.RemindersPatch.Unchanged -> queryReminderMinutes(eventId.toLong())
+        }
+        if (effectiveReminders.isNotEmpty()) {
+            insertReminderRows(newEventId.toLong(), effectiveReminders)
+            setHasAlarm(newEventId.toLong(), row.calendarId, true)
+        }
 
         // Truncate the original series to end just before the anchor. UNTIL is
         // inclusive, so cutting it one second early keeps the anchor occurrence
@@ -1679,6 +1775,85 @@ class EventsService(
                 )
             )
         }
+    }
+
+    /**
+     * Inserts one [CalendarContract.Reminders] row per minute value, each a
+     * relative METHOD_ALERT reminder that many minutes before the event start.
+     */
+    private fun insertReminderRows(eventId: Long, minutes: List<Int>) {
+        for (m in minutes) {
+            val values = android.content.ContentValues().apply {
+                put(CalendarContract.Reminders.EVENT_ID, eventId)
+                put(CalendarContract.Reminders.MINUTES, m)
+                put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
+            }
+            context.contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, values)
+        }
+    }
+
+    /** Removes all reminder rows for [eventId]. */
+    private fun deleteReminderRows(eventId: Long) {
+        context.contentResolver.delete(
+            CalendarContract.Reminders.CONTENT_URI,
+            "${CalendarContract.Reminders.EVENT_ID} = ?",
+            arrayOf(eventId.toString())
+        )
+    }
+
+    /**
+     * Applies a reminders [patch] to the rows of [eventId]: a set replaces the
+     * whole reminder set (delete then re-insert), a clear removes them all, and
+     * unchanged leaves the rows untouched.
+     */
+    private fun applyRemindersRows(
+        eventId: Long,
+        patch: EventFieldPatch.RemindersPatch
+    ) {
+        when (patch) {
+            EventFieldPatch.RemindersPatch.Unchanged -> {}
+            EventFieldPatch.RemindersPatch.Clear -> deleteReminderRows(eventId)
+            is EventFieldPatch.RemindersPatch.Set -> {
+                deleteReminderRows(eventId)
+                if (patch.minutes.isNotEmpty()) {
+                    insertReminderRows(eventId, patch.minutes)
+                }
+            }
+        }
+    }
+
+    /**
+     * Writes HAS_ALARM into [values] to match a reminders [patch]: a non-empty
+     * set flips it on, an empty set or clear flips it off, unchanged leaves the
+     * column out so the existing flag stands.
+     */
+    private fun applyRemindersHasAlarm(
+        values: android.content.ContentValues,
+        patch: EventFieldPatch.RemindersPatch
+    ) {
+        when (patch) {
+            EventFieldPatch.RemindersPatch.Unchanged -> {}
+            EventFieldPatch.RemindersPatch.Clear ->
+                values.put(CalendarContract.Events.HAS_ALARM, 0)
+            is EventFieldPatch.RemindersPatch.Set ->
+                values.put(
+                    CalendarContract.Events.HAS_ALARM,
+                    if (patch.minutes.isNotEmpty()) 1 else 0
+                )
+        }
+    }
+
+    /** Sets HAS_ALARM for an event row (used when reminders are added later). */
+    private fun setHasAlarm(eventId: Long, calendarId: String, hasAlarm: Boolean) {
+        val values = android.content.ContentValues().apply {
+            put(CalendarContract.Events.HAS_ALARM, if (hasAlarm) 1 else 0)
+        }
+        context.contentResolver.update(
+            CalendarContract.Events.CONTENT_URI,
+            values,
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(eventId.toString())
+        )
     }
 
     private fun availabilityToInt(availability: String): Int {

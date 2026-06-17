@@ -153,6 +153,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     String? timeZone,
     String availability,
     String? recurrenceRule,
+    List<int>? reminders,
   ) async {
     final result = await methodChannel.invokeMethod<String>(
       'createEvent',
@@ -168,6 +169,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
         'timeZone': timeZone,
         'availability': availability,
         'recurrenceRule': recurrenceRule,
+        'reminders': reminders,
       },
     );
     return result!;
@@ -197,6 +199,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     bool? isAllDay,
     String? timeZone,
     String? availability,
+    Patch<List<int>>? reminders,
   }) async {
     final args = <String, dynamic>{
       'eventId': eventId,
@@ -212,6 +215,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
       'description': description,
       'location': location,
       'url': url,
+      'reminders': reminders,
     });
     await methodChannel.invokeMethod<void>('updateEvent', args);
   }

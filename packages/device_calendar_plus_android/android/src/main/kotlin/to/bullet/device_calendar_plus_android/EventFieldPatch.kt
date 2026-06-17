@@ -18,19 +18,43 @@ data class EventFieldPatch(
     val isAllDay: Boolean?,
     val timeZone: String?,
     val availability: String?,
+    val reminders: RemindersPatch,
     val clearedFields: List<String>
 ) {
+    /**
+     * The three states of a reminders edit: leave the event's reminders
+     * untouched, replace the whole set, or remove them all. Mirrors the Dart
+     * `Patch<List<Duration>>` over the method channel.
+     */
+    sealed class RemindersPatch {
+        object Unchanged : RemindersPatch()
+        data class Set(val minutes: List<Int>) : RemindersPatch()
+        object Clear : RemindersPatch()
+    }
+
     companion object {
         /** Reads the patch fields from a method-channel [call]. */
-        fun fromCall(call: MethodCall) = EventFieldPatch(
-            title = call.argument<String>("title"),
-            description = call.argument<String>("description"),
-            location = call.argument<String>("location"),
-            url = call.argument<String>("url"),
-            isAllDay = call.argument<Boolean>("isAllDay"),
-            timeZone = call.argument<String>("timeZone"),
-            availability = call.argument<String>("availability"),
-            clearedFields = call.argument<List<String>>("clearedFields") ?: emptyList()
-        )
+        fun fromCall(call: MethodCall): EventFieldPatch {
+            val clearedFields = call.argument<List<String>>("clearedFields") ?: emptyList()
+            // A present `reminders` key replaces the set; the key named in
+            // clearedFields clears it; neither leaves it unchanged.
+            val reminders = when {
+                call.argument<List<Int>>("reminders") != null ->
+                    RemindersPatch.Set(call.argument<List<Int>>("reminders")!!)
+                "reminders" in clearedFields -> RemindersPatch.Clear
+                else -> RemindersPatch.Unchanged
+            }
+            return EventFieldPatch(
+                title = call.argument<String>("title"),
+                description = call.argument<String>("description"),
+                location = call.argument<String>("location"),
+                url = call.argument<String>("url"),
+                isAllDay = call.argument<Boolean>("isAllDay"),
+                timeZone = call.argument<String>("timeZone"),
+                availability = call.argument<String>("availability"),
+                reminders = reminders,
+                clearedFields = clearedFields
+            )
+        }
     }
 }

@@ -98,6 +98,22 @@ class Event {
   /// supports programmatic write via this plugin.
   final List<Attendee>? attendees;
 
+  /// Relative-time reminders (alarms) for this event.
+  ///
+  /// Each [Duration] is the lead time **before** the event's start at which the
+  /// alarm fires (e.g. `Duration(minutes: 15)` fires 15 minutes before start).
+  ///
+  /// Null when the event has no reminders. Reminders are **minute-granular** on
+  /// both platforms: sub-minute durations round to the nearest minute, so a
+  /// `Duration(seconds: 90)` round-trips as `Duration(minutes: 2)`.
+  ///
+  /// **Platform mapping:**
+  /// - **iOS**: `EKAlarm(relativeOffset:)` on `EKEvent.alarms` (seconds before
+  ///   start).
+  /// - **Android**: rows in `CalendarContract.Reminders` (`MINUTES` before
+  ///   start, `METHOD_ALERT`).
+  final List<Duration>? reminders;
+
   /// Optional URL associated with this event.
   ///
   /// A typical use is a meeting link, a ticket page, or a deep link into the
@@ -127,6 +143,7 @@ class Event {
     required this.isRecurring,
     this.recurrenceRule,
     this.attendees,
+    this.reminders,
     this.url,
   });
 
@@ -134,6 +151,7 @@ class Event {
   factory Event.fromMap(Map<String, dynamic> map) {
     final rruleString = map['recurrenceRule'] as String?;
     final attendeesList = map['attendees'] as List<dynamic>?;
+    final remindersList = map['reminders'] as List<dynamic>?;
     return Event(
       eventId: map['eventId'] as String,
       instanceId: map['instanceId'] as String,
@@ -153,6 +171,9 @@ class Event {
           : null,
       attendees: attendeesList
           ?.map((a) => Attendee.fromMap(Map<String, dynamic>.from(a as Map)))
+          .toList(),
+      reminders: remindersList
+          ?.map((m) => Duration(minutes: (m as num).toInt()))
           .toList(),
       url: map['url'] as String?,
     );
@@ -182,6 +203,10 @@ class Event {
     }
     if (attendees != null) {
       map['attendees'] = attendees!.map((a) => a.toMap()).toList();
+    }
+    if (reminders != null) {
+      map['reminders'] =
+          reminders!.map((d) => (d.inSeconds / 60).round()).toList();
     }
 
     return map;
@@ -213,6 +238,7 @@ class Event {
         other.isRecurring == isRecurring &&
         other.recurrenceRule == recurrenceRule &&
         listEquals(other.attendees, attendees) &&
+        listEquals(other.reminders, reminders) &&
         other.url == url;
   }
 
@@ -234,6 +260,7 @@ class Event {
       isRecurring,
       recurrenceRule,
       attendees != null ? Object.hashAll(attendees!) : null,
+      reminders != null ? Object.hashAll(reminders!) : null,
       url,
     );
   }

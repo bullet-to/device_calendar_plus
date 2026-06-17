@@ -246,6 +246,21 @@ class EventsService {
       }
     }
 
+    // Serialize relative reminders. Keep only relative alarms that fire at or
+    // before start (relativeOffset <= 0); skip absolute-date alarms (no
+    // relativeOffset) and after-start ones (out of scope). Emit whole minutes.
+    if let alarms = event.alarms, !alarms.isEmpty {
+      let reminderMinutes: [Int] = alarms.compactMap { alarm in
+        guard alarm.absoluteDate == nil, alarm.relativeOffset <= 0 else {
+          return nil
+        }
+        return Int((-alarm.relativeOffset / 60).rounded())
+      }
+      if !reminderMinutes.isEmpty {
+        eventMap["reminders"] = reminderMinutes
+      }
+    }
+
     return eventMap
   }
 
@@ -435,6 +450,7 @@ class EventsService {
     timeZone: String?,
     availability: String,
     recurrenceRule: String?,
+    reminders: [Int]?,
     completion: @escaping (Result<String, CalendarError>) -> Void
   ) {
     // Check permission - creating events only requires write access
@@ -507,7 +523,13 @@ class EventsService {
     if let rruleString = recurrenceRule, let rule = parseRecurrenceRule(rruleString) {
       event.recurrenceRules = [rule]
     }
-    
+
+    // Set relative reminders (alarms). Each value is whole minutes before
+    // start; EKAlarm uses a negative second offset.
+    if let reminders = reminders, !reminders.isEmpty {
+      EventFieldPatch.applyReminders(reminders, to: event)
+    }
+
     // Save the event
     do {
       try eventStore.save(event, span: .thisEvent)

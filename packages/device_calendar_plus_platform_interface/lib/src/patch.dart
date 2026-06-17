@@ -43,15 +43,18 @@ final class PatchClear<T> extends Patch<T> {
   int get hashCode => (PatchClear<T>).hashCode;
 }
 
-/// Writes patchable string fields into a method-channel argument map.
+/// Writes patchable fields into a method-channel argument map.
 ///
 /// For each entry: a [PatchSet] adds `key: value`; a [PatchClear] appends the
 /// key to the `clearedFields` list; a `null` patch is omitted entirely. The
 /// platform side treats a key listed in `clearedFields` as "remove", a present
 /// key as "set", and an absent key as "leave unchanged".
+///
+/// Values cross the channel as dynamic, so fields of any serializable type
+/// (strings, `List<int>` reminder offsets, …) share the one path.
 void writePatchFields(
   Map<String, dynamic> args,
-  Map<String, Patch<String>?> fields,
+  Map<String, Patch<Object?>?> fields,
 ) {
   final cleared = <String>[];
   for (final entry in fields.entries) {
