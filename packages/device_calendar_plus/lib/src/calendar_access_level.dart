@@ -19,15 +19,16 @@ enum CalendarAccessLevel {
   /// This is the gentler prompt for add-only apps. A granted request maps to
   /// [CalendarPermissionStatus.writeOnly].
   ///
-  /// - iOS 17+: `requestWriteOnlyAccessToEvents`. A distinct, durable tier — the
-  ///   app cannot escalate to full access without the user changing it in
-  ///   Settings.
+  /// - iOS 17+: `requestWriteOnlyAccessToEvents` — the gentler "Add Events Only"
+  ///   prompt. Not a permanent ceiling: a later [full] request re-prompts and,
+  ///   if the user agrees, upgrades the app to full access in-app.
   /// - iOS 16 and below: write-only does not exist, so this falls back to a
   ///   full-access request (`requestAccess(to: .event)`) and a granted result
   ///   reports [CalendarPermissionStatus.granted].
-  /// - Android: requests only `WRITE_CALENDAR`. Note this is a softer boundary
-  ///   than on iOS — `WRITE_CALENDAR` and `READ_CALENDAR` share the one
-  ///   `CALENDAR` permission group, so after a write-only grant a later
-  ///   full request escalates to read access **immediately, with no dialog**.
+  /// - Android: requests only `WRITE_CALENDAR`. `WRITE_CALENDAR` and
+  ///   `READ_CALENDAR` share the one `CALENDAR` permission group, so after a
+  ///   write-only grant a later full request escalates to read access
+  ///   **immediately, with no dialog** — where iOS shows a second prompt. Either
+  ///   way the upgrade succeeds in-app; only the prompt differs.
   writeOnly,
 }

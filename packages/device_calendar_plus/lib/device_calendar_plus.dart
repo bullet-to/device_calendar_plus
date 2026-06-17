@@ -63,16 +63,15 @@ class DeviceCalendar {
   /// If you already hold a tier that satisfies the request, this returns
   /// immediately without prompting (full access satisfies a write-only ask).
   /// Requesting [CalendarAccessLevel.full] while only write-only is held
-  /// behaves differently per platform:
+  /// upgrades the app on both platforms — only the prompt differs:
   /// - **Android**: `READ_CALENDAR` and `WRITE_CALENDAR` belong to the same
   ///   `CALENDAR` permission group, so once write-only has granted
   ///   `WRITE_CALENDAR` the OS grants the read upgrade **immediately, with no
-  ///   dialog**, and this returns [CalendarPermissionStatus.granted]. Write-only
-  ///   is therefore not a hard boundary on Android — an app can escalate to full
-  ///   silently just by asking.
-  /// - **iOS**: treats the write-only choice as final and can't re-prompt
-  ///   in-app, so it returns the existing [CalendarPermissionStatus.writeOnly] —
-  ///   send the user to [openAppSettings] to grant full access there.
+  ///   dialog**, and this returns [CalendarPermissionStatus.granted].
+  /// - **iOS**: re-presents the system dialog, this time asking for full
+  ///   access. If the user agrees this returns [CalendarPermissionStatus.granted];
+  ///   if they decline it returns the still-held
+  ///   [CalendarPermissionStatus.writeOnly].
   ///
   /// Returns a [CalendarPermissionStatus] indicating the result
   ///
