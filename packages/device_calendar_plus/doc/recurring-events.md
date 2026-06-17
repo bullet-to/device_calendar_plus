@@ -51,6 +51,12 @@ if (rule is MonthlyByWeekday) {
 print(rule?.rruleString); // e.g. "FREQ=MONTHLY;BYDAY=2TU;COUNT=12"
 ```
 
+`rruleString` is exact on Android; on iOS it's reconstructed from EventKit and
+may drop properties EventKit doesn't model (e.g. `BYHOUR`). Note `weekStart`
+(WKST) round-trips when reading, but iOS can't *set* it when creating an event —
+EventKit ignores it there, so a weekly rule that depends on a non-default week
+start may differ across platforms.
+
 ## Occurrences and IDs
 
 `listEvents` expands a series into one `Event` per occurrence. Each shares the

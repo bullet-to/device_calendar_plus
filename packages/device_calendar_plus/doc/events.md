@@ -89,8 +89,11 @@ await plugin.updateEvent(
 );
 ```
 
-Passing no fields is a no-op. To edit a recurring **series**, use
-`updateRecurring` ([recurring-events.md](recurring-events.md)).
+Switching `isAllDay` reinterprets the times: timed → all-day strips the start
+and end to midnight; all-day → timed starts them at midnight. Setting `timeZone`
+reinterprets the wall-clock time rather than preserving the instant. Passing no
+fields is a no-op. To edit a recurring **series**, use `updateRecurring`
+([recurring-events.md](recurring-events.md)).
 
 ## Delete
 
