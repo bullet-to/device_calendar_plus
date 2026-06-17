@@ -469,6 +469,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let url = args["url"] as? String
     let timeZone = args["timeZone"] as? String
     let recurrenceRule = args["recurrenceRule"] as? String
+    // Reminders: minutes before start (already normalized by the Dart layer).
+    let reminders = args["reminders"] as? [Int]
 
     // Convert dates
     let startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
@@ -487,6 +489,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
         timeZone: timeZone,
         availability: availability,
         recurrenceRule: recurrenceRule,
+        reminders: reminders,
         completion: $0)
     }
   }

@@ -736,6 +736,13 @@ class DeviceCalendar {
   ///   The platform will validate the timezone string.
   /// [availability] is the availability status (default: EventAvailability.busy).
   /// [recurrenceRule] is an optional recurrence rule for repeating events.
+  /// [reminders] is an optional list of relative reminders, each a [Duration]
+  ///   of lead time **before** the event start at which an alarm fires (e.g.
+  ///   `Duration(minutes: 15)`). Reminders are **minute-granular** on both
+  ///   platforms: a sub-minute [Duration] rounds to the nearest minute. A
+  ///   negative [Duration] (after-start) throws [ArgumentError]; a zero
+  ///   [Duration] (at start) is allowed. Omitting it (or passing `null`) creates
+  ///   the event with no reminders.
   ///
   /// Returns the system-generated event ID.
   ///
@@ -782,6 +789,7 @@ class DeviceCalendar {
     String? timeZone,
     EventAvailability availability = EventAvailability.busy,
     RecurrenceRule? recurrenceRule,
+    List<Duration>? reminders,
   }) async {
     // Validate fields. A null calendarId is valid (use the default calendar);
     // an explicit but empty/whitespace ID targets nothing — a programmer error.
@@ -811,6 +819,9 @@ class DeviceCalendar {
     final normalizedStartDate = isAllDay ? _stripTime(startDate) : startDate;
     final normalizedEndDate = isAllDay ? _stripTime(endDate) : endDate;
 
+    // Convert reminders to whole minutes before start (the wire format).
+    final reminderMinutes = _remindersToMinutes(reminders);
+
     await _ensurePermission(CalendarAccessLevel.writeOnly);
     try {
       final String eventId =
@@ -826,6 +837,7 @@ class DeviceCalendar {
         timeZone,
         availability.name,
         recurrenceRule?.toRruleString(),
+        reminderMinutes,
       );
       return eventId;
     } on PlatformException catch (e, stackTrace) {
@@ -926,9 +938,15 @@ class DeviceCalendar {
   ///   - Example: "3:00 PM EST" → "3:00 PM PST" (different instant in time)
   /// - [availability] - new availability status
   ///
+  /// - [reminders] - the event's reminder set ([Patch.set] to replace the whole
+  ///   set, [Patch.clear] to remove all reminders). Each [Duration] is lead
+  ///   time **before** start and is minute-granular; a negative [Duration]
+  ///   throws [ArgumentError] (zero is allowed).
+  ///
   /// [description], [location] and [url] take a [Patch]: omit the argument (or
   /// pass `null`) to leave the field unchanged, [Patch.set] to assign a new
-  /// value, [Patch.clear] to remove the existing value.
+  /// value, [Patch.clear] to remove the existing value. [reminders] takes a
+  /// `Patch<List<Duration>>` with the same three states.
   ///
   /// Providing no fields is a no-op (nothing to change).
   /// Requires full calendar access ([CalendarAccessLevel.full]) — write-only is
@@ -963,6 +981,7 @@ class DeviceCalendar {
     bool? isAllDay,
     String? timeZone,
     EventAvailability? availability,
+    Patch<List<Duration>>? reminders,
   }) async {
     // Validate eventId
     if (eventId.trim().isEmpty) {
@@ -984,9 +1003,18 @@ class DeviceCalendar {
         url == null &&
         isAllDay == null &&
         timeZone == null &&
-        availability == null) {
+        availability == null &&
+        reminders == null) {
       return;
     }
+
+    // Map the typed reminders Patch to the minutes wire format. Validation
+    // (negative durations) happens inside _remindersToMinutes.
+    final Patch<List<int>>? reminderMinutes = switch (reminders) {
+      null => null,
+      PatchSet(:final value) => Patch.set(_remindersToMinutes(value)!),
+      PatchClear() => const Patch.clear(),
+    };
 
     // Validate dates if both are provided
     if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
@@ -1021,6 +1049,7 @@ class DeviceCalendar {
         isAllDay: isAllDay,
         timeZone: timeZone,
         availability: availability?.name,
+        reminders: reminderMinutes,
       );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
@@ -1432,4 +1461,31 @@ class DeviceCalendar {
   /// Strips time components from a DateTime, returning midnight of the same day.
   static DateTime _stripTime(DateTime dt) =>
       DateTime(dt.year, dt.month, dt.day);
+
+  /// Normalizes reminder [Duration]s to the whole-minutes-before-start wire
+  /// format (the canonical conversion, shared by both platforms).
+  ///
+  /// Each [Duration] is lead time before the event start, so a non-negative
+  /// value is required — a negative [Duration] (after-start) has no valid
+  /// interpretation and throws [ArgumentError]; zero (at start) is allowed.
+  /// Sub-minute values round to the nearest minute. Duplicate minute values are
+  /// de-duplicated to avoid redundant alarm rows, preserving first-seen order.
+  /// Returns `null` for a `null` input (no reminders).
+  static List<int>? _remindersToMinutes(List<Duration>? reminders) {
+    if (reminders == null) return null;
+    final seen = <int>{};
+    final minutes = <int>[];
+    for (final reminder in reminders) {
+      if (reminder < Duration.zero) {
+        throw ArgumentError.value(
+          reminder,
+          'reminders',
+          'A reminder offset cannot be negative (reminders fire before start)',
+        );
+      }
+      final value = (reminder.inSeconds / 60).round();
+      if (seen.add(value)) minutes.add(value);
+    }
+    return minutes;
+  }
 }

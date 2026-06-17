@@ -369,7 +369,9 @@ class DeviceCalendarPlusAndroidPlugin :
         val timeZone = call.argument<String>("timeZone")
         val availability = call.argument<String>("availability")
         val recurrenceRule = call.argument<String>("recurrenceRule")
-        
+        // Reminders: minutes before start (already normalized by the Dart layer).
+        val reminders = call.argument<List<Int>>("reminders")
+
         // Validate required arguments.
         // calendarId is optional: null routes the event to the default calendar.
         if (title == null || startDateMillis == null ||
@@ -397,11 +399,12 @@ class DeviceCalendarPlusAndroidPlugin :
                 url,
                 timeZone,
                 availability,
-                recurrenceRule
+                recurrenceRule,
+                reminders
             )
         }
     }
-    
+
     private fun handleDeleteEvent(call: MethodCall, result: Result) {
         val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
         

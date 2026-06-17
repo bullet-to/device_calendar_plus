@@ -170,6 +170,11 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// [recurrenceRule] is an optional RRULE string for recurring events.
   ///
+  /// [reminders] is an optional list of relative reminder offsets, each in
+  /// **whole minutes before the event start**. The shared Dart layer has
+  /// already converted the public `Duration` values to minutes — native code
+  /// works purely in minutes. `null` means no reminders.
+  ///
   /// Returns the ID of the newly created event (system-generated).
   /// Requires calendar write permissions.
   ///
@@ -188,6 +193,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? timeZone,
     String availability,
     String? recurrenceRule,
+    List<int>? reminders,
   );
 
   /// Deletes an event from the device.
@@ -221,9 +227,15 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// - [isAllDay] - change between all-day and timed event
   /// - [timeZone] - new timezone identifier
   /// - [availability] - new availability identifier
+  /// - [reminders] - replace or clear the event's reminder set (minutes before
+  ///   start)
   ///
   /// [description], [location] and [url] take a [Patch]: `null` leaves the
   /// field unchanged, [Patch.set] assigns a value, [Patch.clear] removes it.
+  /// [reminders] takes a `Patch<List<int>>`: `null` leaves the reminders
+  /// unchanged, [Patch.set] replaces the whole set with the given minutes,
+  /// [Patch.clear] removes all reminders. The shared Dart layer has already
+  /// converted the public `Duration` values to whole minutes.
   ///
   /// At least one field must be provided.
   /// Requires calendar write permissions.
@@ -239,6 +251,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     bool? isAllDay,
     String? timeZone,
     String? availability,
+    Patch<List<int>>? reminders,
   });
 
   /// Updates a recurring event's series, choosing which occurrences the edit

@@ -9,6 +9,15 @@ import EventKit
 /// remaining parameters are the ones that differ per operation. The Swift
 /// counterpart of Android's `EventFieldPatch`.
 struct EventFieldPatch {
+  /// The three states of a reminders edit: leave the event's reminders
+  /// untouched, replace the whole set, or remove them all. Mirrors the Dart
+  /// `Patch<List<Duration>>` over the method channel.
+  enum RemindersPatch {
+    case unchanged
+    case set([Int])  // minutes before start
+    case clear
+  }
+
   let title: String?
   let description: String?
   let location: String?
@@ -16,6 +25,7 @@ struct EventFieldPatch {
   let isAllDay: Bool?
   let timeZone: String?
   let availability: String?
+  let reminders: RemindersPatch
   let clearedFields: [String]
 
   /// Reads the patch fields from method-channel arguments.
@@ -28,6 +38,15 @@ struct EventFieldPatch {
     timeZone = args["timeZone"] as? String
     availability = args["availability"] as? String
     clearedFields = args["clearedFields"] as? [String] ?? []
+    // A present `reminders` key replaces the set; the key named in
+    // clearedFields clears it; neither leaves it unchanged.
+    if let minutes = args["reminders"] as? [Int] {
+      reminders = .set(minutes)
+    } else if clearedFields.contains("reminders") {
+      reminders = .clear
+    } else {
+      reminders = .unchanged
+    }
   }
 
   /// Applies the patch to `event`, except the time zone — each write path
@@ -49,6 +68,14 @@ struct EventFieldPatch {
     } else if let url = url {
       event.url = URL(string: url)
     }
+    switch reminders {
+    case .unchanged:
+      break
+    case .clear:
+      event.alarms = nil
+    case .set(let minutes):
+      EventFieldPatch.applyReminders(minutes, to: event)
+    }
     if let isAllDay = isAllDay { event.isAllDay = isAllDay }
     if let availability = availability {
       switch availability {
@@ -59,6 +86,18 @@ struct EventFieldPatch {
       default: break
       }
     }
+  }
+
+  /// Replaces `event.alarms` with relative-offset alarms built from `minutes`
+  /// (whole minutes before start). An empty list clears the alarms. Shared by
+  /// the update patch and `EventsService.createEvent` so the EKAlarm mapping
+  /// lives in one place.
+  static func applyReminders(_ minutes: [Int], to event: EKEvent) {
+    if minutes.isEmpty {
+      event.alarms = nil
+      return
+    }
+    event.alarms = minutes.map { EKAlarm(relativeOffset: -Double($0) * 60) }
   }
 
   /// Normalizes the event's time zone: all-day events carry none; otherwise
