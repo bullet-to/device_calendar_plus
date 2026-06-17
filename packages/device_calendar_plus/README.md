@@ -209,6 +209,37 @@ If you start with write-only and later need full read access, just call
 Android escalates silently. Either way the upgrade happens in-app; no trip to
 Settings required.
 
+#### Automatic permissions
+
+By default you request permission yourself. To have methods request it on first
+use instead, set `autoPermissions`:
+
+```dart
+// Set once, e.g. at app start.
+DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
+
+// No explicit requestPermissions() needed — this prompts on first use, then
+// throws DeviceCalendarException(permissionDenied) if access isn't granted.
+await plugin.createEvent(/* ... */);
+```
+
+- `AutoPermissionMode.asNeeded` — each method asks for the minimum it needs:
+  add-only operations (`createEvent`, `showCreateEventModal`) request write-only,
+  everything else requests full. Defers the heavier full prompt until a read
+  actually happens.
+- `AutoPermissionMode.full` — request full access on the first operation that
+  needs it. Simplest for apps that read regularly.
+- `null` (the default) — manual: nothing prompts on its own.
+
+Auto-permissions only act on a fresh (`notDetermined`) status — a tier you
+already hold is never silently escalated. If you hold write-only and call a read
+operation, you get `permissionDenied`, not a surprise prompt; call
+`requestPermissions(level: CalendarAccessLevel.full)` yourself when you want to
+ask for the upgrade (and to place any priming UI before it). Auto-mode prompts
+at most once per access level per app run — if the user declines, later calls
+throw `permissionDenied` rather than re-prompting; call `requestPermissions()`
+yourself to ask again.
+
 ### Check Permissions
 
 Use `hasPermissions()` to check the current permission status without prompting the user:
