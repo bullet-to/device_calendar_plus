@@ -49,6 +49,8 @@ class DeviceCalendar {
 
   factory DeviceCalendar() => instance;
 
+  AutoPermissionMode? _autoPermissions;
+
   /// Opts methods into requesting calendar permission automatically.
   ///
   /// When `null` (the default) nothing changes — methods never prompt on their
@@ -63,7 +65,19 @@ class DeviceCalendar {
   /// ```dart
   /// DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
   /// ```
-  AutoPermissionMode? autoPermissions;
+  AutoPermissionMode? get autoPermissions => _autoPermissions;
+
+  set autoPermissions(AutoPermissionMode? mode) {
+    _autoPermissions = mode;
+    // A fresh configuration resets the once-per-run prompt budget.
+    _autoRequestedTiers.clear();
+  }
+
+  /// Access levels already auto-requested this run. Auto-mode prompts at most
+  /// once per level: Android folds a declined prompt back into notDetermined, so
+  /// without this a decline would re-prompt on every later call. Reset whenever
+  /// [autoPermissions] is set.
+  final Set<CalendarAccessLevel> _autoRequestedTiers = {};
 
   /// Requests calendar permissions from the user.
   ///
@@ -221,28 +235,35 @@ class DeviceCalendar {
   /// [CalendarAccessLevel.full]. In [AutoPermissionMode.full] every request is
   /// upgraded to full regardless of [requiredTier].
   ///
-  /// Only a [CalendarPermissionStatus.notDetermined] status triggers a prompt;
-  /// a tier already held is never silently escalated. Throws
-  /// [DeviceCalendarException] ([DeviceCalendarError.permissionDenied]) when the
-  /// resulting access does not satisfy [requiredTier].
+  /// Only a [CalendarPermissionStatus.notDetermined] status triggers a prompt,
+  /// and at most once per access level per run; a tier already held is never
+  /// silently escalated. Throws [DeviceCalendarException]
+  /// ([DeviceCalendarError.permissionDenied]) when the resulting access does not
+  /// satisfy [requiredTier].
   Future<void> _ensurePermission(CalendarAccessLevel requiredTier) async {
     final mode = autoPermissions;
     if (mode == null) return;
 
+    final tierToRequest = mode == AutoPermissionMode.full
+        ? CalendarAccessLevel.full
+        : requiredTier;
+
     var status = await hasPermissions();
-    if (status == CalendarPermissionStatus.notDetermined) {
-      status = await requestPermissions(
-        level: mode == AutoPermissionMode.full
-            ? CalendarAccessLevel.full
-            : requiredTier,
-      );
+    // Prompt only on a fresh notDetermined status, and only the first time this
+    // run for a given tier. Android folds a soft-deny back into notDetermined,
+    // so without the budget a declined prompt would re-fire on every later call.
+    // This makes "prompts on first use" literally true and matches iOS, where a
+    // decline becomes a terminal denied we never re-prompt.
+    if (status == CalendarPermissionStatus.notDetermined &&
+        _autoRequestedTiers.add(tierToRequest)) {
+      status = await requestPermissions(level: tierToRequest);
     }
 
     if (!_satisfies(status, requiredTier)) {
       throw DeviceCalendarException(
         errorCode: DeviceCalendarError.permissionDenied,
         message: 'Calendar access required for this operation was not granted '
-            '(autoPermissions: ${mode.name}).',
+            '(autoPermissions: ${mode.name}, status: ${status.name}).',
       );
     }
   }

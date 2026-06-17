@@ -7,8 +7,10 @@
 ///
 /// When a mode is set, each method ensures permission on first use: if the
 /// status is [CalendarPermissionStatus.notDetermined] it requests the
-/// appropriate tier, and if access is ultimately not granted it throws a
-/// [DeviceCalendarException] with [DeviceCalendarError.permissionDenied].
+/// appropriate tier, at most once per access level per app run. If the user
+/// declines, later calls throw [DeviceCalendarException] with
+/// [DeviceCalendarError.permissionDenied] without re-prompting — call
+/// [DeviceCalendar.requestPermissions] yourself to ask again.
 ///
 /// Auto-permissions only act on a fresh ([CalendarPermissionStatus.notDetermined])
 /// status — they never silently escalate a tier you already hold. An app that

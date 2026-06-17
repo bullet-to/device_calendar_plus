@@ -235,7 +235,10 @@ Auto-permissions only act on a fresh (`notDetermined`) status — a tier you
 already hold is never silently escalated. If you hold write-only and call a read
 operation, you get `permissionDenied`, not a surprise prompt; call
 `requestPermissions(level: CalendarAccessLevel.full)` yourself when you want to
-ask for the upgrade (and to place any priming UI before it).
+ask for the upgrade (and to place any priming UI before it). Auto-mode prompts
+at most once per access level per app run — if the user declines, later calls
+throw `permissionDenied` rather than re-prompting; call `requestPermissions()`
+yourself to ask again.
 
 ### Check Permissions
 

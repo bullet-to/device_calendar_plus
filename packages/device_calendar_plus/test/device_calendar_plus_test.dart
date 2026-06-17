@@ -605,6 +605,35 @@ void main() {
           )),
         );
       });
+
+      test('asNeeded does not prompt when already fully granted', () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.granted);
+
+        await DeviceCalendar.instance.listCalendars();
+
+        expect(mockPlatform.requestPermissionsCallCount, 0);
+      });
+
+      test('prompts at most once per tier per run, even after a soft-deny',
+          () async {
+        DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
+        // notDetermined = Android "can ask again"; the request itself is declined.
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPostRequestStatus(CalendarPermissionStatus.denied);
+
+        await expectLater(
+          DeviceCalendar.instance.listCalendars(),
+          throwsA(isA<DeviceCalendarException>()),
+        );
+        await expectLater(
+          DeviceCalendar.instance.listCalendars(),
+          throwsA(isA<DeviceCalendarException>()),
+        );
+
+        // Only the first call prompted; the second failed fast without re-asking.
+        expect(mockPlatform.requestPermissionsCallCount, 1);
+      });
     });
 
     group('hasPermissions', () {
