@@ -43,7 +43,10 @@ if (status == CalendarPermissionStatus.writeOnly ||
 Write-only covers `createEvent` and `showCreateEventModal`. Everything else —
 reading, updating, deleting, listing calendars — needs full access. Write-only
 is not a ceiling: call `requestPermissions(level: CalendarAccessLevel.full)`
-later to upgrade in-app.
+later to upgrade in-app. On Android the upgrade is granted immediately with no
+second dialog (`READ_CALENDAR` and `WRITE_CALENDAR` share one permission group);
+on iOS it re-prompts, and if the user declines the call returns the still-held
+`writeOnly` rather than `denied`.
 
 > **iOS setup:** add `NSCalendarsWriteOnlyAccessUsageDescription` to your
 > `Info.plist` (see the README install section). On iOS 16 and below there is no

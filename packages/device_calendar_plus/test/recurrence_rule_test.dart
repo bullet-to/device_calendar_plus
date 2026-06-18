@@ -701,15 +701,15 @@ void main() {
   });
 
   group('WKST', () {
-    test('weekly with wkst serializes correctly', () {
+    test('weekly with weekStart serializes correctly', () {
       const rule = WeeklyRecurrence(
         daysOfWeek: [DayOfWeek.monday],
-        wkst: DayOfWeek.sunday,
+        weekStart: DayOfWeek.sunday,
       );
       expect(rule.toRruleString(), 'FREQ=WEEKLY;BYDAY=MO;WKST=SU');
     });
 
-    test('weekly without wkst omits it', () {
+    test('weekly without weekStart omits it', () {
       const rule = WeeklyRecurrence(daysOfWeek: [DayOfWeek.monday]);
       expect(rule.toRruleString(), isNot(contains('WKST')));
     });
@@ -718,29 +718,29 @@ void main() {
       final rule =
           RecurrenceRule.fromRruleString('FREQ=WEEKLY;BYDAY=MO;WKST=SU');
       expect(rule, isA<WeeklyRecurrence>());
-      expect((rule as WeeklyRecurrence).wkst, DayOfWeek.sunday);
+      expect((rule as WeeklyRecurrence).weekStart, DayOfWeek.sunday);
     });
 
     test('WKST roundtrip', () {
       const original = WeeklyRecurrence(
         daysOfWeek: [DayOfWeek.monday, DayOfWeek.friday],
-        wkst: DayOfWeek.sunday,
+        weekStart: DayOfWeek.sunday,
         end: CountEnd(10),
       );
       final parsed = RecurrenceRule.fromRruleString(original.toRruleString());
       expect(parsed, isA<WeeklyRecurrence>());
       final weekly = parsed as WeeklyRecurrence;
-      expect(weekly.wkst, DayOfWeek.sunday);
+      expect(weekly.weekStart, DayOfWeek.sunday);
       expect(weekly.daysOfWeek, original.daysOfWeek);
     });
 
     test('WKST equality', () {
       const a = WeeklyRecurrence(
-          daysOfWeek: [DayOfWeek.monday], wkst: DayOfWeek.sunday);
+          daysOfWeek: [DayOfWeek.monday], weekStart: DayOfWeek.sunday);
       const b = WeeklyRecurrence(
-          daysOfWeek: [DayOfWeek.monday], wkst: DayOfWeek.sunday);
+          daysOfWeek: [DayOfWeek.monday], weekStart: DayOfWeek.sunday);
       const c = WeeklyRecurrence(
-          daysOfWeek: [DayOfWeek.monday], wkst: DayOfWeek.monday);
+          daysOfWeek: [DayOfWeek.monday], weekStart: DayOfWeek.monday);
       expect(a, equals(b));
       expect(a, isNot(equals(c)));
     });
