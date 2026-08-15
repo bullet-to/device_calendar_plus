@@ -6,8 +6,8 @@ import EventKitUI
 public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDelegate, EKEventEditViewDelegate {
   private let eventStore = EKEventStore()
   private lazy var permissionService = PermissionService(
-    authorization: EventKitAuthorization(eventStore: eventStore),
-    accessRecord: .shared)
+    authorization: RecordingAuthorization(
+      wrapping: EventKitAuthorization(eventStore: eventStore)))
   private lazy var calendarService = CalendarService(eventStore: eventStore, permissionService: permissionService)
   private lazy var eventsService = EventsService(eventStore: eventStore, permissionService: permissionService)
   private var eventModalResult: FlutterResult?

@@ -8,9 +8,11 @@ import XCTest
 /// permission denied. Call requestPermissions() first.") until the app was
 /// restarted.
 ///
-/// The whole OS authorization seam is injected, including whether the OS has
-/// the iOS 17+ write-only tier, so both sides of the version divide are test
-/// fixtures rather than whatever the simulator happens to be running.
+/// Both OS-shaped facts are injected — the authorization seam (including
+/// whether the OS has the iOS 17+ write-only tier) and the Info.plist usage
+/// descriptions — so both sides of the version divide, and every configuration
+/// error, are test fixtures rather than whatever the simulator happens to be
+/// running and whatever the host app happens to declare.
 final class PermissionServiceTests: XCTestCase {
   private typealias Access = CalendarAccess
 
@@ -27,40 +29,51 @@ final class PermissionServiceTests: XCTestCase {
     var supportsWriteOnly = true
     /// What the OS request handler reports back.
     var grants = true
+    /// When set, the request fails instead of answering — EventKit handed back
+    /// an error, or an interruption tore the system alert down.
+    var requestError: Error?
     /// One entry per OS prompt fired — "did we ask the user" is the behaviour.
     private(set) var requestedTiers: [CalendarPermissionType] = []
 
-    func request(_ tier: CalendarPermissionType, completion: @escaping (Bool) -> Void) {
+    func request(
+      _ tier: CalendarPermissionType, completion: @escaping (Result<Bool, Error>) -> Void
+    ) {
       requestedTiers.append(tier)
-      completion(grants)
+      if let requestError = requestError {
+        completion(.failure(requestError))
+      } else {
+        completion(.success(grants))
+      }
     }
   }
 
+  private struct StubError: Error {}
+
+  /// A fully configured host app: every calendar key declared, non-empty.
+  private static let allUsageDescriptions = [
+    "NSCalendarsUsageDescription": "legacy",
+    "NSCalendarsFullAccessUsageDescription": "full",
+    "NSCalendarsWriteOnlyAccessUsageDescription": "write-only",
+  ]
+
   private var authorization = StubAuthorization()
+  /// What the host app declares in its Info.plist — injected, so the
+  /// configuration-error tests can take keys away without touching a bundle.
+  private var usageDescriptions = PermissionServiceTests.allUsageDescriptions
 
   override func setUp() {
     super.setUp()
     authorization = StubAuthorization()
-    // `hasPermissions` and `requestPermissions` read Bundle.main for the usage
-    // descriptions, and RunnerTests is app-hosted, so these tests depend on the
-    // example app's Info.plist. Assert it up front — otherwise removing a key
-    // there fails tests in another package with no hint as to why. Matches the
-    // production check: a key declared as an empty string does not count.
-    for key in [
-      "NSCalendarsUsageDescription",
-      "NSCalendarsFullAccessUsageDescription",
-      "NSCalendarsWriteOnlyAccessUsageDescription",
-    ] {
-      XCTAssertFalse(
-        (Bundle.main.object(forInfoDictionaryKey: key) as? String ?? "").isEmpty,
-        "the RunnerTests host app must declare a non-empty \(key) in its Info.plist")
-    }
+    usageDescriptions = PermissionServiceTests.allUsageDescriptions
   }
 
   /// Each service gets its own `AccessRecord`, so an answer recorded in one
-  /// test can never leak into the next.
+  /// test can never leak into the next. The record sits behind the seam in
+  /// production too, so this is the real wiring with `.shared` swapped out.
   private func makeService() -> PermissionService {
-    PermissionService(authorization: authorization, accessRecord: AccessRecord())
+    PermissionService(
+      authorization: RecordingAuthorization(wrapping: authorization, record: AccessRecord()),
+      usageDescriptions: { self.usageDescriptions[$0] })
   }
 
   /// Drives the real request path so the service records the answer the way a
@@ -70,6 +83,13 @@ final class PermissionServiceTests: XCTestCase {
     _ service: PermissionService,
     writeOnly: Bool = false
   ) throws -> Access {
+    try requestPermissionsResult(service, writeOnly: writeOnly).get()
+  }
+
+  private func requestPermissionsResult(
+    _ service: PermissionService,
+    writeOnly: Bool = false
+  ) throws -> Result<Access, PermissionError> {
     var reported: Result<Access, PermissionError>?
     let completed = expectation(description: "requestPermissions completed")
     service.requestPermissions(writeOnly: writeOnly) { result in
@@ -77,7 +97,7 @@ final class PermissionServiceTests: XCTestCase {
       completed.fulfill()
     }
     wait(for: [completed], timeout: 1)
-    return try XCTUnwrap(reported).get()
+    return try XCTUnwrap(reported)
   }
 
   // MARK: - the wire format
@@ -111,20 +131,6 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertEqual(try requestPermissions(service), .denied)
     XCTAssertFalse(service.hasPermission(for: .write))
     XCTAssertEqual(try service.hasPermissions().get(), .denied)
-  }
-
-  /// The other half of the refusal path: a refused *full* upgrade must report
-  /// the tier the caller actually still holds, not "denied" and not
-  /// "notDetermined" — the OS status is stale, so only the record knows.
-  func testRequestPermissionsReportsWriteOnlyWhenAFullUpgradeIsRefusedWhileStale() throws {
-    let service = makeService()
-    try requestPermissions(service, writeOnly: true)
-
-    authorization.grants = false
-
-    XCTAssertEqual(try requestPermissions(service), .writeOnly)
-    XCTAssertTrue(service.hasPermission(for: .write))
-    XCTAssertFalse(service.hasPermission(for: .full))
   }
 
   /// The reported bug: createEvent gates on `.write` and used to fail here.
@@ -170,6 +176,9 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertEqual(try requestPermissions(service, writeOnly: true), .writeOnly)
     XCTAssertEqual(try requestPermissions(service), .fullAccess)
 
+    XCTAssertEqual(
+      authorization.requestedTiers, [.write, .full],
+      "a full ask must still prompt while only write-only is held")
     XCTAssertTrue(service.hasPermission(for: .full))
   }
 
@@ -198,37 +207,33 @@ final class PermissionServiceTests: XCTestCase {
 
   // MARK: - hasPermissions
 
-  /// The ordinary post-restart state: the OS answers for itself and nothing is
-  /// recorded, which is the path every launch after the first one takes.
-  func testHasPermissionsReportsGrantedWhenTheOsReportsFullAccess() throws {
-    authorization.status = .fullAccess
-    let service = makeService()
+  /// The ordinary post-restart state, one row per OS status: the OS answers for
+  /// itself, nothing is recorded, and the status query and the gates must agree
+  /// — a caller that checks before writing must not see "notDetermined" while
+  /// createEvent happily writes. `.notDetermined` is load-bearing in its own
+  /// right: Dart only fires its auto-request prompt on exactly that value, so
+  /// an over-eager fallback would silently stop the app ever prompting.
+  func testHasPermissionsAndTheGatesAgreeOnEveryLiveOsStatus() throws {
+    for (osStatus, satisfiesWrite, satisfiesFull) in [
+      (Access.fullAccess, true, true),
+      (.writeOnly, true, false),
+      (.denied, false, false),
+      // Restricted (parental controls, MDM) is its own status all the way to Dart.
+      (.restricted, false, false),
+      (.notDetermined, false, false),
+    ] {
+      authorization = StubAuthorization()
+      authorization.status = osStatus
+      let service = makeService()
 
-    XCTAssertEqual(try service.hasPermissions().get(), .fullAccess)
-    XCTAssertTrue(service.hasPermission(for: .full))
-    XCTAssertTrue(service.hasPermission(for: .write))
+      XCTAssertEqual(try service.hasPermissions().get(), osStatus)
+      XCTAssertEqual(service.hasPermission(for: .write), satisfiesWrite, "\(osStatus) for .write")
+      XCTAssertEqual(service.hasPermission(for: .full), satisfiesFull, "\(osStatus) for .full")
+    }
   }
 
-  /// The same, one tier down: a live write-only status still fails a `.full`
-  /// gate without leaning on the recorded grant.
-  func testHasPermissionsReportsWriteOnlyWhenTheOsReportsWriteOnly() throws {
-    authorization.status = .writeOnly
-    let service = makeService()
-
-    XCTAssertEqual(try service.hasPermissions().get(), .writeOnly)
-    XCTAssertTrue(service.hasPermission(for: .write))
-    XCTAssertFalse(service.hasPermission(for: .full))
-  }
-
-  /// The baseline the fix must preserve: Dart only fires its auto-request
-  /// prompt when the status is exactly `notDetermined`, so an over-eager
-  /// recorded-answer fallback would silently stop the app ever prompting.
-  func testHasPermissionsReportsNotDeterminedWhenNothingWasEverGranted() throws {
-    XCTAssertEqual(try makeService().hasPermissions().get(), .notDetermined)
-  }
-
-  /// The status query must agree with the gates, or a caller that checks
-  /// before writing sees "notDetermined" while createEvent happily writes.
+  /// The status query must agree with the gates inside the stale window too,
+  /// where only the recorded answer knows what is held.
   func testHasPermissionsReportsGrantedWhileTheStatusIsStillStale() throws {
     let service = makeService()
     try requestPermissions(service)
@@ -252,17 +257,59 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertEqual(try service.hasPermissions().get(), .denied)
   }
 
-  /// Restricted (parental controls, MDM) is its own status all the way to Dart.
-  func testHasPermissionsReportsRestricted() throws {
-    authorization.status = .restricted
-    let service = makeService()
+  /// A status check fires no prompt, so any one calendar key satisfies its
+  /// configuration guard — an add-only app declaring only the write-only key
+  /// can still read its status.
+  func testHasPermissionsAcceptsAnySingleDeclaredUsageDescription() throws {
+    for key in [
+      "NSCalendarsUsageDescription",
+      "NSCalendarsFullAccessUsageDescription",
+      "NSCalendarsWriteOnlyAccessUsageDescription",
+    ] {
+      usageDescriptions = [key: "declared"]
 
-    XCTAssertEqual(try service.hasPermissions().get(), .restricted)
-    XCTAssertFalse(service.hasPermission(for: .write))
-    XCTAssertFalse(service.hasPermission(for: .full))
+      XCTAssertEqual(try makeService().hasPermissions().get(), .notDetermined, "declaring \(key)")
+    }
+  }
+
+  /// An empty string is a declaration in name only — the OS shows a blank
+  /// prompt — so it must fail the guard exactly like a missing key.
+  func testHasPermissionsFailsWhenNoUsageDescriptionIsDeclared() {
+    let nothingUseful: [[String: String]] = [[:], ["NSCalendarsUsageDescription": ""]]
+    for declared in nothingUseful {
+      usageDescriptions = declared
+
+      guard case .failure(let error) = makeService().hasPermissions() else {
+        XCTFail("expected a configuration failure for \(declared)")
+        return
+      }
+      XCTAssertEqual(error.code, PlatformExceptionCodes.permissionsNotDeclared)
+      // Every key, so following the advice once also satisfies the later request.
+      for key in [
+        "NSCalendarsFullAccessUsageDescription",
+        "NSCalendarsWriteOnlyAccessUsageDescription",
+        "NSCalendarsUsageDescription",
+      ] {
+        XCTAssertTrue(error.message.contains(key), "the fix-it must name \(key)")
+      }
+    }
   }
 
   // MARK: - requestPermissions
+
+  /// The other half of the refusal path: a refused *full* upgrade must report
+  /// the tier the caller actually still holds, not "denied" and not
+  /// "notDetermined" — the OS status is stale, so only the record knows.
+  func testRequestPermissionsReportsWriteOnlyWhenAFullUpgradeIsRefusedWhileStale() throws {
+    let service = makeService()
+    try requestPermissions(service, writeOnly: true)
+
+    authorization.grants = false
+
+    XCTAssertEqual(try requestPermissions(service), .writeOnly)
+    XCTAssertTrue(service.hasPermission(for: .write))
+    XCTAssertFalse(service.hasPermission(for: .full))
+  }
 
   /// The stale-window fix must not cost the user a second system prompt: the
   /// recorded grant satisfies the repeat ask, so no request reaches the OS.
@@ -288,6 +335,24 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertEqual(authorization.requestedTiers, [.full], "the user already said no")
   }
 
+  /// A request that never got an answer — EventKit errored, or an incoming call
+  /// tore the alert down — is not a refusal. Remembering it as one would leave
+  /// the OS status `.notDetermined` forever with a terminal record in front of
+  /// it, so the app could never prompt again short of a restart.
+  func testRequestPermissionsStaysAskableAfterAFailedRequest() throws {
+    authorization.requestError = StubError()
+    let service = makeService()
+
+    XCTAssertEqual(try requestPermissions(service), .notDetermined)
+    XCTAssertEqual(try service.hasPermissions().get(), .notDetermined)
+
+    authorization.requestError = nil
+
+    XCTAssertEqual(try requestPermissions(service), .fullAccess)
+    XCTAssertEqual(
+      authorization.requestedTiers, [.full, .full], "a failed request must stay re-askable")
+  }
+
   /// denied and restricted can only be changed in Settings, so firing a prompt
   /// would be a no-op the user still has to look at.
   func testRequestPermissionsReportsATerminalStatusWithoutPrompting() throws {
@@ -303,6 +368,44 @@ final class PermissionServiceTests: XCTestCase {
     }
   }
 
+  // MARK: - requestPermissions usage-description guard
+
+  /// Each iOS 17+ request variant demands its own key, and the OS raises rather
+  /// than prompting without it, so the tier the ask resolved to decides which
+  /// key is checked and which fix-it the developer is handed.
+  func testRequestPermissionsFailsWhenTheTiersOwnUsageDescriptionIsMissing() throws {
+    for (writeOnly, missingKey) in [
+      (true, "NSCalendarsWriteOnlyAccessUsageDescription"),
+      (false, "NSCalendarsFullAccessUsageDescription"),
+    ] {
+      authorization = StubAuthorization()
+      usageDescriptions.removeValue(forKey: missingKey)
+      let service = makeService()
+
+      guard case .failure(let error) = try requestPermissionsResult(service, writeOnly: writeOnly)
+      else {
+        XCTFail("expected a configuration failure without \(missingKey)")
+        return
+      }
+      XCTAssertEqual(error.code, PlatformExceptionCodes.permissionsNotDeclared)
+      XCTAssertTrue(error.message.contains(missingKey), "the fix-it must name \(missingKey)")
+      XCTAssertEqual(authorization.requestedTiers, [], "the OS would raise rather than prompt")
+
+      usageDescriptions[missingKey] = "declared"
+    }
+  }
+
+  /// An already-answered ask never fires a request, so it must report the
+  /// status it holds rather than a configuration error for a key it will
+  /// never need — an add-only app that ships without the full-access key still
+  /// gets its write-only grant back.
+  func testRequestPermissionsReportsATerminalStatusEvenWithoutTheUsageDescription() throws {
+    usageDescriptions = [:]
+    authorization.status = .denied
+
+    XCTAssertEqual(try requestPermissions(makeService()), .denied)
+  }
+
   // MARK: - asking where the write-only tier does not exist
 
   /// The documented contract (`CalendarPermissionStatus`): asking for write-only
@@ -315,5 +418,27 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertEqual(try requestPermissions(service, writeOnly: true), .fullAccess)
     XCTAssertEqual(authorization.requestedTiers, [.full], "there is no write-only prompt to fire")
     XCTAssertTrue(service.hasPermission(for: .full))
+  }
+
+  /// The tier keys do not exist before iOS 17, so a legacy OS must check — and
+  /// name — only the legacy key, or every request on iOS 13-16 fails a guard
+  /// for a key Apple never asked for.
+  func testRequestPermissionsChecksOnlyTheLegacyKeyOnALegacyOs() throws {
+    authorization.supportsWriteOnly = false
+    usageDescriptions = ["NSCalendarsUsageDescription": "legacy"]
+
+    XCTAssertEqual(try requestPermissions(makeService(), writeOnly: true), .fullAccess)
+
+    authorization = StubAuthorization()
+    authorization.supportsWriteOnly = false
+    usageDescriptions = [
+      "NSCalendarsFullAccessUsageDescription": "full",
+      "NSCalendarsWriteOnlyAccessUsageDescription": "write-only",
+    ]
+
+    guard case .failure(let error) = try requestPermissionsResult(makeService()) else {
+      return XCTFail("expected a configuration failure without the legacy key")
+    }
+    XCTAssertTrue(error.message.contains("NSCalendarsUsageDescription"))
   }
 }
