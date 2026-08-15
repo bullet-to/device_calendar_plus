@@ -51,7 +51,7 @@ If you're adding a new field to an existing model, you need to handle both the *
 
 - **Integration tests** are the backbone. They exercise the full Dart → platform channel → native API roundtrip on real devices. These live in `example/integration_test/`.
 - **Unit tests** for Dart-side logic with enough branches that you can't read it and immediately know it's correct (parsing, serialization, validation). These live in each package's `test/` directory.
-- **Native unit tests** for native decision logic an integration test can't set up — permission-status edge cases, for instance. Swift ones live in `example/ios/RunnerTests/`, Kotlin ones in `packages/device_calendar_plus_android/android/src/test/`.
+- **Native unit tests** for native decision logic an integration test can't set up — permission-status edge cases, for instance. Swift ones live in `packages/device_calendar_plus/example/ios/RunnerTests/`, Kotlin ones in `packages/device_calendar_plus_android/android/src/test/`.
 
 Don't write unit tests that just assert a mock returns what you told it to return, or that verify method channel passthrough serialization in isolation — the integration tests cover those paths.
 
