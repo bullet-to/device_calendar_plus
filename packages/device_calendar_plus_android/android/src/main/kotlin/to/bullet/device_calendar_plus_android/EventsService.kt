@@ -42,22 +42,7 @@ class EventsService(
             .appendPath(effectiveEnd.toString())
             .build()
 
-        val projection = arrayOf(
-            CalendarContract.Instances.EVENT_ID,
-            CalendarContract.Instances.CALENDAR_ID,
-            CalendarContract.Instances.TITLE,
-            CalendarContract.Instances.DESCRIPTION,
-            CalendarContract.Instances.EVENT_LOCATION,
-            CalendarContract.Instances.BEGIN,
-            CalendarContract.Instances.END,
-            CalendarContract.Instances.ALL_DAY,
-            CalendarContract.Instances.AVAILABILITY,
-            CalendarContract.Instances.STATUS,
-            CalendarContract.Instances.EVENT_TIMEZONE,
-            CalendarContract.Instances.RRULE,
-            CalendarContract.Instances.CUSTOM_APP_URI,
-            CalendarContract.Instances.EVENT_COLOR
-        )
+        val columns = EventColumns.instances
 
         val selections = mutableListOf<String>()
         val args = mutableListOf<String>()
@@ -79,14 +64,14 @@ class EventsService(
         try {
             context.contentResolver.query(
                 uri,
-                projection,
+                columns.projection,
                 selection,
                 selectionArgs,
-                "${CalendarContract.Instances.BEGIN} ASC"
+                "${columns.start} ASC"
             )?.use { cursor ->
-                val beginIdx = cursor.getColumnIndex(CalendarContract.Instances.BEGIN)
-                val endIdx = cursor.getColumnIndex(CalendarContract.Instances.END)
-                val allDayIdx = cursor.getColumnIndex(CalendarContract.Instances.ALL_DAY)
+                val beginIdx = cursor.getColumnIndexOrThrow(columns.start)
+                val endIdx = cursor.getColumnIndexOrThrow(columns.end)
+                val allDayIdx = cursor.getColumnIndexOrThrow(columns.allDay)
 
                 while (cursor.moveToNext()) {
                     val eventBeginMillis = cursor.getLong(beginIdx)
@@ -98,23 +83,7 @@ class EventsService(
                         continue
                     }
 
-                    val eventMap = buildEventMapFromCursor(
-                        cursor,
-                        CalendarContract.Instances.EVENT_ID,
-                        CalendarContract.Instances.CALENDAR_ID,
-                        CalendarContract.Instances.TITLE,
-                        CalendarContract.Instances.DESCRIPTION,
-                        CalendarContract.Instances.EVENT_LOCATION,
-                        CalendarContract.Instances.BEGIN,
-                        CalendarContract.Instances.END,
-                        CalendarContract.Instances.ALL_DAY,
-                        CalendarContract.Instances.AVAILABILITY,
-                        CalendarContract.Instances.STATUS,
-                        CalendarContract.Instances.EVENT_TIMEZONE,
-                        CalendarContract.Instances.RRULE,
-                        urlColumn = CalendarContract.Instances.CUSTOM_APP_URI
-                    )
-                    events.add(eventMap)
+                    events.add(buildEventMapFromCursor(cursor, columns))
                 }
             }
         } catch (e: SecurityException) {
@@ -192,44 +161,27 @@ class EventsService(
         }
     }
     
+    // Projection/read contract (why getColumnIndexOrThrow): see the
+    // EventColumns KDoc.
     private fun buildEventMapFromCursor(
         cursor: android.database.Cursor,
-        eventIdColumn: String,
-        calendarIdColumn: String,
-        titleColumn: String,
-        descriptionColumn: String,
-        locationColumn: String,
-        startColumn: String,
-        endColumn: String,
-        allDayColumn: String,
-        availabilityColumn: String,
-        statusColumn: String,
-        timeZoneColumn: String,
-        recurrenceRuleColumn: String,
-        createdColumn: String? = null,
-        lastModifiedColumn: String? = null,
-        urlColumn: String? = null
+        columns: EventColumns
     ): Map<String, Any> {
-        val eventIdIndex = cursor.getColumnIndex(eventIdColumn)
-        val calendarIdIndex = cursor.getColumnIndex(calendarIdColumn)
-        val titleIndex = cursor.getColumnIndex(titleColumn)
-        val descriptionIndex = cursor.getColumnIndex(descriptionColumn)
-        val locationIndex = cursor.getColumnIndex(locationColumn)
-        val startIndex = cursor.getColumnIndex(startColumn)
-        val endIndex = cursor.getColumnIndex(endColumn)
-        val allDayIndex = cursor.getColumnIndex(allDayColumn)
-        val availabilityIndex = cursor.getColumnIndex(availabilityColumn)
-        val statusIndex = cursor.getColumnIndex(statusColumn)
-        val timeZoneIndex = cursor.getColumnIndex(timeZoneColumn)
-        val recurrenceRuleIndex = cursor.getColumnIndex(recurrenceRuleColumn)
-        val createdIndex = if (createdColumn != null) cursor.getColumnIndex(createdColumn) else -1
-        val lastModifiedIndex = if (lastModifiedColumn != null) cursor.getColumnIndex(lastModifiedColumn) else -1
-        val urlIndex = if (urlColumn != null) cursor.getColumnIndex(urlColumn) else -1
-        // Instances implements EventsColumns, so EVENT_COLOR is the same
-        // column name through both content URIs — no per-call-site parameter
-        // needed. The index >= 0 guard below covers projections without it.
-        val eventColorIndex = cursor.getColumnIndex(CalendarContract.Events.EVENT_COLOR)
-        
+        val eventIdIndex = cursor.getColumnIndexOrThrow(columns.eventId)
+        val calendarIdIndex = cursor.getColumnIndexOrThrow(columns.calendarId)
+        val titleIndex = cursor.getColumnIndexOrThrow(columns.title)
+        val descriptionIndex = cursor.getColumnIndexOrThrow(columns.description)
+        val locationIndex = cursor.getColumnIndexOrThrow(columns.location)
+        val startIndex = cursor.getColumnIndexOrThrow(columns.start)
+        val endIndex = cursor.getColumnIndexOrThrow(columns.end)
+        val allDayIndex = cursor.getColumnIndexOrThrow(columns.allDay)
+        val availabilityIndex = cursor.getColumnIndexOrThrow(columns.availability)
+        val statusIndex = cursor.getColumnIndexOrThrow(columns.status)
+        val timeZoneIndex = cursor.getColumnIndexOrThrow(columns.timeZone)
+        val recurrenceRuleIndex = cursor.getColumnIndexOrThrow(columns.recurrenceRule)
+        val urlIndex = cursor.getColumnIndexOrThrow(columns.url)
+        val eventColorIndex = cursor.getColumnIndexOrThrow(columns.eventColor)
+
         val eventId = cursor.getString(eventIdIndex)
         val calendarId = cursor.getString(calendarIdIndex)
         val title = if (!cursor.isNull(titleIndex)) cursor.getString(titleIndex) else ""
@@ -242,10 +194,8 @@ class EventsService(
         val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else null
         val timeZone = if (!cursor.isNull(timeZoneIndex)) cursor.getString(timeZoneIndex) else null
         val recurrenceRule = if (!cursor.isNull(recurrenceRuleIndex)) cursor.getString(recurrenceRuleIndex) else null
-        val createdDate = if (createdIndex >= 0 && !cursor.isNull(createdIndex)) cursor.getLong(createdIndex) else null
-        val lastModifiedDate = if (lastModifiedIndex >= 0 && !cursor.isNull(lastModifiedIndex)) cursor.getLong(lastModifiedIndex) else null
-        val url = if (urlIndex >= 0 && !cursor.isNull(urlIndex)) cursor.getString(urlIndex) else null
-        val eventColor = if (eventColorIndex >= 0 && !cursor.isNull(eventColorIndex)) cursor.getInt(eventColorIndex) else null
+        val url = if (!cursor.isNull(urlIndex)) cursor.getString(urlIndex) else null
+        val eventColor = if (!cursor.isNull(eventColorIndex)) cursor.getInt(eventColorIndex) else null
         
         // Generate instanceId using RAW timestamps before any modifications
         val instanceId: String = if (recurrenceRule != null) {
@@ -293,14 +243,6 @@ class EventsService(
             eventMap["recurrenceRule"] = recurrenceRule
         }
         
-        // Add creation and modification dates if available
-        if (createdDate != null) {
-            eventMap["createdDate"] = createdDate
-        }
-        if (lastModifiedDate != null) {
-            eventMap["updatedDate"] = lastModifiedDate
-        }
-
         // Add URL if available (Android: CUSTOM_APP_URI)
         if (url != null) {
             eventMap["url"] = url
@@ -472,52 +414,21 @@ class EventsService(
             }
         } else {
             // Non-recurring event or master event
-            val projection = arrayOf(
-                CalendarContract.Events._ID,
-                CalendarContract.Events.CALENDAR_ID,
-                CalendarContract.Events.TITLE,
-                CalendarContract.Events.DESCRIPTION,
-                CalendarContract.Events.EVENT_LOCATION,
-                CalendarContract.Events.DTSTART,
-                CalendarContract.Events.DTEND,
-                CalendarContract.Events.ALL_DAY,
-                CalendarContract.Events.AVAILABILITY,
-                CalendarContract.Events.STATUS,
-                CalendarContract.Events.EVENT_TIMEZONE,
-                CalendarContract.Events.RRULE,
-                CalendarContract.Events.CUSTOM_APP_URI,
-                CalendarContract.Events.EVENT_COLOR
-            )
-            
+            val columns = EventColumns.events
+
             val selection = "${CalendarContract.Events._ID} = ?"
             val selectionArgs = arrayOf(eventId)
             
             try {
                 context.contentResolver.query(
                     CalendarContract.Events.CONTENT_URI,
-                    projection,
+                    columns.projection,
                     selection,
                     selectionArgs,
                     null
                 )?.use { cursor ->
                     if (cursor.moveToFirst()) {
-                        val eventMap = buildEventMapFromCursor(
-                            cursor,
-                            CalendarContract.Events._ID,
-                            CalendarContract.Events.CALENDAR_ID,
-                            CalendarContract.Events.TITLE,
-                            CalendarContract.Events.DESCRIPTION,
-                            CalendarContract.Events.EVENT_LOCATION,
-                            CalendarContract.Events.DTSTART,
-                            CalendarContract.Events.DTEND,
-                            CalendarContract.Events.ALL_DAY,
-                            CalendarContract.Events.AVAILABILITY,
-                            CalendarContract.Events.STATUS,
-                            CalendarContract.Events.EVENT_TIMEZONE,
-                            CalendarContract.Events.RRULE,
-                            urlColumn = CalendarContract.Events.CUSTOM_APP_URI
-                        )
-                        return Result.success(eventMap)
+                        return Result.success(buildEventMapFromCursor(cursor, columns))
                     } else {
                         return Result.success(null)
                     }

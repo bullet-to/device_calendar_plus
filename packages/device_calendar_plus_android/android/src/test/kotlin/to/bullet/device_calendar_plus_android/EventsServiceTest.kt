@@ -6,7 +6,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 internal class EventsServiceTest {
-    private val service = EventsService(Mockito.mock(Context::class.java))
+    private val service = EventsService(
+        Mockito.mock(Context::class.java),
+        Mockito.mock(CalendarService::class.java),
+    )
 
     // Regression: a NULL STATUS column used to be read as 0, which is
     // STATUS_TENTATIVE on Android — events with no status came back as
