@@ -82,9 +82,13 @@ xcodebuild test -workspace Runner.xcworkspace -scheme Runner \
 Substitute any simulator you have installed for `<simulator>` — list them with
 `xcrun simctl list devices available`.
 
-Kotlin unit tests:
+Kotlin unit tests (the Gradle wrapper is generated, not committed — run any
+Flutter Android build once first):
 ```bash
-cd packages/device_calendar_plus/example/android
+cd packages/device_calendar_plus/example
+flutter build apk --debug
+
+cd android
 ./gradlew :device_calendar_plus_android:test
 ```
 

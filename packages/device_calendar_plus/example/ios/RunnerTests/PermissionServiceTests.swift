@@ -12,27 +12,21 @@ import XCTest
 /// The whole OS authorization seam is injected so the stale-status window can
 /// be reproduced without a real system prompt.
 final class PermissionServiceTests: XCTestCase {
-  /// Stands in for EventKit: reports whatever status the test case is holding
-  /// and answers the request however the test case wants.
+  private typealias Access = PermissionService.EffectiveAccess
+
+  /// Stands in for EventKit: reports whatever status the test case is holding,
+  /// answers the request however the test case wants, and records every prompt
+  /// so a test can assert the user was (or was not) asked.
   private struct StubAuthorization: CalendarAuthorization {
     let currentStatus: () -> EKAuthorizationStatus
     let grants: () -> Bool
+    let recordRequest: (CalendarPermissionType) -> Void
 
     var status: EKAuthorizationStatus { currentStatus() }
 
-    func request(
-      writeOnly: Bool,
-      completion: @escaping (Bool, CalendarPermissionType) -> Void
-    ) {
-      // Mirrors EventKitAuthorization: the write-only tier only exists on
-      // iOS 17+, so anything older can only ever grant full access.
-      let tier: CalendarPermissionType
-      if #available(iOS 17.0, *) {
-        tier = writeOnly ? .write : .full
-      } else {
-        tier = .full
-      }
-      completion(grants(), tier)
+    func request(_ tier: CalendarPermissionType, completion: @escaping (Bool) -> Void) {
+      recordRequest(tier)
+      completion(grants())
     }
   }
 
@@ -41,6 +35,8 @@ final class PermissionServiceTests: XCTestCase {
   private var status: EKAuthorizationStatus = .notDetermined
   /// What the OS request handler reports back.
   private var requestSucceeds = true
+  /// One entry per OS prompt fired — "did we ask the user" is the behaviour.
+  private var requestedTiers: [CalendarPermissionType] = []
 
   override func setUp() {
     super.setUp()
@@ -63,7 +59,8 @@ final class PermissionServiceTests: XCTestCase {
     PermissionService(
       authorization: StubAuthorization(
         currentStatus: { self.status },
-        grants: { self.requestSucceeds }
+        grants: { self.requestSucceeds },
+        recordRequest: { self.requestedTiers.append($0) }
       )
     )
   }
@@ -97,15 +94,32 @@ final class PermissionServiceTests: XCTestCase {
     // The OS status is still stale (`.notDetermined`) at this point, but the
     // handler just told us the user said no, so the refusal is reported as
     // denied rather than "we never asked".
-    XCTAssertEqual(try requestPermissions(service), PermissionService.statusDenied)
+    XCTAssertEqual(try requestPermissions(service), Access.denied.rawValue)
     XCTAssertFalse(service.hasPermission(for: .write))
+  }
+
+  /// The other half of the refusal path: a refused *full* upgrade must report
+  /// the tier the caller actually still holds, not "denied" and not
+  /// "notDetermined" — the OS status is stale, so only the record knows.
+  func testRequestPermissionsReportsWriteOnlyWhenAFullUpgradeIsRefusedWhileStale() throws {
+    guard #available(iOS 17.0, *) else {
+      throw XCTSkip("the write-only tier only exists on iOS 17+")
+    }
+    let service = makeService()
+    _ = try requestPermissions(service, writeOnly: true)
+
+    requestSucceeds = false
+
+    XCTAssertEqual(try requestPermissions(service), Access.writeOnly.rawValue)
+    XCTAssertTrue(service.hasPermission(for: .write))
+    XCTAssertFalse(service.hasPermission(for: .full))
   }
 
   /// The reported bug: createEvent gates on `.write` and used to fail here.
   func testHasPermissionWriteIsTrueWhileTheStatusIsStillStaleAfterAFullGrant() throws {
     let service = makeService()
 
-    XCTAssertEqual(try requestPermissions(service), PermissionService.statusGranted)
+    XCTAssertEqual(try requestPermissions(service), Access.full.rawValue)
     XCTAssertEqual(status, .notDetermined, "the stale status is the point of the test")
     XCTAssertTrue(service.hasPermission(for: .write))
   }
@@ -125,7 +139,7 @@ final class PermissionServiceTests: XCTestCase {
     let service = makeService()
 
     XCTAssertEqual(
-      try requestPermissions(service, writeOnly: true), PermissionService.statusWriteOnly)
+      try requestPermissions(service, writeOnly: true), Access.writeOnly.rawValue)
     XCTAssertTrue(service.hasPermission(for: .write))
   }
 
@@ -151,8 +165,8 @@ final class PermissionServiceTests: XCTestCase {
     let service = makeService()
 
     XCTAssertEqual(
-      try requestPermissions(service, writeOnly: true), PermissionService.statusWriteOnly)
-    XCTAssertEqual(try requestPermissions(service), PermissionService.statusGranted)
+      try requestPermissions(service, writeOnly: true), Access.writeOnly.rawValue)
+    XCTAssertEqual(try requestPermissions(service), Access.full.rawValue)
 
     XCTAssertTrue(service.hasPermission(for: .full))
   }
@@ -191,7 +205,7 @@ final class PermissionServiceTests: XCTestCase {
     let service = makeService()
     _ = try requestPermissions(service)
 
-    XCTAssertEqual(try service.hasPermissions().get(), PermissionService.statusGranted)
+    XCTAssertEqual(try service.hasPermissions().get(), Access.full.rawValue)
   }
 
   func testHasPermissionsReportsWriteOnlyWhileTheStatusIsStillStale() throws {
@@ -201,7 +215,7 @@ final class PermissionServiceTests: XCTestCase {
     let service = makeService()
     _ = try requestPermissions(service, writeOnly: true)
 
-    XCTAssertEqual(try service.hasPermissions().get(), PermissionService.statusWriteOnly)
+    XCTAssertEqual(try service.hasPermissions().get(), Access.writeOnly.rawValue)
   }
 
   func testHasPermissionsReportsDeniedAfterAccessWasRevoked() throws {
@@ -210,6 +224,45 @@ final class PermissionServiceTests: XCTestCase {
 
     status = .denied
 
-    XCTAssertEqual(try service.hasPermissions().get(), PermissionService.statusDenied)
+    XCTAssertEqual(try service.hasPermissions().get(), Access.denied.rawValue)
+  }
+
+  /// Restricted (parental controls, MDM) is its own status all the way to Dart.
+  func testHasPermissionsReportsRestricted() throws {
+    status = .restricted
+    let service = makeService()
+
+    XCTAssertEqual(try service.hasPermissions().get(), Access.restricted.rawValue)
+    XCTAssertFalse(service.hasPermission(for: .write))
+    XCTAssertFalse(service.hasPermission(for: .full))
+  }
+
+  // MARK: - requestPermissions
+
+  /// The stale-window fix must not cost the user a second system prompt: the
+  /// recorded grant satisfies the repeat ask, so no request reaches the OS.
+  func testRequestPermissionsDoesNotPromptAgainWhileTheStatusIsStillStaleAfterAGrant() throws {
+    let service = makeService()
+    XCTAssertEqual(try requestPermissions(service), Access.full.rawValue)
+
+    XCTAssertEqual(try requestPermissions(service), Access.full.rawValue)
+
+    XCTAssertEqual(status, .notDetermined, "the stale status is the point of the test")
+    XCTAssertEqual(requestedTiers, [.full], "the user must only be prompted once")
+  }
+
+  /// denied and restricted can only be changed in Settings, so firing a prompt
+  /// would be a no-op the user still has to look at.
+  func testRequestPermissionsReportsATerminalStatusWithoutPrompting() throws {
+    for (osStatus, expected) in [
+      (EKAuthorizationStatus.denied, Access.denied), (.restricted, Access.restricted),
+    ] {
+      status = osStatus
+      requestedTiers = []
+      let service = makeService()
+
+      XCTAssertEqual(try requestPermissions(service), expected.rawValue)
+      XCTAssertEqual(requestedTiers, [], "\(expected) can only be changed in Settings")
+    }
   }
 }
