@@ -68,13 +68,19 @@ cd example
 ./run_integration_tests.sh <device-id>
 ```
 
-Swift unit tests (needs `flutter build ios --config-only` first):
+Swift unit tests (generate the Xcode config for a simulator build first):
 ```bash
-cd packages/device_calendar_plus/example/ios
+cd packages/device_calendar_plus/example
+flutter build ios --config-only --simulator
+
+cd ios
 xcodebuild test -workspace Runner.xcworkspace -scheme Runner \
-  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -destination 'platform=iOS Simulator,name=<simulator>' \
   -only-testing:RunnerTests
 ```
+
+Substitute any simulator you have installed for `<simulator>` — list them with
+`xcrun simctl list devices available`.
 
 Kotlin unit tests:
 ```bash
