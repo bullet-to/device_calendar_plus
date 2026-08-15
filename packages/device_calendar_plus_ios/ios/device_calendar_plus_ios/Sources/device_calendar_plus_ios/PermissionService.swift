@@ -6,18 +6,59 @@ enum CalendarPermissionType {
   case full   // Need to read calendars/events (requires fullAccess)
 }
 
-/// What the OS reports about calendar access, normalised across iOS versions.
+/// The calendar access this app holds, normalised across iOS versions.
 ///
 /// EventKit's own `EKAuthorizationStatus` means different things on either
 /// side of iOS 17 (`.authorized` there is full access; `.writeOnly` does not
-/// exist). Implementations flatten that away so `PermissionService` never has
-/// to ask what OS it is on.
-enum OSAuthorization {
+/// exist). The `CalendarAuthorization` seam flattens that away, so nothing
+/// above it has to ask what OS it is on.
+enum CalendarAccess {
   case notDetermined
   case denied
   case restricted
   case writeOnly
   case fullAccess
+
+  init(granted type: CalendarPermissionType) {
+    switch type {
+    case .full:
+      self = .fullAccess
+    case .write:
+      self = .writeOnly
+    }
+  }
+
+  /// The tier lattice, defined once: full access covers everything, a
+  /// write-only grant covers writes but never reads.
+  func satisfies(_ required: CalendarPermissionType) -> Bool {
+    switch required {
+    case .full:
+      return self == .fullAccess
+    case .write:
+      return self == .fullAccess || self == .writeOnly
+    }
+  }
+
+  /// Can't be changed from inside the app — the user must use Settings.
+  var isTerminal: Bool { self == .denied || self == .restricted }
+
+  /// The method-channel wire format: Dart's `CalendarPermissionStatus` parses
+  /// these by name, so they are contract rather than display strings. Used only
+  /// at the channel boundary, and defined only here.
+  var wireValue: String {
+    switch self {
+    case .fullAccess:
+      return "granted"
+    case .writeOnly:
+      return "writeOnly"
+    case .denied:
+      return "denied"
+    case .restricted:
+      return "restricted"
+    case .notDetermined:
+      return "notDetermined"
+    }
+  }
 }
 
 /// The OS-level calendar authorization seam.
@@ -33,7 +74,7 @@ protocol CalendarAuthorization {
   /// pre-17 world is a test fixture rather than a runtime accident.
   var supportsWriteOnly: Bool { get }
 
-  var status: OSAuthorization { get }
+  var status: CalendarAccess { get }
 
   /// Fires the OS prompt for `tier` and reports whether it was granted.
   func request(_ tier: CalendarPermissionType, completion: @escaping (_ granted: Bool) -> Void)
@@ -51,7 +92,7 @@ struct EventKitAuthorization: CalendarAuthorization {
     return false
   }
 
-  var status: OSAuthorization {
+  var status: CalendarAccess {
     let status = EKEventStore.authorizationStatus(for: .event)
 
     if #available(iOS 17.0, *) {
@@ -105,52 +146,47 @@ struct EventKitAuthorization: CalendarAuthorization {
   }
 }
 
-/// The tier this app was granted, if any — see `record`.
+/// The answer the OS request handler already gave us, if it has answered.
 ///
 /// On iOS 17+ `EKEventStore.authorizationStatus(for:)` can still report
-/// `.notDetermined` for a short while after the request handler has already
-/// confirmed a grant (#134), which made the very next call fail its permission
-/// gate until the app was restarted. The recorded tier is the fallback the
-/// `.notDetermined` branch consults.
+/// `.notDetermined` for a short while afterwards (#134), which made the very
+/// next call fail its permission gate until the app was restarted. This is the
+/// fallback the `.notDetermined` branch consults.
 ///
-/// Nothing ever clears it, and nothing needs to. It is only consulted while
-/// the OS says `.notDetermined`, so any other status — a `.denied` from a
-/// Settings revocation, say — wins outright. `.notDetermined` *is* itself a
-/// status the OS can return to (Reset Location & Privacy, an MDM policy
-/// change), and the record would mask that; what saves us is that iOS
-/// terminates an app whose privacy settings change, so the record cannot
-/// outlive the grant it describes.
+/// Nothing ever clears it, and nothing needs to: it is only consulted while the
+/// OS says `.notDetermined`, so a revocation always wins, and iOS terminates
+/// the app when its privacy settings change, so the record cannot outlive the
+/// answer it describes.
 ///
-/// Process-wide by design: `shared` is what production injects, because the
-/// grant belongs to the app, not to a `PermissionService` — a
-/// `FlutterEngineGroup` or add-to-app host builds one plugin (and so one
-/// service) per engine, and an engine that did not itself ask must not fail
-/// the gate during another engine's stale window. Tests inject a fresh
+/// Process-wide by design: the answer belongs to the app, not to one
+/// `PermissionService`, and a `FlutterEngineGroup` or add-to-app host builds
+/// one service per engine. Production injects `shared`; tests inject a fresh
 /// instance to stay isolated from each other.
-final class GrantRecord {
-  static let shared = GrantRecord()
+final class AccessRecord {
+  static let shared = AccessRecord()
 
   /// Read from the provider queue (the data endpoints) and from the main
   /// thread (the modal endpoints and the method-channel handlers), and written
   /// from whichever thread EventKit calls the request handler on, so every
   /// access goes through `lock`.
   private let lock = NSLock()
-  private var granted: CalendarPermissionType?
+  private var access: CalendarAccess?
 
-  /// Remembers the tier the user just granted.
-  func record(_ tier: CalendarPermissionType) {
+  /// Remembers the answer the user just gave.
+  func record(_ answer: CalendarAccess) {
     lock.lock()
     defer { lock.unlock() }
-    // Only ever upgrade, so the record can never under-report what was granted.
-    if granted == nil || tier == .full {
-      granted = tier
+    // Only ever upgrade, so the record can never under-report what is held: a
+    // refused full upgrade must not erase the write-only grant behind it.
+    if access == nil || answer == .fullAccess {
+      access = answer
     }
   }
 
-  var current: CalendarPermissionType? {
+  var current: CalendarAccess? {
     lock.lock()
     defer { lock.unlock() }
-    return granted
+    return access
   }
 }
 
@@ -159,72 +195,24 @@ final class GrantRecord {
 /// — the `CalendarAuthorization` seam answers that.
 class PermissionService {
   private let authorization: CalendarAuthorization
-  private let grantRecord: GrantRecord
+  private let accessRecord: AccessRecord
 
-  init(authorization: CalendarAuthorization, grantRecord: GrantRecord) {
+  init(authorization: CalendarAuthorization, accessRecord: AccessRecord) {
     self.authorization = authorization
-    self.grantRecord = grantRecord
+    self.accessRecord = accessRecord
   }
 
   /// The access this app effectively holds. Every decision — the gates, the
   /// status reported to Dart, and whether a request is worth firing — is made
   /// on this, so they can never disagree.
   ///
-  /// The raw values are the wire format: they must match Dart's
-  /// `CalendarPermissionStatus` enum, and this is their only definition.
-  enum EffectiveAccess: String {
-    case full = "granted"
-    case writeOnly
-    case denied
-    case restricted
-    /// Nothing granted and nothing recorded — we have not asked yet.
-    case notDetermined
-
-    init(granted type: CalendarPermissionType) {
-      switch type {
-      case .full:
-        self = .full
-      case .write:
-        self = .writeOnly
-      }
-    }
-
-    /// The tier lattice, defined once: full access covers everything, a
-    /// write-only grant covers writes but never reads.
-    func satisfies(_ required: CalendarPermissionType) -> Bool {
-      switch required {
-      case .full:
-        return self == .full
-      case .write:
-        return self == .full || self == .writeOnly
-      }
-    }
-
-    /// Can't be changed from inside the app — the user must use Settings.
-    var isTerminal: Bool { self == .denied || self == .restricted }
-  }
-
-  /// Resolves the OS status, falling back to the recorded grant while — and
-  /// only while — the OS still says `.notDetermined`. A real `.denied` (a
-  /// Settings revocation, say) is honoured immediately and is never masked by
-  /// an earlier grant.
-  private func effectiveAccess() -> EffectiveAccess {
-    switch authorization.status {
-    case .fullAccess:
-      return .full
-    case .writeOnly:
-      return .writeOnly
-    case .denied:
-      return .denied
-    case .restricted:
-      return .restricted
-    case .notDetermined:
-      return recordedAccess()
-    }
-  }
-
-  private func recordedAccess() -> EffectiveAccess {
-    grantRecord.current.map(EffectiveAccess.init(granted:)) ?? .notDetermined
+  /// Falls back to the record while — and only while — the OS still says
+  /// `.notDetermined`, so a real `.denied` (a Settings revocation, say) is
+  /// honoured immediately and is never masked by an earlier answer.
+  private func effectiveAccess() -> CalendarAccess {
+    let status = authorization.status
+    guard status == .notDetermined else { return status }
+    return accessRecord.current ?? .notDetermined
   }
 
   /// Checks if calendar permissions are granted for the specified access level.
@@ -319,7 +307,7 @@ class PermissionService {
     }
   }
 
-  func hasPermissions() -> Result<EffectiveAccess, PermissionError> {
+  func hasPermissions() -> Result<CalendarAccess, PermissionError> {
     // A status check triggers no prompt, so any declared calendar usage
     // description — legacy, full-access, or write-only — satisfies the
     // configuration guard. An add-only app that declares only the write-only
@@ -339,7 +327,7 @@ class PermissionService {
   ///   not exist, so the request falls back to full access regardless.
   func requestPermissions(
     writeOnly: Bool,
-    completion: @escaping (Result<EffectiveAccess, PermissionError>) -> Void
+    completion: @escaping (Result<CalendarAccess, PermissionError>) -> Void
   ) {
     // The tier this ask resolves to. Write-only exists only where the OS
     // supports it, so elsewhere every ask resolves to full access — the one
@@ -372,21 +360,19 @@ class PermissionService {
     // agrees.
     authorization.request(tier) { granted in
       guard granted else {
-        // Re-read rather than reporting denied outright, so a refused *full*
-        // request while write-only is already held still reports the tier the
-        // caller actually holds. Only when nothing resolves at all — the OS
-        // still says notDetermined and nothing was recorded — do we answer
-        // denied: the handler just told us the user said no, and reporting
-        // "we never asked" would send callers down the wrong branch (#134's
-        // stale window, pointing the other way).
-        let access = self.effectiveAccess()
-        completion(.success(access == .notDetermined ? .denied : access))
+        // Record the refusal too, or `hasPermissions` would go on reporting
+        // "we never asked" for the whole stale window. The record only
+        // upgrades, so a refused *full* ask leaves an earlier write-only grant
+        // standing and re-reading reports that rather than denied.
+        self.accessRecord.record(.denied)
+        completion(.success(self.effectiveAccess()))
         return
       }
       // Record before replying: the caller's very next call may gate on this,
       // and the OS status can still read notDetermined at that point (#134).
-      self.grantRecord.record(tier)
-      completion(.success(EffectiveAccess(granted: tier)))
+      let access = CalendarAccess(granted: tier)
+      self.accessRecord.record(access)
+      completion(.success(access))
     }
   }
 }

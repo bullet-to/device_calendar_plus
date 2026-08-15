@@ -7,7 +7,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   private let eventStore = EKEventStore()
   private lazy var permissionService = PermissionService(
     authorization: EventKitAuthorization(eventStore: eventStore),
-    grantRecord: .shared)
+    accessRecord: .shared)
   private lazy var calendarService = CalendarService(eventStore: eventStore, permissionService: permissionService)
   private lazy var eventsService = EventsService(eventStore: eventStore, permissionService: permissionService)
   private var eventModalResult: FlutterResult?
@@ -123,8 +123,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       DispatchQueue.main.async {
         switch serviceResult {
         case .success(let access):
-          // The method channel is where the typed access becomes a wire string.
-          result(access.rawValue)
+          result(access.wireValue)
         case .failure(let error):
           result(FlutterError(code: error.code, message: error.message, details: nil))
         }
@@ -136,7 +135,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let serviceResult = permissionService.hasPermissions()
     switch serviceResult {
     case .success(let access):
-      result(access.rawValue)
+      result(access.wireValue)
     case .failure(let error):
       result(FlutterError(code: error.code, message: error.message, details: nil))
     }

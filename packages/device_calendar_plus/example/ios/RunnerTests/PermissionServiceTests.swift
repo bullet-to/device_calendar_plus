@@ -12,70 +12,59 @@ import XCTest
 /// the iOS 17+ write-only tier, so both sides of the version divide are test
 /// fixtures rather than whatever the simulator happens to be running.
 final class PermissionServiceTests: XCTestCase {
-  private typealias Access = PermissionService.EffectiveAccess
+  private typealias Access = CalendarAccess
 
   /// Stands in for EventKit: reports whatever status and capabilities the test
-  /// case is holding, answers the request however the test case wants, and
-  /// records every prompt so a test can assert the user was (or was not) asked.
-  private struct StubAuthorization: CalendarAuthorization {
-    let writeOnlyTier: () -> Bool
-    let currentStatus: () -> OSAuthorization
-    let grants: () -> Bool
-    let recordRequest: (CalendarPermissionType) -> Void
-
-    var supportsWriteOnly: Bool { writeOnlyTier() }
-    var status: OSAuthorization { currentStatus() }
+  /// set on it, answers the request the way the test wants, and records every
+  /// prompt so a test can assert the user was (or was not) asked.
+  private final class StubAuthorization: CalendarAuthorization {
+    /// What `EKEventStore.authorizationStatus(for:)` reports, normalised.
+    /// Starts as the first-launch value and stays there — the point of most of
+    /// these tests is that nothing else moves it, so the stale window persists.
+    var status: Access = .notDetermined
+    /// Whether the OS has the iOS 17+ write-only tier. Defaults to the modern
+    /// world; the iOS 13-16 test flips it.
+    var supportsWriteOnly = true
+    /// What the OS request handler reports back.
+    var grants = true
+    /// One entry per OS prompt fired — "did we ask the user" is the behaviour.
+    private(set) var requestedTiers: [CalendarPermissionType] = []
 
     func request(_ tier: CalendarPermissionType, completion: @escaping (Bool) -> Void) {
-      recordRequest(tier)
-      completion(grants())
+      requestedTiers.append(tier)
+      completion(grants)
     }
   }
 
-  /// What `EKEventStore.authorizationStatus(for:)` reports, normalised. Starts
-  /// as the first-launch value and stays there to model the stale window.
-  private var status: OSAuthorization = .notDetermined
-  /// Whether the OS has the iOS 17+ write-only tier. Defaults to the modern
-  /// world; the iOS 13-16 tests flip it.
-  private var supportsWriteOnly = true
-  /// What the OS request handler reports back.
-  private var requestSucceeds = true
-  /// One entry per OS prompt fired — "did we ask the user" is the behaviour.
-  private var requestedTiers: [CalendarPermissionType] = []
+  private var authorization = StubAuthorization()
 
   override func setUp() {
     super.setUp()
+    authorization = StubAuthorization()
     // `hasPermissions` and `requestPermissions` read Bundle.main for the usage
     // descriptions, and RunnerTests is app-hosted, so these tests depend on the
     // example app's Info.plist. Assert it up front — otherwise removing a key
-    // there fails tests in another package with no hint as to why.
+    // there fails tests in another package with no hint as to why. Matches the
+    // production check: a key declared as an empty string does not count.
     for key in [
       "NSCalendarsUsageDescription",
       "NSCalendarsFullAccessUsageDescription",
       "NSCalendarsWriteOnlyAccessUsageDescription",
     ] {
-      XCTAssertNotNil(
-        Bundle.main.object(forInfoDictionaryKey: key),
-        "the RunnerTests host app must declare \(key) in its Info.plist")
+      XCTAssertFalse(
+        (Bundle.main.object(forInfoDictionaryKey: key) as? String ?? "").isEmpty,
+        "the RunnerTests host app must declare a non-empty \(key) in its Info.plist")
     }
   }
 
-  /// Each service gets its own `GrantRecord`, so a grant recorded in one test
-  /// can never leak into the next.
+  /// Each service gets its own `AccessRecord`, so an answer recorded in one
+  /// test can never leak into the next.
   private func makeService() -> PermissionService {
-    PermissionService(
-      authorization: StubAuthorization(
-        writeOnlyTier: { self.supportsWriteOnly },
-        currentStatus: { self.status },
-        grants: { self.requestSucceeds },
-        recordRequest: { self.requestedTiers.append($0) }
-      ),
-      grantRecord: GrantRecord()
-    )
+    PermissionService(authorization: authorization, accessRecord: AccessRecord())
   }
 
-  /// Drives the real request path so the service records the grant the way a
-  /// user tapping "Allow" would.
+  /// Drives the real request path so the service records the answer the way a
+  /// user tapping "Allow" (or "Don't Allow") would.
   @discardableResult
   private func requestPermissions(
     _ service: PermissionService,
@@ -93,14 +82,14 @@ final class PermissionServiceTests: XCTestCase {
 
   // MARK: - the wire format
 
-  /// The raw values cross the method channel and Dart's
+  /// The wire values cross the method channel and Dart's
   /// `CalendarPermissionStatus` parses them by name, degrading anything it does
   /// not recognise to `denied` without an exception — so a rename would surface
   /// as a mystery permission failure in the field rather than a red test.
   /// Pinned to literals here; every other assertion stays symbolic.
-  func testEffectiveAccessRawValuesAreTheWireFormatDartParses() {
+  func testWireValuesAreTheStringsDartParses() {
     XCTAssertEqual(
-      [Access.full, .writeOnly, .denied, .restricted, .notDetermined].map(\.rawValue),
+      [Access.fullAccess, .writeOnly, .denied, .restricted, .notDetermined].map(\.wireValue),
       ["granted", "writeOnly", "denied", "restricted", "notDetermined"])
   }
 
@@ -111,14 +100,17 @@ final class PermissionServiceTests: XCTestCase {
   }
 
   func testHasPermissionWriteIsFalseWhenTheUserRefusedTheRequest() throws {
-    requestSucceeds = false
+    authorization.grants = false
     let service = makeService()
 
     // The OS status is still stale (`.notDetermined`) at this point, but the
     // handler just told us the user said no, so the refusal is reported as
-    // denied rather than "we never asked".
+    // denied rather than "we never asked" — by the gates and the status query
+    // alike, or an app that renders off one and writes through the other sees
+    // two different worlds.
     XCTAssertEqual(try requestPermissions(service), .denied)
     XCTAssertFalse(service.hasPermission(for: .write))
+    XCTAssertEqual(try service.hasPermissions().get(), .denied)
   }
 
   /// The other half of the refusal path: a refused *full* upgrade must report
@@ -128,7 +120,7 @@ final class PermissionServiceTests: XCTestCase {
     let service = makeService()
     try requestPermissions(service, writeOnly: true)
 
-    requestSucceeds = false
+    authorization.grants = false
 
     XCTAssertEqual(try requestPermissions(service), .writeOnly)
     XCTAssertTrue(service.hasPermission(for: .write))
@@ -139,8 +131,7 @@ final class PermissionServiceTests: XCTestCase {
   func testHasPermissionWriteIsTrueWhileTheStatusIsStillStaleAfterAFullGrant() throws {
     let service = makeService()
 
-    XCTAssertEqual(try requestPermissions(service), .full)
-    XCTAssertEqual(status, .notDetermined, "the stale status is the point of the test")
+    XCTAssertEqual(try requestPermissions(service), .fullAccess)
     XCTAssertTrue(service.hasPermission(for: .write))
   }
 
@@ -156,6 +147,8 @@ final class PermissionServiceTests: XCTestCase {
     let service = makeService()
 
     XCTAssertEqual(try requestPermissions(service, writeOnly: true), .writeOnly)
+    XCTAssertEqual(
+      authorization.requestedTiers, [.write], "a write-only ask fires the write-only prompt")
     XCTAssertTrue(service.hasPermission(for: .write))
   }
 
@@ -175,7 +168,7 @@ final class PermissionServiceTests: XCTestCase {
     let service = makeService()
 
     XCTAssertEqual(try requestPermissions(service, writeOnly: true), .writeOnly)
-    XCTAssertEqual(try requestPermissions(service), .full)
+    XCTAssertEqual(try requestPermissions(service), .fullAccess)
 
     XCTAssertTrue(service.hasPermission(for: .full))
   }
@@ -186,7 +179,7 @@ final class PermissionServiceTests: XCTestCase {
     let service = makeService()
     try requestPermissions(service)
 
-    status = .denied
+    authorization.status = .denied
 
     XCTAssertFalse(service.hasPermission(for: .write))
     XCTAssertFalse(service.hasPermission(for: .full))
@@ -197,7 +190,7 @@ final class PermissionServiceTests: XCTestCase {
     try requestPermissions(service)
 
     // The OS is the authority once it answers: it granted only write-only.
-    status = .writeOnly
+    authorization.status = .writeOnly
 
     XCTAssertTrue(service.hasPermission(for: .write))
     XCTAssertFalse(service.hasPermission(for: .full))
@@ -208,10 +201,10 @@ final class PermissionServiceTests: XCTestCase {
   /// The ordinary post-restart state: the OS answers for itself and nothing is
   /// recorded, which is the path every launch after the first one takes.
   func testHasPermissionsReportsGrantedWhenTheOsReportsFullAccess() throws {
-    status = .fullAccess
+    authorization.status = .fullAccess
     let service = makeService()
 
-    XCTAssertEqual(try service.hasPermissions().get(), .full)
+    XCTAssertEqual(try service.hasPermissions().get(), .fullAccess)
     XCTAssertTrue(service.hasPermission(for: .full))
     XCTAssertTrue(service.hasPermission(for: .write))
   }
@@ -219,7 +212,7 @@ final class PermissionServiceTests: XCTestCase {
   /// The same, one tier down: a live write-only status still fails a `.full`
   /// gate without leaning on the recorded grant.
   func testHasPermissionsReportsWriteOnlyWhenTheOsReportsWriteOnly() throws {
-    status = .writeOnly
+    authorization.status = .writeOnly
     let service = makeService()
 
     XCTAssertEqual(try service.hasPermissions().get(), .writeOnly)
@@ -229,7 +222,7 @@ final class PermissionServiceTests: XCTestCase {
 
   /// The baseline the fix must preserve: Dart only fires its auto-request
   /// prompt when the status is exactly `notDetermined`, so an over-eager
-  /// recorded-grant fallback would silently stop the app ever prompting.
+  /// recorded-answer fallback would silently stop the app ever prompting.
   func testHasPermissionsReportsNotDeterminedWhenNothingWasEverGranted() throws {
     XCTAssertEqual(try makeService().hasPermissions().get(), .notDetermined)
   }
@@ -240,7 +233,7 @@ final class PermissionServiceTests: XCTestCase {
     let service = makeService()
     try requestPermissions(service)
 
-    XCTAssertEqual(try service.hasPermissions().get(), .full)
+    XCTAssertEqual(try service.hasPermissions().get(), .fullAccess)
   }
 
   func testHasPermissionsReportsWriteOnlyWhileTheStatusIsStillStale() throws {
@@ -254,14 +247,14 @@ final class PermissionServiceTests: XCTestCase {
     let service = makeService()
     try requestPermissions(service)
 
-    status = .denied
+    authorization.status = .denied
 
     XCTAssertEqual(try service.hasPermissions().get(), .denied)
   }
 
   /// Restricted (parental controls, MDM) is its own status all the way to Dart.
   func testHasPermissionsReportsRestricted() throws {
-    status = .restricted
+    authorization.status = .restricted
     let service = makeService()
 
     XCTAssertEqual(try service.hasPermissions().get(), .restricted)
@@ -275,63 +268,52 @@ final class PermissionServiceTests: XCTestCase {
   /// recorded grant satisfies the repeat ask, so no request reaches the OS.
   func testRequestPermissionsDoesNotPromptAgainWhileTheStatusIsStillStaleAfterAGrant() throws {
     let service = makeService()
-    XCTAssertEqual(try requestPermissions(service), .full)
+    XCTAssertEqual(try requestPermissions(service), .fullAccess)
 
-    XCTAssertEqual(try requestPermissions(service), .full)
+    XCTAssertEqual(try requestPermissions(service), .fullAccess)
 
-    XCTAssertEqual(status, .notDetermined, "the stale status is the point of the test")
-    XCTAssertEqual(requestedTiers, [.full], "the user must only be prompted once")
+    XCTAssertEqual(authorization.requestedTiers, [.full], "the user must only be prompted once")
+  }
+
+  /// A refusal is just as unaskable as a Settings denial: iOS never re-shows a
+  /// prompt the user declined, so the recorded refusal must stop the second ask
+  /// reaching the OS rather than firing a dialog that can never appear.
+  func testRequestPermissionsDoesNotPromptAgainAfterARefusalWhileTheStatusIsStillStale() throws {
+    authorization.grants = false
+    let service = makeService()
+    XCTAssertEqual(try requestPermissions(service), .denied)
+
+    XCTAssertEqual(try requestPermissions(service), .denied)
+
+    XCTAssertEqual(authorization.requestedTiers, [.full], "the user already said no")
   }
 
   /// denied and restricted can only be changed in Settings, so firing a prompt
   /// would be a no-op the user still has to look at.
   func testRequestPermissionsReportsATerminalStatusWithoutPrompting() throws {
     for (osStatus, expected) in [
-      (OSAuthorization.denied, Access.denied), (.restricted, Access.restricted),
+      (Access.denied, Access.denied), (.restricted, .restricted),
     ] {
-      status = osStatus
-      requestedTiers = []
+      authorization = StubAuthorization()
+      authorization.status = osStatus
       let service = makeService()
 
       XCTAssertEqual(try requestPermissions(service), expected)
-      XCTAssertEqual(requestedTiers, [], "\(expected) can only be changed in Settings")
+      XCTAssertEqual(authorization.requestedTiers, [], "\(expected) can only be changed in Settings")
     }
   }
 
-  // MARK: - iOS 13-16, where the write-only tier does not exist
-
-  /// `.authorized` there is full access, which the seam normalises to
-  /// `.fullAccess` before the policy ever sees it.
-  func testHasPermissionsReportsGrantedWhenALegacyOsReportsAuthorized() throws {
-    supportsWriteOnly = false
-    status = .fullAccess
-    let service = makeService()
-
-    XCTAssertEqual(try service.hasPermissions().get(), .full)
-    XCTAssertTrue(service.hasPermission(for: .full))
-  }
-
-  /// #134's fix applies below iOS 17 too: the recorded grant covers the gate
-  /// while the OS status is still `.notDetermined`.
-  func testHasPermissionsReportsGrantedWhileStaleOnALegacyOs() throws {
-    supportsWriteOnly = false
-    let service = makeService()
-
-    try requestPermissions(service)
-
-    XCTAssertEqual(status, .notDetermined, "the stale status is the point of the test")
-    XCTAssertEqual(try service.hasPermissions().get(), .full)
-    XCTAssertTrue(service.hasPermission(for: .full))
-  }
+  // MARK: - asking where the write-only tier does not exist
 
   /// The documented contract (`CalendarPermissionStatus`): asking for write-only
-  /// where the tier does not exist prompts for — and reports — full access.
+  /// where the tier does not exist (iOS 13-16) prompts for — and reports — full
+  /// access.
   func testRequestPermissionsAsksForFullAccessWhenALegacyOsHasNoWriteOnlyTier() throws {
-    supportsWriteOnly = false
+    authorization.supportsWriteOnly = false
     let service = makeService()
 
-    XCTAssertEqual(try requestPermissions(service, writeOnly: true), .full)
-    XCTAssertEqual(requestedTiers, [.full], "there is no write-only prompt to fire")
+    XCTAssertEqual(try requestPermissions(service, writeOnly: true), .fullAccess)
+    XCTAssertEqual(authorization.requestedTiers, [.full], "there is no write-only prompt to fire")
     XCTAssertTrue(service.hasPermission(for: .full))
   }
 }
