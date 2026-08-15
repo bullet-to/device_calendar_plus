@@ -138,8 +138,7 @@ final class PermissionServiceTests: XCTestCase {
     }
     let service = makeService()
 
-    XCTAssertEqual(
-      try requestPermissions(service, writeOnly: true), Access.writeOnly.rawValue)
+    XCTAssertEqual(try requestPermissions(service, writeOnly: true), Access.writeOnly.rawValue)
     XCTAssertTrue(service.hasPermission(for: .write))
   }
 
@@ -164,8 +163,7 @@ final class PermissionServiceTests: XCTestCase {
     }
     let service = makeService()
 
-    XCTAssertEqual(
-      try requestPermissions(service, writeOnly: true), Access.writeOnly.rawValue)
+    XCTAssertEqual(try requestPermissions(service, writeOnly: true), Access.writeOnly.rawValue)
     XCTAssertEqual(try requestPermissions(service), Access.full.rawValue)
 
     XCTAssertTrue(service.hasPermission(for: .full))
