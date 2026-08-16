@@ -55,6 +55,13 @@ If you're adding a new field to an existing model, you need to handle both the *
 
 Don't write unit tests that just assert a mock returns what you told it to return, or that verify method channel passthrough serialization in isolation — the integration tests cover those paths.
 
+### Permission changes need a manual pass
+
+The thin shims that call the OS permission APIs directly (`EventKitAuthorization` on iOS) sit below every seam the tests inject, so no automated layer ever reaches them — swap two EventKit request calls over and the whole suite still passes. Anything that touches them needs a human pass on a **fresh install** (delete the app first; a granted simulator returns early and never prompts), on iOS 17 or later, covering both asks:
+
+- `requestPermissions()` — the OS shows the full-access prompt. On iOS 18 it offers three choices; check **Allow Full Access** and **Add Events Only** separately, and confirm the status that comes back matches what you tapped (`granted` / `writeOnly`) and that creating an event works without restarting the app.
+- `requestPermissions(writeOnly: true)` — the OS shows the *add-only* prompt, and the status comes back `writeOnly`.
+
 ### Running tests
 
 Unit tests (all packages):

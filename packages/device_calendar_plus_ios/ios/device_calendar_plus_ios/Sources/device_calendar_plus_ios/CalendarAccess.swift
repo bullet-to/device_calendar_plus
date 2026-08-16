@@ -85,34 +85,20 @@ enum CalendarAccess {
   /// Can't be changed from inside the app — the user must use Settings.
   var isTerminal: Bool { self == .denied || self == .restricted }
 
-  /// How much access this value represents. A total order, so "supersedes" and
-  /// "satisfies" are facts about the type rather than rules some caller has to
-  /// remember. `.denied` and `.restricted` share a rank: they are different
-  /// reasons for the same amount of access, and neither can displace the other.
-  ///
-  /// The record is only ever handed `.denied`, `.writeOnly` or `.fullAccess`
-  /// (from `CalendarAccess(granted:)`, or the literal `.denied` in
-  /// `RecordingAuthorization.request`), so the `.notDetermined` and
-  /// `.restricted` rows are here for exhaustiveness and for `satisfies` — no
-  /// caller records them.
+  /// How much access this value represents, as a total order, so `satisfies` is
+  /// a fact about the type rather than a rule some caller has to remember.
+  /// Everything short of a grant ranks the same: `.notDetermined`, `.denied`
+  /// and `.restricted` are different reasons for the same amount of access —
+  /// none.
   private var rank: Int {
     switch self {
-    case .notDetermined:
+    case .notDetermined, .denied, .restricted:
       return 0
-    case .denied, .restricted:
-      return 1
     case .writeOnly:
-      return 2
+      return 1
     case .fullAccess:
-      return 3
+      return 2
     }
-  }
-
-  /// Whether this answer represents strictly more access than `other`, where
-  /// `nil` means "no answer yet". `AccessRecord` uses it to only ever move up,
-  /// so a refused *full* upgrade can never erase the write-only grant behind it.
-  func supersedes(_ other: CalendarAccess?) -> Bool {
-    rank > (other?.rank ?? 0)
   }
 
   /// The method-channel wire format: Dart's `CalendarPermissionStatus` parses
