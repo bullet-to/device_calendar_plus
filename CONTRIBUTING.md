@@ -89,12 +89,10 @@ xcodebuild test -workspace Runner.xcworkspace -scheme Runner \
 Substitute any simulator you have installed for `<simulator>` — list them with
 `xcrun simctl list devices available`.
 
-That build runs `pod install`, which rewrites the Xcode project and workspace
-and drops a `Podfile.lock`. None of that churn belongs in a PR, so clean it up
-when you're done:
+That build runs `pod install`, which rewrites the Xcode project and workspace.
+None of that churn belongs in a PR, so clean it up when you're done:
 ```bash
 git checkout -- ios/Runner.xcodeproj ios/Runner.xcworkspace
-rm -f ios/Podfile.lock
 ```
 Keep any deliberate project edits of your own (adding a test file to the
 `RunnerTests` target, say) — commit those first, then discard the rest.

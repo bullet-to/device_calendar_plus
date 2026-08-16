@@ -7,11 +7,9 @@ enum CalendarPermissionType {
 }
 
 /// The calendar access this app holds, normalised across iOS versions.
-///
-/// EventKit's own `EKAuthorizationStatus` means different things on either
-/// side of iOS 17 (`.authorized` there is full access; `.writeOnly` does not
-/// exist). The `CalendarAuthorization` seam flattens that away, so nothing
-/// above it has to ask what OS it is on.
+/// EventKit's own `EKAuthorizationStatus` means different things on either side
+/// of iOS 17 (`.authorized` there is full access; `.writeOnly` does not exist),
+/// and the `CalendarAuthorization` seam flattens that away.
 enum CalendarAccess {
   case notDetermined
   case denied
@@ -30,10 +28,8 @@ enum CalendarAccess {
 
   /// Normalises EventKit's own status across the iOS 17 divide.
   ///
-  /// Pure, and branches on `supportsWriteOnly` rather than on `#available`, so
-  /// a test can drive the pre-17 mapping from a modern simulator — the OS
-  /// version is a fact handed in by the `CalendarAuthorization` seam, not
-  /// something this mapping asks the runtime.
+  /// Branches on `supportsWriteOnly` rather than on `#available`, so a test can
+  /// drive the pre-17 mapping from a modern simulator.
   ///
   /// - Parameter supportsWriteOnly: whether this OS has the iOS 17+ tiers.
   ///   Where it does not, only `.authorized` exists and it means full access.
@@ -74,9 +70,8 @@ enum CalendarAccess {
     }
   }
 
-  /// The tier lattice, read off `rank` rather than restated: full access
-  /// covers everything, a write-only grant covers writes but never reads.
-  /// Expressed in terms of the grant the requirement asks for, so adding a
+  /// The tier lattice, read off `rank` rather than restated: full access covers
+  /// everything, a write-only grant covers writes but never reads. Adding a
   /// tier means adding one `rank` row and nothing else.
   func satisfies(_ required: CalendarPermissionType) -> Bool {
     rank >= CalendarAccess(granted: required).rank
@@ -85,12 +80,10 @@ enum CalendarAccess {
   /// Can't be changed from inside the app — the user must use Settings.
   var isTerminal: Bool { self == .denied || self == .restricted }
 
-  /// How much access this value represents, as a total order, so `satisfies` is
-  /// a fact about the type rather than a rule some caller has to remember.
-  /// Everything short of a grant ranks the same: `.notDetermined`, `.denied`
-  /// and `.restricted` are different reasons for the same amount of access —
-  /// none.
-  private var rank: Int {
+  /// How much access this value represents, as a total order. Everything short
+  /// of a grant ranks the same: `.notDetermined`, `.denied` and `.restricted`
+  /// are different reasons for the same amount of access — none.
+  var rank: Int {
     switch self {
     case .notDetermined, .denied, .restricted:
       return 0
@@ -102,8 +95,7 @@ enum CalendarAccess {
   }
 
   /// The method-channel wire format: Dart's `CalendarPermissionStatus` parses
-  /// these by name, so they are contract rather than display strings. Used only
-  /// at the channel boundary, and defined only here.
+  /// these by name, so they are contract rather than display strings.
   var wireValue: String {
     switch self {
     case .fullAccess:

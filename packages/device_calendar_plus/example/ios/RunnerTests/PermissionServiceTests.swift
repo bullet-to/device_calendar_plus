@@ -120,21 +120,6 @@ final class PermissionServiceTests: XCTestCase {
 
   // MARK: - hasPermission
 
-  func testHasPermissionWriteIsFalseWhenTheRequestWasNotGranted() throws {
-    let (service, authorization) = makeService()
-    authorization.grants = false
-
-    // The OS status is still stale (`.notDetermined`) here, and an ungranted
-    // request is not evidence of a refusal — see
-    // `testAFullAskAnsweredAddEventsOnlyIsNotRecordedAsADenial` — so nothing is
-    // recorded and the honest answer is the OS's own: no access yet, still
-    // askable. The gates and the status query agree on it, or an app that
-    // renders off one and writes through the other sees two different worlds.
-    XCTAssertEqual(try requestPermissions(service), .notDetermined)
-    XCTAssertFalse(service.hasPermission(for: .write))
-    XCTAssertEqual(try service.hasPermissions().get(), .notDetermined)
-  }
-
   /// The reported bug: createEvent gates on `.write` and used to fail here.
   func testHasPermissionWriteIsTrueWhileTheStatusIsStillStaleAfterAFullGrant() throws {
     let (service, _) = makeService()
@@ -307,10 +292,14 @@ final class PermissionServiceTests: XCTestCase {
     let (service, authorization) = makeService()
     authorization.grants = false
 
-    XCTAssertEqual(try requestPermissions(service), .notDetermined)
-    // Dart auto-prompts on exactly `.notDetermined`, so this is the value that
+    // Nothing is recorded, so the honest answer is the OS's own: no access yet,
+    // still askable. The gates and the status query must agree on it, or an app
+    // that renders off one and writes through the other sees two worlds. Dart
+    // auto-prompts on exactly `.notDetermined`, so this is also the value that
     // keeps the app recoverable rather than locked out until a restart.
+    XCTAssertEqual(try requestPermissions(service), .notDetermined)
     XCTAssertEqual(try service.hasPermissions().get(), .notDetermined)
+    XCTAssertFalse(service.hasPermission(for: .write))
 
     // ...and once the live status catches up with what the OS actually granted,
     // the write gate opens on its own.
@@ -483,5 +472,18 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertTrue(other.hasPermission(for: .full))
     XCTAssertEqual(try requestPermissions(other), .fullAccess)
     XCTAssertEqual(otherStub.requestedTiers, [], "the shared answer means no second prompt")
+  }
+
+  /// The record only ever climbs. Going through `PermissionService` a recorded
+  /// full grant satisfies every later ask, so this ordering only happens with
+  /// two asks in flight at once — two engines sharing the record, the write
+  /// answer landing after the full one — and it must not downgrade reads.
+  func testTheRecordNeverDowngradesAFullGrantToWriteOnly() {
+    let record = AccessRecord()
+
+    record.record(granted: .full)
+    record.record(granted: .write)
+
+    XCTAssertEqual(record.current, .fullAccess)
   }
 }
