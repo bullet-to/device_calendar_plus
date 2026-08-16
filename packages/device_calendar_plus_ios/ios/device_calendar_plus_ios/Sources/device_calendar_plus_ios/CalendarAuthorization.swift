@@ -71,10 +71,11 @@ struct EventKitAuthorization: CalendarAuthorization {
 /// next call fail its permission gate until the app was restarted. This is the
 /// fallback `RecordingAuthorization` consults during that window.
 ///
-/// Nothing ever clears it, and nothing needs to: a live status always wins, and
-/// iOS terminates the app when its privacy settings change, so the record
-/// cannot outlive the grant it describes. The grant belongs to the app rather
-/// than to one `PermissionService`, hence `shared` in production.
+/// Nothing ever clears it, and nothing needs to: a terminal live status wins
+/// outright, so a Settings revocation is never masked, and iOS terminates the
+/// app when its privacy settings change, so the record cannot outlive the grant
+/// it describes. The grant belongs to the app rather than to one
+/// `PermissionService`, hence `shared` in production.
 final class AccessRecord {
   static let shared = AccessRecord()
 
@@ -104,10 +105,12 @@ final class AccessRecord {
 }
 
 /// Patches EventKit's stale-status window (#134) behind the seam, so nothing
-/// above has to know the window exists. Reports the live status whenever the OS
-/// has one and falls back to the recorded grant only while it still says
-/// `.notDetermined` — so a Settings revocation is honoured immediately and is
-/// never masked by an earlier grant.
+/// above has to know the window exists. `.denied` and `.restricted` are
+/// terminal and reported as-is, so a Settings revocation is honoured
+/// immediately and is never masked by an earlier grant. Below that, the
+/// recorded grant is reported whenever it outranks the live status — the OS
+/// confirmed that tier, so a lower live status is stale rather than
+/// authoritative.
 final class RecordingAuthorization: CalendarAuthorization {
   private let wrapped: CalendarAuthorization
   private let record: AccessRecord
@@ -119,10 +122,16 @@ final class RecordingAuthorization: CalendarAuthorization {
 
   var supportsWriteOnly: Bool { wrapped.supportsWriteOnly }
 
+  /// A terminal answer is the OS's alone. Otherwise the higher of the live
+  /// status and the recorded grant wins: a `.full` ask only answers `granted ==
+  /// true` for real full access (iOS 18's "Add Events Only" answers `false`),
+  /// so a live status *below* what the OS confirmed — `.notDetermined` on a
+  /// fresh grant, `.writeOnly` on an in-app upgrade — has yet to catch up.
   var status: CalendarAccess {
     let live = wrapped.status
-    guard live == .notDetermined else { return live }
-    return record.current ?? .notDetermined
+    guard !live.isTerminal else { return live }
+    guard let recorded = record.current, recorded.rank > live.rank else { return live }
+    return recorded
   }
 
   /// Records grants and nothing else, because `granted == false` means "not

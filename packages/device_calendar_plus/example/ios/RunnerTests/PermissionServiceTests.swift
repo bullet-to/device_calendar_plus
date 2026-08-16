@@ -135,47 +135,42 @@ final class PermissionServiceTests: XCTestCase {
 
   // MARK: - hasPermission
 
-  /// The reported bug: createEvent gates on `.write` and used to fail here.
-  func testHasPermissionWriteIsTrueWhileTheStatusIsStillStaleAfterAFullGrant() throws {
-    let (service, _) = makeService()
+  /// The reported bug: createEvent gates on `.write` and used to fail here,
+  /// because the live status still said `.notDetermined`. One row per grant
+  /// tier, each asserting the whole stale-window contract at once — what the
+  /// request reported, what the status query reports, and what both gates
+  /// answer — since an app that renders off one and writes through the other
+  /// must never see two worlds. A recorded write-only grant in particular must
+  /// not satisfy a full-access gate: the fallback keeps the tier distinction
+  /// the live status would have made.
+  func testTheGatesAndTheStatusQueryAgreeAfterAGrantWhileTheStatusIsStale() throws {
+    for (writeOnly, granted, satisfiesWrite, satisfiesFull) in [
+      (false, Access.fullAccess, true, true),
+      (true, .writeOnly, true, false),
+    ] {
+      let (service, authorization) = makeService()
 
-    XCTAssertEqual(try requestPermissions(service), .fullAccess)
-    XCTAssertTrue(service.hasPermission(for: .write))
+      XCTAssertEqual(try requestPermissions(service, writeOnly: writeOnly), granted)
+      XCTAssertEqual(
+        authorization.requestedTiers, [writeOnly ? .write : .full],
+        "a \(granted) ask fires its own prompt")
+      XCTAssertEqual(try service.hasPermissions().get(), granted)
+      XCTAssertEqual(service.hasPermission(for: .write), satisfiesWrite, "\(granted) for .write")
+      XCTAssertEqual(service.hasPermission(for: .full), satisfiesFull, "\(granted) for .full")
+    }
   }
 
-  func testHasPermissionFullIsTrueWhileTheStatusIsStillStaleAfterAFullGrant() throws {
-    let (service, _) = makeService()
-
-    try requestPermissions(service)
-
-    XCTAssertTrue(service.hasPermission(for: .full))
-  }
-
-  func testHasPermissionWriteIsTrueWhileTheStatusIsStillStaleAfterAWriteOnlyGrant() throws {
-    let (service, authorization) = makeService()
-
-    XCTAssertEqual(try requestPermissions(service, writeOnly: true), .writeOnly)
-    XCTAssertEqual(
-      authorization.requestedTiers, [.write], "a write-only ask fires the write-only prompt")
-    XCTAssertTrue(service.hasPermission(for: .write))
-  }
-
-  /// A recorded write-only grant must not satisfy a full-access gate — the
-  /// fallback keeps the tier distinction the live status would have made.
-  func testHasPermissionFullIsFalseAfterAWriteOnlyGrant() throws {
-    let (service, _) = makeService()
-
-    try requestPermissions(service, writeOnly: true)
-
-    XCTAssertFalse(service.hasPermission(for: .full))
-  }
-
-  /// An add-only app that later escalates to full access, all inside the stale
-  /// window: the record must upgrade, or reads stay locked out until restart.
+  /// An add-only app that later escalates to full access, with the live status
+  /// reporting the settled write-only grant throughout: the record must
+  /// upgrade, or reads stay locked out until restart.
   func testHasPermissionFullIsTrueWhenAWriteOnlyGrantIsUpgradedToFullWhileStale() throws {
     let (service, authorization) = makeService()
 
     XCTAssertEqual(try requestPermissions(service, writeOnly: true), .writeOnly)
+    // What a settled write-only grant actually reports, and what the OS keeps
+    // reporting for a while after the upgrade is granted.
+    authorization.status = .writeOnly
+
     XCTAssertEqual(try requestPermissions(service), .fullAccess)
 
     XCTAssertEqual(
@@ -196,15 +191,20 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertFalse(service.hasPermission(for: .full))
   }
 
-  func testHasPermissionFullIsFalseWhenTheOsReportsWriteOnlyAfterAFullGrant() throws {
+  /// The upgrade window from the gate's side: a `.full` ask only answers
+  /// granted for real full access — iOS 18's "Add Events Only" answers a full
+  /// ask `false` — so a live `.writeOnly` alongside a confirmed full grant is
+  /// the status lagging, not the OS overruling. Reporting write-only there is
+  /// the very bug this fix exists to kill.
+  func testHasPermissionFullIsTrueWhileTheOsStillReportsWriteOnlyAfterAFullGrant() throws {
     let (service, authorization) = makeService()
     try requestPermissions(service)
 
-    // The OS is the authority once it answers: it granted only write-only.
     authorization.status = .writeOnly
 
     XCTAssertTrue(service.hasPermission(for: .write))
-    XCTAssertFalse(service.hasPermission(for: .full))
+    XCTAssertTrue(service.hasPermission(for: .full))
+    XCTAssertEqual(try service.hasPermissions().get(), .fullAccess)
   }
 
   // MARK: - hasPermissions
@@ -230,22 +230,6 @@ final class PermissionServiceTests: XCTestCase {
       XCTAssertEqual(service.hasPermission(for: .write), satisfiesWrite, "\(osStatus) for .write")
       XCTAssertEqual(service.hasPermission(for: .full), satisfiesFull, "\(osStatus) for .full")
     }
-  }
-
-  /// The status query must agree with the gates inside the stale window too,
-  /// where only the recorded grant knows what is held.
-  func testHasPermissionsReportsGrantedWhileTheStatusIsStillStale() throws {
-    let (service, _) = makeService()
-    try requestPermissions(service)
-
-    XCTAssertEqual(try service.hasPermissions().get(), .fullAccess)
-  }
-
-  func testHasPermissionsReportsWriteOnlyWhileTheStatusIsStillStale() throws {
-    let (service, _) = makeService()
-    try requestPermissions(service, writeOnly: true)
-
-    XCTAssertEqual(try service.hasPermissions().get(), .writeOnly)
   }
 
   func testHasPermissionsReportsDeniedAfterAccessWasRevoked() throws {
@@ -514,7 +498,9 @@ final class PermissionServiceTests: XCTestCase {
     // Now the write-only answer arrives, out of order.
     slowStub.finishRequest()
 
-    XCTAssertNotNil(slowReported, "the parked ask must still complete")
+    XCTAssertEqual(
+      try XCTUnwrap(slowReported).get(), .fullAccess,
+      "the parked ask must report the tier the app now holds")
     XCTAssertTrue(asking.hasPermission(for: .full), "the full grant must survive")
     XCTAssertTrue(slow.hasPermission(for: .full), "and be visible through both engines")
   }

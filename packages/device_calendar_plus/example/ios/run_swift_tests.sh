@@ -60,10 +60,14 @@ trap 'exit 143' TERM
 # Pick a destination: the caller's, or the first available iPhone simulator.
 DESTINATION="${1:-}"
 if [ -z "$DESTINATION" ]; then
-    SIMULATOR=$(xcrun simctl list devices available \
+    # Every match, then the first line in the shell: a `head -1` (or a `q` in
+    # the last sed) exits early, and the SIGPIPE that hands upstream would be
+    # promoted by `pipefail` into a silent `set -e` abort before the friendly
+    # message below ever runs.
+    SIMULATORS=$(xcrun simctl list devices available \
         | sed -n 's/^ *\(iPhone [^(]*\)(.*/\1/p' \
-        | sed 's/ *$//' \
-        | head -1)
+        | sed 's/ *$//')
+    SIMULATOR=${SIMULATORS%%$'\n'*}
     if [ -z "$SIMULATOR" ]; then
         echo -e "${RED}❌ No available iPhone simulator found${NC}"
         echo ""
