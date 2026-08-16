@@ -34,8 +34,14 @@ final class PermissionServiceTests: XCTestCase {
     /// When set, the request fails instead of answering — EventKit handed back
     /// an error, or an interruption tore the system alert down.
     var requestError: Error?
+    /// When true, the prompt is left on screen: `request` parks its answer
+    /// instead of delivering it, so a test can put two asks in flight and
+    /// choose which one the user answers first. `finishRequest()` releases it.
+    var holdsRequest = false
     /// One entry per OS prompt fired — "did we ask the user" is the behaviour.
     private(set) var requestedTiers: [CalendarPermissionType] = []
+
+    private var parkedAnswer: (() -> Void)?
 
     init(status: Access = .notDetermined, supportsWriteOnly: Bool = true) {
       self.status = status
@@ -46,11 +52,20 @@ final class PermissionServiceTests: XCTestCase {
       _ tier: CalendarPermissionType, completion: @escaping (Result<Bool, Error>) -> Void
     ) {
       requestedTiers.append(tier)
-      if let requestError = requestError {
-        completion(.failure(requestError))
-      } else {
-        completion(.success(grants))
+      let answer: Result<Bool, Error> =
+        requestError.map { .failure($0) } ?? .success(grants)
+      guard holdsRequest else {
+        completion(answer)
+        return
       }
+      parkedAnswer = { completion(answer) }
+    }
+
+    /// Delivers the answer a held request parked — the user finally tapped.
+    func finishRequest() {
+      let answer = parkedAnswer
+      parkedAnswer = nil
+      answer?()
     }
   }
 
@@ -474,16 +489,33 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertEqual(otherStub.requestedTiers, [], "the shared answer means no second prompt")
   }
 
-  /// The record only ever climbs. Going through `PermissionService` a recorded
-  /// full grant satisfies every later ask, so this ordering only happens with
-  /// two asks in flight at once — two engines sharing the record, the write
-  /// answer landing after the full one — and it must not downgrade reads.
-  func testTheRecordNeverDowngradesAFullGrantToWriteOnly() {
+  /// The shared answer only ever climbs. Going through `PermissionService` a
+  /// recorded full grant satisfies every later ask, so this ordering only
+  /// arises with two asks in flight at once — two engines sharing the record,
+  /// the write-only answer landing after the full one. A late write-only answer
+  /// must not downgrade what the app already holds, or the engine that asked
+  /// for full access loses its reads until the live status catches up.
+  func testALateWriteOnlyAnswerDoesNotDowngradeAFullGrantSharedWithAnotherEngine() throws {
     let record = AccessRecord()
+    let askingStub = StubAuthorization()
+    let slowStub = StubAuthorization()
+    slowStub.holdsRequest = true
+    let asking = makeService(askingStub, record: record)
+    let slow = makeService(slowStub, record: record)
 
-    record.record(granted: .full)
-    record.record(granted: .write)
+    // The write-only prompt goes up first, and the user has not answered it yet.
+    var slowReported: Result<Access, PermissionError>?
+    slow.requestPermissions(writeOnly: true) { slowReported = $0 }
+    XCTAssertNil(slowReported, "the write-only ask is still waiting on the user")
 
-    XCTAssertEqual(record.current, .fullAccess)
+    // Meanwhile the other engine's full-access ask is answered, and lands.
+    XCTAssertEqual(try requestPermissions(asking), .fullAccess)
+
+    // Now the write-only answer arrives, out of order.
+    slowStub.finishRequest()
+
+    XCTAssertNotNil(slowReported, "the parked ask must still complete")
+    XCTAssertTrue(asking.hasPermission(for: .full), "the full grant must survive")
+    XCTAssertTrue(slow.hasPermission(for: .full), "and be visible through both engines")
   }
 }

@@ -133,7 +133,8 @@ final class RecordingAuthorization: CalendarAuthorization {
   /// terminal answer; forgetting a real refusal costs one redundant OS call.
   ///
   /// The residual — that same answer reports `.notDetermined` until the live
-  /// status catches up — is tracked on #134.
+  /// status catches up, so a `createEvent` fired immediately after the prompt
+  /// can still fail its gate — is tracked on #137.
   func request(_ tier: CalendarPermissionType, completion: @escaping (Result<Bool, Error>) -> Void) {
     wrapped.request(tier) { result in
       // Record before calling back: the caller's very next read may gate on

@@ -57,7 +57,7 @@ Don't write unit tests that just assert a mock returns what you told it to retur
 
 ### Permission changes need a manual pass
 
-The thin shims that call the OS permission APIs directly (`EventKitAuthorization` on iOS) sit below every seam the tests inject, so no automated layer ever reaches them — swap two EventKit request calls over and the whole suite still passes. Anything that touches them needs a human pass on a **fresh install** (delete the app first; a granted simulator returns early and never prompts), on iOS 17 or later, covering both asks:
+The thin shims that call the OS permission APIs directly (`EventKitAuthorization` on iOS) sit below every seam the tests inject, so no automated layer ever reaches them — swap two EventKit request calls over and the whole suite still passes. The same is true of the composition that wires them up in `DeviceCalendarPlusIosPlugin` (`RecordingAuthorization(wrapping: EventKitAuthorization(...), record: .shared)`): drop the wrapper, or hand it a fresh `AccessRecord` instead of the shared one, and every test still passes while #134 comes straight back. Anything that touches either needs a human pass on a **fresh install** (delete the app first; a granted simulator returns early and never prompts), on iOS 17 or later, covering both asks:
 
 - `requestPermissions()` — the OS shows the full-access prompt. On iOS 18 it offers three choices; check **Allow Full Access** and **Add Events Only** separately, and confirm the status that comes back matches what you tapped (`granted` / `writeOnly`) and that creating an event works without restarting the app.
 - `requestPermissions(writeOnly: true)` — the OS shows the *add-only* prompt, and the status comes back `writeOnly`.
@@ -75,27 +75,25 @@ cd example
 ./run_integration_tests.sh <device-id>
 ```
 
-Swift unit tests (generate the Xcode config for a simulator build first):
+Swift unit tests:
 ```bash
-cd packages/device_calendar_plus/example
-flutter build ios --config-only --simulator
-
-cd ios
-xcodebuild test -workspace Runner.xcworkspace -scheme Runner \
-  -destination 'platform=iOS Simulator,name=<simulator>' \
-  -only-testing:RunnerTests
+cd packages/device_calendar_plus/example/ios
+./run_swift_tests.sh
 ```
 
-Substitute any simulator you have installed for `<simulator>` — list them with
-`xcrun simctl list devices available`.
+The script generates the Xcode config, runs `RunnerTests`, and puts
+`Runner.xcodeproj` and `Runner.xcworkspace` back afterwards — the config step
+runs `pod install`, which rewrites both, and none of that churn belongs in a
+PR. It restores rather than discards, so your own project edits (adding a test
+file to the `RunnerTests` target, say) survive the run committed or not, and
+the cleanup happens from a trap so a failing test or a Ctrl-C is covered too.
 
-That build runs `pod install`, which rewrites the Xcode project and workspace.
-None of that churn belongs in a PR, so clean it up when you're done:
+It defaults to the first available iPhone simulator. Pass an `xcodebuild`
+destination to pick another — list what you have with
+`xcrun simctl list devices available`:
 ```bash
-git checkout -- ios/Runner.xcodeproj ios/Runner.xcworkspace
+./run_swift_tests.sh 'platform=iOS Simulator,name=iPhone 17'
 ```
-Keep any deliberate project edits of your own (adding a test file to the
-`RunnerTests` target, say) — commit those first, then discard the rest.
 
 Kotlin unit tests (the Gradle wrapper is generated, not committed — run any
 Flutter Android build once first):

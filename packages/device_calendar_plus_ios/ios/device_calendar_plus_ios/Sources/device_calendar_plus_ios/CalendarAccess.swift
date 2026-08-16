@@ -28,31 +28,44 @@ enum CalendarAccess {
 
   /// Normalises EventKit's own status across the iOS 17 divide.
   ///
-  /// Branches on `supportsWriteOnly` rather than on `#available`, so a test can
-  /// drive the pre-17 mapping from a modern simulator.
+  /// `supportsWriteOnly` alone decides which mapping applies, so a test can
+  /// drive the pre-17 mapping from a modern simulator. The `#available` below
+  /// is the compiler's requirement for naming the iOS 17+ cases, not a second
+  /// source of truth.
   ///
   /// - Parameter supportsWriteOnly: whether this OS has the iOS 17+ tiers.
   ///   Where it does not, only `.authorized` exists and it means full access.
   init(ekStatus: EKAuthorizationStatus, supportsWriteOnly: Bool) {
-    if #available(iOS 17.0, *), supportsWriteOnly {
-      switch ekStatus {
-      case .fullAccess:
-        self = .fullAccess
-      case .writeOnly:
-        self = .writeOnly
-      case .denied:
-        self = .denied
-      case .restricted:
-        self = .restricted
-      case .notDetermined:
-        self = .notDetermined
-      @unknown default:
-        self = .denied
-      }
+    guard supportsWriteOnly else {
+      self.init(legacyEkStatus: ekStatus)
+      return
+    }
+    guard #available(iOS 17.0, *) else {
+      // Unreachable: `supportsWriteOnly` can only be true on iOS 17+, since
+      // `EventKitAuthorization` derives it from this same `#available` and no
+      // other implementation reaches here. The compiler still needs a branch.
+      self.init(legacyEkStatus: ekStatus)
       return
     }
 
-    // iOS 16 and below only has .authorized, which is full access.
+    switch ekStatus {
+    case .fullAccess:
+      self = .fullAccess
+    case .writeOnly:
+      self = .writeOnly
+    case .denied:
+      self = .denied
+    case .restricted:
+      self = .restricted
+    case .notDetermined:
+      self = .notDetermined
+    @unknown default:
+      self = .denied
+    }
+  }
+
+  /// iOS 16 and below: only `.authorized` exists, and it means full access.
+  private init(legacyEkStatus ekStatus: EKAuthorizationStatus) {
     switch ekStatus {
     case .authorized:
       self = .fullAccess
