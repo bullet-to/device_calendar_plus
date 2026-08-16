@@ -1,3 +1,4 @@
+import EventKit
 import Foundation
 
 enum CalendarPermissionType {
@@ -27,24 +28,73 @@ enum CalendarAccess {
     }
   }
 
-  /// The tier lattice, defined once: full access covers everything, a
-  /// write-only grant covers writes but never reads.
-  func satisfies(_ required: CalendarPermissionType) -> Bool {
-    switch required {
-    case .full:
-      return self == .fullAccess
-    case .write:
-      return self == .fullAccess || self == .writeOnly
+  /// Normalises EventKit's own status across the iOS 17 divide.
+  ///
+  /// Pure, and branches on `supportsWriteOnly` rather than on `#available`, so
+  /// a test can drive the pre-17 mapping from a modern simulator — the OS
+  /// version is a fact handed in by the `CalendarAuthorization` seam, not
+  /// something this mapping asks the runtime.
+  ///
+  /// - Parameter supportsWriteOnly: whether this OS has the iOS 17+ tiers.
+  ///   Where it does not, only `.authorized` exists and it means full access.
+  init(ekStatus: EKAuthorizationStatus, supportsWriteOnly: Bool) {
+    if #available(iOS 17.0, *), supportsWriteOnly {
+      switch ekStatus {
+      case .fullAccess:
+        self = .fullAccess
+      case .writeOnly:
+        self = .writeOnly
+      case .denied:
+        self = .denied
+      case .restricted:
+        self = .restricted
+      case .notDetermined:
+        self = .notDetermined
+      @unknown default:
+        self = .denied
+      }
+      return
     }
+
+    // iOS 16 and below only has .authorized, which is full access.
+    switch ekStatus {
+    case .authorized:
+      self = .fullAccess
+    case .denied:
+      self = .denied
+    case .restricted:
+      self = .restricted
+    case .notDetermined:
+      self = .notDetermined
+    // Not `@unknown default`: the iOS 17+ `.writeOnly` case is unreachable on
+    // an OS without the tier but still counts against exhaustiveness, and a
+    // plain `default` maps it to the same `.denied` without the warning.
+    default:
+      self = .denied
+    }
+  }
+
+  /// The tier lattice, read off `rank` rather than restated: full access
+  /// covers everything, a write-only grant covers writes but never reads.
+  /// Expressed in terms of the grant the requirement asks for, so adding a
+  /// tier means adding one `rank` row and nothing else.
+  func satisfies(_ required: CalendarPermissionType) -> Bool {
+    rank >= CalendarAccess(granted: required).rank
   }
 
   /// Can't be changed from inside the app — the user must use Settings.
   var isTerminal: Bool { self == .denied || self == .restricted }
 
-  /// How much access this value represents. A total order, so "supersedes" is
-  /// a fact about the type rather than a rule some caller has to remember.
-  /// `.denied` and `.restricted` share a rank: they are different reasons for
-  /// the same amount of access, and neither can displace the other.
+  /// How much access this value represents. A total order, so "supersedes" and
+  /// "satisfies" are facts about the type rather than rules some caller has to
+  /// remember. `.denied` and `.restricted` share a rank: they are different
+  /// reasons for the same amount of access, and neither can displace the other.
+  ///
+  /// The record is only ever handed `.denied`, `.writeOnly` or `.fullAccess`
+  /// (from `CalendarAccess(granted:)`, or the literal `.denied` in
+  /// `RecordingAuthorization.request`), so the `.notDetermined` and
+  /// `.restricted` rows are here for exhaustiveness and for `satisfies` — no
+  /// caller records them.
   private var rank: Int {
     switch self {
     case .notDetermined:

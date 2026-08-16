@@ -39,42 +39,13 @@ struct EventKitAuthorization: CalendarAuthorization {
     return false
   }
 
+  /// Only the store lookup lives here; the version-dependent mapping is
+  /// `CalendarAccess(ekStatus:supportsWriteOnly:)`, which is pure and pinned by
+  /// `CalendarAccessTests`.
   var status: CalendarAccess {
-    let status = EKEventStore.authorizationStatus(for: .event)
-
-    if #available(iOS 17.0, *) {
-      switch status {
-      case .fullAccess:
-        return .fullAccess
-      case .writeOnly:
-        return .writeOnly
-      case .denied:
-        return .denied
-      case .restricted:
-        return .restricted
-      case .notDetermined:
-        return .notDetermined
-      @unknown default:
-        return .denied
-      }
-    }
-
-    // iOS 16 and below only has .authorized, which is full access.
-    switch status {
-    case .authorized:
-      return .fullAccess
-    case .denied:
-      return .denied
-    case .restricted:
-      return .restricted
-    case .notDetermined:
-      return .notDetermined
-    // Not `@unknown default`: the iOS 17+ `.writeOnly` case is unreachable
-    // here but still counts against exhaustiveness, and a plain `default`
-    // maps it to the same `.denied` without the warning.
-    default:
-      return .denied
-    }
+    CalendarAccess(
+      ekStatus: EKEventStore.authorizationStatus(for: .event),
+      supportsWriteOnly: supportsWriteOnly)
   }
 
   func request(_ tier: CalendarPermissionType, completion: @escaping (Result<Bool, Error>) -> Void) {

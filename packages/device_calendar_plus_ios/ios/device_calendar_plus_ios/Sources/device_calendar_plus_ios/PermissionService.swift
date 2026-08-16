@@ -172,7 +172,15 @@ class PermissionService {
     // also on a full request while only write-only is held — iOS re-presents the
     // dialog asking for full access and upgrades the app in-app if the user
     // agrees.
-    authorization.request(tier) { _ in
+    authorization.request(tier) { result in
+      // A request that errored is deliberately *not* surfaced to Dart as a
+      // failure: the app is still askable, and reporting the resulting
+      // notDetermined is the honest answer. But it is the one outcome nothing
+      // downstream can see, so log it rather than let it vanish.
+      if case .failure(let error) = result {
+        NSLog("device_calendar_plus: calendar access request failed: \(error)")
+      }
+
       // Re-read rather than translate the answer: the seam has already folded
       // an answered grant or refusal into its status, and a request that never
       // got an answer left it alone, so this reports the truth on every branch

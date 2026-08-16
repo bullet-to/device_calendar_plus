@@ -67,12 +67,16 @@ final class PermissionServiceTests: XCTestCase {
     usageDescriptions = PermissionServiceTests.allUsageDescriptions
   }
 
-  /// Each service gets its own `AccessRecord`, so an answer recorded in one
-  /// test can never leak into the next. The record sits behind the seam in
-  /// production too, so this is the real wiring with `.shared` swapped out.
-  private func makeService() -> PermissionService {
+  /// Each service gets its own `AccessRecord` by default, so an answer recorded
+  /// in one test can never leak into the next. The record sits behind the seam
+  /// in production too, so this is the real wiring with `.shared` swapped out —
+  /// the cross-engine test hands two services one record to stand in for it.
+  private func makeService(
+    _ stub: StubAuthorization? = nil,
+    record: AccessRecord = AccessRecord()
+  ) -> PermissionService {
     PermissionService(
-      authorization: RecordingAuthorization(wrapping: authorization, record: AccessRecord()),
+      authorization: RecordingAuthorization(wrapping: stub ?? authorization, record: record),
       usageDescriptions: { self.usageDescriptions[$0] })
   }
 
@@ -100,24 +104,7 @@ final class PermissionServiceTests: XCTestCase {
     return try XCTUnwrap(reported)
   }
 
-  // MARK: - the wire format
-
-  /// The wire values cross the method channel and Dart's
-  /// `CalendarPermissionStatus` parses them by name, degrading anything it does
-  /// not recognise to `denied` without an exception — so a rename would surface
-  /// as a mystery permission failure in the field rather than a red test.
-  /// Pinned to literals here; every other assertion stays symbolic.
-  func testWireValuesAreTheStringsDartParses() {
-    XCTAssertEqual(
-      [Access.fullAccess, .writeOnly, .denied, .restricted, .notDetermined].map(\.wireValue),
-      ["granted", "writeOnly", "denied", "restricted", "notDetermined"])
-  }
-
   // MARK: - hasPermission
-
-  func testHasPermissionWriteIsFalseWhenNothingWasEverGranted() {
-    XCTAssertFalse(makeService().hasPermission(for: .write))
-  }
 
   func testHasPermissionWriteIsFalseWhenTheUserRefusedTheRequest() throws {
     authorization.grants = false
@@ -440,5 +427,30 @@ final class PermissionServiceTests: XCTestCase {
       return XCTFail("expected a configuration failure without the legacy key")
     }
     XCTAssertTrue(error.message.contains("NSCalendarsUsageDescription"))
+  }
+
+  // MARK: - the shared access record
+
+  /// The record is process-wide by design: a `FlutterEngineGroup` or add-to-app
+  /// host builds one `PermissionService` per engine, and the answer the user
+  /// gave belongs to the app rather than to whichever engine happened to ask.
+  /// Both engines sit inside the stale window here — each one's OS status still
+  /// reports `.notDetermined` — so only the shared record can carry the grant
+  /// across, and without it the second engine would re-prompt for access the
+  /// app already holds.
+  func testAGrantThroughOneEngineIsHonouredByAnotherSharingTheRecord() throws {
+    let record = AccessRecord()
+    let askingStub = StubAuthorization()
+    let otherStub = StubAuthorization()
+    let asking = makeService(askingStub, record: record)
+    let other = makeService(otherStub, record: record)
+
+    XCTAssertEqual(try requestPermissions(asking), .fullAccess)
+
+    XCTAssertEqual(otherStub.status, .notDetermined, "the other engine's OS status is still stale")
+    XCTAssertTrue(other.hasPermission(for: .write))
+    XCTAssertTrue(other.hasPermission(for: .full))
+    XCTAssertEqual(try requestPermissions(other), .fullAccess)
+    XCTAssertEqual(otherStub.requestedTiers, [], "the shared answer means no second prompt")
   }
 }
