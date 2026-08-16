@@ -5,7 +5,10 @@ import EventKitUI
 
 public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDelegate, EKEventEditViewDelegate {
   private let eventStore = EKEventStore()
-  private lazy var permissionService = PermissionService(eventStore: eventStore)
+  private lazy var permissionService = PermissionService(
+    authorization: RecordingAuthorization(
+      wrapping: EventKitAuthorization(eventStore: eventStore),
+      record: .shared))
   private lazy var calendarService = CalendarService(eventStore: eventStore, permissionService: permissionService)
   private lazy var eventsService = EventsService(eventStore: eventStore, permissionService: permissionService)
   private var eventModalResult: FlutterResult?
@@ -120,8 +123,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     permissionService.requestPermissions(writeOnly: writeOnly) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
-        case .success(let status):
-          result(status)
+        case .success(let access):
+          result(access.wireValue)
         case .failure(let error):
           result(FlutterError(code: error.code, message: error.message, details: nil))
         }
@@ -132,8 +135,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   private func handleHasPermissions(result: @escaping FlutterResult) {
     let serviceResult = permissionService.hasPermissions()
     switch serviceResult {
-    case .success(let status):
-      result(status)
+    case .success(let access):
+      result(access.wireValue)
     case .failure(let error):
       result(FlutterError(code: error.code, message: error.message, details: nil))
     }
