@@ -1,3 +1,25 @@
+## 0.8.1 - 2026-09-21
+
+### Fixed
+- iOS: a grant is honoured immediately. The first time a user allowed access,
+  the very next call could still fail with `permissionDenied` until the app was
+  restarted, because EventKit briefly kept reporting `notDetermined` after the
+  grant (#134).
+- `showCreateEventModal` needs no calendar permission on Android or iOS 17+ —
+  the system editor saves with its own access — so it now works as a fallback
+  after a denial, and `autoPermissions` never prompts for it. On iOS 16 and
+  below the in-process editor still requires full access (#121, #141).
+- Android read endpoints report `permissionDenied` instead of a silent empty
+  result when `READ_CALENDAR` isn't held, and full-tier mutations require both
+  `READ_CALENDAR` and `WRITE_CALENDAR`, matching iOS (#121).
+- iOS: `createEvent` with a named `calendarId` under write-only access reports
+  `permissionDenied` (with a hint) instead of a misleading `notFound` (#121).
+
+### Docs
+- `CalendarPermissionStatus.denied` spells out the difference between the
+  permanent denial `hasPermissions` reports and the just-declined prompt
+  `requestPermissions` reports.
+
 ## 0.8.0 - 2026-07-22
 
 ### Added
