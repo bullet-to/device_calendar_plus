@@ -115,6 +115,19 @@ final newSeriesId = await plugin.updateRecurring(
 `updateRecurring` returns the affected scope's event ID — the same ID for
 `allEvents`, the new series' ID for `thisAndFollowing`.
 
+### Changing the rule
+
+A new `recurrenceRule` re-anchors the scope on the first day the rule
+generates on or after its anchor — the occurrence you passed for
+`thisAndFollowing`, the series start for `allEvents` — keeping the
+time-of-day. Switch a Saturday series to Sundays from one occurrence and the
+new series starts on the Sunday after it; no Saturday is left behind. Rule
+parts you leave implicit (`WeeklyRecurrence()` with no `daysOfWeek`,
+`MonthlyRecurrence()` with no `daysOfMonth`) take their day from the anchor,
+so a rule that already fits its anchor never moves it. Pass `start` in the
+same call to pick the anchor yourself; the rule still walks forward from there
+if that day isn't one it generates.
+
 ### Moving the day of a pinned rule
 
 `start` moves the series anchor. For rules whose day is implied by the start

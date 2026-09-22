@@ -550,6 +550,98 @@ void main() {
     });
 
     test(
+        'thisAndFollowing with a rule on a new weekday moves the split '
+        'occurrence to that weekday instead of leaving it behind (#140)',
+        () async {
+      // Issue #140: a Saturday series split at one Saturday with a "from now
+      // on, Sundays" rule kept that Saturday as an extra first occurrence of
+      // the new series. The split occurrence must move to the first day the
+      // new rule generates, not survive alongside it.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+
+      // The series is stored in UTC, so derive and read weekdays in UTC — a
+      // device-local read flakes whenever local and UTC dates differ (#103).
+      final anchor = DateTime.now().toUtc().add(const Duration(hours: 1));
+      final oldDay = DayOfWeek.values[anchor.weekday - 1];
+      final newDay =
+          DayOfWeek.values[anchor.add(const Duration(days: 1)).weekday - 1];
+      final series = await createWeeklySeries(plugin, calendarId!,
+          count: 6, daysOfWeek: [oldDay]);
+
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 50);
+      expect(before.length, greaterThanOrEqualTo(4),
+          reason: 'the weekly series should have expanded into occurrences');
+      final split = before[2];
+      final splitMillis = split.startDate.millisecondsSinceEpoch;
+
+      // Weekly on the new weekday until 20 days past the split: exactly
+      // three occurrences (split + 1, + 8, + 15 days). UNTIL rather than
+      // COUNT because iOS's `.futureEvents` save normalises a COUNT on a
+      // split (see the TODO in the rule-change test above).
+      final until = split.startDate.add(const Duration(days: 20));
+      final newSeriesId = await plugin.updateRecurring(
+        split.instanceId,
+        EventSpan.thisAndFollowing,
+        recurrenceRule: Patch.set(WeeklyRecurrence(
+          daysOfWeek: [newDay],
+          end: UntilEnd(until),
+        )),
+      );
+
+      // The two occurrences before the split stay on the old weekday under
+      // the original id, and nothing later survives there.
+      final remainingMaster = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 50);
+      expect(remainingMaster.length, 2,
+          reason: 'only the occurrences before the split stay on the '
+              'original series');
+      expect(
+        remainingMaster
+            .every((e) => e.startDate.millisecondsSinceEpoch < splitMillis),
+        isTrue,
+        reason: 'the original series must not extend past the split point',
+      );
+
+      // The new series lives entirely on the new weekday, starting the day
+      // after the split occurrence — i.e. the split occurrence itself moved.
+      final newOccurrences = await occurrencesOf(
+          plugin, calendarId!, newSeriesId, series.start,
+          windowDays: 50);
+      expect(newOccurrences.length, 3,
+          reason: 'the new series must expand to every occurrence the rule '
+              'generates before its end');
+      expect(
+        newOccurrences.first.startDate.millisecondsSinceEpoch,
+        splitMillis + const Duration(days: 1).inMilliseconds,
+        reason: 'the split occurrence must move to the first day the new '
+            'rule generates',
+      );
+      expect(
+        newOccurrences
+            .every((e) => e.startDate.toUtc().weekday == newDay.index + 1),
+        isTrue,
+        reason: 'every occurrence of the new series must fall on the new '
+            'weekday',
+      );
+
+      // Nothing is left at the split instant under either id.
+      final atSplit = await plugin.listEvents(
+        split.startDate.subtract(const Duration(minutes: 1)),
+        split.startDate.add(const Duration(minutes: 1)),
+        calendarIds: [calendarId!],
+      );
+      expect(
+        atSplit.where((e) => e.startDate.millisecondsSinceEpoch == splitMillis),
+        isEmpty,
+        reason: 'the split occurrence must not survive on the old weekday '
+            'as an orphan (#140)',
+      );
+    });
+
+    test(
         'thisAndFollowing with Patch.clear turns the anchor into a standalone '
         'non-recurring event and drops future occurrences (#93)', () async {
       // Issue #93's "this and future" case: split the series at the chosen

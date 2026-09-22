@@ -1316,11 +1316,25 @@ class EventsService {
       parsedRecurrenceRule = rule
     }
 
+    // A new rule may not generate the anchor's day (a Saturday series switched
+    // to Sundays): the series then anchors on the first day it does, or
+    // EventKit keeps the old day as an extra first occurrence (#140). Android's
+    // counterpart is `anchorOnRule`.
+    if let rule = parsedRecurrenceRule {
+      let base: Date = newStart ?? foundEvent.startDate
+      if let anchored = RecurrenceAnchor.firstMatch(
+           of: rule, onOrAfter: base, timeZone: foundEvent.timeZone ?? .current
+         ),
+         anchored != base {
+        newStart = anchored
+      }
+    }
+
     // Apply field changes.
     patch.apply(to: foundEvent)
 
-    // Apply time-of-day and/or duration changes. The existing date is
-    // preserved; only the time component is replaced.
+    // Apply start and/or duration changes. Without a new start the existing
+    // date is preserved; only the duration is replaced.
     if newStart != nil || durationMinutes != nil {
       let duration = durationMinutes.map { TimeInterval($0 * 60) }
         ?? foundEvent.endDate.timeIntervalSince(foundEvent.startDate)

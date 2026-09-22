@@ -1179,14 +1179,19 @@ class EventsService(
         // single event must use DTEND (and no DURATION). Rewrite them when the
         // start, duration, or recurring state changes.
         val effectiveIsAllDay = patch.isAllDay ?: row.allDay
-        val hasTimeChange = newStartMillis != null || durationMinutes != null
+        // The anchor shifts relative to the occurrence the caller pointed at
+        // (timestamp), or the series anchor itself when none was given — and
+        // then onto the new rule, when one is given (#140).
+        val (shiftedStart, newDurationMs) = resolveSeriesTimes(
+            row.dtstart, timestamp ?: row.dtstart, eventDurationMillis(row),
+            newStartMillis, durationMinutes, row.timeZone, effectiveIsAllDay
+        )
+        val newStart = anchorOnRule(
+            shiftedStart, recurrenceRule, row.timeZone, effectiveIsAllDay
+        )
+        val hasTimeChange = newStartMillis != null || durationMinutes != null ||
+            newStart != row.dtstart
         if (hasTimeChange || wasRecurring != willBeRecurring) {
-            // The anchor shifts relative to the occurrence the caller pointed
-            // at (timestamp), or the series anchor itself when none was given.
-            val (newStart, newDurationMs) = resolveSeriesTimes(
-                row.dtstart, timestamp ?: row.dtstart, eventDurationMillis(row),
-                newStartMillis, durationMinutes, row.timeZone, effectiveIsAllDay
-            )
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
                 values.put(
@@ -1302,9 +1307,16 @@ class EventsService(
         // The new series is anchored at the split occurrence, shifted to the
         // caller's new start (the reference and base are both the occurrence).
         // Duration is the master's unless overridden.
-        val (newStart, newDurationMs) = resolveSeriesTimes(
+        val (shiftedStart, newDurationMs) = resolveSeriesTimes(
             timestamp, timestamp, eventDurationMillis(row),
             newStartMillis, durationMinutes, row.timeZone, effectiveIsAllDay
+        )
+        // A new rule may not generate the split occurrence's day (a Saturday
+        // series switched to Sundays): the new series then anchors on the
+        // first day it does, or the provider keeps the old day as an extra
+        // first occurrence (#140).
+        val newStart = anchorOnRule(
+            shiftedStart, recurrenceRule, row.timeZone, effectiveIsAllDay
         )
         val newEnd = newStart + newDurationMs
 
@@ -1779,6 +1791,36 @@ class EventsService(
     }
 
     /**
+     * The timezone that frames a series' calendar days: the event's own
+     * (device default when [timeZoneId] is null), except that all-day events
+     * are stored as UTC midnight and so live in UTC.
+     */
+    private fun seriesTimeZone(timeZoneId: String?, isAllDay: Boolean): java.util.TimeZone =
+        when {
+            isAllDay -> java.util.TimeZone.getTimeZone("UTC")
+            timeZoneId != null -> java.util.TimeZone.getTimeZone(timeZoneId)
+            else -> java.util.TimeZone.getDefault()
+        }
+
+    /**
+     * Moves [startMillis] onto the first day [rrule] generates on or after it,
+     * keeping its wall-clock time — the anchor a series switched to a new rule
+     * must have, or the provider emits the old day as an extra occurrence
+     * (#140). Unchanged when no new rule is given or the rule can't be placed.
+     * iOS's counterpart is the `RecurrenceAnchor` call in `updateRecurring`.
+     */
+    private fun anchorOnRule(
+        startMillis: Long,
+        rrule: String?,
+        timeZoneId: String?,
+        isAllDay: Boolean
+    ): Long {
+        if (rrule == null) return startMillis
+        val tz = seriesTimeZone(timeZoneId, isAllDay)
+        return RecurrenceAnchor.firstMatch(rrule, startMillis, tz) ?: startMillis
+    }
+
+    /**
      * Translates [baseMillis] by the wall-clock delta from [referenceMillis]
      * to [newStartMillis]: shifts by the whole-day difference and sets the
      * time-of-day to [newStartMillis]'s. DST-safe — it counts calendar days
@@ -1797,11 +1839,7 @@ class EventsService(
         timeZoneId: String?,
         isAllDay: Boolean
     ): Long {
-        val tz = when {
-            isAllDay -> java.util.TimeZone.getTimeZone("UTC")
-            timeZoneId != null -> java.util.TimeZone.getTimeZone(timeZoneId)
-            else -> java.util.TimeZone.getDefault()
-        }
+        val tz = seriesTimeZone(timeZoneId, isAllDay)
         val dayDelta = calendarDaysBetween(referenceMillis, newStartMillis, tz)
         val cal = java.util.Calendar.getInstance(tz)
         cal.timeInMillis = baseMillis
