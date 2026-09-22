@@ -25,7 +25,8 @@ enum RecurrenceAnchor {
   /// implicit (no BYDAY, BYMONTHDAY or BYMONTH) come from `from` itself, as
   /// they would from the start date — so a rule that already fits its anchor
   /// returns `from` unchanged. Nil when the rule generates nothing within
-  /// five years, in which case the caller leaves the anchor alone.
+  /// five years, so the caller can refuse rather than anchor the series
+  /// off-rule.
   static func firstMatch(
     of rule: EKRecurrenceRule,
     onOrAfter from: Date,
@@ -166,8 +167,9 @@ enum RecurrenceAnchor {
         var days = Set<Int>()
         for doy in 1...yearLength {
           guard let current = calendar.date(byAdding: .day, value: doy - 1, to: first) else { break }
-          let nth = Nth(fromStart: (doy - 1) / 7 + 1, fromEnd: -((yearLength - doy) / 7 + 1))
-          if matchesByDay(current, nth: nth) { days.insert(dayKey(current)) }
+          if matchesByDay(current, nth: nthInPeriod(doy, periodLength: yearLength)) {
+            days.insert(dayKey(current))
+          }
         }
         return days
       }
@@ -188,7 +190,7 @@ enum RecurrenceAnchor {
       var days = Set<Int>()
       for dom in 1...length {
         guard let current = date(year: year, month: month, day: dom) else { continue }
-        let nth = Nth(fromStart: (dom - 1) / 7 + 1, fromEnd: -((length - dom) / 7 + 1))
+        let nth = nthInPeriod(dom, periodLength: length)
         // Per RFC 5545, BYDAY limits a BYMONTHDAY set and expands otherwise;
         // with neither, the anchor's own day-of-month.
         let included: Bool
@@ -203,6 +205,13 @@ enum RecurrenceAnchor {
         if included { days.insert(dayKey(current)) }
       }
       return days
+    }
+
+    /// The ordinal of the day at `position` (1-based) in a period of
+    /// `periodLength` days: which length is passed decides whether "2MO"
+    /// counts within the month or within the year.
+    private func nthInPeriod(_ position: Int, periodLength: Int) -> Nth {
+      return Nth(fromStart: (position - 1) / 7 + 1, fromEnd: -((periodLength - position) / 7 + 1))
     }
 
     private func matchesMonthDay(_ dom: Int, monthLength: Int) -> Bool {

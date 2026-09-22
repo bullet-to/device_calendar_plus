@@ -116,6 +116,25 @@ void expectReanchoredWeekly(
   }
 }
 
+/// Asserts [remaining] is what a `thisAndFollowing` split leaves on the
+/// original series: exactly [count] occurrences, every one before the split
+/// at [before]. The split occurrence itself must not survive here (#140).
+void expectTruncatedMaster(
+  List<Event> remaining, {
+  required DateTime before,
+  int count = 2,
+}) {
+  expect(remaining.length, count,
+      reason: 'only the occurrences before the split stay on the original '
+          'series');
+  expect(
+    remaining.every((e) => e.startDate.isBefore(before)),
+    isTrue,
+    reason: 'the original series must not extend past the split point '
+        '(#140)',
+  );
+}
+
 /// Lists the occurrences of `eventId` in the calendar over a window wide
 /// enough to capture the whole series ([windowDays] forward), in date order
 /// as returned by the platform.
@@ -645,16 +664,10 @@ void main() {
 
       // The two occurrences before the split stay on the old weekday under
       // the original id, and nothing later survives there.
-      final remainingMaster = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start,
-          windowDays: 50);
-      expect(remainingMaster.length, 2,
-          reason: 'only the occurrences before the split stay on the '
-              'original series');
-      expect(
-        remainingMaster.every((e) => e.startDate.isBefore(split.startDate)),
-        isTrue,
-        reason: 'the original series must not extend past the split point',
+      expectTruncatedMaster(
+        await occurrencesOf(plugin, calendarId!, series.eventId, series.start,
+            windowDays: 50),
+        before: split.startDate,
       );
 
       // The new series lives entirely on the new weekday, starting the day
@@ -771,14 +784,10 @@ void main() {
         orphanAt: split.startDate,
         allDay: true,
       );
-      final remainingMaster = await occurrencesOf(
-          plugin, calendarId!, eventId, start,
-          windowDays: 50);
-      expect(
-        remainingMaster.where((e) => e.startDate == split.startDate),
-        isEmpty,
-        reason: 'the split occurrence must not survive on the original '
-            'series (#140)',
+      expectTruncatedMaster(
+        await occurrencesOf(plugin, calendarId!, eventId, start,
+            windowDays: 50),
+        before: split.startDate,
       );
     });
 
@@ -787,34 +796,50 @@ void main() {
         'and leaves the series untouched', () async {
       // The re-anchor walk gives up after five years. Rather than anchor the
       // series on a day the rule never generates — the orphan #140 removes —
-      // the update is refused before anything is written.
+      // the update is refused before anything is written, for both spans:
+      // the master keeps every occurrence, and a split creates no new series.
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createWeeklySeries(plugin, calendarId!, count: 4);
-      final before = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start,
-          windowDays: 45);
-      expect(before, isNotEmpty);
+      for (final span in EventSpan.values) {
+        final series = await createWeeklySeries(plugin, calendarId!, count: 4);
+        final before = await occurrencesOf(
+            plugin, calendarId!, series.eventId, series.start,
+            windowDays: 45);
+        expect(before.length, greaterThanOrEqualTo(3),
+            reason: 'the weekly series should have expanded into occurrences');
+        final windowEnd = series.start.add(const Duration(days: 45));
+        final calendarBefore = await plugin.listEvents(
+            series.start.subtract(const Duration(days: 1)), windowEnd,
+            calendarIds: [calendarId!]);
+        final id =
+            span == EventSpan.allEvents ? series.eventId : before[2].instanceId;
 
-      await expectLater(
-        plugin.updateRecurring(
-          series.eventId,
-          EventSpan.allEvents,
-          // 30 February: constructible, never generated.
-          recurrenceRule:
-              Patch.set(YearlyRecurrence(months: [2], daysOfMonth: [30])),
-        ),
-        throwsA(isA<DeviceCalendarException>().having((e) => e.errorCode,
-            'errorCode', DeviceCalendarError.invalidArguments)),
-      );
+        await expectLater(
+          plugin.updateRecurring(
+            id,
+            span,
+            // 30 February: constructible, never generated.
+            recurrenceRule:
+                Patch.set(YearlyRecurrence(months: [2], daysOfMonth: [30])),
+          ),
+          throwsA(isA<DeviceCalendarException>().having((e) => e.errorCode,
+              'errorCode', DeviceCalendarError.invalidArguments)),
+          reason: '$span must refuse a rule that never generates',
+        );
 
-      final after = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start,
-          windowDays: 45);
-      expect(
-        after.map((e) => e.startDate).toList(),
-        before.map((e) => e.startDate).toList(),
-        reason: 'a refused rule must leave the series as it was',
-      );
+        final after = await occurrencesOf(
+            plugin, calendarId!, series.eventId, series.start,
+            windowDays: 45);
+        expect(
+          after.map((e) => e.startDate).toList(),
+          before.map((e) => e.startDate).toList(),
+          reason: 'a refused $span rule must leave the series as it was',
+        );
+        final calendarAfter = await plugin.listEvents(
+            series.start.subtract(const Duration(days: 1)), windowEnd,
+            calendarIds: [calendarId!]);
+        expect(calendarAfter.length, calendarBefore.length,
+            reason: 'a refused $span rule must not create a new series');
+      }
     });
 
     test(

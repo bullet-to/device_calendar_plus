@@ -1106,8 +1106,7 @@ class EventsService {
   }
 
   /// The start a series update leaves `event` with, or nil when nothing moves
-  /// it. Android's counterpart is `resolveSeriesTimes` followed by
-  /// `anchorOnRule`.
+  /// it. Android's counterpart is `resolveSeriesTimes`.
   ///
   /// `newStartMillis`, when given, shifts the anchor first: `event`'s start
   /// moves by the wall-clock delta from the reference occurrence (the one at

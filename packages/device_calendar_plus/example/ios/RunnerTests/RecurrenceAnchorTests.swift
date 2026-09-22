@@ -90,6 +90,27 @@ final class RecurrenceAnchorTests: XCTestCase {
     )
   }
 
+  // Per RFC 5545 BYDAY limits a BYMONTHDAY set rather than expanding it:
+  // "Friday the 13th" skips October's Tuesday 13th for November's Friday.
+  func testMonthlyByMonthDayAndByDayByDayLimitsTheSet() {
+    XCTAssertEqual(
+      firstMatch(
+        rule(.monthly, days: [EKRecurrenceDayOfWeek(.friday)], daysOfMonth: [13]),
+        from: at(2026, 9, 12)
+      ),
+      at(2026, 11, 13)
+    )
+  }
+
+  // "First weekday of the month": a positive BYSETPOS counts from the start
+  // of the BYDAY set, so the anchor is Thursday 1 October.
+  func testMonthlyBySetPosPositiveSelectsFromTheStartOfTheSet() {
+    XCTAssertEqual(
+      firstMatch(rule(.monthly, days: weekdays, setPositions: [1]), from: at(2026, 9, 12)),
+      at(2026, 10, 1)
+    )
+  }
+
   func testYearlyByMonthAndMonthDayMovesToThatDateThisYear() {
     XCTAssertEqual(
       firstMatch(rule(.yearly, daysOfMonth: [25], months: [12]), from: at(2026, 9, 12)),

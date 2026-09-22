@@ -1182,12 +1182,10 @@ class EventsService(
         // The anchor shifts relative to the occurrence the caller pointed at
         // (timestamp), or the series anchor itself when none was given — and
         // then onto the new rule, when one is given (#140).
-        val (shiftedStart, newDurationMs) = resolveSeriesTimes(
+        val (newStart, newDurationMs) = resolveSeriesTimes(
             row.dtstart, timestamp ?: row.dtstart, eventDurationMillis(row),
-            newStartMillis, durationMinutes, row.timeZone, effectiveIsAllDay
-        )
-        val newStart = anchorOnRule(
-            shiftedStart, recurrenceRule, row.timeZone, effectiveIsAllDay
+            newStartMillis, durationMinutes, recurrenceRule, row.timeZone,
+            effectiveIsAllDay
         ).getOrElse { return Result.failure(it) }
         // A `start` equal to the current anchor is still a rewrite: the
         // DTSTART/DURATION (and RRULE, below) re-put is what makes the
@@ -1308,18 +1306,15 @@ class EventsService(
         }
 
         // The new series is anchored at the split occurrence, shifted to the
-        // caller's new start (the reference and base are both the occurrence).
+        // caller's new start (the reference and base are both the occurrence)
+        // and then onto the new rule, which may not generate the occurrence's
+        // day (a Saturday series switched to Sundays) — without that the
+        // provider keeps the old day as an extra first occurrence (#140).
         // Duration is the master's unless overridden.
-        val (shiftedStart, newDurationMs) = resolveSeriesTimes(
+        val (newStart, newDurationMs) = resolveSeriesTimes(
             timestamp, timestamp, eventDurationMillis(row),
-            newStartMillis, durationMinutes, row.timeZone, effectiveIsAllDay
-        )
-        // A new rule may not generate the split occurrence's day (a Saturday
-        // series switched to Sundays): the new series then anchors on the
-        // first day it does, or the provider keeps the old day as an extra
-        // first occurrence (#140).
-        val newStart = anchorOnRule(
-            shiftedStart, recurrenceRule, row.timeZone, effectiveIsAllDay
+            newStartMillis, durationMinutes, recurrenceRule, row.timeZone,
+            effectiveIsAllDay
         ).getOrElse { return Result.failure(it) }
         val newEnd = newStart + newDurationMs
 
@@ -1766,9 +1761,16 @@ class EventsService(
     }
 
     /**
-     * Resolves the start and duration for a series-level time edit. When
-     * [newStartMillis] is given the start is shifted by the wall-clock delta
-     * from [referenceMillis] to [newStartMillis] (see [shiftDate]); the
+     * Resolves the start and duration for a series-level edit; iOS's
+     * counterpart is `resolveSeriesStart`.
+     *
+     * When [newStartMillis] is given the start is shifted by the wall-clock
+     * delta from [referenceMillis] to [newStartMillis] (see [shiftDate]). A
+     * new [rrule] then moves it onto the first day the rule generates, keeping
+     * its wall-clock time — the anchor a series switched to a new rule must
+     * have, or the provider emits the old day as an extra occurrence (#140).
+     * A rule that generates nothing within five years of the anchor fails
+     * with INVALID_ARGUMENTS rather than leaving that orphan behind. The
      * duration is overridden when [durationMinutes] is given.
      */
     private fun resolveSeriesTimes(
@@ -1777,20 +1779,33 @@ class EventsService(
         existingDurationMillis: Long,
         newStartMillis: Long?,
         durationMinutes: Int?,
+        rrule: String?,
         timeZoneId: String?,
         isAllDay: Boolean
-    ): Pair<Long, Long> {
-        val newStart = if (newStartMillis != null) {
-            shiftDate(baseMillis, referenceMillis, newStartMillis, timeZoneId, isAllDay)
+    ): Result<Pair<Long, Long>> {
+        val tz = seriesTimeZone(timeZoneId, isAllDay)
+        val shiftedStart = if (newStartMillis != null) {
+            shiftDate(baseMillis, referenceMillis, newStartMillis, tz, isAllDay)
         } else {
             baseMillis
+        }
+        val newStart = if (rrule != null) {
+            RecurrenceAnchor.firstMatch(rrule, shiftedStart, tz)
+                ?: return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "recurrenceRule generates no occurrences within five years of the anchor"
+                    )
+                )
+        } else {
+            shiftedStart
         }
         val newDurationMs = if (durationMinutes != null) {
             durationMinutes.toLong() * 60_000L
         } else {
             existingDurationMillis
         }
-        return Pair(newStart, newDurationMs)
+        return Result.success(Pair(newStart, newDurationMs))
     }
 
     /**
@@ -1806,52 +1821,24 @@ class EventsService(
         }
 
     /**
-     * Moves [startMillis] onto the first day [rrule] generates on or after it,
-     * keeping its wall-clock time — the anchor a series switched to a new rule
-     * must have, or the provider emits the old day as an extra occurrence
-     * (#140). Unchanged when no new rule is given. A rule that generates
-     * nothing within five years of the anchor fails with INVALID_ARGUMENTS
-     * rather than leaving that orphan behind. iOS's counterpart is the
-     * `RecurrenceAnchor` step of `resolveSeriesStart`.
-     */
-    private fun anchorOnRule(
-        startMillis: Long,
-        rrule: String?,
-        timeZoneId: String?,
-        isAllDay: Boolean
-    ): Result<Long> {
-        if (rrule == null) return Result.success(startMillis)
-        val tz = seriesTimeZone(timeZoneId, isAllDay)
-        val anchored = RecurrenceAnchor.firstMatch(rrule, startMillis, tz)
-            ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "recurrenceRule generates no occurrences within five years of the anchor"
-                )
-            )
-        return Result.success(anchored)
-    }
-
-    /**
      * Translates [baseMillis] by the wall-clock delta from [referenceMillis]
      * to [newStartMillis]: shifts by the whole-day difference and sets the
      * time-of-day to [newStartMillis]'s. DST-safe — it counts calendar days
      * and sets a wall-clock time rather than adding a raw interval.
      *
-     * Dates are interpreted in the event's timezone (device default when
-     * [timeZoneId] is null). All-day events are stored as UTC midnight, so
-     * they shift in UTC by whole days with the time-of-day left at midnight.
-     * The anchor-shift that lets [updateRecurring] move both the time and the
-     * day of a series (issue #103); iOS's counterpart is `shiftStart`.
+     * Dates are interpreted in [tz], the series' timezone (see
+     * [seriesTimeZone]). All-day events are stored as UTC midnight, so they
+     * shift in UTC by whole days with the time-of-day left at midnight. The
+     * anchor-shift that lets [updateRecurring] move both the time and the day
+     * of a series (issue #103); iOS's counterpart is `shiftStart`.
      */
     private fun shiftDate(
         baseMillis: Long,
         referenceMillis: Long,
         newStartMillis: Long,
-        timeZoneId: String?,
+        tz: java.util.TimeZone,
         isAllDay: Boolean
     ): Long {
-        val tz = seriesTimeZone(timeZoneId, isAllDay)
         val dayDelta = calendarDaysBetween(referenceMillis, newStartMillis, tz)
         val cal = java.util.Calendar.getInstance(tz)
         cal.timeInMillis = baseMillis

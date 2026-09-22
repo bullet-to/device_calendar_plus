@@ -13,13 +13,11 @@ import kotlin.test.assertEquals
 internal class RecurrenceAnchorTest {
     private val stockholm = TimeZone.getTimeZone("Europe/Stockholm")
 
-    private fun at(
-        year: Int, month: Int, day: Int, hour: Int = 10, minute: Int = 0,
-        tz: TimeZone = stockholm
-    ): Long = Calendar.getInstance(tz).apply {
-        clear()
-        set(year, month - 1, day, hour, minute, 0)
-    }.timeInMillis
+    private fun at(year: Int, month: Int, day: Int, hour: Int = 10): Long =
+        Calendar.getInstance(stockholm).apply {
+            clear()
+            set(year, month - 1, day, hour, 0, 0)
+        }.timeInMillis
 
     // The #140 report: a Saturday series switched to Sundays must anchor on
     // the Sunday after the split occurrence, not stay on the Saturday.
@@ -67,6 +65,40 @@ internal class RecurrenceAnchorTest {
         assertEquals(
             at(2026, 9, 25),
             RecurrenceAnchor.firstMatch("FREQ=MONTHLY;BYDAY=-1FR", at(2026, 9, 12), stockholm)
+        )
+    }
+
+    // Per RFC 5545 BYDAY limits a BYMONTHDAY set rather than expanding it:
+    // "Friday the 13th" skips October's Tuesday 13th for November's Friday.
+    @Test
+    fun monthlyByMonthDayAndByDay_byDayLimitsTheSet() {
+        assertEquals(
+            at(2026, 11, 13),
+            RecurrenceAnchor.firstMatch(
+                "FREQ=MONTHLY;BYMONTHDAY=13;BYDAY=FR", at(2026, 9, 12), stockholm
+            )
+        )
+    }
+
+    // "First weekday of the month": a positive BYSETPOS counts from the start
+    // of the BYDAY set, so the anchor is Thursday 1 October.
+    @Test
+    fun monthlyBySetPosPositive_selectsFromTheStartOfTheSet() {
+        assertEquals(
+            at(2026, 10, 1),
+            RecurrenceAnchor.firstMatch(
+                "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1", at(2026, 9, 12), stockholm
+            )
+        )
+    }
+
+    // RFC 5545 allows an explicit "+" on a BYDAY ordinal; iOS never sees the
+    // string form, so this case has no Swift mirror.
+    @Test
+    fun byDayWithPlusPrefix_parsesAsAPositiveOrdinal() {
+        assertEquals(
+            at(2026, 10, 5),
+            RecurrenceAnchor.firstMatch("FREQ=MONTHLY;BYDAY=+1MO", at(2026, 9, 12), stockholm)
         )
     }
 

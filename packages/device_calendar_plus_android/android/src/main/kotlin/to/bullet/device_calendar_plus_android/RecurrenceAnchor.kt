@@ -189,8 +189,7 @@ internal object RecurrenceAnchor {
                 val days = mutableSetOf<Int>()
                 for (doy in 1..yearLength) {
                     c.set(Calendar.DAY_OF_YEAR, doy)
-                    val nth = Nth((doy - 1) / 7 + 1, -((yearLength - doy) / 7 + 1))
-                    if (matchesByDay(c, nth)) days += dayKey(c)
+                    if (matchesByDay(c, nthInPeriod(doy, yearLength))) days += dayKey(c)
                 }
                 return days
             }
@@ -220,8 +219,8 @@ internal object RecurrenceAnchor {
                 val included = when {
                     rule.byMonthDay.isNotEmpty() ->
                         matchesMonthDay(dom, length) &&
-                            (rule.byDay.isEmpty() || matchesByDay(c, nthInMonth(dom, length)))
-                    rule.byDay.isNotEmpty() -> matchesByDay(c, nthInMonth(dom, length))
+                            (rule.byDay.isEmpty() || matchesByDay(c, nthInPeriod(dom, length)))
+                    rule.byDay.isNotEmpty() -> matchesByDay(c, nthInPeriod(dom, length))
                     else -> dom == anchorDayOfMonth
                 }
                 if (included) days += dayKey(c)
@@ -235,8 +234,13 @@ internal object RecurrenceAnchor {
         /** A day's weekday ordinal within its period, counted from the start and the end. */
         private data class Nth(val fromStart: Int, val fromEnd: Int)
 
-        private fun nthInMonth(dom: Int, monthLength: Int) =
-            Nth((dom - 1) / 7 + 1, -((monthLength - dom) / 7 + 1))
+        /**
+         * The ordinal of the day at [position] (1-based) in a period of
+         * [periodLength] days: which length is passed decides whether "2MO"
+         * counts within the month or within the year.
+         */
+        private fun nthInPeriod(position: Int, periodLength: Int) =
+            Nth((position - 1) / 7 + 1, -((periodLength - position) / 7 + 1))
 
         /** BYDAY membership: the weekday, and the ordinal when one is given. */
         private fun matchesByDay(c: Calendar, nth: Nth): Boolean {
