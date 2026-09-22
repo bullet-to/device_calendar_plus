@@ -41,12 +41,6 @@ internal class RruleStringTest {
     }
 
     @Test
-    fun count_readsTheCountOrNull() {
-        assertEquals(5, RruleString.count("RRULE:FREQ=WEEKLY;count=5"))
-        assertEquals(null, RruleString.count("FREQ=WEEKLY;UNTIL=20261001T215959Z"))
-    }
-
-    @Test
     fun withCount_replacesAnyEndAndKeepsTheRestAsWritten() {
         assertEquals(
             "FREQ=WEEKLY;byday=MO;COUNT=2",

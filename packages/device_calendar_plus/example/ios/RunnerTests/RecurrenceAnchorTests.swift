@@ -127,6 +127,16 @@ final class RecurrenceAnchorTests: XCTestCase {
     )
   }
 
+  // With no BYMONTH the month is the anchor's, as the start date would supply
+  // it (RFC 5545 would expand across every month): the 15th of September is
+  // past, so the anchor is next September's, not 15 October.
+  func testYearlyByMonthDayOnlyKeepsAnchorsMonth() {
+    XCTAssertEqual(
+      firstMatch(rule(.yearly, daysOfMonth: [15]), from: at(2026, 9, 20)),
+      at(2027, 9, 15)
+    )
+  }
+
   func testYearlyLeapDayLooksAheadToTheNextLeapYear() {
     XCTAssertEqual(
       firstMatch(rule(.yearly, daysOfMonth: [29], months: [2]), from: at(2026, 3, 1)),

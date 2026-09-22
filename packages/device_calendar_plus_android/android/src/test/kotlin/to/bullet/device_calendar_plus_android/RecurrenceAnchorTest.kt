@@ -122,6 +122,17 @@ internal class RecurrenceAnchorTest {
         )
     }
 
+    // With no BYMONTH the month is the anchor's, as DTSTART would supply it
+    // (RFC 5545 would expand across every month): the 15th of September is
+    // past, so the anchor is next September's, not 15 October.
+    @Test
+    fun yearlyByMonthDayOnly_keepsAnchorsMonth() {
+        assertEquals(
+            at(2027, 9, 15),
+            RecurrenceAnchor.firstMatch("FREQ=YEARLY;BYMONTHDAY=15", at(2026, 9, 20), stockholm)
+        )
+    }
+
     @Test
     fun yearlyLeapDay_looksAheadToTheNextLeapYear() {
         assertEquals(

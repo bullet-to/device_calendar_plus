@@ -30,16 +30,18 @@ Future<({String eventId, DateTime start})> createDailySeries(
   return (eventId: eventId, start: start);
 }
 
-/// Creates a weekly recurring event starting one hour from now (UTC), with
-/// `count` weekly occurrences. The recurring weekday is the start's weekday
-/// unless [daysOfWeek] is given. Returns the event ID and the start time.
+/// Creates a weekly recurring event starting at [start] (one hour from now
+/// by default, stored in UTC), with `count` weekly occurrences. The recurring
+/// weekday is the start's weekday unless [daysOfWeek] is given. Returns the
+/// event ID and the start time.
 Future<({String eventId, DateTime start})> createWeeklySeries(
   DeviceCalendar plugin,
   String calendarId, {
   int count = 5,
   List<DayOfWeek>? daysOfWeek,
+  DateTime? start,
 }) async {
-  final start = DateTime.now().add(const Duration(hours: 1));
+  start ??= DateTime.now().add(const Duration(hours: 1));
   final eventId = await plugin.createEvent(
     calendarId: calendarId,
     title: 'Weekly Series',
@@ -59,7 +61,9 @@ DayOfWeek weekdayOf(DateTime d) => DayOfWeek.values[d.weekday - 1];
 /// Creates a weekly series pinned (BYDAY) to its own start weekday, for the
 /// #140 tests that then switch it to [newDay], the weekday after. The series
 /// is stored in UTC, so both weekdays are derived in UTC — a device-local
-/// read flakes whenever local and UTC dates differ (#103).
+/// read flakes whenever local and UTC dates differ (#103). The start and the
+/// pinned weekday come from the one instant, so they can't straddle a UTC
+/// midnight.
 Future<({String eventId, DateTime start, DayOfWeek newDay})>
     createWeeklySeriesOnOwnWeekday(
   DeviceCalendar plugin,
@@ -68,7 +72,7 @@ Future<({String eventId, DateTime start, DayOfWeek newDay})>
 }) async {
   final anchor = DateTime.now().toUtc().add(const Duration(hours: 1));
   final series = await createWeeklySeries(plugin, calendarId,
-      count: count, daysOfWeek: [weekdayOf(anchor)]);
+      count: count, daysOfWeek: [weekdayOf(anchor)], start: anchor);
   return (
     eventId: series.eventId,
     start: series.start,
@@ -1159,7 +1163,7 @@ void main() {
       // weekday the rule does not list — an ambiguous move we refuse.
       final startDay = DateTime.now().add(const Duration(hours: 1));
       final series = await createWeeklySeries(plugin, calendarId!,
-          count: 4, daysOfWeek: [weekdayOf(startDay)]);
+          count: 4, daysOfWeek: [weekdayOf(startDay)], start: startDay);
       final before = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start,
           windowDays: 45);
@@ -1180,7 +1184,7 @@ void main() {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final startDay = DateTime.now().add(const Duration(hours: 1));
       final series = await createWeeklySeries(plugin, calendarId!,
-          count: 4, daysOfWeek: [weekdayOf(startDay)]);
+          count: 4, daysOfWeek: [weekdayOf(startDay)], start: startDay);
       final before = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start,
           windowDays: 45);
@@ -1210,7 +1214,7 @@ void main() {
       final startDay = DateTime.now().add(const Duration(hours: 1));
       final oldDay = weekdayOf(startDay);
       final series = await createWeeklySeries(plugin, calendarId!,
-          count: 4, daysOfWeek: [oldDay]);
+          count: 4, daysOfWeek: [oldDay], start: startDay);
       final before = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start,
           windowDays: 45);
@@ -1255,7 +1259,7 @@ void main() {
       final startDay = DateTime.now().toUtc().add(const Duration(hours: 1));
       final oldDay = weekdayOf(startDay);
       final series = await createWeeklySeries(plugin, calendarId!,
-          count: 4, daysOfWeek: [oldDay]);
+          count: 4, daysOfWeek: [oldDay], start: startDay);
       final before = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start,
           windowDays: 45);

@@ -20,18 +20,32 @@ internal object RruleString {
         if (rrule.startsWith(PREFIX)) rrule.substring(PREFIX.length) else rrule
 
     /**
+     * One `;`-separated part of a rule: its [key] upper-cased and trimmed,
+     * its [value] trimmed (null for a part with no `=`), and its [text] as
+     * written.
+     */
+    private data class Part(val key: String, val value: String?, val text: String)
+
+    /** The rule's non-blank parts, in order: the one tokeniser every reader and writer shares. */
+    private fun parts(rrule: String): List<Part> =
+        body(rrule).split(";").filter { it.isNotBlank() }.map { text ->
+            val idx = text.indexOf('=')
+            if (idx < 0) {
+                Part(text.trim().uppercase(), null, text)
+            } else {
+                val key = text.substring(0, idx).trim().uppercase()
+                Part(key, text.substring(idx + 1).trim(), text)
+            }
+        }
+
+    /**
      * The rule's parts keyed by their upper-cased name (`BYDAY`, `COUNT`),
      * values trimmed. Empty parts and parts with no `=` are dropped; when a
      * key repeats, the last wins.
      */
     fun params(rrule: String): Map<String, String> =
-        body(rrule).split(";").mapNotNull { part ->
-            val idx = part.indexOf('=')
-            if (idx <= 0) {
-                null
-            } else {
-                part.substring(0, idx).trim().uppercase() to part.substring(idx + 1).trim()
-            }
+        parts(rrule).mapNotNull { part ->
+            part.value?.takeIf { part.key.isNotEmpty() }?.let { part.key to it }
         }.toMap()
 
     /** The rule's COUNT, or null when it has none. */
@@ -53,11 +67,8 @@ internal object RruleString {
      * The other parts are kept as written.
      */
     private fun withEnd(rrule: String, endPart: String): String {
-        val parts = body(rrule).split(";").filter {
-            val key = it.substringBefore('=').trim().uppercase()
-            it.isNotBlank() && key != "COUNT" && key != "UNTIL"
-        }
-        return (parts + endPart).joinToString(";")
+        val kept = parts(rrule).filter { it.key != "COUNT" && it.key != "UNTIL" }.map { it.text }
+        return (kept + endPart).joinToString(";")
     }
 
     private fun formatUtc(millis: Long, dateOnly: Boolean): String {
