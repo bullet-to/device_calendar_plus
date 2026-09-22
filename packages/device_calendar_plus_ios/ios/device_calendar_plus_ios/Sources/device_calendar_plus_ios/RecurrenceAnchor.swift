@@ -10,6 +10,12 @@ import Foundation
 /// forward from the intended anchor to the first day the rule generates, so
 /// the anchor of a series switched to a new pattern lands on that pattern.
 /// Android's counterpart is `RecurrenceAnchor.kt`; the two must agree.
+///
+/// Covers the RRULE subset the plugin models: FREQ, BYDAY (with ordinals),
+/// BYMONTHDAY, BYMONTH, and BYSETPOS on monthly and yearly rules. INTERVAL
+/// and WKST don't affect which days a rule can generate from a given anchor
+/// (the anchor itself fixes the interval's phase), and a BYSETPOS on a daily
+/// or weekly rule is outside the modelled subset, so all three are ignored.
 enum RecurrenceAnchor {
   /// Five years: enough for a rule pinned to 29 February.
   private static let maxLookaheadDays = 5 * 366
@@ -53,7 +59,7 @@ enum RecurrenceAnchor {
     let fromEnd: Int
   }
 
-  /// Decides whether a day is in the rule's set for the period (week, month,
+  /// Decides whether a day is in the rule's set for the period (day, month,
   /// year) containing it. The period's set is built once and cached, since
   /// `firstMatch` visits its days in order.
   private final class Matcher {
@@ -63,7 +69,6 @@ enum RecurrenceAnchor {
     private let byMonthDay: [Int]
     private let byMonth: [Int]
     private let bySetPos: [Int]
-    private let weekStart: Int
     private let anchorWeekday: Int
     private let anchorDayOfMonth: Int
     private let anchorMonth: Int
@@ -79,8 +84,6 @@ enum RecurrenceAnchor {
       byMonthDay = (rule.daysOfTheMonth ?? []).map { $0.intValue }
       byMonth = (rule.monthsOfTheYear ?? []).map { $0.intValue }
       bySetPos = (rule.setPositions ?? []).map { $0.intValue }
-      // EventKit reports 0 for an unset WKST; RFC 5545 defaults to Monday.
-      weekStart = rule.firstDayOfTheWeek == 0 ? 2 : rule.firstDayOfTheWeek
       anchorWeekday = calendar.component(.weekday, from: anchor)
       anchorDayOfMonth = calendar.component(.day, from: anchor)
       anchorMonth = calendar.component(.month, from: anchor)
@@ -90,12 +93,13 @@ enum RecurrenceAnchor {
       let period = periodKey(day)
       if period != cachedPeriod {
         cachedPeriod = period
-        cachedDays = applySetPos(periodDays(day))
+        cachedDays = periodDays(day)
       }
       return cachedDays.contains(dayKey(day))
     }
 
-    /// BYSETPOS keeps only the listed positions (1-based; negative from the end).
+    /// BYSETPOS keeps only the listed positions of a month's or year's set
+    /// (1-based; negative from the end).
     private func applySetPos(_ days: Set<Int>) -> Set<Int> {
       if bySetPos.isEmpty { return days }
       let ordered = days.sorted()
@@ -111,10 +115,11 @@ enum RecurrenceAnchor {
       return year * 1000 + dayOfYear
     }
 
+    // Daily and weekly rules are decided a day at a time: whether a day is in
+    // a weekly set doesn't depend on where the week starts.
     private func periodKey(_ day: Date) -> Int {
       switch frequency {
-      case .daily: return dayKey(day)
-      case .weekly: return dayKey(weekStart(of: day))
+      case .daily, .weekly: return dayKey(day)
       case .monthly:
         return calendar.component(.year, from: day) * 100 + calendar.component(.month, from: day)
       case .yearly: return calendar.component(.year, from: day)
@@ -122,18 +127,12 @@ enum RecurrenceAnchor {
       }
     }
 
-    /// The first day of the week (per WKST) containing `day`, at its time.
-    private func weekStart(of day: Date) -> Date {
-      let back = (calendar.component(.weekday, from: day) - weekStart + 7) % 7
-      return calendar.date(byAdding: .day, value: -back, to: day) ?? day
-    }
-
     private func periodDays(_ day: Date) -> Set<Int> {
       switch frequency {
       case .daily: return passesDailyFilters(day) ? [dayKey(day)] : []
-      case .weekly: return weekDays(day)
-      case .monthly: return inByMonth(day) ? monthDays(day) : []
-      case .yearly: return yearDays(day)
+      case .weekly: return isWeeklyDay(day) ? [dayKey(day)] : []
+      case .monthly: return inByMonth(day) ? applySetPos(monthDays(day)) : []
+      case .yearly: return applySetPos(yearDays(day))
       @unknown default: return []
       }
     }
@@ -148,18 +147,11 @@ enum RecurrenceAnchor {
       return byDay.isEmpty || byDay.contains { $0.weekday == weekday }
     }
 
-    private func weekDays(_ day: Date) -> Set<Int> {
-      let weekdays = byDay.isEmpty ? Set([anchorWeekday]) : Set(byDay.map { $0.weekday })
-      var days = Set<Int>()
-      var current = weekStart(of: day)
-      for _ in 0..<7 {
-        if weekdays.contains(calendar.component(.weekday, from: current)) && inByMonth(current) {
-          days.insert(dayKey(current))
-        }
-        guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
-        current = next
-      }
-      return days
+    /// A WEEKLY rule's days: the listed weekdays, or the anchor's own.
+    private func isWeeklyDay(_ day: Date) -> Bool {
+      guard inByMonth(day) else { return false }
+      let weekday = calendar.component(.weekday, from: day)
+      return byDay.isEmpty ? weekday == anchorWeekday : byDay.contains { $0.weekday == weekday }
     }
 
     /// The days of `day`'s year the rule generates.

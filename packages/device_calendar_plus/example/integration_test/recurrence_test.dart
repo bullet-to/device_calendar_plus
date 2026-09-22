@@ -627,14 +627,164 @@ void main() {
             'weekday',
       );
 
-      // Nothing is left at the split instant under either id.
+      // Nothing of this series or its split is left at the split instant.
       final atSplit = await plugin.listEvents(
         split.startDate.subtract(const Duration(minutes: 1)),
         split.startDate.add(const Duration(minutes: 1)),
         calendarIds: [calendarId!],
       );
       expect(
-        atSplit.where((e) => e.startDate.millisecondsSinceEpoch == splitMillis),
+        atSplit.where((e) =>
+            (e.eventId == series.eventId || e.eventId == newSeriesId) &&
+            e.startDate.millisecondsSinceEpoch == splitMillis),
+        isEmpty,
+        reason: 'the split occurrence must not survive on the old weekday '
+            'as an orphan (#140)',
+      );
+    });
+
+    test(
+        'allEvents with a rule on a new weekday moves the series anchor to '
+        'that weekday instead of leaving it behind (#140)', () async {
+      // The allEvents half of #140: a rule-only patch must re-anchor the
+      // series start on the first day the new rule generates. Without that
+      // the start is never rewritten and the provider keeps the old weekday
+      // as an extra first occurrence.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+
+      // The series is stored in UTC, so derive and read weekdays in UTC (#103).
+      final anchor = DateTime.now().toUtc().add(const Duration(hours: 1));
+      final oldDay = DayOfWeek.values[anchor.weekday - 1];
+      final newDay =
+          DayOfWeek.values[anchor.add(const Duration(days: 1)).weekday - 1];
+      final series = await createWeeklySeries(plugin, calendarId!,
+          count: 6, daysOfWeek: [oldDay]);
+
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 50);
+      expect(before, isNotEmpty,
+          reason: 'the weekly series should have expanded into occurrences');
+      final startMillis = before.first.startDate.millisecondsSinceEpoch;
+
+      // Weekly on the new weekday until 20 days past the start: exactly three
+      // occurrences (start + 1, + 8, + 15 days).
+      final until = before.first.startDate.add(const Duration(days: 20));
+      final result = await plugin.updateRecurring(
+        series.eventId,
+        EventSpan.allEvents,
+        recurrenceRule: Patch.set(WeeklyRecurrence(
+          daysOfWeek: [newDay],
+          end: UntilEnd(until),
+        )),
+      );
+      expect(result, series.eventId,
+          reason: 'allEvents returns the same event ID');
+
+      final updated = await plugin.getEvent(series.eventId);
+      expect(updated, isNotNull);
+      expect(
+        updated!.startDate.millisecondsSinceEpoch,
+        startMillis + const Duration(days: 1).inMilliseconds,
+        reason: 'the series anchor must move to the first day the new rule '
+            'generates',
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 50);
+      expect(after.length, 3,
+          reason: 'the series must expand to every occurrence the rule '
+              'generates before its end');
+      expect(
+        after.every((e) => e.startDate.toUtc().weekday == newDay.index + 1),
+        isTrue,
+        reason: 'every occurrence must fall on the new weekday',
+      );
+      expect(
+        after.where((e) => e.startDate.millisecondsSinceEpoch == startMillis),
+        isEmpty,
+        reason: 'the old first occurrence must not survive on the old '
+            'weekday as an orphan (#140)',
+      );
+    });
+
+    test(
+        'thisAndFollowing with a rule on a new weekday re-anchors an all-day '
+        'series on that weekday', () async {
+      // All-day days are framed differently per platform (Android walks
+      // them in UTC, iOS in the device zone), so the re-anchor must land on
+      // the next calendar day, not a day early or late around midnight.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+
+      final today = DateTime.now();
+      final start =
+          DateTime(today.year, today.month, today.day + 1); // local midnight
+      final oldDay = DayOfWeek.values[start.weekday - 1];
+      final newDay =
+          DayOfWeek.values[start.add(const Duration(days: 1)).weekday - 1];
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId!,
+        title: 'All-Day Weekly Series',
+        startDate: start,
+        endDate: start.add(const Duration(days: 1)),
+        isAllDay: true,
+        recurrenceRule: WeeklyRecurrence(
+          daysOfWeek: [oldDay],
+          end: const CountEnd(6),
+        ),
+      );
+
+      final before = await occurrencesOf(plugin, calendarId!, eventId, start,
+          windowDays: 50);
+      expect(before.length, greaterThanOrEqualTo(4),
+          reason: 'the weekly series should have expanded into occurrences');
+      final split = before[2];
+      expect(split.isAllDay, isTrue);
+      final splitDate = DateTime(
+          split.startDate.year, split.startDate.month, split.startDate.day);
+
+      // A date-only UNTIL (UTC midnight serialises without a time), 20 days
+      // past the split: exactly three occurrences (split + 1, + 8, + 15).
+      final until =
+          DateTime.utc(splitDate.year, splitDate.month, splitDate.day + 20);
+      final newSeriesId = await plugin.updateRecurring(
+        split.instanceId,
+        EventSpan.thisAndFollowing,
+        recurrenceRule: Patch.set(WeeklyRecurrence(
+          daysOfWeek: [newDay],
+          end: UntilEnd(until),
+        )),
+      );
+
+      final newOccurrences = await occurrencesOf(
+          plugin, calendarId!, newSeriesId, start,
+          windowDays: 50);
+      expect(newOccurrences.length, 3,
+          reason: 'the new series must expand to every occurrence the rule '
+              'generates before its end');
+      expect(newOccurrences.every((e) => e.isAllDay), isTrue,
+          reason: 'the new series must stay all-day');
+      expect(
+        newOccurrences.first.startDate,
+        DateTime(splitDate.year, splitDate.month, splitDate.day + 1),
+        reason: 'the split occurrence must move to the calendar day after it',
+      );
+      expect(
+        newOccurrences.every((e) => e.startDate.weekday == newDay.index + 1),
+        isTrue,
+        reason: 'every occurrence of the new series must fall on the new '
+            'weekday',
+      );
+
+      // Nothing of this series or its split is left on the split day.
+      final remaining = [
+        ...await occurrencesOf(plugin, calendarId!, eventId, start,
+            windowDays: 50),
+        ...newOccurrences,
+      ];
+      expect(
+        remaining.where((e) => e.startDate == split.startDate),
         isEmpty,
         reason: 'the split occurrence must not survive on the old weekday '
             'as an orphan (#140)',
@@ -685,8 +835,8 @@ void main() {
 
       // No future occurrences: the detached event expands to exactly one,
       // and nothing past the split survives under the new id.
-      final detachedOccurrences = await occurrencesOf(
-          plugin, calendarId!, standaloneId, series.start);
+      final detachedOccurrences =
+          await occurrencesOf(plugin, calendarId!, standaloneId, series.start);
       expect(detachedOccurrences.length, 1,
           reason: 'a non-recurring event expands to a single occurrence');
       expect(detachedOccurrences.single.startDate.millisecondsSinceEpoch,
@@ -842,8 +992,8 @@ void main() {
         () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 6);
-      final before =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(before.length, greaterThanOrEqualTo(3));
 
       // Move the whole series two hours later.
@@ -854,8 +1004,8 @@ void main() {
         start: newStart,
       );
 
-      final after =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expectShifted(before, after, const Duration(hours: 2));
     });
 
@@ -888,12 +1038,13 @@ void main() {
       );
     });
 
-    test('allEvents start shift changes day and time together (crosses midnight)',
+    test(
+        'allEvents start shift changes day and time together (crosses midnight)',
         () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 6);
-      final before =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(before.length, greaterThanOrEqualTo(3));
 
       // +1 day +3 hours: a combined move that necessarily crosses midnight.
@@ -915,8 +1066,8 @@ void main() {
         () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
-      final before =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(before.length, greaterThanOrEqualTo(6));
       final splitIndex = 4;
       final splitMillis = before[splitIndex].startDate.millisecondsSinceEpoch;
@@ -928,8 +1079,8 @@ void main() {
       );
 
       // Occurrences before the split stay put under the original series.
-      final remainingMaster =
-          await occurrencesOf(plugin, calendarId!, series.eventId, series.start);
+      final remainingMaster = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(remainingMaster, isNotEmpty);
       expect(
         remainingMaster
@@ -1054,6 +1205,55 @@ void main() {
     });
 
     test(
+        'day shift WITH a rule that does not fit the shifted day walks on to '
+        'the first day the rule generates', () async {
+      // The documented composition: `start` picks the anchor first, then the
+      // new rule walks forward from it when that day isn't one it generates.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final startDay = DateTime.now().toUtc().add(const Duration(hours: 1));
+      final oldDay = weekdays[startDay.weekday - 1];
+      final series = await createWeeklySeries(plugin, calendarId!,
+          count: 4, daysOfWeek: [oldDay]);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 45);
+      expect(before, isNotEmpty);
+
+      // Shift one day on; pin the rule to the day after that (in UTC, the
+      // series' frame — see the test above).
+      final newStart = before.first.startDate.add(const Duration(days: 1));
+      final ruleDay =
+          weekdays[newStart.toUtc().add(const Duration(days: 1)).weekday - 1];
+      await plugin.updateRecurring(
+        before.first.instanceId,
+        EventSpan.allEvents,
+        start: newStart,
+        recurrenceRule: Patch.set(WeeklyRecurrence(
+          daysOfWeek: [ruleDay],
+          end: const CountEnd(3),
+        )),
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 45);
+      expect(after.length, 3,
+          reason: 'the series must expand to the count the new rule gives');
+      expect(
+        after.first.startDate.millisecondsSinceEpoch,
+        newStart.millisecondsSinceEpoch +
+            const Duration(days: 1).inMilliseconds,
+        reason: 'the anchor must move from the passed start on to the first '
+            'day the rule generates',
+      );
+      expect(
+        after.every((e) => e.startDate.toUtc().weekday == ruleDay.index + 1),
+        isTrue,
+        reason: 'every occurrence should fall on the rule\'s weekday',
+      );
+    });
+
+    test(
         'allEvents shift keeps wall-clock across DST in a non-UTC event '
         'timezone', () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
@@ -1083,8 +1283,8 @@ void main() {
         timeZone: pacific,
       );
 
-      final before =
-          await occurrencesOf(plugin, calendarId!, eventId, anchor, windowDays: 10);
+      final before = await occurrencesOf(plugin, calendarId!, eventId, anchor,
+          windowDays: 10);
       expect(before.length, greaterThanOrEqualTo(4),
           reason: 'the daily series must expand across the transition');
       for (final occ in before) {
@@ -1102,8 +1302,8 @@ void main() {
         start: newAnchor,
       );
 
-      final after =
-          await occurrencesOf(plugin, calendarId!, eventId, anchor, windowDays: 10);
+      final after = await occurrencesOf(plugin, calendarId!, eventId, anchor,
+          windowDays: 10);
       expect(after, isNotEmpty);
       expect(after.first.startDate.toUtc().millisecondsSinceEpoch,
           newAnchor.millisecondsSinceEpoch,

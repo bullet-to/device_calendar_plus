@@ -1105,6 +1105,48 @@ class EventsService {
     )
   }
 
+  /// The start a series update leaves `event` with, or nil when nothing moves
+  /// it. `newStartMillis`, when given, shifts the anchor first
+  /// (`resolveShiftedStart`). A new `rule` then walks the anchor onto the
+  /// first day it generates: the rule may not generate the anchor's day (a
+  /// Saturday series switched to Sundays), and EventKit would keep that day
+  /// as an extra first occurrence (#140). Android's counterpart is
+  /// `resolveSeriesTimes` followed by `anchorOnRule`.
+  private func resolveSeriesStart(
+    for event: EKEvent,
+    newStartMillis: Int64?,
+    timestamp: Int64?,
+    isAllDay: Bool,
+    rule: EKRecurrenceRule?,
+    changingRule: Bool
+  ) -> Result<Date?, CalendarError> {
+    var start: Date?
+    if let newStartMillis = newStartMillis {
+      switch resolveShiftedStart(
+        for: event,
+        newStartMillis: newStartMillis,
+        timestamp: timestamp,
+        isAllDay: isAllDay,
+        changingRule: changingRule
+      ) {
+      case .success(let shifted):
+        start = shifted
+      case .failure(let error):
+        return .failure(error)
+      }
+    }
+    if let rule = rule {
+      let base: Date = start ?? event.startDate
+      if let anchored = RecurrenceAnchor.firstMatch(
+           of: rule, onOrAfter: base, timeZone: event.timeZone ?? .current
+         ),
+         anchored != base {
+        start = anchored
+      }
+    }
+    return .success(start)
+  }
+
   /// Resolves the anchor-shifted start for an `updateRecurring` call that
   /// passed a new `start` (`newStartMillis`): moves `event`'s start by the
   /// wall-clock delta from the reference occurrence (the one at `timestamp`,
@@ -1279,31 +1321,10 @@ class EventsService {
       return
     }
 
-    // Compute the new start and parse the recurrence rule before touching
+    // Parse the recurrence rule and compute the new start before touching
     // the event. EventKit keeps the fetched EKEvent live in its cache, so
     // every failure exit must happen while it is still unmodified — orphaned
     // mutations could otherwise ride along with a later save.
-    // Anchor shift: move the reference occurrence to `newStartMillis` and
-    // translate this event's start by the same wall-clock delta (day + time).
-    var newStart: Date?
-    if let newStartMillis = newStartMillis {
-      let changingRule = recurrenceRule != nil
-        || patch.clearedFields.contains("recurrenceRule")
-      switch resolveShiftedStart(
-        for: foundEvent,
-        newStartMillis: newStartMillis,
-        timestamp: timestamp,
-        isAllDay: effectiveIsAllDay,
-        changingRule: changingRule
-      ) {
-      case .success(let shifted):
-        newStart = shifted
-      case .failure(let error):
-        completion(.failure(error))
-        return
-      }
-    }
-
     var parsedRecurrenceRule: EKRecurrenceRule?
     if !patch.clearedFields.contains("recurrenceRule"), let rruleString = recurrenceRule {
       guard let rule = parseRecurrenceRule(rruleString) else {
@@ -1316,18 +1337,20 @@ class EventsService {
       parsedRecurrenceRule = rule
     }
 
-    // A new rule may not generate the anchor's day (a Saturday series switched
-    // to Sundays): the series then anchors on the first day it does, or
-    // EventKit keeps the old day as an extra first occurrence (#140). Android's
-    // counterpart is `anchorOnRule`.
-    if let rule = parsedRecurrenceRule {
-      let base: Date = newStart ?? foundEvent.startDate
-      if let anchored = RecurrenceAnchor.firstMatch(
-           of: rule, onOrAfter: base, timeZone: foundEvent.timeZone ?? .current
-         ),
-         anchored != base {
-        newStart = anchored
-      }
+    let newStart: Date?
+    switch resolveSeriesStart(
+      for: foundEvent,
+      newStartMillis: newStartMillis,
+      timestamp: timestamp,
+      isAllDay: effectiveIsAllDay,
+      rule: parsedRecurrenceRule,
+      changingRule: recurrenceRule != nil || patch.clearedFields.contains("recurrenceRule")
+    ) {
+    case .success(let start):
+      newStart = start
+    case .failure(let error):
+      completion(.failure(error))
+      return
     }
 
     // Apply field changes.

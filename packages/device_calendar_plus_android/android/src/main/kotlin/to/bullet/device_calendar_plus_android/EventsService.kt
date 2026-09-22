@@ -2013,45 +2013,22 @@ class EventsService(
     /**
      * Whether [rrule] carries the part named [key] (e.g. "BYDAY"). Matches on
      * the part key rather than a raw substring, so "BYMONTH" doesn't spuriously
-     * match "BYMONTHDAY". Mirrors the key parsing in [rruleCount]/[setRruleUntil].
+     * match "BYMONTHDAY".
      */
-    private fun rruleHasPart(rrule: String, key: String): Boolean {
-        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
-        return body.split(";").any {
-            it.substringBefore('=').uppercase() == key
-        }
-    }
+    private fun rruleHasPart(rrule: String, key: String): Boolean =
+        key in RruleString.params(rrule)
 
     /** The COUNT value of an RRULE, or null if it has none. */
-    private fun rruleCount(rrule: String): Int? {
-        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
-        for (part in body.split(";")) {
-            if (part.substringBefore('=').uppercase() == "COUNT") {
-                return part.substringAfter('=').trim().toIntOrNull()
-            }
-        }
-        return null
-    }
+    private fun rruleCount(rrule: String): Int? =
+        RruleString.params(rrule)["COUNT"]?.toIntOrNull()
 
     /** Replaces any COUNT/UNTIL in [rrule] with COUNT=[count]. */
-    private fun setRruleCount(rrule: String, count: Int): String {
-        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
-        val parts = body.split(";").filter {
-            val key = it.substringBefore('=').uppercase()
-            it.isNotEmpty() && key != "COUNT" && key != "UNTIL"
-        }
-        return (parts + "COUNT=$count").joinToString(";")
-    }
+    private fun setRruleCount(rrule: String, count: Int): String =
+        RruleString.withEnd(rrule, "COUNT=$count")
 
     /** Replaces any COUNT/UNTIL in [rrule] with UNTIL at [untilMillis] (inclusive). */
-    private fun setRruleUntil(rrule: String, untilMillis: Long, isAllDay: Boolean): String {
-        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
-        val parts = body.split(";").filter {
-            val key = it.substringBefore('=').uppercase()
-            it.isNotEmpty() && key != "COUNT" && key != "UNTIL"
-        }
-        return (parts + "UNTIL=${formatRruleUtc(untilMillis, isAllDay)}").joinToString(";")
-    }
+    private fun setRruleUntil(rrule: String, untilMillis: Long, isAllDay: Boolean): String =
+        RruleString.withEnd(rrule, "UNTIL=${formatRruleUtc(untilMillis, isAllDay)}")
 
     /** Formats [millis] as an RRULE UTC value (date-only when [dateOnly]). */
     private fun formatRruleUtc(millis: Long, dateOnly: Boolean): String {
