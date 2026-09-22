@@ -1,68 +1,43 @@
-import EventKit
+import Foundation
 
-enum CalendarPermissionType {
-  case write  // Need to write events (iOS 17+ writeOnly or fullAccess is fine)
-  case full   // Need to read calendars/events (requires fullAccess)
-}
+/// Reads an Info.plist usage description by key. Injected so the
+/// configuration-error paths are testable without a bundle: like the OS
+/// authorization status, "what did this app declare" is an OS-shaped fact and
+/// belongs behind a seam.
+typealias UsageDescriptionLookup = (String) -> String?
 
+/// The permission policy: which tier an ask resolves to, which grants satisfy
+/// which gates, and what Dart is told. It holds no version knowledge of its own
+/// — the `CalendarAuthorization` seam answers that — and no knowledge of
+/// EventKit's stale-status window, which `RecordingAuthorization` hides behind
+/// the same seam.
 class PermissionService {
-  private let eventStore: EKEventStore
-  
-  // Permission status values matching CalendarPermissionStatus enum
-  static let statusGranted = "granted"
-  static let statusWriteOnly = "writeOnly"
-  static let statusDenied = "denied"
-  static let statusRestricted = "restricted"
-  static let statusNotDetermined = "notDetermined"
-  
-  init(eventStore: EKEventStore) {
-    self.eventStore = eventStore
+  /// The production lookup: the host app's own Info.plist, which is what the OS
+  /// itself reads when it decides whether a prompt is allowed.
+  static let mainBundleUsageDescriptions: UsageDescriptionLookup = {
+    Bundle.main.object(forInfoDictionaryKey: $0) as? String
   }
-  
+
+  private let authorization: CalendarAuthorization
+  private let usageDescriptions: UsageDescriptionLookup
+
+  init(
+    authorization: CalendarAuthorization,
+    usageDescriptions: @escaping UsageDescriptionLookup =
+      PermissionService.mainBundleUsageDescriptions
+  ) {
+    self.authorization = authorization
+    self.usageDescriptions = usageDescriptions
+  }
+
   /// Checks if calendar permissions are granted for the specified access level.
+  ///
   /// - Parameter type: The type of access required (.write or .full)
   /// - Returns: true if the required permission level is granted
   func hasPermission(for type: CalendarPermissionType = .full) -> Bool {
-    if #available(iOS 17.0, *) {
-      let status = EKEventStore.authorizationStatus(for: .event)
-      
-      switch type {
-      case .full:
-        // For full access (reading), need fullAccess only
-        switch status {
-        case .fullAccess:
-          return true
-        case .writeOnly, .denied, .restricted, .notDetermined:
-          return false
-        @unknown default:
-          return false
-        }
-        
-      case .write:
-        // For write-only operations, writeOnly or fullAccess is fine
-        switch status {
-        case .fullAccess, .writeOnly:
-          return true
-        case .denied, .restricted, .notDetermined:
-          return false
-        @unknown default:
-          return false
-        }
-      }
-    } else {
-      // iOS 16 and below only has .authorized (which is full access)
-      let status = EKEventStore.authorizationStatus(for: .event)
-      switch status {
-      case .authorized:
-        return true
-      case .denied, .restricted, .notDetermined:
-        return false
-      @unknown default:
-        return false
-      }
-    }
+    authorization.status.satisfies(type)
   }
-  
+
   // Info.plist usage-description keys. The declaration checks and the error
   // messages must name the same keys, so both go through these constants and
   // the shared descriptionExample map.
@@ -77,8 +52,7 @@ class PermissionService {
   ]
 
   private func isDescriptionDeclared(_ key: String) -> Bool {
-    let value = Bundle.main.object(forInfoDictionaryKey: key) as? String
-    return !(value?.isEmpty ?? true)
+    !(usageDescriptions(key)?.isEmpty ?? true)
   }
 
   private func missingDescriptionError(_ title: String, keys: [String]) -> PermissionError {
@@ -126,58 +100,28 @@ class PermissionService {
   /// legacy `NSCalendarsUsageDescription` no longer satisfies either, and
   /// without the matching key the OS raises an exception, so we surface a
   /// clear error instead of crashing. iOS 16 and below uses only the legacy key.
-  private func checkUsageDescriptionDeclared(writeOnly: Bool) -> PermissionError? {
-    if #available(iOS 17.0, *) {
-      if writeOnly {
-        return isDescriptionDeclared(PermissionService.writeOnlyUsageKey)
-          ? nil : missingWriteOnlyDescriptionError()
-      }
+  ///
+  /// Takes the resolved tier rather than the caller's raw `writeOnly` flag, so
+  /// the "which tier is this ask" question is answered exactly once, in
+  /// `requestPermissions`.
+  private func checkUsageDescriptionDeclared(for tier: CalendarPermissionType) -> PermissionError? {
+    guard authorization.supportsWriteOnly else {
+      return isDescriptionDeclared(PermissionService.legacyUsageKey)
+        ? nil : missingDescriptionError(
+          "Calendar usage description", keys: [PermissionService.legacyUsageKey])
+    }
+
+    switch tier {
+    case .write:
+      return isDescriptionDeclared(PermissionService.writeOnlyUsageKey)
+        ? nil : missingWriteOnlyDescriptionError()
+    case .full:
       return isDescriptionDeclared(PermissionService.fullAccessUsageKey)
         ? nil : missingFullAccessDescriptionError()
     }
+  }
 
-    return isDescriptionDeclared(PermissionService.legacyUsageKey)
-      ? nil : missingDescriptionError(
-        "Calendar usage description", keys: [PermissionService.legacyUsageKey])
-  }
-  
-  private func getCurrentPermissionStatus() -> String {
-    if #available(iOS 17.0, *) {
-      let currentStatus = EKEventStore.authorizationStatus(for: .event)
-      
-      switch currentStatus {
-      case .fullAccess:
-        return PermissionService.statusGranted
-      case .writeOnly:
-        return PermissionService.statusWriteOnly
-      case .denied:
-        return PermissionService.statusDenied
-      case .restricted:
-        return PermissionService.statusRestricted
-      case .notDetermined:
-        return PermissionService.statusNotDetermined
-      @unknown default:
-        return PermissionService.statusDenied
-      }
-    } else {
-      let currentStatus = EKEventStore.authorizationStatus(for: .event)
-      
-      switch currentStatus {
-      case .authorized:
-        return PermissionService.statusGranted
-      case .denied:
-        return PermissionService.statusDenied
-      case .restricted:
-        return PermissionService.statusRestricted
-      case .notDetermined:
-        return PermissionService.statusNotDetermined
-      @unknown default:
-        return PermissionService.statusDenied
-      }
-    }
-  }
-  
-  func hasPermissions() -> Result<String, PermissionError> {
+  func hasPermissions() -> Result<CalendarAccess, PermissionError> {
     // A status check triggers no prompt, so any declared calendar usage
     // description — legacy, full-access, or write-only — satisfies the
     // configuration guard. An add-only app that declares only the write-only
@@ -188,33 +132,30 @@ class PermissionService {
       return .failure(missingUsageDescriptionError())
     }
 
-    return .success(getCurrentPermissionStatus())
+    return .success(authorization.status)
   }
-  
+
   /// Requests calendar access from the user.
   /// - Parameter writeOnly: when `true`, asks for add-only (write-only) access
   ///   where the OS supports it (iOS 17+). On iOS 16 and below write-only does
   ///   not exist, so the request falls back to full access regardless.
   func requestPermissions(
     writeOnly: Bool,
-    completion: @escaping (Result<String, PermissionError>) -> Void
+    completion: @escaping (Result<CalendarAccess, PermissionError>) -> Void
   ) {
-    let currentStatus = getCurrentPermissionStatus()
+    // The tier this ask resolves to. Write-only exists only where the OS
+    // supports it, so elsewhere every ask resolves to full access — the one
+    // place the version difference is decided.
+    let tier: CalendarPermissionType =
+      writeOnly && authorization.supportsWriteOnly ? .write : .full
 
-    // Already hold a tier that satisfies the request? No prompt needed. Full
-    // access satisfies any request; write-only satisfies a write-only ask — but
-    // it does NOT satisfy a full ask, so a full request while only write-only is
-    // held falls through to a request attempt below.
-    let alreadySatisfied = currentStatus == PermissionService.statusGranted
-      || (writeOnly && currentStatus == PermissionService.statusWriteOnly)
+    let access = authorization.status
 
-    // denied / restricted can't be changed from inside the app — the user must
-    // use Settings — so report them as-is instead of firing a no-op request.
-    let terminal = currentStatus == PermissionService.statusDenied
-      || currentStatus == PermissionService.statusRestricted
-
-    if alreadySatisfied || terminal {
-      completion(.success(currentStatus))
+    // Nothing to prompt for if we already hold a tier that satisfies the ask
+    // (a full request while only write-only is held does *not*, so it falls
+    // through), or if the answer can only be changed in Settings.
+    if access.satisfies(tier) || access.isTerminal {
+      completion(.success(access))
       return
     }
 
@@ -222,7 +163,7 @@ class PermissionService {
     // request, so the check sits after the early returns — an app that ships
     // without the (iOS 17+) tier key must still get its already-granted or
     // terminal status back rather than a configuration error.
-    if let error = checkUsageDescriptionDeclared(writeOnly: writeOnly) {
+    if let error = checkUsageDescriptionDeclared(for: tier) {
       completion(.failure(error))
       return
     }
@@ -230,28 +171,22 @@ class PermissionService {
     // Otherwise attempt the request. This prompts on a fresh notDetermined, and
     // also on a full request while only write-only is held — iOS re-presents the
     // dialog asking for full access and upgrades the app in-app if the user
-    // agrees. On a non-grant we re-read the real status so the caller still sees
-    // the tier they actually hold (e.g. writeOnly), not a misleading denied.
-    // Report the tier we asked for on a grant; on a non-grant re-read the real
-    // status. One handler serves all three request variants.
-    if #available(iOS 17.0, *) {
-      let grantedStatus = writeOnly
-        ? PermissionService.statusWriteOnly
-        : PermissionService.statusGranted
-      let handler: (Bool, Error?) -> Void = { granted, _ in
-        completion(.success(granted ? grantedStatus : self.getCurrentPermissionStatus()))
+    // agrees.
+    authorization.request(tier) { result in
+      // A request that errored is deliberately *not* surfaced to Dart as a
+      // failure: the app is still askable, and reporting the resulting
+      // notDetermined is the honest answer. But it is the one outcome nothing
+      // downstream can see, so log it rather than let it vanish.
+      if case .failure(let error) = result {
+        NSLog("device_calendar_plus: calendar access request failed: \(error)")
       }
-      if writeOnly {
-        eventStore.requestWriteOnlyAccessToEvents(completion: handler)
-      } else {
-        eventStore.requestFullAccessToEvents(completion: handler)
-      }
-    } else {
-      // iOS 16 and below: only full access exists, so any grant is full access.
-      let handler: (Bool, Error?) -> Void = { granted, _ in
-        completion(.success(granted ? PermissionService.statusGranted : self.getCurrentPermissionStatus()))
-      }
-      eventStore.requestAccess(to: .event, completion: handler)
+
+      // Re-read rather than translate the answer: a grant has already been
+      // folded into the seam's status, and everything else — a refusal, a
+      // not-that-tier answer, a request that errored — is left alone, so this
+      // reports the live status or `.notDetermined`. That is the honest answer
+      // in all three cases, and it keeps the app askable.
+      completion(.success(self.authorization.status))
     }
   }
 }
@@ -260,4 +195,3 @@ struct PermissionError: Error {
   let code: String
   let message: String
 }
-

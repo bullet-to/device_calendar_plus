@@ -51,8 +51,16 @@ If you're adding a new field to an existing model, you need to handle both the *
 
 - **Integration tests** are the backbone. They exercise the full Dart → platform channel → native API roundtrip on real devices. These live in `example/integration_test/`.
 - **Unit tests** for Dart-side logic with enough branches that you can't read it and immediately know it's correct (parsing, serialization, validation). These live in each package's `test/` directory.
+- **Native unit tests** for native decision logic an integration test can't set up — permission-status edge cases, for instance. Swift ones live in `packages/device_calendar_plus/example/ios/RunnerTests/`, Kotlin ones in `packages/device_calendar_plus_android/android/src/test/`.
 
 Don't write unit tests that just assert a mock returns what you told it to return, or that verify method channel passthrough serialization in isolation — the integration tests cover those paths.
+
+### Permission changes need a manual pass
+
+The thin shims that call the OS permission APIs directly (`EventKitAuthorization` on iOS) sit below every seam the tests inject, so no automated layer ever reaches them — swap two EventKit request calls over and the whole suite still passes. The same is true of the composition that wires them up in `DeviceCalendarPlusIosPlugin` (`RecordingAuthorization(wrapping: EventKitAuthorization(...), record: .shared)`): drop the wrapper, or hand it a fresh `AccessRecord` instead of the shared one, and every test still passes while #134 comes straight back. Anything that touches either needs a human pass on a **fresh install** (delete the app first; a granted simulator returns early and never prompts), on iOS 17 or later, covering both asks:
+
+- `requestPermissions()` — the OS shows the full-access prompt. On iOS 18 it offers three choices; check **Allow Full Access** and **Add Events Only** separately, and confirm the status that comes back matches what you tapped (`granted` / `writeOnly`) and that creating an event works without restarting the app.
+- `requestPermissions(writeOnly: true)` — the OS shows the *add-only* prompt, and the status comes back `writeOnly`.
 
 ### Running tests
 
@@ -65,6 +73,36 @@ Integration tests:
 ```bash
 cd example
 ./run_integration_tests.sh <device-id>
+```
+
+Swift unit tests:
+```bash
+cd packages/device_calendar_plus/example/ios
+./run_swift_tests.sh
+```
+
+The script generates the Xcode config, runs `RunnerTests`, and puts
+`Runner.xcodeproj` and `Runner.xcworkspace` back afterwards — the config step
+runs `pod install`, which rewrites both, and none of that churn belongs in a
+PR. It restores rather than discards, so your own project edits (adding a test
+file to the `RunnerTests` target, say) survive the run committed or not, and
+the cleanup happens from a trap so a failing test or a Ctrl-C is covered too.
+
+It defaults to the first available iPhone simulator. Pass an `xcodebuild`
+destination to pick another — list what you have with
+`xcrun simctl list devices available`:
+```bash
+./run_swift_tests.sh 'platform=iOS Simulator,name=iPhone 17'
+```
+
+Kotlin unit tests (the Gradle wrapper is generated, not committed — run any
+Flutter Android build once first):
+```bash
+cd packages/device_calendar_plus/example
+flutter build apk --debug
+
+cd android
+./gradlew :device_calendar_plus_android:test
 ```
 
 ## Pull Requests

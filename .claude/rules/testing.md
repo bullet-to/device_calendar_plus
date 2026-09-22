@@ -38,6 +38,21 @@ Don't unit-test:
 - Mock plumbing ("mock returns X, assert X comes back")
 - Methods that just delegate to the platform interface
 
+### Native unit tests (native decision logic)
+
+For decision logic on the native side that an integration test can't set up —
+permission-status edge cases being the usual example (a stale OS status, a
+refused upgrade, a request that errored, an OS version you don't have a device
+for). Same bar as the Dart unit tests: only where the branching is dense enough
+that reading it isn't proof.
+
+- Swift: `packages/device_calendar_plus/example/ios/RunnerTests/`
+- Kotlin: `packages/device_calendar_plus_android/android/src/test/`
+
+Inject the OS-shaped facts behind a seam (the authorization status, the
+Info.plist lookup) so the test drives them instead of inheriting whatever the
+simulator and host app happen to provide.
+
 ### Property tests (invariants)
 
 Verify rules that must hold for all inputs:
