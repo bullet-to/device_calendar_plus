@@ -112,6 +112,28 @@ internal class RecurrenceAnchorTest {
         )
     }
 
+    // BYDAY alone on a yearly rule counts within the year: 2026's second
+    // Monday (12 January) is past, so the anchor is 2027's (11 January).
+    @Test
+    fun yearlyByDayOnly_ordinalCountsWithinTheYear() {
+        assertEquals(
+            at(2027, 1, 11),
+            RecurrenceAnchor.firstMatch("FREQ=YEARLY;BYDAY=2MO", at(2026, 9, 12), stockholm)
+        )
+    }
+
+    // "Last weekday of January": BYSETPOS picks from the year's set, which
+    // BYMONTH narrows to January's weekdays — Friday 29 January 2027.
+    @Test
+    fun yearlyBySetPos_selectsFromTheYearsSet() {
+        assertEquals(
+            at(2027, 1, 29),
+            RecurrenceAnchor.firstMatch(
+                "FREQ=YEARLY;BYMONTH=1;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1", at(2026, 9, 12), stockholm
+            )
+        )
+    }
+
     // "Last weekday of the month": BYSETPOS picks from the BYDAY set, so the
     // anchor is Wednesday 30 September, not the next weekday after the 12th.
     @Test
@@ -167,13 +189,17 @@ internal class RecurrenceAnchorTest {
         )
     }
 
+    // A rule outside the modelled subset is assumed to fit its anchor — not
+    // refused as one that generates nothing.
     @Test
-    fun unsupportedRule_returnsNull() {
-        assertEquals(null, RecurrenceAnchor.firstMatch("FREQ=HOURLY", at(2026, 9, 12), stockholm))
-        assertEquals(null, RecurrenceAnchor.firstMatch("garbage", at(2026, 9, 12), stockholm))
+    fun unsupportedRule_leavesTheAnchorAlone() {
+        val anchor = at(2026, 9, 12)
+        assertEquals(anchor, RecurrenceAnchor.firstMatch("FREQ=HOURLY", anchor, stockholm))
+        assertEquals(anchor, RecurrenceAnchor.firstMatch("garbage", anchor, stockholm))
     }
 
-    // 30 February never comes, so the walk gives up rather than looping.
+    // 30 February never comes, so the walk gives up rather than looping —
+    // and the caller refuses the rule instead of anchoring off it.
     @Test
     fun ruleThatNeverGenerates_returnsNull() {
         assertEquals(

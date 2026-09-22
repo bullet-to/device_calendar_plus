@@ -694,6 +694,9 @@ class DeviceCalendar {
   /// `allEvents`), keeping the time-of-day: a Saturday series switched to
   /// Sundays from one occurrence starts on the Sunday after it, with no
   /// Saturday left behind. A rule that already fits its anchor doesn't move it.
+  /// A rule that generates nothing within five years of the anchor (30
+  /// February, say) throws [DeviceCalendarException]
+  /// ([DeviceCalendarError.invalidArguments]) and leaves the series untouched.
   ///
   /// Moving the day of a rule that pins it explicitly (e.g.
   /// `WeeklyRecurrence(daysOfWeek: …)`) without also passing a [recurrenceRule]

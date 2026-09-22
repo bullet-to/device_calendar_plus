@@ -126,7 +126,10 @@ parts you leave implicit (`WeeklyRecurrence()` with no `daysOfWeek`,
 `MonthlyRecurrence()` with no `daysOfMonth`) take their day from the anchor,
 so a rule that already fits its anchor never moves it. Pass `start` in the
 same call to pick the anchor yourself; the rule still walks forward from there
-if that day isn't one it generates.
+if that day isn't one it generates. A rule that generates nothing within five
+years of the anchor (`YearlyRecurrence(months: [2], daysOfMonth: [30])`, say)
+throws `DeviceCalendarException` with `invalidArguments` and leaves the series
+as it was, rather than anchoring it on a day the rule never generates.
 
 ### Moving the day of a pinned rule
 

@@ -40,6 +40,10 @@ final class RecurrenceAnchorTests: XCTestCase {
     return RecurrenceAnchor.firstMatch(of: rule, onOrAfter: from, timeZone: stockholm)
   }
 
+  private let weekdays: [EKRecurrenceDayOfWeek] = [
+    .init(.monday), .init(.tuesday), .init(.wednesday), .init(.thursday), .init(.friday),
+  ]
+
   // The #140 report: a Saturday series switched to Sundays must anchor on
   // the Sunday after the split occurrence, not stay on the Saturday.
   func testWeeklyByDayAnchorOffRuleMovesToNextListedWeekday() {
@@ -121,12 +125,32 @@ final class RecurrenceAnchorTests: XCTestCase {
     )
   }
 
+  // BYDAY alone on a yearly rule counts within the year: 2026's second
+  // Monday (12 January) is past, so the anchor is 2027's (11 January).
+  func testYearlyByDayOnlyOrdinalCountsWithinTheYear() {
+    XCTAssertEqual(
+      firstMatch(
+        rule(.yearly, days: [EKRecurrenceDayOfWeek(.monday, weekNumber: 2)]),
+        from: at(2026, 9, 12)
+      ),
+      at(2027, 1, 11)
+    )
+  }
+
+  // "Last weekday of January": BYSETPOS picks from the year's set, which
+  // BYMONTH narrows to January's weekdays — Friday 29 January 2027.
+  func testYearlyBySetPosSelectsFromTheYearsSet() {
+    XCTAssertEqual(
+      firstMatch(
+        rule(.yearly, days: weekdays, months: [1], setPositions: [-1]), from: at(2026, 9, 12)
+      ),
+      at(2027, 1, 29)
+    )
+  }
+
   // "Last weekday of the month": BYSETPOS picks from the BYDAY set, so the
   // anchor is Wednesday 30 September, not the next weekday after the 12th.
   func testMonthlyBySetPosSelectsFromTheExpandedSet() {
-    let weekdays: [EKRecurrenceDayOfWeek] = [
-      .init(.monday), .init(.tuesday), .init(.wednesday), .init(.thursday), .init(.friday),
-    ]
     XCTAssertEqual(
       firstMatch(rule(.monthly, days: weekdays, setPositions: [-1]), from: at(2026, 9, 12)),
       at(2026, 9, 30)
@@ -172,7 +196,8 @@ final class RecurrenceAnchorTests: XCTestCase {
     XCTAssertEqual(at(2026, 10, 25).timeIntervalSince(at(2026, 10, 24)), 25 * 3600)
   }
 
-  // 30 February never comes, so the walk gives up rather than looping.
+  // 30 February never comes, so the walk gives up rather than looping — and
+  // the caller refuses the rule instead of anchoring off it.
   func testRuleThatNeverGeneratesReturnsNil() {
     XCTAssertNil(
       firstMatch(rule(.yearly, daysOfMonth: [30], months: [2]), from: at(2026, 9, 12))

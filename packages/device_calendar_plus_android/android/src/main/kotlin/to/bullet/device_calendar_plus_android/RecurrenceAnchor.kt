@@ -48,12 +48,13 @@ internal object RecurrenceAnchor {
      * the rule generates, at [fromMillis]'s wall-clock time. Parts the rule
      * leaves implicit (no BYDAY, BYMONTHDAY or BYMONTH) come from [fromMillis]
      * itself, as they would from DTSTART — so a rule that already fits its
-     * anchor returns [fromMillis] unchanged. Null when the rule can't be
-     * parsed or generates nothing within five years, in which case the caller
-     * leaves the anchor alone.
+     * anchor returns [fromMillis] unchanged — as does a rule outside the
+     * modelled subset (no FREQ this object knows), which is assumed to fit
+     * its anchor. Null when the rule generates nothing within five years, so
+     * the caller can refuse rather than anchor the series off-rule.
      */
     fun firstMatch(rrule: String, fromMillis: Long, tz: TimeZone): Long? {
-        val rule = parse(rrule) ?: return null
+        val rule = parse(rrule) ?: return fromMillis
         val matcher = Matcher(rule, fromMillis, tz)
         val cal = Calendar.getInstance(tz).apply { timeInMillis = fromMillis }
         repeat(MAX_LOOKAHEAD_DAYS) {
