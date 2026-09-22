@@ -54,9 +54,9 @@ internal object RecurrenceAnchor {
      * the caller can refuse rather than anchor the series off-rule.
      */
     fun firstMatch(rrule: String, fromMillis: Long, tz: TimeZone): Long? {
-        val rule = parse(rrule) ?: return fromMillis
-        val matcher = Matcher(rule, fromMillis, tz)
         val cal = Calendar.getInstance(tz).apply { timeInMillis = fromMillis }
+        val rule = parse(rrule)?.impliedBy(cal) ?: return fromMillis
+        val matcher = Matcher(rule)
         repeat(MAX_LOOKAHEAD_DAYS) {
             if (matcher.generates(cal)) return cal.timeInMillis
             // Whole-day steps keep the wall-clock time across DST (mirrors
@@ -98,32 +98,61 @@ internal object RecurrenceAnchor {
     }
 
     /**
-     * Decides whether a day is in the rule's set for the period (day, month,
-     * year) containing it. The period's set is built once and cached, since
-     * [firstMatch] visits its days in order.
+     * Fills in the parts the rule leaves implicit from [anchor], as RFC 5545
+     * fills them from DTSTART: a WEEKLY rule with no BYDAY runs on the
+     * anchor's weekday, a MONTHLY rule with neither BYDAY nor BYMONTHDAY on
+     * its day of the month, and a YEARLY rule likewise, in the anchor's month
+     * unless BYMONTH lists its own. The one YEARLY form left alone is BYDAY on
+     * its own, whose ordinals count within the year. A DAILY rule has nothing
+     * implicit: each of its parts only filters.
      */
-    private class Matcher(private val rule: Rule, anchorMillis: Long, tz: TimeZone) {
-        private val anchorWeekday: Int
-        private val anchorDayOfMonth: Int
-        private val anchorMonth: Int
-
-        init {
-            val anchor = Calendar.getInstance(tz).apply { timeInMillis = anchorMillis }
-            anchorWeekday = anchor.get(Calendar.DAY_OF_WEEK)
-            anchorDayOfMonth = anchor.get(Calendar.DAY_OF_MONTH)
-            anchorMonth = anchor.get(Calendar.MONTH) + 1
+    private fun Rule.impliedBy(anchor: Calendar): Rule {
+        val weekday = anchor.get(Calendar.DAY_OF_WEEK)
+        val dayOfMonth = listOf(anchor.get(Calendar.DAY_OF_MONTH))
+        val month = listOf(anchor.get(Calendar.MONTH) + 1)
+        val ownDay = byDay.isEmpty() && byMonthDay.isEmpty()
+        return when (freq) {
+            Freq.DAILY -> this
+            // A WEEKLY rule ignores BYMONTHDAY.
+            Freq.WEEKLY -> copy(
+                byDay = byDay.ifEmpty { listOf(ByDay(0, weekday)) },
+                byMonthDay = emptyList()
+            )
+            Freq.MONTHLY -> if (ownDay) copy(byMonthDay = dayOfMonth) else this
+            Freq.YEARLY ->
+                if (byMonth.isEmpty() && byMonthDay.isEmpty() && byDay.isNotEmpty()) {
+                    this
+                } else {
+                    copy(
+                        byMonth = byMonth.ifEmpty { month },
+                        byMonthDay = if (ownDay) dayOfMonth else byMonthDay
+                    )
+                }
         }
+    }
 
+    /**
+     * Decides whether a day is in the rule's set for the period containing
+     * it. A monthly or yearly period's set is built once and cached, since
+     * [firstMatch] visits its days in order; the rule must already have had
+     * its implicit parts filled in ([impliedBy]).
+     */
+    private class Matcher(private val rule: Rule) {
         private var cachedPeriod: Int? = null
         private var cachedDays: Set<Int> = emptySet()
 
-        fun generates(day: Calendar): Boolean {
-            val period = periodKey(day)
-            if (period != cachedPeriod) {
-                cachedPeriod = period
-                cachedDays = periodDays(day)
+        fun generates(day: Calendar): Boolean = when (rule.freq) {
+            // Daily and weekly rules are decided a day at a time: whether a
+            // day is in a weekly set doesn't depend on where the week starts.
+            Freq.DAILY, Freq.WEEKLY -> dayPasses(day)
+            Freq.MONTHLY, Freq.YEARLY -> {
+                val period = periodKey(day)
+                if (period != cachedPeriod) {
+                    cachedPeriod = period
+                    cachedDays = periodDays(day)
+                }
+                dayKey(day) in cachedDays
             }
-            return dayKey(day) in cachedDays
         }
 
         /**
@@ -142,23 +171,21 @@ internal object RecurrenceAnchor {
         private fun dayKey(c: Calendar): Int =
             c.get(Calendar.YEAR) * 1000 + c.get(Calendar.DAY_OF_YEAR)
 
-        // Daily and weekly rules are decided a day at a time: whether a day
-        // is in a weekly set doesn't depend on where the week starts.
         private fun periodKey(day: Calendar): Int = when (rule.freq) {
-            Freq.DAILY, Freq.WEEKLY -> dayKey(day)
             Freq.MONTHLY -> day.get(Calendar.YEAR) * 100 + day.get(Calendar.MONTH)
-            Freq.YEARLY -> day.get(Calendar.YEAR)
+            else -> day.get(Calendar.YEAR)
         }
 
         private fun periodDays(day: Calendar): Set<Int> = when (rule.freq) {
-            Freq.DAILY -> if (passesDailyFilters(day)) setOf(dayKey(day)) else emptySet()
-            Freq.WEEKLY -> if (isWeeklyDay(day)) setOf(dayKey(day)) else emptySet()
             Freq.MONTHLY -> if (inByMonth(day)) applySetPos(monthDays(day)) else emptySet()
-            Freq.YEARLY -> applySetPos(yearDays(day))
+            else -> applySetPos(yearDays(day))
         }
 
-        /** In a DAILY rule every BYxxx part only filters (no ordinals apply). */
-        private fun passesDailyFilters(day: Calendar): Boolean {
+        /**
+         * In a DAILY or WEEKLY rule every BYxxx part only filters (no
+         * ordinals apply).
+         */
+        private fun dayPasses(day: Calendar): Boolean {
             if (!inByMonth(day)) return false
             val dom = day.get(Calendar.DAY_OF_MONTH)
             val length = day.getActualMaximum(Calendar.DAY_OF_MONTH)
@@ -167,23 +194,13 @@ internal object RecurrenceAnchor {
             return rule.byDay.isEmpty() || rule.byDay.any { it.weekday == weekday }
         }
 
-        /** A WEEKLY rule's days: the listed weekdays, or the anchor's own. */
-        private fun isWeeklyDay(day: Calendar): Boolean {
-            if (!inByMonth(day)) return false
-            val weekday = day.get(Calendar.DAY_OF_WEEK)
-            return if (rule.byDay.isEmpty()) {
-                weekday == anchorWeekday
-            } else {
-                rule.byDay.any { it.weekday == weekday }
-            }
-        }
-
         /** The days of [day]'s year the rule generates. */
         private fun yearDays(day: Calendar): Set<Int> {
-            // BYDAY on its own: ordinals count within the year ("the 20th
-            // Monday"). Once BYMONTH or BYMONTHDAY narrows the set, they count
-            // within the month, and the yearly set is the listed months' sets.
-            if (rule.byMonth.isEmpty() && rule.byMonthDay.isEmpty() && rule.byDay.isNotEmpty()) {
+            // BYDAY on its own (the one form impliedBy leaves without a
+            // BYMONTH): ordinals count within the year ("the 20th Monday").
+            // Otherwise they count within the month, and the yearly set is
+            // the listed months' sets.
+            if (rule.byMonth.isEmpty()) {
                 val c = (day.clone() as Calendar).apply { set(Calendar.DAY_OF_YEAR, 1) }
                 val yearLength = c.getActualMaximum(Calendar.DAY_OF_YEAR)
                 val days = mutableSetOf<Int>()
@@ -193,9 +210,8 @@ internal object RecurrenceAnchor {
                 }
                 return days
             }
-            val months = if (rule.byMonth.isEmpty()) listOf(anchorMonth) else rule.byMonth
             val days = mutableSetOf<Int>()
-            for (month in months) {
+            for (month in rule.byMonth) {
                 if (month !in 1..12) continue
                 val inMonth = (day.clone() as Calendar).apply {
                     set(Calendar.DAY_OF_MONTH, 1)
@@ -215,13 +231,12 @@ internal object RecurrenceAnchor {
             for (dom in 1..length) {
                 c.set(Calendar.DAY_OF_MONTH, dom)
                 // Per RFC 5545, BYDAY limits a BYMONTHDAY set and expands
-                // otherwise; with neither, the anchor's own day-of-month.
-                val included = when {
-                    rule.byMonthDay.isNotEmpty() ->
-                        matchesMonthDay(dom, length) &&
-                            (rule.byDay.isEmpty() || matchesByDay(c, nthInPeriod(dom, length)))
-                    rule.byDay.isNotEmpty() -> matchesByDay(c, nthInPeriod(dom, length))
-                    else -> dom == anchorDayOfMonth
+                // otherwise (impliedBy guarantees one of the two is present).
+                val included = if (rule.byMonthDay.isNotEmpty()) {
+                    matchesMonthDay(dom, length) &&
+                        (rule.byDay.isEmpty() || matchesByDay(c, nthInPeriod(dom, length)))
+                } else {
+                    matchesByDay(c, nthInPeriod(dom, length))
                 }
                 if (included) days += dayKey(c)
             }

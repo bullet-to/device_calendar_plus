@@ -1105,8 +1105,8 @@ class EventsService {
     )
   }
 
-  /// The start a series update leaves `event` with, or nil when nothing moves
-  /// it. Android's counterpart is `resolveSeriesTimes`.
+  /// The start a series update leaves `event` with: its current start when
+  /// nothing moves it. Android's counterpart is `resolveSeriesTimes`.
   ///
   /// `newStartMillis`, when given, shifts the anchor first: `event`'s start
   /// moves by the wall-clock delta from the reference occurrence (the one at
@@ -1128,9 +1128,9 @@ class EventsService {
     isAllDay: Bool,
     rule: EKRecurrenceRule?,
     changingRule: Bool
-  ) -> Result<Date?, CalendarError> {
+  ) -> Result<Date, CalendarError> {
     let timeZone = event.timeZone ?? .current
-    var start: Date?
+    var start: Date = event.startDate
 
     if let newStartMillis = newStartMillis {
       let target = Date(timeIntervalSince1970: TimeInterval(newStartMillis) / 1000.0)
@@ -1167,20 +1167,15 @@ class EventsService {
     }
 
     if let rule = rule {
-      let base: Date = start ?? event.startDate
       guard let anchored = RecurrenceAnchor.firstMatch(
-        of: rule, onOrAfter: base, timeZone: timeZone
+        of: rule, onOrAfter: start, timeZone: timeZone
       ) else {
         return .failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
           message: "recurrenceRule generates no occurrences within five years of the anchor"
         ))
       }
-      // A rule that already fits its anchor leaves `start` nil, so the caller
-      // skips the time rewrite for a change that moves nothing.
-      if anchored != base {
-        start = anchored
-      }
+      start = anchored
     }
     return .success(start)
   }
@@ -1325,7 +1320,7 @@ class EventsService {
       parsedRecurrenceRule = rule
     }
 
-    let newStart: Date?
+    let newStart: Date
     switch resolveSeriesStart(
       for: foundEvent,
       newStartMillis: newStartMillis,
@@ -1344,14 +1339,14 @@ class EventsService {
     // Apply field changes.
     patch.apply(to: foundEvent)
 
-    // Apply start and/or duration changes. Without a new start the existing
-    // date is preserved; only the duration is replaced.
-    if newStart != nil || durationMinutes != nil {
+    // Apply start and/or duration changes. A rule that already fits its
+    // anchor resolves to the current start, and skips the time rewrite for a
+    // change that moves nothing (mirrors Android's rewriteTimeColumns).
+    if newStartMillis != nil || durationMinutes != nil || newStart != foundEvent.startDate {
       let duration = durationMinutes.map { TimeInterval($0 * 60) }
         ?? foundEvent.endDate.timeIntervalSince(foundEvent.startDate)
-      let start: Date = newStart ?? foundEvent.startDate
-      foundEvent.startDate = start
-      foundEvent.endDate = start.addingTimeInterval(duration)
+      foundEvent.startDate = newStart
+      foundEvent.endDate = newStart.addingTimeInterval(duration)
     }
 
     patch.applyTimeZone(to: foundEvent)

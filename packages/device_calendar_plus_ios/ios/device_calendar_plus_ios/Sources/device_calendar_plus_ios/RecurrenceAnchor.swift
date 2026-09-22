@@ -34,7 +34,9 @@ enum RecurrenceAnchor {
   ) -> Date? {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = timeZone
-    let matcher = Matcher(rule: rule, anchor: from, calendar: calendar)
+    let matcher = Matcher(
+      rule: Rule(rule).impliedBy(anchor: from, calendar: calendar), calendar: calendar
+    )
     var day = from
     for _ in 0..<maxLookaheadDays {
       if matcher.generates(day) { return day }
@@ -60,24 +62,16 @@ enum RecurrenceAnchor {
     let fromEnd: Int
   }
 
-  /// Decides whether a day is in the rule's set for the period (day, month,
-  /// year) containing it. The period's set is built once and cached, since
-  /// `firstMatch` visits its days in order.
-  private final class Matcher {
-    private let calendar: Calendar
-    private let frequency: EKRecurrenceFrequency
-    private let byDay: [ByDay]
-    private let byMonthDay: [Int]
-    private let byMonth: [Int]
-    private let bySetPos: [Int]
-    private let anchorWeekday: Int
-    private let anchorDayOfMonth: Int
-    private let anchorMonth: Int
-    private var cachedPeriod: Int?
-    private var cachedDays: Set<Int> = []
+  /// The parts of an `EKRecurrenceRule` that decide which days it generates.
+  private struct Rule {
+    let frequency: EKRecurrenceFrequency
+    var byDay: [ByDay]
+    var byMonthDay: [Int]
+    var byMonth: [Int]
+    let bySetPos: [Int]
 
-    init(rule: EKRecurrenceRule, anchor: Date, calendar: Calendar) {
-      self.calendar = calendar
+    /// The modelled parts of `rule`, as written.
+    init(_ rule: EKRecurrenceRule) {
       frequency = rule.frequency
       byDay = (rule.daysOfTheWeek ?? []).map {
         ByDay(ordinal: $0.weekNumber, weekday: $0.dayOfTheWeek.rawValue)
@@ -85,18 +79,80 @@ enum RecurrenceAnchor {
       byMonthDay = (rule.daysOfTheMonth ?? []).map { $0.intValue }
       byMonth = (rule.monthsOfTheYear ?? []).map { $0.intValue }
       bySetPos = (rule.setPositions ?? []).map { $0.intValue }
-      anchorWeekday = calendar.component(.weekday, from: anchor)
-      anchorDayOfMonth = calendar.component(.day, from: anchor)
-      anchorMonth = calendar.component(.month, from: anchor)
+    }
+
+    /// Fills in the parts the rule leaves implicit from `anchor`, as RFC
+    /// 5545 fills them from DTSTART: a WEEKLY rule with no BYDAY runs on the
+    /// anchor's weekday, a MONTHLY rule with neither BYDAY nor BYMONTHDAY on
+    /// its day of the month, and a YEARLY rule likewise, in the anchor's
+    /// month unless BYMONTH lists its own. The one YEARLY form left alone is
+    /// BYDAY on its own, whose ordinals count within the year. A DAILY rule
+    /// has nothing implicit: each of its parts only filters.
+    func impliedBy(anchor: Date, calendar: Calendar) -> Rule {
+      let weekday = calendar.component(.weekday, from: anchor)
+      let dayOfMonth = [calendar.component(.day, from: anchor)]
+      let month = [calendar.component(.month, from: anchor)]
+      let ownDay = byDay.isEmpty && byMonthDay.isEmpty
+      var implied = self
+      switch frequency {
+      case .daily:
+        break
+      case .weekly:
+        if byDay.isEmpty { implied.byDay = [ByDay(ordinal: 0, weekday: weekday)] }
+        // A WEEKLY rule ignores BYMONTHDAY.
+        implied.byMonthDay = []
+      case .monthly:
+        if ownDay { implied.byMonthDay = dayOfMonth }
+      case .yearly:
+        if byMonth.isEmpty && byMonthDay.isEmpty && !byDay.isEmpty { break }
+        if byMonth.isEmpty { implied.byMonth = month }
+        if ownDay { implied.byMonthDay = dayOfMonth }
+      @unknown default:
+        break
+      }
+      return implied
+    }
+  }
+
+  /// Decides whether a day is in the rule's set for the period containing
+  /// it. A monthly or yearly period's set is built once and cached, since
+  /// `firstMatch` visits its days in order; the rule must already have had
+  /// its implicit parts filled in (`Rule.impliedBy`).
+  private final class Matcher {
+    private let calendar: Calendar
+    private let frequency: EKRecurrenceFrequency
+    private let byDay: [ByDay]
+    private let byMonthDay: [Int]
+    private let byMonth: [Int]
+    private let bySetPos: [Int]
+    private var cachedPeriod: Int?
+    private var cachedDays: Set<Int> = []
+
+    init(rule: Rule, calendar: Calendar) {
+      self.calendar = calendar
+      frequency = rule.frequency
+      byDay = rule.byDay
+      byMonthDay = rule.byMonthDay
+      byMonth = rule.byMonth
+      bySetPos = rule.bySetPos
     }
 
     func generates(_ day: Date) -> Bool {
-      let period = periodKey(day)
-      if period != cachedPeriod {
-        cachedPeriod = period
-        cachedDays = periodDays(day)
+      switch frequency {
+      // Daily and weekly rules are decided a day at a time: whether a day is
+      // in a weekly set doesn't depend on where the week starts.
+      case .daily, .weekly:
+        return dayPasses(day)
+      case .monthly, .yearly:
+        let period = periodKey(day)
+        if period != cachedPeriod {
+          cachedPeriod = period
+          cachedDays = periodDays(day)
+        }
+        return cachedDays.contains(dayKey(day))
+      @unknown default:
+        return false
       }
-      return cachedDays.contains(dayKey(day))
     }
 
     /// BYSETPOS keeps only the listed positions of a month's or year's set
@@ -116,30 +172,23 @@ enum RecurrenceAnchor {
       return year * 1000 + dayOfYear
     }
 
-    // Daily and weekly rules are decided a day at a time: whether a day is in
-    // a weekly set doesn't depend on where the week starts.
     private func periodKey(_ day: Date) -> Int {
-      switch frequency {
-      case .daily, .weekly: return dayKey(day)
-      case .monthly:
+      if frequency == .monthly {
         return calendar.component(.year, from: day) * 100 + calendar.component(.month, from: day)
-      case .yearly: return calendar.component(.year, from: day)
-      @unknown default: return dayKey(day)
       }
+      return calendar.component(.year, from: day)
     }
 
     private func periodDays(_ day: Date) -> Set<Int> {
-      switch frequency {
-      case .daily: return passesDailyFilters(day) ? [dayKey(day)] : []
-      case .weekly: return isWeeklyDay(day) ? [dayKey(day)] : []
-      case .monthly: return inByMonth(day) ? applySetPos(monthDays(day)) : []
-      case .yearly: return applySetPos(yearDays(day))
-      @unknown default: return []
+      if frequency == .monthly {
+        return inByMonth(day) ? applySetPos(monthDays(day)) : []
       }
+      return applySetPos(yearDays(day))
     }
 
-    /// In a DAILY rule every BYxxx part only filters (no ordinals apply).
-    private func passesDailyFilters(_ day: Date) -> Bool {
+    /// In a DAILY or WEEKLY rule every BYxxx part only filters (no ordinals
+    /// apply).
+    private func dayPasses(_ day: Date) -> Bool {
       guard inByMonth(day) else { return false }
       let dom = calendar.component(.day, from: day)
       let length = monthLength(of: day)
@@ -148,20 +197,14 @@ enum RecurrenceAnchor {
       return byDay.isEmpty || byDay.contains { $0.weekday == weekday }
     }
 
-    /// A WEEKLY rule's days: the listed weekdays, or the anchor's own.
-    private func isWeeklyDay(_ day: Date) -> Bool {
-      guard inByMonth(day) else { return false }
-      let weekday = calendar.component(.weekday, from: day)
-      return byDay.isEmpty ? weekday == anchorWeekday : byDay.contains { $0.weekday == weekday }
-    }
-
     /// The days of `day`'s year the rule generates.
     private func yearDays(_ day: Date) -> Set<Int> {
       let year = calendar.component(.year, from: day)
-      // BYDAY on its own: ordinals count within the year ("the 20th
-      // Monday"). Once BYMONTH or BYMONTHDAY narrows the set, they count
-      // within the month, and the yearly set is the listed months' sets.
-      if byMonth.isEmpty && byMonthDay.isEmpty && !byDay.isEmpty {
+      // BYDAY on its own (the one form `impliedBy` leaves without a
+      // BYMONTH): ordinals count within the year ("the 20th Monday").
+      // Otherwise they count within the month, and the yearly set is the
+      // listed months' sets.
+      if byMonth.isEmpty {
         guard let first = date(year: year, month: 1, day: 1) else { return [] }
         let yearLength = calendar.range(of: .day, in: .year, for: first)?.count ?? 365
         var days = Set<Int>()
@@ -173,9 +216,8 @@ enum RecurrenceAnchor {
         }
         return days
       }
-      let months = byMonth.isEmpty ? [anchorMonth] : byMonth
       var days = Set<Int>()
-      for month in months where (1...12).contains(month) {
+      for month in byMonth where (1...12).contains(month) {
         guard let inMonth = date(year: year, month: month, day: 1) else { continue }
         days.formUnion(monthDays(inMonth))
       }
@@ -191,16 +233,14 @@ enum RecurrenceAnchor {
       for dom in 1...length {
         guard let current = date(year: year, month: month, day: dom) else { continue }
         let nth = nthInPeriod(dom, periodLength: length)
-        // Per RFC 5545, BYDAY limits a BYMONTHDAY set and expands otherwise;
-        // with neither, the anchor's own day-of-month.
+        // Per RFC 5545, BYDAY limits a BYMONTHDAY set and expands otherwise
+        // (`impliedBy` guarantees one of the two is present).
         let included: Bool
         if !byMonthDay.isEmpty {
           included = matchesMonthDay(dom, monthLength: length)
             && (byDay.isEmpty || matchesByDay(current, nth: nth))
-        } else if !byDay.isEmpty {
-          included = matchesByDay(current, nth: nth)
         } else {
-          included = dom == anchorDayOfMonth
+          included = matchesByDay(current, nth: nth)
         }
         if included { days.insert(dayKey(current)) }
       }

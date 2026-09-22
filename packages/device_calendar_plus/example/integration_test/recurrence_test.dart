@@ -791,15 +791,16 @@ void main() {
       );
     });
 
-    test(
-        'a rule that generates no occurrence is refused with invalidArguments '
-        'and leaves the series untouched', () async {
-      // The re-anchor walk gives up after five years. Rather than anchor the
-      // series on a day the rule never generates — the orphan #140 removes —
-      // the update is refused before anything is written, for both spans:
-      // the master keeps every occurrence, and a split creates no new series.
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      for (final span in EventSpan.values) {
+    // The re-anchor walk gives up after five years. Rather than anchor the
+    // series on a day the rule never generates — the orphan #140 removes —
+    // the update is refused before anything is written, for both spans: the
+    // master keeps every occurrence, and a split creates no new series.
+    for (final span in EventSpan.values) {
+      test(
+          'a rule that generates no occurrence is refused with invalidArguments '
+          'for $span and leaves the series untouched', () async {
+        expect(calendarId, isNotNull,
+            reason: 'setUpAll must create a calendar');
         final series = await createWeeklySeries(plugin, calendarId!, count: 4);
         final before = await occurrencesOf(
             plugin, calendarId!, series.eventId, series.start,
@@ -839,8 +840,8 @@ void main() {
             calendarIds: [calendarId!]);
         expect(calendarAfter.length, calendarBefore.length,
             reason: 'a refused $span rule must not create a new series');
-      }
-    });
+      });
+    }
 
     test(
         'thisAndFollowing with Patch.clear turns the anchor into a standalone '
