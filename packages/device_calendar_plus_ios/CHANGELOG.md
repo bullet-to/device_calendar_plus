@@ -1,3 +1,28 @@
+## 0.7.1 - 2026-09-21
+
+### Fixed
+- A grant is honoured while `EKEventStore.authorizationStatus` still reports
+  `.notDetermined`. On iOS 17+ the live status can lag the request handler, so
+  the first call after a fresh grant failed its permission gate until the app
+  restarted. The tier the OS confirmed is now remembered for the process and
+  consulted only when it outranks a stale live status; a terminal `denied` /
+  `restricted` always wins, so a Settings revocation is never masked (#134).
+- `showCreateEventModal` is gated only below iOS 17, where the editor runs
+  in-process. On iOS 17+ `EKEventEditViewController` is out-of-process and
+  needs no calendar access (#121).
+- Full-access requests on iOS 17+ check `NSCalendarsFullAccessUsageDescription`
+  (what the OS demands) rather than the legacy key, and only when a prompt will
+  actually fire — already-granted and terminal states get their status back
+  without a configuration error (#121).
+- `createEvent` with a named `calendarId` under write-only access reports
+  `permissionDenied` instead of `notFound` (#121).
+
+### Changed
+- The permission stack is restructured behind a `CalendarAuthorization` seam:
+  `CalendarAccess` normalises EventKit's status across the iOS 17 divide and
+  `PermissionService` holds policy only. Swift unit tests cover the grant,
+  revocation and configuration paths (#134).
+
 ## 0.7.0 - 2026-06-17
 
 ### Added

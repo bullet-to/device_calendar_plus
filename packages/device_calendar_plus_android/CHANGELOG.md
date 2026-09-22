@@ -1,3 +1,23 @@
+## 0.7.2 - 2026-09-21
+
+### Fixed
+- `showCreateEventModal` no longer requires `READ_CALENDAR`. `ACTION_INSERT`
+  needs no permission, so the gate only blocked the one path that still works
+  after a denial (#121, #141).
+- `listCalendars`, `listSources`, `listEvents` and `getEvent` throw
+  `permissionDenied` when `READ_CALENDAR` isn't held instead of returning an
+  empty result (#121).
+- Full-tier operations (calendar mutations, event update/delete, recurring
+  update/delete) require `READ_CALENDAR` and `WRITE_CALENDAR`; `WRITE_CALENDAR`
+  alone is the write-only tier and could previously mutate calendars that iOS
+  rejects. The error message names the tier that's missing (#121).
+- `showCreateEventModal` writes `EXTRA_EVENT_ALL_DAY` as a boolean extra, so
+  the all-day prefill is honoured (#121).
+
+### Changed
+- Permission gates are consolidated in `PermissionGates.kt`; event cursor
+  projections go through `EventColumns` presets (#119). No behaviour change.
+
 ## 0.7.1 - 2026-07-22
 
 ### Added
