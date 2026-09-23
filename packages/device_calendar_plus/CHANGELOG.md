@@ -1,5 +1,11 @@
 ## Unreleased
 
+### Fixed
+- Android: `getEvent` resolves all-day recurring instance IDs (it always
+  returned null), returns a recurring master's real end date instead of a
+  zero-length one, and `listEvents` orders all-day events by their local
+  midnight among timed events in non-UTC zones, as iOS does (#122).
+
 ### Changed
 - Android: migrated to Flutter's built-in Kotlin, so the KGP deprecation
   warning no longer prints on every `flutter build`. Minimum supported SDK is

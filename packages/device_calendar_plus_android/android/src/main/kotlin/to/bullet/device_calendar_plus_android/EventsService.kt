@@ -18,8 +18,7 @@ class EventsService(
     fun retrieveEvents(
         startDate: Date,
         endDate: Date,
-        calendarIds: List<String>?,
-        eventId: String? = null
+        calendarIds: List<String>?
     ): Result<List<Map<String, Any>>> {
         readAccessFailure(context)?.let { return Result.failure(it) }
 
@@ -51,11 +50,6 @@ class EventsService(
             val placeholders = calendarIds.joinToString(",") { "?" }
             selections.add("${CalendarContract.Instances.CALENDAR_ID} IN ($placeholders)")
             args.addAll(calendarIds)
-        }
-
-        if (eventId != null) {
-            selections.add("${CalendarContract.Instances.EVENT_ID} = ?")
-            args.add(eventId)
         }
 
         val selection = if (selections.isNotEmpty()) selections.joinToString(" AND ") else null
@@ -101,7 +95,14 @@ class EventsService(
                 )
             )
         }
-        
+
+        // Sort on the map's startDate, not the cursor's BEGIN: the cursor is
+        // in BEGIN order, but buildEventMapFromCursor rewrites all-day starts
+        // from UTC midnight to local midnight, so the two orders diverge once
+        // all-day and timed events mix in a non-UTC zone (#122). Mirrors iOS.
+        // sortBy is stable, so BEGIN order still breaks ties.
+        events.sortBy { it["startDate"] as Long }
+
         return Result.success(events)
     }
     
@@ -174,6 +175,7 @@ class EventsService(
         val locationIndex = cursor.getColumnIndexOrThrow(columns.location)
         val startIndex = cursor.getColumnIndexOrThrow(columns.start)
         val endIndex = cursor.getColumnIndexOrThrow(columns.end)
+        val durationIndex = cursor.getColumnIndexOrThrow(columns.duration)
         val allDayIndex = cursor.getColumnIndexOrThrow(columns.allDay)
         val availabilityIndex = cursor.getColumnIndexOrThrow(columns.availability)
         val statusIndex = cursor.getColumnIndexOrThrow(columns.status)
@@ -188,7 +190,15 @@ class EventsService(
         val description = if (!cursor.isNull(descriptionIndex)) cursor.getString(descriptionIndex) else null
         val location = if (!cursor.isNull(locationIndex)) cursor.getString(locationIndex) else null
         val rawStart = cursor.getLong(startIndex)
-        val rawEnd = if (!cursor.isNull(endIndex)) cursor.getLong(endIndex) else rawStart
+        // A recurring master row stores DURATION and no DTEND (an expanded
+        // Instances row always has END), so the master's end is derived from
+        // its duration rather than collapsing onto the start (#122).
+        val duration = if (!cursor.isNull(durationIndex)) cursor.getString(durationIndex) else null
+        val rawEnd = when {
+            !cursor.isNull(endIndex) -> cursor.getLong(endIndex)
+            duration != null -> rawStart + (parseDurationMillis(duration) ?: 0L)
+            else -> rawStart
+        }
         val allDay = if (!cursor.isNull(allDayIndex)) cursor.getInt(allDayIndex) == 1 else false
         val availability = if (!cursor.isNull(availabilityIndex)) cursor.getInt(availabilityIndex) else null
         val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else null
@@ -387,69 +397,73 @@ class EventsService(
         }
     }
     
+    /**
+     * Reads one event: the master row for a bare [eventId], or the occurrence
+     * that starts at [timestamp] when one is given. Null when nothing matches.
+     */
     fun getEvent(eventId: String, timestamp: Long?): Result<Map<String, Any>?> {
         readAccessFailure(context)?.let { return Result.failure(it) }
 
-        if (timestamp != null) {
-            // Recurring event with timestamp
-            val occurrenceMillis = timestamp
-            
-            // Query ±1 second around the exact occurrence time
-            // We use a small window since we have the precise timestamp
-            val startMillis = occurrenceMillis - 1000
-            val endMillis = occurrenceMillis + 1000
-            
-            val startDate = Date(startMillis)
-            val endDate = Date(endMillis)
-            
-            // Use retrieveEvents with event ID filter
-            val eventsResult = retrieveEvents(startDate, endDate, null, eventId)
-            
-            return eventsResult.mapCatching { events ->
-                // Find closest match to the occurrence time
-                events.minByOrNull { event ->
-                    val eventStart = event["startDate"] as? Long ?: return@minByOrNull Long.MAX_VALUE
-                    kotlin.math.abs(eventStart - occurrenceMillis)
-                }
-            }
-        } else {
-            // Non-recurring event or master event
-            val columns = EventColumns.events
+        if (timestamp == null) {
+            return querySingleEvent(
+                CalendarContract.Events.CONTENT_URI,
+                EventColumns.events,
+                "${CalendarContract.Events._ID} = ?",
+                arrayOf(eventId)
+            )
+        }
 
-            val selection = "${CalendarContract.Events._ID} = ?"
-            val selectionArgs = arrayOf(eventId)
-            
-            try {
-                context.contentResolver.query(
-                    CalendarContract.Events.CONTENT_URI,
-                    columns.projection,
-                    selection,
-                    selectionArgs,
-                    null
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        return Result.success(buildEventMapFromCursor(cursor, columns))
-                    } else {
-                        return Result.success(null)
-                    }
-                }
-                
-                return Result.success(null)
-            } catch (e: SecurityException) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.PERMISSION_DENIED,
-                        "Calendar permission denied: ${e.message}"
-                    )
-                )
-            } catch (e: Exception) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.UNKNOWN_ERROR,
-                        "Failed to query event: ${e.message}"
-                    )
-                )
+        // An instance ID carries the occurrence's raw BEGIN (see
+        // buildEventMapFromCursor), so the Instances row is an exact match on
+        // EVENT_ID and BEGIN. The Instances URI still needs a window, and the
+        // provider matches any row overlapping it, so a ±1s one is enough.
+        // This used to go through retrieveEvents, whose all-day date filter
+        // reduces a two-second window to an empty date range in every
+        // timezone, so an all-day occurrence could never be resolved (#122).
+        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
+            .appendPath((timestamp - 1000).toString())
+            .appendPath((timestamp + 1000).toString())
+            .build()
+        return querySingleEvent(
+            uri,
+            EventColumns.instances,
+            "${CalendarContract.Instances.EVENT_ID} = ? AND ${CalendarContract.Instances.BEGIN} = ?",
+            arrayOf(eventId, timestamp.toString())
+        )
+    }
+
+    /** The first row of [uri] matching [selection] as an event map, or null. */
+    private fun querySingleEvent(
+        uri: android.net.Uri,
+        columns: EventColumns,
+        selection: String,
+        selectionArgs: Array<String>
+    ): Result<Map<String, Any>?> {
+        try {
+            val event = context.contentResolver.query(
+                uri,
+                columns.projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) buildEventMapFromCursor(cursor, columns) else null
             }
+            return Result.success(event)
+        } catch (e: SecurityException) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to query event: ${e.message}"
+                )
+            )
         }
     }
 
