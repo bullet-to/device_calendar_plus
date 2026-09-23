@@ -105,14 +105,15 @@ cd android
 ./gradlew :device_calendar_plus_android:test
 ```
 
-If you touched `packages/device_calendar_plus_android/android/build.gradle`,
-run both commands again with `-Pandroid.builtInKotlin=true` appended (needs
-Flutter 3.47+). The example keeps the Flutter template's
-`android.builtInKotlin=false`, so by default Flutter's Gradle plugin applies
-KGP to the plugin and AGP never compiles its Kotlin. With the flag, AGP
-compiles the plugin's Kotlin itself — the mode apps on Flutter 3.47+ build in
-— and the #133 migration has to hold up there too. `-P` overrides
-`gradle.properties` for that one run, so nothing needs editing.
+If you touched `packages/device_calendar_plus_android/android/build.gradle`
+or the example's Android toolchain pins (`android/settings.gradle.kts`,
+`android/gradle.properties`), run both commands again with
+`-Pandroid.builtInKotlin=true` appended (Flutter 3.47+). The example keeps the
+template's `android.builtInKotlin=false` (see the comment in
+`android/gradle.properties`), so the default run never has AGP compile the
+plugin's Kotlin itself — the mode AGP 9 defaults to for any app that drops or
+flips that property. `-P` overrides the property for that run only, so nothing
+needs editing.
 
 ## Pull Requests
 
