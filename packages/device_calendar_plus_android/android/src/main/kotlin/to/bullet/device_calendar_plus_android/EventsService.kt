@@ -1649,14 +1649,17 @@ class EventsService(
      * a sync adapter.
      *
      * Exceptions already written against the series before it had an id — by
-     * an older plugin version or another app — are re-keyed by
-     * `original_sync_id` so they join the family. That is an upgrade-only
-     * path: the id is now assigned before the first exception write, so the
-     * public API can no longer produce a keyless series with exceptions. The
-     * integration suite reaches it through the example app's test seed
-     * channel, which performs the old plugin's write (a plain insert on the
-     * exception URI) to recreate #153's on-disk state before an edit goes
-     * through here.
+     * an older plugin version or another app — join the family with this one
+     * write: the provider's `original_sync_update` trigger (in AOSP's
+     * CalendarDatabaseHelper since database version 301, Android 4.0) copies
+     * a changed `_sync_id` into the `original_sync_id` of every row whose
+     * `original_id` is this master. That is an upgrade-only path: the id is
+     * now assigned before the first exception write, so the public API can no
+     * longer produce a keyless series with exceptions. The integration suite
+     * reaches it through the example app's test seed channel, which performs
+     * the old plugin's write (a plain insert on the exception URI) to
+     * recreate #153's on-disk state before an edit goes through here, and
+     * reads the two columns back to check the exception was re-keyed.
      *
      * Fails with OPERATION_FAILED when the provider refuses the key write —
      * matching no row, whatever the reason — so the caller never writes an
@@ -1674,9 +1677,8 @@ class EventsService(
         if (account?.isLocal != true) return Result.success(Unit)
 
         val syncId = "device_calendar_plus:${java.util.UUID.randomUUID()}"
-        val uri = syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
         val updated = context.contentResolver.update(
-            uri,
+            syncAdapterUri(CalendarContract.Events.CONTENT_URI, account),
             android.content.ContentValues().apply {
                 put(CalendarContract.Events._SYNC_ID, syncId)
             },
@@ -1691,14 +1693,6 @@ class EventsService(
                 )
             )
         }
-        context.contentResolver.update(
-            uri,
-            android.content.ContentValues().apply {
-                put(CalendarContract.Events.ORIGINAL_SYNC_ID, syncId)
-            },
-            "${CalendarContract.Events.ORIGINAL_ID} = ?",
-            arrayOf(row.id)
-        )
         return Result.success(Unit)
     }
 

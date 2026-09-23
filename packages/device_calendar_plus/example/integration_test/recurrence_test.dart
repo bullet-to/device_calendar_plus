@@ -1108,6 +1108,13 @@ void main() {
       // channel performs the old write; the next edit through the plugin
       // must key the master, re-key the old exception into its family, and
       // bring every untouched occurrence back.
+      //
+      // The re-key is asserted on the provider's own columns: the
+      // incremental re-expansion after the edit honours the old exception
+      // with or without it, so the listing alone would pass either way. What
+      // the key buys is the provider's full regeneration (a timezone change,
+      // a reboot), which matches exceptions to their series by
+      // `original_sync_id` — and no test can trigger that.
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
       final occurrences = await occurrencesOf(
@@ -1115,6 +1122,10 @@ void main() {
       expect(occurrences.length, greaterThanOrEqualTo(7));
       final keyless = occurrences[3];
       final rekeying = occurrences[6];
+
+      Future<Map<Object?, Object?>?> syncIdsOf(String eventId) =>
+          _testSeed.invokeMethod<Map<Object?, Object?>>(
+              'readSyncIds', {'eventId': eventId});
 
       final exceptionId = await _testSeed.invokeMethod<String>(
         'insertKeylessException',
@@ -1127,9 +1138,18 @@ void main() {
       );
       expect(exceptionId, isNotEmpty,
           reason: 'the seed must write the old-style exception');
+      expect((await syncIdsOf(series.eventId))?['syncId'], isNull,
+          reason: 'the seed must leave the master keyless, #153\'s state');
+      expect((await syncIdsOf(exceptionId!))?['originalSyncId'], isNull,
+          reason: 'the seed must leave the exception keyless, #153\'s state');
 
       await plugin.updateEvent(
           eventId: rekeying.instanceId, title: 'Rekeyed #153');
+
+      final masterKey = (await syncIdsOf(series.eventId))?['syncId'];
+      expect(masterKey, isNotNull, reason: 'the edit must key the master');
+      expect((await syncIdsOf(exceptionId))?['originalSyncId'], masterKey,
+          reason: 'the old exception must be re-keyed into the family');
 
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);

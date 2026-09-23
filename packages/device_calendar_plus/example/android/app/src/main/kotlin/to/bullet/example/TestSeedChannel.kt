@@ -103,6 +103,38 @@ object TestSeedChannel {
                         result.error("TEST_SEED_FAILED", e.message, null)
                     }
                 }
+                // The provider's own keys for an event row: `_sync_id` and
+                // `original_sync_id`, as {"syncId": ..., "originalSyncId":
+                // ...} (null for an unkeyed row, or the whole map null when
+                // the row is missing). The plugin never exposes them, but
+                // they are what the provider's full regeneration (a timezone
+                // change, a reboot) keys a series' exceptions by, so a test
+                // of the #153 re-key has to read them directly.
+                "readSyncIds" -> {
+                    try {
+                        val eventId = call.argument<String>("eventId")!!.toLong()
+                        val projection = arrayOf(
+                            CalendarContract.Events._SYNC_ID,
+                            CalendarContract.Events.ORIGINAL_SYNC_ID
+                        )
+                        val row = contentResolver.query(
+                            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+                            projection,
+                            null,
+                            null,
+                            null
+                        )?.use { cursor ->
+                            if (!cursor.moveToFirst()) return@use null
+                            mapOf(
+                                "syncId" to cursor.getString(0),
+                                "originalSyncId" to cursor.getString(1)
+                            )
+                        }
+                        result.success(row)
+                    } catch (e: Exception) {
+                        result.error("TEST_SEED_FAILED", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
