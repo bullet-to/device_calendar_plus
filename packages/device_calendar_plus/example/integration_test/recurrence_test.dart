@@ -18,9 +18,8 @@ typedef DailySeries = ({String eventId, DateTime start, String title});
 
 /// Creates a daily recurring event starting one hour from now (UTC), with
 /// `count` total occurrences. Returns the event ID, the start time and the
-/// title. Every series in a calendar starts on the same second, so a test
-/// that finds occurrences by title ([detachedAt]) passes a distinct [title]
-/// to keep a sibling test's leftovers out of its listings.
+/// title. A test that finds occurrences by title ([detachedAt]) goes through
+/// [createExpandedDailySeries], which mints a distinct one.
 Future<DailySeries> createDailySeries(
   DeviceCalendar plugin,
   String calendarId, {
@@ -129,9 +128,20 @@ void expectReanchoredWeekly(
   }
 }
 
+/// Asserts nothing of [remaining] is on or after the split at [before]: the
+/// split occurrence itself must not survive on the original series (#140).
+void expectNonePastSplit(List<Event> remaining, DateTime before) {
+  expect(
+    remaining.every((e) => e.startDate.isBefore(before)),
+    isTrue,
+    reason: 'the original series must not extend past the split point '
+        '(#140)',
+  );
+}
+
 /// Asserts [remaining] is what a `thisAndFollowing` split leaves on the
 /// original series: exactly [count] occurrences, every one before the split
-/// at [before]. The split occurrence itself must not survive here (#140).
+/// at [before].
 void expectTruncatedMaster(
   List<Event> remaining, {
   required DateTime before,
@@ -140,12 +150,7 @@ void expectTruncatedMaster(
   expect(remaining.length, count,
       reason: 'only the occurrences before the split stay on the original '
           'series');
-  expect(
-    remaining.every((e) => e.startDate.isBefore(before)),
-    isTrue,
-    reason: 'the original series must not extend past the split point '
-        '(#140)',
-  );
+  expectNonePastSplit(remaining, before);
 }
 
 /// Lists everything in the calendar over a window wide enough to capture a
@@ -170,9 +175,9 @@ Future<List<Event>> listWindow(
 /// Unlike [expectTruncatedMaster] this pins no count: what the master lists
 /// in a detached occurrence's place varies by platform (the Android
 /// emulator's Instances cache keeps the original slot until it next
-/// regenerates), so only the slots that must survive are named. Instants
-/// are compared by [DateTime.millisecondsSinceEpoch], as `==` would also
-/// compare the `isUtc` flag.
+/// regenerates), so only the slots that must survive are named. [keeps] is
+/// matched by [DateTime.millisecondsSinceEpoch], as `==` would also compare
+/// the `isUtc` flag.
 void expectMasterSplit(
   List<Event> remaining, {
   required DateTime before,
@@ -182,12 +187,7 @@ void expectMasterSplit(
       remaining.map((e) => e.startDate.millisecondsSinceEpoch).toSet();
   expect(starts, containsAll(keeps.map((d) => d.millisecondsSinceEpoch)),
       reason: 'the occurrences before the split must survive on the master');
-  final beforeMillis = before.millisecondsSinceEpoch;
-  expect(
-    remaining.every((e) => e.startDate.millisecondsSinceEpoch < beforeMillis),
-    isTrue,
-    reason: 'the original series must not extend past the split point',
-  );
+  expectNonePastSplit(remaining, before);
 }
 
 /// The events of [series] listed at exactly [instant]. Finds a detached
@@ -205,6 +205,39 @@ Future<List<Event>> detachedAt(
           e.title == series.title &&
           e.startDate.millisecondsSinceEpoch == instant.millisecondsSinceEpoch)
       .toList();
+}
+
+/// A daily series and its occurrences as listed, for the detached-occurrence
+/// tests. Every series in a calendar starts on the same second, so a test
+/// that finds occurrences by title ([detachedAt]) needs a title no sibling
+/// test's leftovers share; it is minted here rather than by each caller. At
+/// least eight occurrences must list, so slots `[0]`..`[7]` are safe to index.
+Future<({DailySeries series, List<Event> occurrences})>
+    createExpandedDailySeries(
+  DeviceCalendar plugin,
+  String calendarId, {
+  int count = 10,
+}) async {
+  final series = await createDailySeries(plugin, calendarId,
+      count: count,
+      title: 'Daily Series ${DateTime.now().microsecondsSinceEpoch}');
+  final occurrences =
+      await occurrencesOf(plugin, calendarId, series.eventId, series.start);
+  expect(occurrences.length, greaterThanOrEqualTo(8),
+      reason: 'the series must expand far enough to index slots [0]..[7]');
+  return (series: series, occurrences: occurrences);
+}
+
+/// Removes [anchor] and every later occurrence of [series]
+/// (`thisAndFollowing`) and returns what the master still lists.
+Future<List<Event>> splitSeriesAt(
+  DeviceCalendar plugin,
+  String calendarId,
+  DailySeries series,
+  Event anchor,
+) async {
+  await plugin.deleteRecurring(anchor.instanceId, EventSpan.thisAndFollowing);
+  return occurrencesOf(plugin, calendarId, series.eventId, series.start);
 }
 
 /// Moves [occurrence] of [series] by [shift] as a per-occurrence edit,
@@ -715,7 +748,7 @@ void main() {
         isTrue,
         reason: 'the original series must not extend past the split point',
       );
-      expect(remainingMaster.every((e) => e.title == 'Daily Series'), isTrue,
+      expect(remainingMaster.every((e) => e.title == series.title), isTrue,
           reason: 'occurrences before the split must keep the original title');
 
       // The new series starts at the split point and carries the new title.
@@ -1074,7 +1107,7 @@ void main() {
           reason:
               'master should have initialCount-1 occurrences (targeted one is now an exception)');
       expect(
-        afterUpdate.every((e) => e.title == 'Daily Series'),
+        afterUpdate.every((e) => e.title == series.title),
         isTrue,
         reason: 'untouched occurrences must keep the original title',
       );
@@ -1082,7 +1115,7 @@ void main() {
       // The master row itself must not be corrupted.
       final master = await plugin.getEvent(series.eventId);
       expect(master, isNotNull);
-      expect(master!.title, 'Daily Series',
+      expect(master!.title, series.title,
           reason: 'the master event row must keep its original title');
     });
 
@@ -1557,13 +1590,8 @@ void main() {
       // leave it behind as an orphan; iOS's EKSpan.futureEvents removes it,
       // so Android must too.
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!,
-          count: 10,
-          title: 'Daily Series ${DateTime.now().microsecondsSinceEpoch}');
-
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(8));
+      final (:series, :occurrences) =
+          await createExpandedDailySeries(plugin, calendarId!);
 
       // Detach one occurrence on each side of the split (anchor at [3]) by
       // moving it two hours within its own day: [6] must go, [1] must stay.
@@ -1574,13 +1602,7 @@ void main() {
           plugin, calendarId!, series, occurrences[1], withinDay);
 
       final anchor = occurrences[3];
-      await plugin.deleteRecurring(
-        anchor.instanceId,
-        EventSpan.thisAndFollowing,
-      );
-
-      final after = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
+      final after = await splitSeriesAt(plugin, calendarId!, series, anchor);
       expectMasterSplit(after,
           before: anchor.startDate,
           keeps: [occurrences[0].startDate, occurrences[2].startDate]);
@@ -1596,31 +1618,20 @@ void main() {
       // ORIGINAL_INSTANCE_TIME bound is built to match. So an occurrence
       // dragged from before the split to after it survives the split.
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!,
-          count: 10,
-          title: 'Daily Series ${DateTime.now().microsecondsSinceEpoch}');
-
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(8));
+      final (:series, :occurrences) =
+          await createExpandedDailySeries(plugin, calendarId!);
 
       // Move [2] onto [7]'s day, offset by two hours so it can't be confused
       // with the master's own [7].
       final moved = await moveOccurrence(plugin, calendarId!, series,
           occurrences[2], const Duration(days: 5, hours: 2));
 
-      final anchor = occurrences[3];
-      await plugin.deleteRecurring(
-        anchor.instanceId,
-        EventSpan.thisAndFollowing,
-      );
-
       // iOS lists a detached occurrence under the master's ID, so the moved
       // copy would read as the master extending past the split; it is
       // asserted on its own below.
+      final anchor = occurrences[3];
       final movedMillis = moved.startDate.millisecondsSinceEpoch;
-      final after = (await occurrencesOf(
-              plugin, calendarId!, series.eventId, series.start))
+      final after = (await splitSeriesAt(plugin, calendarId!, series, anchor))
           .where((e) => e.startDate.millisecondsSinceEpoch != movedMillis)
           .toList();
       expectMasterSplit(after,
@@ -1642,13 +1653,8 @@ void main() {
       // the split to before it goes with "this and following", because the
       // slot it replaced is past the split.
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!,
-          count: 10,
-          title: 'Daily Series ${DateTime.now().microsecondsSinceEpoch}');
-
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(8));
+      final (:series, :occurrences) =
+          await createExpandedDailySeries(plugin, calendarId!);
 
       // Move [6] onto [1]'s day, offset by two hours so it can't be confused
       // with the master's own [1].
@@ -1656,13 +1662,7 @@ void main() {
           occurrences[6], const Duration(days: -5, hours: 2));
 
       final anchor = occurrences[3];
-      await plugin.deleteRecurring(
-        anchor.instanceId,
-        EventSpan.thisAndFollowing,
-      );
-
-      final after = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
+      final after = await splitSeriesAt(plugin, calendarId!, series, anchor);
       expectMasterSplit(after, before: anchor.startDate, keeps: [
         occurrences[0].startDate,
         occurrences[1].startDate,
