@@ -1000,8 +1000,6 @@ class EventsService(
             )
         }
 
-        ensureLocalSeriesSyncId(row)
-
         val effectiveIsAllDay = patch.isAllDay ?: row.allDay
         val newStart = if (startDate != null) {
             toStorageMillis(startDate, effectiveIsAllDay)
@@ -1039,6 +1037,8 @@ class EventsService(
         // The exception is a fresh event row, so a reminders set/clear sets its
         // HAS_ALARM. Unchanged inherits the parent's value implicitly.
         applyRemindersHasAlarm(values, patch.reminders)
+
+        ensureLocalSeriesSyncId(row, readCalendarAccount(row.calendarId))
 
         val exceptionUri = android.content.ContentUris.withAppendedId(
             CalendarContract.Events.CONTENT_EXCEPTION_URI,
@@ -1528,7 +1528,8 @@ class EventsService(
             )
         }
 
-        ensureLocalSeriesSyncId(row)
+        val account = readCalendarAccount(row.calendarId)
+        ensureLocalSeriesSyncId(row, account)
 
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
@@ -1536,17 +1537,13 @@ class EventsService(
         }
 
         // Build the exception URI with sync-adapter context.
-        val account = readCalendarAccount(row.calendarId)
-        val uriBuilder = CalendarContract.Events.CONTENT_EXCEPTION_URI.buildUpon()
-        if (account != null) {
-            uriBuilder
-                .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
-                .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.first)
-                .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.second)
-        }
-        uriBuilder.appendPath(eventId)
+        val base = CalendarContract.Events.CONTENT_EXCEPTION_URI
+        val uri = (if (account != null) syncAdapterUri(base, account) else base)
+            .buildUpon()
+            .appendPath(eventId)
+            .build()
 
-        val exceptionUri = context.contentResolver.insert(uriBuilder.build(), values)
+        val exceptionUri = context.contentResolver.insert(uri, values)
         if (exceptionUri == null) {
             return Result.failure(
                 CalendarException(
@@ -1649,17 +1646,31 @@ class EventsService(
      *
      * Only local calendars are touched: nothing else will ever assign them a
      * `_sync_id`, whereas a synced calendar's adapter owns that column. The
-     * write goes as a sync adapter (the column is read-only otherwise), and
-     * any exceptions written before the id existed are re-keyed by
-     * `original_sync_id` so they join the family too.
+     * write goes as a sync adapter (the column is read-only otherwise).
+     *
+     * The trade: the provider physically deletes an event only for a sync
+     * adapter or when `_sync_id` is empty, so once a local series carries
+     * one, a delete by a non-sync-adapter caller (the stock Calendar app,
+     * say) leaves it as a DELETED=1 row that no adapter will ever collect.
+     * Instances queries skip such rows, and the plugin's own deletes go
+     * through [buildDeleteUri] as a sync adapter, so they are unaffected.
+     *
+     * Any exceptions already written against the series before the id
+     * existed — by an older plugin version or another app — are re-keyed by
+     * `original_sync_id` so they join the family. That is an upgrade-only
+     * path: this plugin now assigns the id before its first exception write,
+     * so the public API can no longer produce a keyless series with
+     * exceptions and the integration suite cannot reach the branch.
+     *
+     * [account] is the calendar's (name, type), read by the caller, which
+     * needs it for the exception URI as well.
      */
-    private fun ensureLocalSeriesSyncId(row: EventRow) {
+    private fun ensureLocalSeriesSyncId(row: EventRow, account: Pair<String, String>?) {
         if (row.syncId != null) return
-        val account = readCalendarAccount(row.calendarId) ?: return
-        if (account.second != CalendarContract.ACCOUNT_TYPE_LOCAL) return
+        if (account == null || account.second != CalendarContract.ACCOUNT_TYPE_LOCAL) return
 
         val syncId = "device_calendar_plus:${java.util.UUID.randomUUID()}"
-        val uri = syncAdapterEventsUri(account)
+        val uri = syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
         val updated = context.contentResolver.update(
             uri,
             android.content.ContentValues().apply {
@@ -1668,6 +1679,9 @@ class EventsService(
             "${CalendarContract.Events._ID} = ?",
             arrayOf(row.id)
         )
+        // 0 means the master vanished between the caller's read and now: the
+        // exception insert that follows reports NOT_FOUND, and there is no
+        // family left to re-key.
         if (updated == 0) return
         context.contentResolver.update(
             uri,
@@ -2120,7 +2134,7 @@ class EventsService(
     ): Int {
         val account = readCalendarAccount(calendarId)
         val uri = if (account != null) {
-            syncAdapterEventsUri(account)
+            syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
         } else {
             CalendarContract.Events.CONTENT_URI
         }
@@ -2132,9 +2146,15 @@ class EventsService(
         )
     }
 
-    /** The Events URI with sync-adapter context for [account] (name, type). */
-    private fun syncAdapterEventsUri(account: Pair<String, String>): android.net.Uri =
-        CalendarContract.Events.CONTENT_URI.buildUpon()
+    /**
+     * [base] (an Events or exception URI) with sync-adapter context for
+     * [account] (name, type).
+     */
+    private fun syncAdapterUri(
+        base: android.net.Uri,
+        account: Pair<String, String>
+    ): android.net.Uri =
+        base.buildUpon()
             .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
             .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.first)
             .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.second)
@@ -2164,6 +2184,6 @@ class EventsService(
         val account = readCalendarAccount(calendarId)
             ?: return CalendarContract.Events.CONTENT_URI
 
-        return syncAdapterEventsUri(account)
+        return syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
     }
 }

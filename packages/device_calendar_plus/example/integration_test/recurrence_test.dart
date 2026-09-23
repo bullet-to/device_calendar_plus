@@ -1030,16 +1030,6 @@ void main() {
         hasLength(1),
         reason: 'the moved occurrence must appear once, on its new day',
       );
-
-      // Deleting the series takes the detached occurrence with it.
-      await plugin.deleteEvent(eventId: eventId);
-      final remaining = await plugin.listEvents(
-        anchor.subtract(const Duration(days: 1)),
-        anchor.add(const Duration(days: 70)),
-        calendarIds: [calendarId!],
-      );
-      expect(remaining.where((e) => e.title == 'Weekly #153'), isEmpty,
-          reason: 'deleting the series must remove its detached occurrence');
     });
 
     test('updateEvent on a recurring eventId updates the whole series',
@@ -1526,6 +1516,43 @@ void main() {
           plugin, calendarId!, series.eventId, series.start);
       expect(after, isEmpty, reason: 'the whole series should be gone');
       expect(await plugin.getEvent(series.eventId), isNull);
+    });
+
+    test('deleteEvent on a recurring eventId removes its detached occurrences',
+        () async {
+      // An occurrence edited through its instance ID becomes a detached
+      // exception row. Deleting the series must take it along — on a local
+      // Android calendar the provider stops cascading once the series has
+      // the `_sync_id` the #153 fix gives it, so the plugin cascades itself.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(6));
+
+      await plugin.updateEvent(
+        eventId: occurrences[4].instanceId,
+        title: 'Detached #153',
+      );
+      Future<Iterable<Event>> detached() async {
+        final events = await plugin.listEvents(
+          series.start.subtract(const Duration(days: 1)),
+          series.start.add(const Duration(days: 14)),
+          calendarIds: [calendarId!],
+        );
+        return events.where((e) => e.title == 'Detached #153');
+      }
+
+      expect(await detached(), hasLength(1),
+          reason: 'the edited occurrence must be detached before the delete');
+
+      await plugin.deleteEvent(eventId: series.eventId);
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(after, isEmpty, reason: 'the whole series should be gone');
+      expect(await detached(), isEmpty,
+          reason: 'deleting the series must remove its detached occurrence');
     });
   });
 }
