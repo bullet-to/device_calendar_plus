@@ -105,6 +105,22 @@ cd android
 ./gradlew :device_calendar_plus_android:test
 ```
 
+If you touched the plugin's Gradle config, run both again with
+`-Pandroid.builtInKotlin=true`:
+```bash
+cd packages/device_calendar_plus/example
+flutter build apk --debug -Pandroid.builtInKotlin=true
+
+cd android
+./gradlew -Pandroid.builtInKotlin=true :device_calendar_plus_android:test
+```
+
+The example pins the Flutter template's `android.builtInKotlin=false`, under
+which Flutter's Gradle plugin applies KGP to `:device_calendar_plus_android`
+on every build. The `-P` flag overrides that for one run — no file edit needed
+— so AGP compiles the plugin's Kotlin itself: the mode apps on Flutter 3.47+
+build in, and the one the plugin's `build.gradle` is written for (#133).
+
 ## Pull Requests
 
 - **One feature per PR.** Each PR should branch off `main` and contain only its own changes.
