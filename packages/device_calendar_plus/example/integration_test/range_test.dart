@@ -2,22 +2,18 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-/// `listEvents` contract tests: wide-range chunking
-/// (builttoroam/device_calendar#452) and all-day events in sub-day windows.
+/// Regression tests for builttoroam/device_calendar#452.
+///
+/// iOS EventKit's `predicateForEvents` silently truncates a date range longer
+/// than ~4 years to the first 4 years, so a naive single query drops the later
+/// events. The fix chunks wide ranges into <=3-year windows and merges the
+/// results — which must return every event exactly once, in start-date order,
+/// even for recurring series whose occurrences straddle a window boundary.
+///
+/// Android has no such limit, so these also serve as a cross-platform contract.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  // Regression tests for builttoroam/device_calendar#452.
-  //
-  // iOS EventKit's `predicateForEvents` silently truncates a date range longer
-  // than ~4 years to the first 4 years, so a naive single query drops the later
-  // events. The fix chunks wide ranges into <=3-year windows and merges the
-  // results — which must return every event exactly once, in start-date
-  // order, even for recurring series whose occurrences straddle a window
-  // boundary.
-  //
-  // Android has no such limit, so these also serve as a cross-platform
-  // contract.
   group('listEvents wide range (>4 year span)', () {
     late DeviceCalendar plugin;
     String? calendarId;
@@ -135,71 +131,6 @@ void main() {
         occurrenceCount,
         reason: 'expected all $occurrenceCount monthly occurrences across the '
             'span (crossing a window boundary)',
-      );
-    });
-  });
-
-  group('listEvents all-day events', () {
-    late DeviceCalendar plugin;
-    String? calendarId;
-
-    setUpAll(() async {
-      plugin = DeviceCalendar.instance;
-      await plugin.requestPermissions();
-      calendarId = await plugin.createCalendar(
-        name: 'All-day Window Test ${DateTime.now().millisecondsSinceEpoch}',
-        colorHex: '#FF8800',
-      );
-    });
-
-    tearDownAll(() async {
-      if (calendarId != null) {
-        await plugin.deleteCalendar(calendarId!);
-      }
-    });
-
-    // iOS EventKit's overlap predicate returns an all-day event for any window
-    // that touches its date, however short. Android stores all-day events at
-    // UTC midnight and compares them against the window's local dates, so a
-    // window that starts and ends on the same date must still count as
-    // covering that whole date rather than collapsing to nothing. The
-    // neighbouring days pin the other side: widening the window to its date
-    // must not pull in the day before or after.
-    test('includes an all-day event when the window is a sub-day slice of its '
-        'date', () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final now = DateTime.now();
-      // Local midnight via the constructor, not `add(Duration(days: 3))`: a
-      // calendar day, not 24h, so it stays at midnight across a DST change.
-      final day = DateTime(now.year, now.month, now.day + 3);
-      const dayOffsets = <String, int>{
-        'all-day before': -1,
-        'all-day on day': 0,
-        'all-day after': 1,
-      };
-      for (final entry in dayOffsets.entries) {
-        final start = DateTime(day.year, day.month, day.day + entry.value);
-        await plugin.createEvent(
-          calendarId: calendarId!,
-          title: entry.key,
-          startDate: start,
-          endDate: DateTime(start.year, start.month, start.day + 1),
-          isAllDay: true,
-        );
-      }
-
-      final events = await plugin.listEvents(
-        day.add(const Duration(hours: 10)),
-        day.add(const Duration(hours: 11)),
-        calendarIds: [calendarId!],
-      );
-
-      expect(
-        events.map((e) => e.title).where(dayOffsets.containsKey).toList(),
-        ['all-day on day'],
-        reason:
-            "a window inside a date must return that date's all-day event "
-            'and nothing from the neighbouring dates',
       );
     });
   });

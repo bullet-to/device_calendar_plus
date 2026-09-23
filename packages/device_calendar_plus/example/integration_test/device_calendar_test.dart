@@ -1307,5 +1307,49 @@ void main() {
       expect(after.where((e) => e.title == 'Holiday Trip'), isEmpty,
           reason: 'Must not appear after last day');
     });
+
+    // iOS EventKit's overlap predicate returns an all-day event for any window
+    // that touches its date, however short. Android stores all-day events at
+    // UTC midnight and compares them against the window's local dates, so a
+    // window that starts and ends on the same date must still count as
+    // covering that whole date rather than collapsing to nothing. The
+    // neighbouring days pin the other side: widening the window to its date
+    // must not pull in the day before or after.
+    test('includes an all-day event when the window is a sub-day slice of its '
+        'date', () async {
+      final now = DateTime.now();
+      // Local midnight via the constructor, not `add(Duration(days: 3))`: a
+      // calendar day, not 24h, so it stays at midnight across a DST change.
+      final day = DateTime(now.year, now.month, now.day + 3);
+      const dayOffsets = <String, int>{
+        'all-day before': -1,
+        'all-day on day': 0,
+        'all-day after': 1,
+      };
+      for (final entry in dayOffsets.entries) {
+        final start = DateTime(day.year, day.month, day.day + entry.value);
+        await plugin.createEvent(
+          calendarId: calendarId,
+          title: entry.key,
+          startDate: start,
+          endDate: DateTime(start.year, start.month, start.day + 1),
+          isAllDay: true,
+        );
+      }
+
+      final events = await plugin.listEvents(
+        day.add(const Duration(hours: 10)),
+        day.add(const Duration(hours: 11)),
+        calendarIds: [calendarId],
+      );
+
+      expect(
+        events.map((e) => e.title).where(dayOffsets.containsKey).toList(),
+        ['all-day on day'],
+        reason:
+            "a window inside a date must return that date's all-day event "
+            'and nothing from the neighbouring dates',
+      );
+    });
   });
 }
