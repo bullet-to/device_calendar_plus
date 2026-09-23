@@ -106,14 +106,24 @@ cd android
 ```
 
 If you touched `packages/device_calendar_plus_android/android/build.gradle`
-or the example's Android toolchain pins (`android/settings.gradle.kts`,
-`android/gradle.properties`), run both commands again with
-`-Pandroid.builtInKotlin=true` appended (Flutter 3.47+). The example keeps the
-template's `android.builtInKotlin=false` (see the comment in
-`android/gradle.properties`), so the default run never has AGP compile the
-plugin's Kotlin itself — the mode AGP 9 defaults to for any app that drops or
-flips that property. `-P` overrides the property for that run only, so nothing
-needs editing.
+or any of the example's Android toolchain files under
+`packages/device_calendar_plus/example/android/` (`settings.gradle.kts`,
+`gradle.properties`, `app/build.gradle.kts`,
+`gradle/wrapper/gradle-wrapper.properties`), run both again under built-in
+Kotlin (Flutter 3.47+):
+```bash
+cd packages/device_calendar_plus/example
+flutter build apk --debug -Pandroid.builtInKotlin=true
+
+cd android
+./gradlew :device_calendar_plus_android:test -Pandroid.builtInKotlin=true
+```
+
+The example keeps the template's `android.builtInKotlin=false` (see the
+comment in its `gradle.properties`), so the default run never has AGP compile
+the plugin's Kotlin itself, which is what AGP 9 does by default for any app
+that drops or flips that property. `-P` overrides the property for that run
+only, so nothing needs editing.
 
 ## Pull Requests
 
