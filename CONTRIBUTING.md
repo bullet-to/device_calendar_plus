@@ -96,7 +96,8 @@ destination to pick another — list what you have with
 ```
 
 Kotlin unit tests (the Gradle wrapper is generated, not committed — run any
-Flutter Android build once first):
+Flutter Android build once first, on Flutter 3.47 or later; the example pins
+that release's Gradle/AGP/KGP):
 ```bash
 cd packages/device_calendar_plus/example
 flutter build apk --debug
