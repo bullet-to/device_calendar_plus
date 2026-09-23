@@ -10,12 +10,7 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.9.1")
-        // Kept on purpose, even though the plugin is no longer applied below:
-        // this is what lets Flutter's Gradle plugin resolve `kotlin-android`
-        // when it applies it on our behalf (built-in Kotlin off), and what
-        // makes `org.jetbrains.kotlin.gradle.dsl.JvmTarget` resolvable in the
-        // `kotlin {}` block. Flutter's own plugin template keeps it; the KGP
-        // deprecation detector only matches an *applied* plugin (#133).
+        // Not applied below; kept for resolution, see the note above apply plugin.
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
     }
 }
@@ -27,13 +22,17 @@ allprojects {
     }
 }
 
-// Built-in Kotlin: the Kotlin Gradle Plugin is no longer *applied* here (it
-// stays on the buildscript classpath above). When built-in Kotlin is on
-// (AGP 9+, the default) AGP compiles Kotlin itself; when it's off, the
-// Flutter Gradle plugin (3.44+) applies `kotlin-android` to plugin projects
-// that don't. Applying it ourselves is what triggers Flutter's KGP
-// deprecation warning (#133). This also means the script only configures
-// under Flutter's Gradle plugin: there is no standalone `android/` build.
+// Built-in Kotlin (#133): the Kotlin Gradle Plugin is not applied here,
+// because an applied `kotlin-android` is exactly what Flutter's KGP
+// deprecation detector flags. With built-in Kotlin on (AGP 9+, the default)
+// AGP compiles Kotlin itself; with it off, Flutter's Gradle plugin (3.44+)
+// applies `kotlin-android` for us. KGP stays on the buildscript classpath
+// above so that apply resolves even in a host app whose root `plugins {}`
+// block doesn't declare KGP (Flutter's failure message otherwise asks the
+// app to), and so `org.jetbrains.kotlin.gradle.dsl.JvmTarget` resolves in
+// the `kotlin {}` block. Flutter's own plugin template keeps it too. As a
+// result this script only configures under Flutter's Gradle plugin: there
+// is no standalone `android/` build.
 apply plugin: "com.android.library"
 
 android {
