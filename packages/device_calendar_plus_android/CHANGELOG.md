@@ -1,5 +1,12 @@
 ## Unreleased
 
+### Fixed
+- `deleteRecurring` with `thisAndFollowing` now removes a detached occurrence
+  that falls on or after the split. Truncating the series' rule left an
+  occurrence that had been edited on its own behind as an orphan row, which
+  came back in `listEvents` once the provider next rebuilt its Instances
+  cache; iOS removes it, so Android does too.
+
 ### Changed
 - Migrated to Flutter's built-in Kotlin: the plugin no longer applies the
   Kotlin Gradle Plugin itself, which silences the KGP deprecation warning on

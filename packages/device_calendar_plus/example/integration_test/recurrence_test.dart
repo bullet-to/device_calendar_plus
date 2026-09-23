@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -1418,6 +1420,69 @@ void main() {
       // Occurrences before the anchor survive.
       expect(after, isNotEmpty,
           reason: 'occurrences before the anchor must survive');
+    });
+
+    test('thisAndFollowing removes a detached occurrence past the split',
+        () async {
+      // An occurrence edited on its own is a detached exception, not part
+      // of the master's expansion. Truncating the master's rule alone would
+      // leave it behind as an orphan; iOS's EKSpan.futureEvents removes it,
+      // so Android must too.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
+
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(8));
+      final moved = occurrences[6];
+      final movedStart = moved.startDate.add(const Duration(hours: 2));
+      await plugin.updateEvent(
+        eventId: moved.instanceId,
+        startDate: movedStart,
+        endDate: moved.endDate.add(const Duration(hours: 2)),
+      );
+
+      // The platforms disagree on a detached occurrence's ID, so find it by
+      // title at its new instant.
+      Future<Iterable<Event>> detached() async {
+        final listed = await plugin.listEvents(
+          series.start.subtract(const Duration(days: 1)),
+          series.start.add(const Duration(days: 14)),
+          calendarIds: [calendarId!],
+        );
+        return listed.where((e) =>
+            e.title == 'Daily Series' &&
+            e.startDate.millisecondsSinceEpoch ==
+                movedStart.millisecondsSinceEpoch);
+      }
+
+      final movedEvent = (await detached()).toList();
+      expect(movedEvent, hasLength(1),
+          reason: 'the moved occurrence must appear once, at its new time');
+
+      final anchor = occurrences[3];
+      await plugin.deleteRecurring(
+        anchor.instanceId,
+        EventSpan.thisAndFollowing,
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expectTruncatedMaster(after, before: anchor.startDate, count: 3);
+      expect(await detached(), isEmpty,
+          reason: 'a detached occurrence past the split must go with the '
+              'rest of "this and following"');
+      if (Platform.isAndroid) {
+        // On Android the detached occurrence is its own Events row, and
+        // listEvents reads the Instances cache, which the truncate rebuilds
+        // from the master alone — so an orphaned row and a removed one look
+        // the same there until the cache next regenerates. The bare-ID read
+        // goes straight to the row. (iOS reports the master's identifier for
+        // a detached occurrence, so the same read would find the master.)
+        expect(await plugin.getEvent(movedEvent.single.eventId), isNull,
+            reason: 'the detached occurrence\'s own row must be removed, not '
+                'just dropped from the Instances cache');
+      }
     });
 
     test('deleteEvent with an instance ID removes only the one occurrence',

@@ -1,5 +1,10 @@
 ## Unreleased
 
+### Fixed
+- Android: `deleteRecurring` with `thisAndFollowing` no longer leaves behind
+  an occurrence on or after the split that had been edited on its own,
+  matching iOS.
+
 ### Changed
 - Android: migrated to Flutter's built-in Kotlin, so the KGP deprecation
   warning no longer prints on every `flutter build`. Minimum supported SDK is

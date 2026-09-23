@@ -1486,6 +1486,22 @@ class EventsService(
                 )
             )
         }
+
+        // The truncate only stops the master generating occurrences; an
+        // occurrence that was edited on its own is a detached exception row
+        // (ORIGINAL_ID = master, ORIGINAL_INSTANCE_TIME = the instant it
+        // replaced), so one past the split would survive as an orphan: out of
+        // the Instances cache the rewrite above rebuilds, but still on disk,
+        // and back in listEvents once the provider next regenerates it.
+        // iOS's EKSpan.futureEvents removes those too, so match it: drop every
+        // exception from the anchor's instant onward. The sync-adapter URI
+        // physically removes the rows rather than flagging them DELETED=1.
+        context.contentResolver.delete(
+            buildDeleteUri(eventId),
+            "${CalendarContract.Events.ORIGINAL_ID} = ? AND " +
+                "${CalendarContract.Events.ORIGINAL_INSTANCE_TIME} >= ?",
+            arrayOf(eventId, timestamp.toString())
+        )
         return Result.success(Unit)
     }
 
