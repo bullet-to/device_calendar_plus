@@ -7,7 +7,6 @@ import android.provider.CalendarContract
 import java.util.Date
 
 private const val MINUTES_PER_DAY = 1440
-private const val MILLIS_PER_DAY = 86_400_000L
 
 // Default-calendar resolution reuses CalendarService rather than duplicating
 // its cursor logic, so it's injected by the plugin.
@@ -30,9 +29,10 @@ class EventsService(
         val endMillis = endDate.time
 
         // Widen to the all-day UTC-midnight edges; see
-        // allDayWindowEndUtcMidnight. (issue #20)
-        val queryStartUtcMidnight = localDateToUtcMidnight(startMillis)
-        val queryEndUtcMidnight = allDayWindowEndUtcMidnight(endMillis)
+        // AllDayDates.windowEndUtcMidnight. (issue #20)
+        val zone = java.util.TimeZone.getDefault()
+        val queryStartUtcMidnight = AllDayDates.localDateToUtcMidnight(startMillis, zone)
+        val queryEndUtcMidnight = AllDayDates.windowEndUtcMidnight(endMillis, zone)
 
         val effectiveStart = minOf(startMillis, queryStartUtcMidnight)
         val effectiveEnd = maxOf(endMillis, queryEndUtcMidnight)
@@ -106,22 +106,6 @@ class EventsService(
     }
     
     /**
-     * Exclusive UTC-midnight edge of a `[start, end)` listEvents window.
-     *
-     * All-day events are stored as UTC-midnight dates, but the caller passes
-     * local millis. A window touches every local date from `date(start)`
-     * through `date(end - 1)`, so its all-day edges are the UTC midnights of
-     * those two dates: the start edge is `localDateToUtcMidnight(start)`, and
-     * this is the day after the local date of `end - 1`. An end on a local
-     * midnight names that boundary unchanged; an end inside a date rounds up
-     * so a sub-day window still covers its whole date. (issue #20)
-     */
-    internal fun allDayWindowEndUtcMidnight(
-        endMillis: Long,
-        zone: java.util.TimeZone = java.util.TimeZone.getDefault(),
-    ): Long = localDateToUtcMidnight(endMillis - 1, zone) + MILLIS_PER_DAY
-
-    /**
      * Checks whether an event (all-day or timed) falls within the query range.
      * All-day events are compared by UTC calendar date; timed events by millis.
      */
@@ -137,7 +121,7 @@ class EventsService(
         if (isAllDay) {
             // All-day BEGIN/END are UTC midnights. If end <= begin, it's a
             // single-day event stored without the +1 day convention.
-            val effectiveEnd = if (eventEnd <= eventBegin) eventBegin + MILLIS_PER_DAY else eventEnd
+            val effectiveEnd = if (eventEnd <= eventBegin) eventBegin + AllDayDates.MILLIS_PER_DAY else eventEnd
             return effectiveEnd > startUtcMidnight && eventBegin < endUtcMidnight
         }
         // Timed events: half-open overlap. A zero-duration (instantaneous) event
@@ -220,8 +204,9 @@ class EventsService(
         val end: Long
         
         if (allDay) {
-            start = utcToLocalMidnight(rawStart)
-            end = utcToLocalMidnight(rawEnd)
+            val zone = java.util.TimeZone.getDefault()
+            start = AllDayDates.utcToLocalMidnight(rawStart, zone)
+            end = AllDayDates.utcToLocalMidnight(rawEnd, zone)
         } else {
             start = rawStart
             end = rawEnd
@@ -642,8 +627,9 @@ class EventsService(
             val endMillis: Long
             
             if (isAllDay) {
-                startMillis = localDateToUtcMidnight(startDate.time)
-                endMillis = localDateToUtcMidnight(endDate.time)
+                val zone = java.util.TimeZone.getDefault()
+                startMillis = AllDayDates.localDateToUtcMidnight(startDate.time, zone)
+                endMillis = AllDayDates.localDateToUtcMidnight(endDate.time, zone)
             } else {
                 startMillis = startDate.time
                 endMillis = endDate.time
@@ -879,8 +865,9 @@ class EventsService(
             val endMillis: Long?
 
             if (effectiveIsAllDay) {
-                startMillis = startDate?.let { localDateToUtcMidnight(it.time) }
-                endMillis = endDate?.let { localDateToUtcMidnight(it.time) }
+                val zone = java.util.TimeZone.getDefault()
+                startMillis = startDate?.let { AllDayDates.localDateToUtcMidnight(it.time, zone) }
+                endMillis = endDate?.let { AllDayDates.localDateToUtcMidnight(it.time, zone) }
             } else {
                 startMillis = startDate?.time
                 endMillis = endDate?.time
@@ -1922,56 +1909,13 @@ class EventsService(
             return c.timeInMillis
         }
         val diff = startOfDay(toMillis) - startOfDay(fromMillis)
-        return Math.round(diff.toDouble() / MILLIS_PER_DAY).toInt()
+        return Math.round(diff.toDouble() / AllDayDates.MILLIS_PER_DAY).toInt()
     }
 
     /** Storage millis for a date: UTC midnight for all-day, the instant otherwise. */
     private fun toStorageMillis(date: java.util.Date, isAllDay: Boolean): Long {
         if (!isAllDay) return date.time
-        return localDateToUtcMidnight(date.time)
-    }
-
-    /**
-     * Converts local-time millis to UTC midnight, preserving the calendar date.
-     * Android stores all-day events as UTC midnight boundaries, so a local
-     * "June 5" must become "June 5 00:00 UTC". Used both when writing all-day
-     * events and for the all-day edges of the listEvents window (see
-     * [allDayWindowEndUtcMidnight]).
-     */
-    private fun localDateToUtcMidnight(
-        localMillis: Long,
-        zone: java.util.TimeZone = java.util.TimeZone.getDefault(),
-    ): Long {
-        val local = java.util.Calendar.getInstance(zone)
-        local.timeInMillis = localMillis
-        val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        utc.set(
-            local.get(java.util.Calendar.YEAR),
-            local.get(java.util.Calendar.MONTH),
-            local.get(java.util.Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        utc.set(java.util.Calendar.MILLISECOND, 0)
-        return utc.timeInMillis
-    }
-
-    /**
-     * Converts UTC millis to local midnight, preserving the calendar date.
-     * Used when reading all-day events: Android stores them as UTC midnight
-     * boundaries, and we need to present the date in the device's local time.
-     */
-    private fun utcToLocalMidnight(utcMillis: Long): Long {
-        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        utcCal.timeInMillis = utcMillis
-        val localCal = java.util.Calendar.getInstance()
-        localCal.set(
-            utcCal.get(java.util.Calendar.YEAR),
-            utcCal.get(java.util.Calendar.MONTH),
-            utcCal.get(java.util.Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        localCal.set(java.util.Calendar.MILLISECOND, 0)
-        return localCal.timeInMillis
+        return AllDayDates.localDateToUtcMidnight(date.time, java.util.TimeZone.getDefault())
     }
 
     /** Resolves an event's duration, falling back to one hour when unknown. */
