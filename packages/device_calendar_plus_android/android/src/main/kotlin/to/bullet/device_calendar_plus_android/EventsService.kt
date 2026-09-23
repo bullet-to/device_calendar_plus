@@ -1459,30 +1459,16 @@ class EventsService(
             )
         }
 
-        // Both writes below need sync-adapter context: the truncate touches
-        // RRULE, which the provider strips from a plain update (see
-        // updateEventAsSyncAdapter), and the sweep must physically remove
-        // rows rather than flag them DELETED=1. One account read serves
-        // both. The plain URI is the fallback if the calendar's account can't
-        // be read, which should only happen if the calendar was deleted
-        // between the row read and now.
-        val account = readCalendarAccount(row.calendarId)
-        val uri = if (account != null) {
-            syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
-        } else {
-            CalendarContract.Events.CONTENT_URI
-        }
-
         // Truncate the series so the anchor occurrence and every later one
         // stop generating. UNTIL is inclusive, so cutting one second early
         // drops the anchor too — "this and following" removes the anchor.
         //
-        // DTSTART/DURATION are rewritten with their existing values too,
-        // because Android's CalendarProvider doesn't always invalidate the
-        // Instances cache when only RRULE changes — touching multiple time
-        // columns forces it to regenerate. Without this the master's RRULE
-        // is correctly updated on disk but listEvents keeps returning the
-        // old expansion.
+        // RRULE writes go through updateEventAsSyncAdapter; we also rewrite
+        // DTSTART/DURATION with their existing values, because Android's
+        // CalendarProvider doesn't always invalidate the Instances cache
+        // when only RRULE changes — touching multiple time columns forces
+        // it to regenerate. Without this the master's RRULE is correctly
+        // updated on disk but listEvents keeps returning the old expansion.
         val truncatedRrule = RruleString.withUntil(row.rrule, timestamp - 1000, row.allDay)
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, truncatedRrule)
@@ -1491,12 +1477,7 @@ class EventsService(
                 put(CalendarContract.Events.DURATION, row.duration)
             }
         }
-        val updatedRows = context.contentResolver.update(
-            uri,
-            values,
-            "${CalendarContract.Events._ID} = ?",
-            arrayOf(eventId)
-        )
+        val updatedRows = updateEventAsSyncAdapter(eventId, row.calendarId, values)
         if (updatedRows == 0) {
             return Result.failure(
                 CalendarException(
@@ -1511,7 +1492,7 @@ class EventsService(
         // exceptions gone first and the truncate then failed, the provider
         // would keep generating the original slots and the user's
         // per-occurrence edits would be lost.
-        deleteDetachedOccurrencesFrom(eventId, uri, timestamp)
+        deleteDetachedOccurrencesFrom(eventId, row.calendarId, timestamp)
         return Result.success(Unit)
     }
 
@@ -1532,17 +1513,16 @@ class EventsService(
      * occurrence dragged from before the split to after it survives, and one
      * dragged from after the split to before it goes.
      *
-     * [uri] is the Events URI with sync-adapter context for the master's
-     * calendar, so the rows are physically removed rather than flagged
-     * DELETED=1.
+     * Deletes with sync-adapter context for [calendarId] so the rows are
+     * physically removed rather than flagged DELETED=1.
      */
     private fun deleteDetachedOccurrencesFrom(
         masterId: String,
-        uri: android.net.Uri,
+        calendarId: String,
         fromInstant: Long
     ) {
         context.contentResolver.delete(
-            uri,
+            syncAdapterUriFor(CalendarContract.Events.CONTENT_URI, calendarId),
             "${CalendarContract.Events.ORIGINAL_ID} = ? AND " +
                 "${CalendarContract.Events.ORIGINAL_INSTANCE_TIME} >= ?",
             arrayOf(masterId, fromInstant.toString())
@@ -1582,9 +1562,7 @@ class EventsService(
         }
 
         // The exception URI with sync-adapter context.
-        val account = readCalendarAccount(row.calendarId)
-        val base = CalendarContract.Events.CONTENT_EXCEPTION_URI
-        val uri = (if (account != null) syncAdapterUri(base, account) else base)
+        val uri = syncAdapterUriFor(CalendarContract.Events.CONTENT_EXCEPTION_URI, row.calendarId)
             .buildUpon()
             .appendPath(eventId)
             .build()
@@ -2110,14 +2088,8 @@ class EventsService(
         calendarId: String,
         values: android.content.ContentValues
     ): Int {
-        val account = readCalendarAccount(calendarId)
-        val uri = if (account != null) {
-            syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
-        } else {
-            CalendarContract.Events.CONTENT_URI
-        }
         return context.contentResolver.update(
-            uri,
+            syncAdapterUriFor(CalendarContract.Events.CONTENT_URI, calendarId),
             values,
             "${CalendarContract.Events._ID} = ?",
             arrayOf(eventId)
@@ -2134,6 +2106,13 @@ class EventsService(
             .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.first)
             .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.second)
             .build()
+
+    /**
+     * [base] with sync-adapter context for [calendarId]'s account, or [base]
+     * itself when the calendar can't be read (deleted since the row was read).
+     */
+    private fun syncAdapterUriFor(base: android.net.Uri, calendarId: String): android.net.Uri =
+        readCalendarAccount(calendarId)?.let { syncAdapterUri(base, it) } ?: base
 
     /**
      * Builds a delete URI with sync-adapter context for the given event.
@@ -2156,9 +2135,6 @@ class EventsService(
             } else null
         } ?: return CalendarContract.Events.CONTENT_URI
 
-        val account = readCalendarAccount(calendarId)
-            ?: return CalendarContract.Events.CONTENT_URI
-
-        return syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
+        return syncAdapterUriFor(CalendarContract.Events.CONTENT_URI, calendarId)
     }
 }
