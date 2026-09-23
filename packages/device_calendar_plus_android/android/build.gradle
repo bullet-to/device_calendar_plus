@@ -22,17 +22,11 @@ allprojects {
     }
 }
 
-// Built-in Kotlin (#133): the Kotlin Gradle Plugin is not applied here,
-// because an applied `kotlin-android` is exactly what Flutter's KGP
-// deprecation detector flags. With built-in Kotlin on (AGP 9+, the default)
-// AGP compiles Kotlin itself; with it off, Flutter's Gradle plugin (3.44+)
-// applies `kotlin-android` for us. KGP stays on the buildscript classpath
-// above so that apply resolves even in a host app whose root `plugins {}`
-// block doesn't declare KGP (Flutter's failure message otherwise asks the
-// app to), and so `org.jetbrains.kotlin.gradle.dsl.JvmTarget` resolves in
-// the `kotlin {}` block. Flutter's own plugin template keeps it too. As a
-// result this script only configures under Flutter's Gradle plugin: there
-// is no standalone `android/` build.
+// Built-in Kotlin (#133). Do not apply `kotlin-android` here: Flutter's
+// Gradle plugin applies it when AGP < 9 / `android.builtInKotlin=false`, and
+// AGP compiles Kotlin itself otherwise. KGP stays on the buildscript classpath
+// above so that apply (and `JvmTarget` below) resolve. Requires Flutter >= 3.44.
+// See https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
 apply plugin: "com.android.library"
 
 android {
