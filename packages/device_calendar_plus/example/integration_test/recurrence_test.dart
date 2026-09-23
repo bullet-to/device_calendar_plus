@@ -2,15 +2,6 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-/// Set by `run_integration_tests.sh` when the target is an Android emulator.
-/// The emulator's Calendar Provider permanently drops a recurring series'
-/// instances after a CONTENT_EXCEPTION_URI insert (verified: 10 occurrences
-/// before the insert, then 0 for 10s of polling — it never recovers), which
-/// breaks the per-instance edit/delete tests below. The behaviour is correct
-/// on physical Android devices and iOS, so those run the tests; only the
-/// emulator skips. See builttoroam/device_calendar#416 follow-up.
-const bool _isAndroidEmulator = bool.fromEnvironment('DC_ANDROID_EMULATOR');
-
 /// Creates a daily recurring event starting one hour from now (UTC), with
 /// `count` total occurrences. Returns the event ID and the start time.
 Future<({String eventId, DateTime start})> createDailySeries(
@@ -900,10 +891,7 @@ void main() {
     });
 
     test('updateEvent with an instance ID edits only the one occurrence',
-        skip: _isAndroidEmulator
-            ? 'Android emulator Calendar Provider drops master occurrences '
-                'after a CONTENT_EXCEPTION_URI insert; runs on physical devices'
-            : false, () async {
+        () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 
@@ -981,6 +969,77 @@ void main() {
           DeviceCalendarError.invalidArguments,
         )),
       );
+    });
+
+    test(
+        'updateEvent moving an instance to another day keeps every other '
+        'occurrence (#153)', () async {
+      // Issue #153's shape: a weekly BYDAY series ending on a date, one
+      // occurrence moved a day later through its instance ID. On a local
+      // Android calendar the Calendar Provider used to drop the master's
+      // occurrences from its Instances cache after the exception insert —
+      // the earlier ones for good, since only windows past the cached range
+      // re-expand on demand.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final anchor = DateTime.now().toUtc().add(const Duration(hours: 1));
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId!,
+        title: 'Weekly #153',
+        startDate: anchor,
+        endDate: anchor.add(const Duration(hours: 1)),
+        recurrenceRule: WeeklyRecurrence(
+          daysOfWeek: [weekdayOf(anchor)],
+          end: UntilEnd(anchor.add(const Duration(days: 7 * 8 + 1))),
+        ),
+        timeZone: 'UTC',
+      );
+      final before = await occurrencesOf(plugin, calendarId!, eventId, anchor,
+          windowDays: 70);
+      expect(before.length, 9, reason: 'the anchor plus eight weekly repeats');
+      final target = before[3];
+      final movedStart = target.startDate.add(const Duration(days: 1));
+
+      await plugin.updateEvent(
+        eventId: target.instanceId,
+        startDate: movedStart,
+        endDate: target.endDate.add(const Duration(days: 1)),
+      );
+
+      final after = await occurrencesOf(plugin, calendarId!, eventId, anchor,
+          windowDays: 70);
+      final expectedMaster = [...before]..removeAt(3);
+      expect(
+        after.map((e) => e.startDate.millisecondsSinceEpoch).toList(),
+        expectedMaster.map((e) => e.startDate.millisecondsSinceEpoch).toList(),
+        reason: 'every occurrence but the moved one must stay on the series, '
+            'the earlier ones included (#153)',
+      );
+
+      // The moved occurrence is a detached exception; the platforms disagree
+      // on its ID, so find it by title at its new instant.
+      final listed = await plugin.listEvents(
+        anchor.subtract(const Duration(days: 1)),
+        anchor.add(const Duration(days: 70)),
+        calendarIds: [calendarId!],
+      );
+      expect(
+        listed.where((e) =>
+            e.title == 'Weekly #153' &&
+            e.startDate.millisecondsSinceEpoch ==
+                movedStart.millisecondsSinceEpoch),
+        hasLength(1),
+        reason: 'the moved occurrence must appear once, on its new day',
+      );
+
+      // Deleting the series takes the detached occurrence with it.
+      await plugin.deleteEvent(eventId: eventId);
+      final remaining = await plugin.listEvents(
+        anchor.subtract(const Duration(days: 1)),
+        anchor.add(const Duration(days: 70)),
+        calendarIds: [calendarId!],
+      );
+      expect(remaining.where((e) => e.title == 'Weekly #153'), isEmpty,
+          reason: 'deleting the series must remove its detached occurrence');
     });
 
     test('updateEvent on a recurring eventId updates the whole series',
@@ -1421,10 +1480,7 @@ void main() {
     });
 
     test('deleteEvent with an instance ID removes only the one occurrence',
-        skip: _isAndroidEmulator
-            ? 'Android emulator Calendar Provider drops master occurrences '
-                'after a CONTENT_EXCEPTION_URI insert; runs on physical devices'
-            : false, () async {
+        () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!, count: 10);
 

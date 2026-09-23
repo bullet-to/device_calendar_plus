@@ -146,19 +146,6 @@ echo -e "${GREEN}✓${NC} Device ID: ${YELLOW}$DEVICE_ID${NC}"
 echo -e "${GREEN}✓${NC} Platform: ${YELLOW}$PLATFORM${NC}"
 echo ""
 
-# Detect Android emulators so the suite can skip tests that only fail on the
-# emulator's Calendar Provider (e.g. recurrence exception inserts that wipe the
-# master's instances). Physical devices and iOS run the full suite.
-DART_DEFINES=""
-if [ "$PLATFORM" == "android" ]; then
-    QEMU=$(adb -s "$DEVICE_ID" shell getprop ro.boot.qemu 2>/dev/null | tr -d '\r')
-    if [ "$QEMU" == "1" ] || [[ "$DEVICE_ID" == emulator-* ]]; then
-        DART_DEFINES="--dart-define=DC_ANDROID_EMULATOR=true"
-        echo -e "${YELLOW}⚠️  Android emulator detected — emulator-only flaky tests will be skipped${NC}"
-        echo ""
-    fi
-fi
-
 # A simulator's UDID appears in `simctl list devices`; a physical device's does
 # not. Used to decide whether we can auto-grant (simctl is simulator-only) and
 # whether the simctl cleanup at the end applies.
@@ -249,13 +236,13 @@ run_tests() {
             done
         ) &
         local grant_pid=$!
-        flutter test integration_test/all_tests.dart -d "$DEVICE_ID" $DART_DEFINES
+        flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
         local result=$?
         kill "$grant_pid" 2>/dev/null || true
         wait "$grant_pid" 2>/dev/null || true
         return $result
     fi
-    flutter test integration_test/all_tests.dart -d "$DEVICE_ID" $DART_DEFINES
+    flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
 }
 
 # Timezones to cycle through on Android (covers positive, negative, and zero offsets).
