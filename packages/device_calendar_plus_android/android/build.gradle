@@ -10,6 +10,7 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.9.1")
+        // Not applied below; kept for resolution, see the note above apply plugin.
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
     }
 }
@@ -21,8 +22,12 @@ allprojects {
     }
 }
 
+// Built-in Kotlin (#133). Do not apply `kotlin-android` here: Flutter's
+// Gradle plugin applies it when AGP < 9 / `android.builtInKotlin=false`, and
+// AGP compiles Kotlin itself otherwise. KGP stays on the buildscript classpath
+// above so that apply (and `JvmTarget` below) resolve. Requires Flutter >= 3.44.
+// See https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
 apply plugin: "com.android.library"
-apply plugin: "kotlin-android"
 
 android {
     namespace = "to.bullet.device_calendar_plus_android"
@@ -32,10 +37,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11
     }
 
     sourceSets {
@@ -53,11 +54,6 @@ android {
         }
     }
 
-    dependencies {
-        testImplementation("org.jetbrains.kotlin:kotlin-test")
-        testImplementation("org.mockito:mockito-core:5.0.0")
-    }
-
     testOptions {
         unitTests.all {
             useJUnitPlatform()
@@ -69,4 +65,18 @@ android {
             }
         }
     }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
+    }
+}
+
+dependencies {
+    // Flutter's plugin template declares a bare `kotlin-test`, but picking the
+    // JUnit flavour behind it is a KGP feature; under built-in Kotlin the suite
+    // doesn't compile unless the JUnit 5 artifact is named directly.
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testImplementation("org.mockito:mockito-core:5.0.0")
 }
