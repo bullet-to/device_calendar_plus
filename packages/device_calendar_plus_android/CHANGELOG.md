@@ -3,8 +3,8 @@
 ### Changed
 - Migrated to Flutter's built-in Kotlin: the plugin no longer applies the
   Kotlin Gradle Plugin itself, which silences the KGP deprecation warning on
-  every `flutter build` and keeps the plugin building once Flutter stops
-  applying `kotlin-android` for plugins (#133).
+  every `flutter build` and keeps the plugin building once Flutter rejects
+  plugins that apply KGP themselves (#133).
 - Minimum supported SDK is now Flutter 3.44 / Dart 3.12, as the migration
   requires.
 
