@@ -21,8 +21,12 @@ allprojects {
     }
 }
 
+// Built-in Kotlin: the Kotlin Gradle Plugin is no longer applied here. On
+// AGP 9+ the Android plugin compiles Kotlin itself; on older AGP the Flutter
+// Gradle plugin (3.44+) applies `kotlin-android` to plugin projects that
+// don't. Applying it ourselves is what triggers Flutter's KGP deprecation
+// warning (#133).
 apply plugin: "com.android.library"
-apply plugin: "kotlin-android"
 
 android {
     namespace = "to.bullet.device_calendar_plus_android"
@@ -32,10 +36,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11
     }
 
     sourceSets {
@@ -53,11 +53,6 @@ android {
         }
     }
 
-    dependencies {
-        testImplementation("org.jetbrains.kotlin:kotlin-test")
-        testImplementation("org.mockito:mockito-core:5.0.0")
-    }
-
     testOptions {
         unitTests.all {
             useJUnitPlatform()
@@ -69,4 +64,15 @@ android {
             }
         }
     }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
+    }
+}
+
+dependencies {
+    testImplementation("org.jetbrains.kotlin:kotlin-test")
+    testImplementation("org.mockito:mockito-core:5.0.0")
 }
