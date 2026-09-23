@@ -689,6 +689,15 @@ class DeviceCalendar {
   /// for all-day events). [recurrenceRule] takes a [Patch]: [Patch.set] to
   /// change the rule, [Patch.clear] to stop recurring.
   ///
+  /// A new rule re-anchors the scope on the first day it generates on or after
+  /// the anchor (the occurrence for `thisAndFollowing`, the series start for
+  /// `allEvents`), keeping the time-of-day: a Saturday series switched to
+  /// Sundays from one occurrence starts on the Sunday after it, with no
+  /// Saturday left behind. A rule that already fits its anchor doesn't move it.
+  /// A rule that generates nothing within five years of the anchor (30
+  /// February, say) throws [DeviceCalendarException]
+  /// ([DeviceCalendarError.invalidArguments]) and leaves the series untouched.
+  ///
   /// Moving the day of a rule that pins it explicitly (e.g.
   /// `WeeklyRecurrence(daysOfWeek: …)`) without also passing a [recurrenceRule]
   /// throws [DeviceCalendarException] ([DeviceCalendarError.invalidArguments]),

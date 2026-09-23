@@ -1105,54 +1105,79 @@ class EventsService {
     )
   }
 
-  /// Resolves the anchor-shifted start for an `updateRecurring` call that
-  /// passed a new `start` (`newStartMillis`): moves `event`'s start by the
-  /// wall-clock delta from the reference occurrence (the one at `timestamp`,
-  /// or the series anchor when none) to the target.
+  /// The start a series update leaves `event` with: its current start when
+  /// nothing moves it. Android's counterpart is `resolveSeriesTimes`.
   ///
-  /// Fails with `invalidArguments` when the move would change a day the rule
-  /// pins explicitly and the caller didn't also change the rule (the move is
+  /// `newStartMillis`, when given, shifts the anchor first: `event`'s start
+  /// moves by the wall-clock delta from the reference occurrence (the one at
+  /// `timestamp`, or the series anchor when none) to the target. That fails
+  /// with `invalidArguments` when the move would change a day the rule pins
+  /// explicitly and the caller didn't also change the rule (the move is
   /// ambiguous — see updateRecurring docs), and with `operationFailed` if the
   /// shift can't be computed.
-  private func resolveShiftedStart(
+  ///
+  /// A new `rule` then walks the anchor onto the first day it generates: the
+  /// rule may not generate the anchor's day (a Saturday series switched to
+  /// Sundays), and EventKit would keep that day as an extra first occurrence
+  /// (#140). A rule that generates nothing within five years of the anchor
+  /// fails with `invalidArguments` rather than leaving that orphan behind.
+  private func resolveSeriesStart(
     for event: EKEvent,
-    newStartMillis: Int64,
+    newStartMillis: Int64?,
     timestamp: Int64?,
     isAllDay: Bool,
+    rule: EKRecurrenceRule?,
     changingRule: Bool
   ) -> Result<Date, CalendarError> {
-    let target = Date(timeIntervalSince1970: TimeInterval(newStartMillis) / 1000.0)
-    let reference: Date
-    if let timestamp = timestamp {
-      reference = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
-    } else {
-      reference = event.startDate
-    }
     let timeZone = event.timeZone ?? .current
+    var start: Date = event.startDate
 
-    if !changingRule,
-       let rule = event.recurrenceRules?.first,
-       dayMoveConflictsWithRule(
-         rule: rule, reference: reference, target: target, timeZone: timeZone
-       ) {
-      return .failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
-        message: "start moves this series to a different day, but its "
-          + "recurrence rule pins specific days. Pass a recurrenceRule to "
-          + "specify the new pattern."
-      ))
+    if let newStartMillis = newStartMillis {
+      let target = Date(timeIntervalSince1970: TimeInterval(newStartMillis) / 1000.0)
+      let reference: Date
+      if let timestamp = timestamp {
+        reference = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
+      } else {
+        reference = event.startDate
+      }
+
+      if !changingRule,
+         let existingRule = event.recurrenceRules?.first,
+         dayMoveConflictsWithRule(
+           rule: existingRule, reference: reference, target: target, timeZone: timeZone
+         ) {
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "start moves this series to a different day, but its "
+            + "recurrence rule pins specific days. Pass a recurrenceRule to "
+            + "specify the new pattern."
+        ))
+      }
+
+      guard let shifted = shiftStart(
+        event.startDate, reference: reference, to: target,
+        isAllDay: isAllDay, timeZone: timeZone
+      ) else {
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "Could not apply the new start to the event"
+        ))
+      }
+      start = shifted
     }
 
-    guard let shifted = shiftStart(
-      event.startDate, reference: reference, to: target,
-      isAllDay: isAllDay, timeZone: timeZone
-    ) else {
-      return .failure(CalendarError(
-        code: PlatformExceptionCodes.operationFailed,
-        message: "Could not apply the new start to the event"
-      ))
+    if let rule = rule {
+      guard let anchored = RecurrenceAnchor.firstMatch(
+        of: rule, onOrAfter: start, timeZone: timeZone
+      ) else {
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "recurrenceRule generates no occurrences within five years of the anchor"
+        ))
+      }
+      start = anchored
     }
-    return .success(shifted)
+    return .success(start)
   }
 
   /// Splits a `thisAndFollowing` series at `occurrence` and turns that
@@ -1279,31 +1304,10 @@ class EventsService {
       return
     }
 
-    // Compute the new start and parse the recurrence rule before touching
+    // Parse the recurrence rule and compute the new start before touching
     // the event. EventKit keeps the fetched EKEvent live in its cache, so
     // every failure exit must happen while it is still unmodified — orphaned
     // mutations could otherwise ride along with a later save.
-    // Anchor shift: move the reference occurrence to `newStartMillis` and
-    // translate this event's start by the same wall-clock delta (day + time).
-    var newStart: Date?
-    if let newStartMillis = newStartMillis {
-      let changingRule = recurrenceRule != nil
-        || patch.clearedFields.contains("recurrenceRule")
-      switch resolveShiftedStart(
-        for: foundEvent,
-        newStartMillis: newStartMillis,
-        timestamp: timestamp,
-        isAllDay: effectiveIsAllDay,
-        changingRule: changingRule
-      ) {
-      case .success(let shifted):
-        newStart = shifted
-      case .failure(let error):
-        completion(.failure(error))
-        return
-      }
-    }
-
     var parsedRecurrenceRule: EKRecurrenceRule?
     if !patch.clearedFields.contains("recurrenceRule"), let rruleString = recurrenceRule {
       guard let rule = parseRecurrenceRule(rruleString) else {
@@ -1316,17 +1320,33 @@ class EventsService {
       parsedRecurrenceRule = rule
     }
 
+    let newStart: Date
+    switch resolveSeriesStart(
+      for: foundEvent,
+      newStartMillis: newStartMillis,
+      timestamp: timestamp,
+      isAllDay: effectiveIsAllDay,
+      rule: parsedRecurrenceRule,
+      changingRule: recurrenceRule != nil || patch.clearedFields.contains("recurrenceRule")
+    ) {
+    case .success(let start):
+      newStart = start
+    case .failure(let error):
+      completion(.failure(error))
+      return
+    }
+
     // Apply field changes.
     patch.apply(to: foundEvent)
 
-    // Apply time-of-day and/or duration changes. The existing date is
-    // preserved; only the time component is replaced.
-    if newStart != nil || durationMinutes != nil {
+    // Apply start and/or duration changes. A rule that already fits its
+    // anchor resolves to the current start, and skips the time rewrite for a
+    // change that moves nothing (mirrors Android's rewriteTimeColumns).
+    if newStartMillis != nil || durationMinutes != nil || newStart != foundEvent.startDate {
       let duration = durationMinutes.map { TimeInterval($0 * 60) }
         ?? foundEvent.endDate.timeIntervalSince(foundEvent.startDate)
-      let start: Date = newStart ?? foundEvent.startDate
-      foundEvent.startDate = start
-      foundEvent.endDate = start.addingTimeInterval(duration)
+      foundEvent.startDate = newStart
+      foundEvent.endDate = newStart.addingTimeInterval(duration)
     }
 
     patch.applyTimeZone(to: foundEvent)

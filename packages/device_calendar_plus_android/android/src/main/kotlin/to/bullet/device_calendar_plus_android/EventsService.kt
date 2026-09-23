@@ -1179,14 +1179,20 @@ class EventsService(
         // single event must use DTEND (and no DURATION). Rewrite them when the
         // start, duration, or recurring state changes.
         val effectiveIsAllDay = patch.isAllDay ?: row.allDay
-        val hasTimeChange = newStartMillis != null || durationMinutes != null
-        if (hasTimeChange || wasRecurring != willBeRecurring) {
-            // The anchor shifts relative to the occurrence the caller pointed
-            // at (timestamp), or the series anchor itself when none was given.
-            val (newStart, newDurationMs) = resolveSeriesTimes(
-                row.dtstart, timestamp ?: row.dtstart, eventDurationMillis(row),
-                newStartMillis, durationMinutes, row.timeZone, effectiveIsAllDay
-            )
+        // The anchor shifts relative to the occurrence the caller pointed at
+        // (timestamp), or the series anchor itself when none was given — and
+        // then onto the new rule, when one is given (#140).
+        val (newStart, newDurationMs) = resolveSeriesTimes(
+            row.dtstart, timestamp ?: row.dtstart, eventDurationMillis(row),
+            newStartMillis, durationMinutes, recurrenceRule, row.timeZone,
+            effectiveIsAllDay
+        ).getOrElse { return Result.failure(it) }
+        // A `start` equal to the current anchor is still a rewrite: the
+        // DTSTART/DURATION (and RRULE, below) re-put is what makes the
+        // provider re-expand the series.
+        val rewriteTimeColumns = newStartMillis != null || durationMinutes != null ||
+            newStart != row.dtstart
+        if (rewriteTimeColumns || wasRecurring != willBeRecurring) {
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
                 values.put(
@@ -1289,10 +1295,10 @@ class EventsService(
                 // Rule unchanged: the new series inherits the original rule. A
                 // COUNT must drop by the occurrences left on the old series,
                 // or the new series would over-generate.
-                val originalCount = rruleCount(row.rrule)
+                val originalCount = RruleString.count(row.rrule)
                 if (originalCount != null) {
                     val before = countInstancesBefore(eventId, timestamp)
-                    setRruleCount(row.rrule, maxOf(1, originalCount - before))
+                    RruleString.withCount(row.rrule, maxOf(1, originalCount - before))
                 } else {
                     row.rrule
                 }
@@ -1300,12 +1306,16 @@ class EventsService(
         }
 
         // The new series is anchored at the split occurrence, shifted to the
-        // caller's new start (the reference and base are both the occurrence).
+        // caller's new start (the reference and base are both the occurrence)
+        // and then onto the new rule, which may not generate the occurrence's
+        // day (a Saturday series switched to Sundays) — without that the
+        // provider keeps the old day as an extra first occurrence (#140).
         // Duration is the master's unless overridden.
         val (newStart, newDurationMs) = resolveSeriesTimes(
             timestamp, timestamp, eventDurationMillis(row),
-            newStartMillis, durationMinutes, row.timeZone, effectiveIsAllDay
-        )
+            newStartMillis, durationMinutes, recurrenceRule, row.timeZone,
+            effectiveIsAllDay
+        ).getOrElse { return Result.failure(it) }
         val newEnd = newStart + newDurationMs
 
         // Create the new series first, so that a later failure leaves the
@@ -1345,7 +1355,7 @@ class EventsService(
         // DTSTART/DURATION with their existing values to force Android's
         // CalendarProvider to invalidate the Instances cache (it doesn't
         // always when only RRULE changes — see deleteRecurringThisAndFollowing).
-        val truncatedRrule = setRruleUntil(row.rrule, timestamp - 1000, row.allDay)
+        val truncatedRrule = RruleString.withUntil(row.rrule, timestamp - 1000, row.allDay)
         val truncateValues = android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, truncatedRrule)
             put(CalendarContract.Events.DTSTART, row.dtstart)
@@ -1459,7 +1469,7 @@ class EventsService(
         // when only RRULE changes — touching multiple time columns forces
         // it to regenerate. Without this the master's RRULE is correctly
         // updated on disk but listEvents keeps returning the old expansion.
-        val truncatedRrule = setRruleUntil(row.rrule, timestamp - 1000, row.allDay)
+        val truncatedRrule = RruleString.withUntil(row.rrule, timestamp - 1000, row.allDay)
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, truncatedRrule)
             put(CalendarContract.Events.DTSTART, row.dtstart)
@@ -1751,9 +1761,16 @@ class EventsService(
     }
 
     /**
-     * Resolves the start and duration for a series-level time edit. When
-     * [newStartMillis] is given the start is shifted by the wall-clock delta
-     * from [referenceMillis] to [newStartMillis] (see [shiftDate]); the
+     * Resolves the start and duration for a series-level edit; iOS's
+     * counterpart is `resolveSeriesStart`.
+     *
+     * When [newStartMillis] is given the start is shifted by the wall-clock
+     * delta from [referenceMillis] to [newStartMillis] (see [shiftDate]). A
+     * new [rrule] then moves it onto the first day the rule generates, keeping
+     * its wall-clock time — the anchor a series switched to a new rule must
+     * have, or the provider emits the old day as an extra occurrence (#140).
+     * A rule that generates nothing within five years of the anchor fails
+     * with INVALID_ARGUMENTS rather than leaving that orphan behind. The
      * duration is overridden when [durationMinutes] is given.
      */
     private fun resolveSeriesTimes(
@@ -1762,21 +1779,46 @@ class EventsService(
         existingDurationMillis: Long,
         newStartMillis: Long?,
         durationMinutes: Int?,
+        rrule: String?,
         timeZoneId: String?,
         isAllDay: Boolean
-    ): Pair<Long, Long> {
-        val newStart = if (newStartMillis != null) {
-            shiftDate(baseMillis, referenceMillis, newStartMillis, timeZoneId, isAllDay)
+    ): Result<Pair<Long, Long>> {
+        val tz = seriesTimeZone(timeZoneId, isAllDay)
+        val shiftedStart = if (newStartMillis != null) {
+            shiftDate(baseMillis, referenceMillis, newStartMillis, tz, isAllDay)
         } else {
             baseMillis
+        }
+        val newStart = if (rrule != null) {
+            RecurrenceAnchor.firstMatch(rrule, shiftedStart, tz)
+                ?: return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "recurrenceRule generates no occurrences within five years of the anchor"
+                    )
+                )
+        } else {
+            shiftedStart
         }
         val newDurationMs = if (durationMinutes != null) {
             durationMinutes.toLong() * 60_000L
         } else {
             existingDurationMillis
         }
-        return Pair(newStart, newDurationMs)
+        return Result.success(Pair(newStart, newDurationMs))
     }
+
+    /**
+     * The timezone that frames a series' calendar days: the event's own
+     * (device default when [timeZoneId] is null), except that all-day events
+     * are stored as UTC midnight and so live in UTC.
+     */
+    private fun seriesTimeZone(timeZoneId: String?, isAllDay: Boolean): java.util.TimeZone =
+        when {
+            isAllDay -> java.util.TimeZone.getTimeZone("UTC")
+            timeZoneId != null -> java.util.TimeZone.getTimeZone(timeZoneId)
+            else -> java.util.TimeZone.getDefault()
+        }
 
     /**
      * Translates [baseMillis] by the wall-clock delta from [referenceMillis]
@@ -1784,24 +1826,19 @@ class EventsService(
      * time-of-day to [newStartMillis]'s. DST-safe — it counts calendar days
      * and sets a wall-clock time rather than adding a raw interval.
      *
-     * Dates are interpreted in the event's timezone (device default when
-     * [timeZoneId] is null). All-day events are stored as UTC midnight, so
-     * they shift in UTC by whole days with the time-of-day left at midnight.
-     * The anchor-shift that lets [updateRecurring] move both the time and the
-     * day of a series (issue #103); iOS's counterpart is `shiftStart`.
+     * Dates are interpreted in [tz], the series' timezone (see
+     * [seriesTimeZone]). All-day events are stored as UTC midnight, so they
+     * shift in UTC by whole days with the time-of-day left at midnight. The
+     * anchor-shift that lets [updateRecurring] move both the time and the day
+     * of a series (issue #103); iOS's counterpart is `shiftStart`.
      */
     private fun shiftDate(
         baseMillis: Long,
         referenceMillis: Long,
         newStartMillis: Long,
-        timeZoneId: String?,
+        tz: java.util.TimeZone,
         isAllDay: Boolean
     ): Long {
-        val tz = when {
-            isAllDay -> java.util.TimeZone.getTimeZone("UTC")
-            timeZoneId != null -> java.util.TimeZone.getTimeZone(timeZoneId)
-            else -> java.util.TimeZone.getDefault()
-        }
         val dayDelta = calendarDaysBetween(referenceMillis, newStartMillis, tz)
         val cal = java.util.Calendar.getInstance(tz)
         cal.timeInMillis = baseMillis
@@ -1839,9 +1876,10 @@ class EventsService(
         targetMillis: Long,
         timeZoneId: String?
     ): Boolean {
-        val hasByDay = rruleHasPart(rrule, "BYDAY")
-        val hasByMonthDay = rruleHasPart(rrule, "BYMONTHDAY")
-        val hasByMonth = rruleHasPart(rrule, "BYMONTH")
+        val parts = RruleString.params(rrule)
+        val hasByDay = "BYDAY" in parts
+        val hasByMonthDay = "BYMONTHDAY" in parts
+        val hasByMonth = "BYMONTH" in parts
         if (!hasByDay && !hasByMonthDay && !hasByMonth) return false
         val tz = if (timeZoneId != null) java.util.TimeZone.getTimeZone(timeZoneId)
                  else java.util.TimeZone.getDefault()
@@ -1970,70 +2008,6 @@ class EventsService(
             }
         }
         return count
-    }
-
-    /**
-     * Whether [rrule] carries the part named [key] (e.g. "BYDAY"). Matches on
-     * the part key rather than a raw substring, so "BYMONTH" doesn't spuriously
-     * match "BYMONTHDAY". Mirrors the key parsing in [rruleCount]/[setRruleUntil].
-     */
-    private fun rruleHasPart(rrule: String, key: String): Boolean {
-        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
-        return body.split(";").any {
-            it.substringBefore('=').uppercase() == key
-        }
-    }
-
-    /** The COUNT value of an RRULE, or null if it has none. */
-    private fun rruleCount(rrule: String): Int? {
-        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
-        for (part in body.split(";")) {
-            if (part.substringBefore('=').uppercase() == "COUNT") {
-                return part.substringAfter('=').trim().toIntOrNull()
-            }
-        }
-        return null
-    }
-
-    /** Replaces any COUNT/UNTIL in [rrule] with COUNT=[count]. */
-    private fun setRruleCount(rrule: String, count: Int): String {
-        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
-        val parts = body.split(";").filter {
-            val key = it.substringBefore('=').uppercase()
-            it.isNotEmpty() && key != "COUNT" && key != "UNTIL"
-        }
-        return (parts + "COUNT=$count").joinToString(";")
-    }
-
-    /** Replaces any COUNT/UNTIL in [rrule] with UNTIL at [untilMillis] (inclusive). */
-    private fun setRruleUntil(rrule: String, untilMillis: Long, isAllDay: Boolean): String {
-        val body = if (rrule.startsWith("RRULE:")) rrule.substring(6) else rrule
-        val parts = body.split(";").filter {
-            val key = it.substringBefore('=').uppercase()
-            it.isNotEmpty() && key != "COUNT" && key != "UNTIL"
-        }
-        return (parts + "UNTIL=${formatRruleUtc(untilMillis, isAllDay)}").joinToString(";")
-    }
-
-    /** Formats [millis] as an RRULE UTC value (date-only when [dateOnly]). */
-    private fun formatRruleUtc(millis: Long, dateOnly: Boolean): String {
-        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        cal.timeInMillis = millis
-        val date = String.format(
-            java.util.Locale.US,
-            "%04d%02d%02d",
-            cal.get(java.util.Calendar.YEAR),
-            cal.get(java.util.Calendar.MONTH) + 1,
-            cal.get(java.util.Calendar.DAY_OF_MONTH)
-        )
-        if (dateOnly) return date
-        return date + String.format(
-            java.util.Locale.US,
-            "T%02d%02d%02dZ",
-            cal.get(java.util.Calendar.HOUR_OF_DAY),
-            cal.get(java.util.Calendar.MINUTE),
-            cal.get(java.util.Calendar.SECOND)
-        )
     }
 
     /**
