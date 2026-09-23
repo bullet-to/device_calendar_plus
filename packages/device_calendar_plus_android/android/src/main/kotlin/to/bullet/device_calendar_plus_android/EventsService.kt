@@ -36,10 +36,7 @@ class EventsService(
         val effectiveStart = minOf(startMillis, queryStartUtcMidnight)
         val effectiveEnd = maxOf(endMillis, queryEndUtcMidnight)
 
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            .appendPath(effectiveStart.toString())
-            .appendPath(effectiveEnd.toString())
-            .build()
+        val uri = instancesUri(effectiveStart, effectiveEnd)
 
         val columns = EventColumns.instances
 
@@ -412,12 +409,8 @@ class EventsService(
 
         // An instance ID carries the occurrence's raw BEGIN (see
         // buildEventMapFromCursor), so the Instances row is an exact match on
-        // EVENT_ID and BEGIN. The Instances URI still needs a window, and the
-        // provider matches any row overlapping it, so a ±1s one is enough.
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            .appendPath((timestamp - 1000).toString())
-            .appendPath((timestamp + 1000).toString())
-            .build()
+        // EVENT_ID and BEGIN; a ±1s window is enough to overlap it.
+        val uri = instancesUri(timestamp - 1000, timestamp + 1000)
         return querySingleEvent(
             uri,
             EventColumns.instances,
@@ -1967,6 +1960,17 @@ class EventsService(
         return localCal.timeInMillis
     }
 
+    /**
+     * The Instances URI for the window [[beginMillis], [endMillis]]. The
+     * Instances table can only be queried through a window, and the provider
+     * matches any occurrence overlapping it.
+     */
+    private fun instancesUri(beginMillis: Long, endMillis: Long): android.net.Uri =
+        CalendarContract.Instances.CONTENT_URI.buildUpon()
+            .appendPath(beginMillis.toString())
+            .appendPath(endMillis.toString())
+            .build()
+
     /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */
     internal fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =
         dtend ?: duration?.let(::parseDurationMillis)?.let { dtstart + it }
@@ -1976,7 +1980,7 @@ class EventsService(
         storedEndMillis(row.dtstart, row.dtend, row.duration)?.let { it - row.dtstart } ?: 3_600_000L
 
     /** Parses an RFC 5545 / Android duration string (e.g. "P3600S", "PT1H"). */
-    internal fun parseDurationMillis(duration: String): Long? {
+    private fun parseDurationMillis(duration: String): Long? {
         val trimmed = duration.trim()
         Regex("P(\\d+)S").matchEntire(trimmed)?.let {
             return it.groupValues[1].toLong() * 1000L
@@ -1998,10 +2002,7 @@ class EventsService(
         // Five-year look-back window: covers daily/weekly/monthly easily, and
         // yearly rules with an interval of up to five.
         val windowStart = beforeMillis - 5L * 366 * 24 * 3600 * 1000
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            .appendPath(windowStart.toString())
-            .appendPath(beforeMillis.toString())
-            .build()
+        val uri = instancesUri(windowStart, beforeMillis)
         var count = 0
         context.contentResolver.query(
             uri,

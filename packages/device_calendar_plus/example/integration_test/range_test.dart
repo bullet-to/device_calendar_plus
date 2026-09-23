@@ -168,7 +168,9 @@ void main() {
     test('sorts all-day events by their local-midnight start', () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final now = DateTime.now();
-      final day = DateTime(now.year, now.month, now.day + 3); // local midnight
+      // Local midnight via the constructor, not `add(Duration(days: 3))`: a
+      // calendar day, not 24h, so it stays at midnight across a DST change.
+      final day = DateTime(now.year, now.month, now.day + 3);
       await plugin.createEvent(
         calendarId: calendarId!,
         title: 'all-day',
