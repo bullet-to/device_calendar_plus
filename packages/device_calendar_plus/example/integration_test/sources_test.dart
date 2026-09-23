@@ -123,4 +123,29 @@ void main() {
     },
     skip: !Platform.isAndroid,
   );
+
+  // Regression (#126): listSources reports every non-local account as
+  // supportsCalendarCreation=false, but createCalendar used to insert a
+  // phantom calendar under it anyway — one the account's real sync adapter
+  // can wipe at any time. iOS already pre-rejects such sources with readOnly.
+  testWidgets(
+    'Android: createCalendar under a non-local account type throws readOnly',
+    (tester) async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      try {
+        final calendarId = await plugin.createCalendar(
+          name: 'Phantom $timestamp',
+          platformOptions: const CreateCalendarOptionsAndroid(
+            accountName: 'someone@example.com',
+            accountType: 'com.google',
+          ),
+        );
+        createdCalendarIds.add(calendarId);
+        fail('Expected readOnly, but a calendar was created: $calendarId');
+      } on DeviceCalendarException catch (e) {
+        expect(e.errorCode, DeviceCalendarError.readOnly);
+      }
+    },
+    skip: !Platform.isAndroid,
+  );
 }

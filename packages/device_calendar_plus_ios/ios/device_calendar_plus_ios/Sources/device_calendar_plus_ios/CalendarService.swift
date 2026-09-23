@@ -144,12 +144,8 @@ class CalendarService {
       return
     }
     
-    // Check if calendar is modifiable
-    guard calendar.allowsContentModifications else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.readOnly,
-        message: "Calendar is read-only and cannot be modified"
-      )))
+    if let refusal = readOnlyRefusal(calendar) {
+      completion(.failure(refusal))
       return
     }
     
@@ -194,6 +190,11 @@ class CalendarService {
       return
     }
     
+    if let refusal = readOnlyRefusal(calendar) {
+      completion(.failure(refusal))
+      return
+    }
+    
     // Delete the calendar
     do {
       try eventStore.removeCalendar(calendar, commit: true)
@@ -226,6 +227,23 @@ class CalendarService {
     }
 
     completion(.success(sources))
+  }
+
+  /// The readOnly refusal for a calendar the app can't rename, recolor or
+  /// delete, decided before EventKit is asked so the caller gets `readOnly`
+  /// rather than the opaque `operationFailed` a thrown save would become
+  /// (#126). `isImmutable` is EventKit's own flag for exactly this ("cannot
+  /// be edited or deleted"); `allowsContentModifications` is what
+  /// `listCalendars` reports as `readOnly`, so a calendar the list calls
+  /// read-only is one the mutations refuse.
+  private func readOnlyRefusal(_ calendar: EKCalendar) -> CalendarError? {
+    guard calendar.isImmutable || !calendar.allowsContentModifications else {
+      return nil
+    }
+    return CalendarError(
+      code: PlatformExceptionCodes.readOnly,
+      message: "Calendar '\(calendar.title)' is read-only and cannot be modified or deleted"
+    )
   }
 
   private func sourceTypeToCalendarSourceType(_ type: EKSourceType) -> String {

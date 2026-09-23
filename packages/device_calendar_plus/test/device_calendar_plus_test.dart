@@ -1031,6 +1031,24 @@ void main() {
           throwsArgumentError,
         );
       });
+
+      // Regression (#126): a malformed hex used to reach the platform, where
+      // both sides silently stored black.
+      test('throws ArgumentError for a malformed colorHex', () async {
+        expect(
+          () => DeviceCalendar.instance
+              .createCalendar(name: 'x', colorHex: 'not-a-color'),
+          throwsArgumentError,
+        );
+      });
+
+      test('accepts #RRGGBB, #AARRGGBB, and a bare RRGGBB', () async {
+        for (final hex in ['#FF5733', '#80FF5733', 'ff5733']) {
+          final id = await DeviceCalendar.instance
+              .createCalendar(name: 'x', colorHex: hex);
+          expect(id, 'mock-calendar-id', reason: hex);
+        }
+      });
     });
 
     group('updateCalendar', () {
@@ -1051,6 +1069,28 @@ void main() {
       test('throws ArgumentError when calendarId is empty', () async {
         expect(
           () => DeviceCalendar.instance.updateCalendar('   ', name: 'x'),
+          throwsArgumentError,
+        );
+      });
+
+      // Regression (#126): a malformed hex used to reach the platform, where
+      // both sides silently stored black.
+      test('throws ArgumentError for a malformed colorHex', () async {
+        expect(
+          () => DeviceCalendar.instance
+              .updateCalendar('calendar-123', colorHex: 'not-a-color'),
+          throwsArgumentError,
+        );
+        expect(mockPlatform.lastUpdateCalendar, isNull);
+      });
+    });
+
+    group('deleteCalendar', () {
+      // Regression (#126): the empty-id guard updateCalendar / deleteEvent
+      // have was missing here, so '' went to the platform as a real lookup.
+      test('throws ArgumentError when calendarId is empty', () async {
+        expect(
+          () => DeviceCalendar.instance.deleteCalendar('   '),
           throwsArgumentError,
         );
       });

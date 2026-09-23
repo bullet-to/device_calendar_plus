@@ -6,6 +6,7 @@ import 'src/calendar.dart';
 import 'src/calendar_access_level.dart';
 import 'src/calendar_permission_status.dart';
 import 'src/calendar_source.dart';
+import 'src/color_hex.dart';
 import 'src/device_calendar_error.dart';
 import 'src/event.dart';
 import 'src/event_availability.dart';
@@ -254,9 +255,16 @@ class DeviceCalendar {
 
   /// Creates a calendar and returns its ID.
   ///
-  /// [colorHex] is an optional `#RRGGBB` color. [platformOptions] targets a
-  /// specific account (see [listSources]); without it a sensible default
-  /// account is chosen. Requires full access.
+  /// [colorHex] is an optional `#RRGGBB` (or `#AARRGGBB`) color; anything
+  /// else throws [ArgumentError]. [platformOptions] targets a specific
+  /// account (see [listSources]); without it a sensible default account is
+  /// chosen (iOS: iCloud, else local; Android: the local account type).
+  /// Requires full access.
+  ///
+  /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) when
+  /// the targeted source or account type can't hold a new calendar, i.e. one
+  /// [listSources] reports with [CalendarSource.supportsCalendarCreation]
+  /// `false`.
   Future<String> createCalendar({
     required String name,
     String? colorHex,
@@ -268,6 +276,9 @@ class DeviceCalendar {
         'name',
         'Calendar name cannot be empty',
       );
+    }
+    if (colorHex != null) {
+      validateColorHex(colorHex);
     }
 
     await _ensurePermission(CalendarAccessLevel.full);
@@ -285,9 +296,13 @@ class DeviceCalendar {
     }
   }
 
-  /// Updates a calendar's [name] and/or [colorHex] (`#RRGGBB`).
+  /// Updates a calendar's [name] and/or [colorHex] (`#RRGGBB` or
+  /// `#AARRGGBB`; anything else throws [ArgumentError]).
   ///
   /// Passing neither is a no-op. Requires full access.
+  ///
+  /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) for a
+  /// calendar that can't be modified (see [deleteCalendar] for what counts).
   Future<void> updateCalendar(
     String calendarId, {
     String? name,
@@ -317,6 +332,9 @@ class DeviceCalendar {
         'Calendar name cannot be empty',
       );
     }
+    if (colorHex != null) {
+      validateColorHex(colorHex);
+    }
 
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -335,8 +353,20 @@ class DeviceCalendar {
   /// Deletes a calendar and all of its events. Requires full access.
   ///
   /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) for a
-  /// calendar that can't be deleted (e.g. a system-managed account calendar).
+  /// calendar that can't be deleted: on iOS one EventKit marks immutable or
+  /// read-only (Birthdays, subscribed feeds, holiday calendars), on Android
+  /// one whose access level is below contributor — the same calendars
+  /// [listCalendars] reports as [Calendar.readOnly].
   Future<void> deleteCalendar(String calendarId) async {
+    // An empty id targets no calendar (matches updateCalendar / deleteEvent).
+    if (calendarId.trim().isEmpty) {
+      throw ArgumentError.value(
+        calendarId,
+        'calendarId',
+        'Calendar ID cannot be empty',
+      );
+    }
+
     await _ensurePermission(CalendarAccessLevel.full);
     try {
       await DeviceCalendarPlusPlatform.instance.deleteCalendar(calendarId);

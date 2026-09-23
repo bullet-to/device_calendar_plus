@@ -55,6 +55,12 @@ android {
     }
 
     testOptions {
+        // CalendarServiceTest drives CalendarService against a mocked
+        // ContentResolver. Its path crosses android.jar stubs on the way
+        // (ContextCompat's permission check, ContentValues, CalendarContract's
+        // Uri constants); stubbed defaults let those pass through instead of
+        // throwing "Stub!".
+        unitTests.returnDefaultValues = true
         unitTests.all {
             useJUnitPlatform()
 

@@ -1,5 +1,25 @@
 ## Unreleased
 
+### Fixed
+- `updateCalendar` and `deleteCalendar` throw the documented `readOnly` for a
+  calendar that can't be modified, on both platforms. iOS used to surface a
+  refused delete as `operationFailed`; Android renamed or deleted any row it
+  was handed (#126).
+- Android `createCalendar` refuses a non-local `accountType` with `readOnly`,
+  as `listSources` already reports and iOS already does for non-creatable
+  sources, instead of leaving a phantom calendar the account's sync adapter
+  can wipe (#126).
+- A malformed `colorHex` on `createCalendar` / `updateCalendar` throws
+  `ArgumentError` instead of being stored silently as black (#126).
+- `deleteCalendar('')` throws `ArgumentError`, like the other mutations (#126).
+- Android `listCalendars` no longer crashes on a provider row with a NULL
+  id or display name (#126).
+
+### Docs
+- `CalendarSource.supportsCalendarCreation`, `CreateCalendarOptionsIos` and
+  `CreateCalendarOptionsAndroid` describe what the code actually does: iOS
+  creates under iCloud or local, Android under the local account type (#126).
+
 ### Changed
 - Android: migrated to Flutter's built-in Kotlin, so the KGP deprecation
   warning no longer prints on every `flutter build`. Minimum supported SDK is
