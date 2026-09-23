@@ -3,7 +3,7 @@ description: A monorepo for device_calendar_plus Flutter plugin packages
 publish_to: none
 
 environment:
-  sdk: ">=3.5.0 <4.0.0"
+  sdk: ^3.12.0
 
 workspace:
   - packages/device_calendar_plus

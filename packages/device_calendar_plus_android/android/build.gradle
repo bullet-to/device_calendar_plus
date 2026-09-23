@@ -10,6 +10,12 @@ buildscript {
 
     dependencies {
         classpath("com.android.tools.build:gradle:8.9.1")
+        // Kept on purpose, even though the plugin is no longer applied below:
+        // this is what lets Flutter's Gradle plugin resolve `kotlin-android`
+        // when it applies it on our behalf (built-in Kotlin off), and what
+        // makes `org.jetbrains.kotlin.gradle.dsl.JvmTarget` resolvable in the
+        // `kotlin {}` block. Flutter's own plugin template keeps it; the KGP
+        // deprecation detector only matches an *applied* plugin (#133).
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version")
     }
 }
@@ -21,11 +27,12 @@ allprojects {
     }
 }
 
-// Built-in Kotlin: the Kotlin Gradle Plugin is no longer applied here. When
-// built-in Kotlin is on (AGP 9+, the default) AGP compiles Kotlin itself; when
-// it's off, the Flutter Gradle plugin (3.44+) applies `kotlin-android` to
-// plugin projects that don't. Applying it ourselves is what triggers Flutter's
-// KGP deprecation warning (#133). This also means the script only configures
+// Built-in Kotlin: the Kotlin Gradle Plugin is no longer *applied* here (it
+// stays on the buildscript classpath above). When built-in Kotlin is on
+// (AGP 9+, the default) AGP compiles Kotlin itself; when it's off, the
+// Flutter Gradle plugin (3.44+) applies `kotlin-android` to plugin projects
+// that don't. Applying it ourselves is what triggers Flutter's KGP
+// deprecation warning (#133). This also means the script only configures
 // under Flutter's Gradle plugin: there is no standalone `android/` build.
 apply plugin: "com.android.library"
 
