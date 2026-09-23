@@ -1317,10 +1317,7 @@ void main() {
     // must not pull in the day before or after.
     test('includes an all-day event when the window is a sub-day slice of its '
         'date', () async {
-      final now = DateTime.now();
-      // Local midnight via the constructor, not `add(Duration(days: 3))`: a
-      // calendar day, not 24h, so it stays at midnight across a DST change.
-      final day = DateTime(now.year, now.month, now.day + 3);
+      final day = DateTime(2026, 3, 11);
       const dayOffsets = <String, int>{
         'all-day before': -1,
         'all-day on day': 0,
@@ -1338,8 +1335,8 @@ void main() {
       }
 
       final events = await plugin.listEvents(
-        day.add(const Duration(hours: 10)),
-        day.add(const Duration(hours: 11)),
+        DateTime(day.year, day.month, day.day, 10),
+        DateTime(day.year, day.month, day.day, 11),
         calendarIds: [calendarId],
       );
 

@@ -30,9 +30,8 @@ class EventsService(
 
         // Widen to the all-day UTC-midnight edges; see
         // AllDayDates.windowEndUtcMidnight. (issue #20)
-        val zone = java.util.TimeZone.getDefault()
-        val queryStartUtcMidnight = AllDayDates.localDateToUtcMidnight(startMillis, zone)
-        val queryEndUtcMidnight = AllDayDates.windowEndUtcMidnight(endMillis, zone)
+        val queryStartUtcMidnight = AllDayDates.localDateToUtcMidnight(startMillis)
+        val queryEndUtcMidnight = AllDayDates.windowEndUtcMidnight(endMillis)
 
         val effectiveStart = minOf(startMillis, queryStartUtcMidnight)
         val effectiveEnd = maxOf(endMillis, queryEndUtcMidnight)
@@ -204,9 +203,8 @@ class EventsService(
         val end: Long
         
         if (allDay) {
-            val zone = java.util.TimeZone.getDefault()
-            start = AllDayDates.utcToLocalMidnight(rawStart, zone)
-            end = AllDayDates.utcToLocalMidnight(rawEnd, zone)
+            start = AllDayDates.utcToLocalMidnight(rawStart)
+            end = AllDayDates.utcToLocalMidnight(rawEnd)
         } else {
             start = rawStart
             end = rawEnd
@@ -627,9 +625,8 @@ class EventsService(
             val endMillis: Long
             
             if (isAllDay) {
-                val zone = java.util.TimeZone.getDefault()
-                startMillis = AllDayDates.localDateToUtcMidnight(startDate.time, zone)
-                endMillis = AllDayDates.localDateToUtcMidnight(endDate.time, zone)
+                startMillis = AllDayDates.localDateToUtcMidnight(startDate.time)
+                endMillis = AllDayDates.localDateToUtcMidnight(endDate.time)
             } else {
                 startMillis = startDate.time
                 endMillis = endDate.time
@@ -865,9 +862,8 @@ class EventsService(
             val endMillis: Long?
 
             if (effectiveIsAllDay) {
-                val zone = java.util.TimeZone.getDefault()
-                startMillis = startDate?.let { AllDayDates.localDateToUtcMidnight(it.time, zone) }
-                endMillis = endDate?.let { AllDayDates.localDateToUtcMidnight(it.time, zone) }
+                startMillis = startDate?.let { AllDayDates.localDateToUtcMidnight(it.time) }
+                endMillis = endDate?.let { AllDayDates.localDateToUtcMidnight(it.time) }
             } else {
                 startMillis = startDate?.time
                 endMillis = endDate?.time
@@ -1915,7 +1911,7 @@ class EventsService(
     /** Storage millis for a date: UTC midnight for all-day, the instant otherwise. */
     private fun toStorageMillis(date: java.util.Date, isAllDay: Boolean): Long {
         if (!isAllDay) return date.time
-        return AllDayDates.localDateToUtcMidnight(date.time, java.util.TimeZone.getDefault())
+        return AllDayDates.localDateToUtcMidnight(date.time)
     }
 
     /** Resolves an event's duration, falling back to one hour when unknown. */

@@ -9,49 +9,31 @@ import java.util.TimeZone
  * Android stores all-day events as UTC midnight boundaries, so a local
  * "June 5" must become "June 5 00:00 UTC" on the way in and come back as the
  * device's local midnight on the way out. These conversions are pure
- * functions of an instant and a zone; the caller names the zone so the
- * boundary is explicit (and testable without a device).
+ * functions of an instant and a zone. Production callers take the device's
+ * default zone (read per call, so a runtime zone change is picked up); the
+ * parameter exists so the unit tests can drive both hemispheres without a
+ * device.
  */
 internal object AllDayDates {
     const val MILLIS_PER_DAY = 86_400_000L
+
+    private val UTC: TimeZone = TimeZone.getTimeZone("UTC")
 
     /**
      * Converts local-time millis to UTC midnight, preserving the calendar
      * date. Used both when writing all-day events and for the all-day edges
      * of the listEvents window (see [windowEndUtcMidnight]).
      */
-    fun localDateToUtcMidnight(localMillis: Long, zone: TimeZone): Long {
-        val local = Calendar.getInstance(zone)
-        local.timeInMillis = localMillis
-        val utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
-        utc.set(
-            local.get(Calendar.YEAR),
-            local.get(Calendar.MONTH),
-            local.get(Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        utc.set(Calendar.MILLISECOND, 0)
-        return utc.timeInMillis
-    }
+    fun localDateToUtcMidnight(localMillis: Long, zone: TimeZone = TimeZone.getDefault()): Long =
+        midnightOfSameDate(localMillis, readIn = zone, writeIn = UTC)
 
     /**
      * Converts UTC millis to local midnight, preserving the calendar date.
      * Used when reading all-day events, to present the stored UTC date in
      * the device's local time.
      */
-    fun utcToLocalMidnight(utcMillis: Long, zone: TimeZone): Long {
-        val utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
-        utcCal.timeInMillis = utcMillis
-        val localCal = Calendar.getInstance(zone)
-        localCal.set(
-            utcCal.get(Calendar.YEAR),
-            utcCal.get(Calendar.MONTH),
-            utcCal.get(Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        localCal.set(Calendar.MILLISECOND, 0)
-        return localCal.timeInMillis
-    }
+    fun utcToLocalMidnight(utcMillis: Long, zone: TimeZone = TimeZone.getDefault()): Long =
+        midnightOfSameDate(utcMillis, readIn = UTC, writeIn = zone)
 
     /**
      * Exclusive UTC-midnight edge of a `[start, end)` listEvents window.
@@ -64,6 +46,24 @@ internal object AllDayDates {
      * midnight names that boundary unchanged; an end inside a date rounds up
      * so a sub-day window still covers its whole date. (issue #20)
      */
-    fun windowEndUtcMidnight(endMillis: Long, zone: TimeZone): Long =
+    fun windowEndUtcMidnight(endMillis: Long, zone: TimeZone = TimeZone.getDefault()): Long =
         localDateToUtcMidnight(endMillis - 1, zone) + MILLIS_PER_DAY
+
+    /**
+     * Midnight, in [writeIn], of the calendar date that [millis] falls on in
+     * [readIn]. The two public converters are this with the zones swapped.
+     */
+    private fun midnightOfSameDate(millis: Long, readIn: TimeZone, writeIn: TimeZone): Long {
+        val source = Calendar.getInstance(readIn)
+        source.timeInMillis = millis
+        val target = Calendar.getInstance(writeIn)
+        target.set(
+            source.get(Calendar.YEAR),
+            source.get(Calendar.MONTH),
+            source.get(Calendar.DAY_OF_MONTH),
+            0, 0, 0
+        )
+        target.set(Calendar.MILLISECOND, 0)
+        return target.timeInMillis
+    }
 }
