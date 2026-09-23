@@ -39,7 +39,9 @@ internal class AllDayDatesTest {
     // The first instant past midnight is inside the new date, so it covers it.
     @Test
     fun windowEndUtcMidnight_endJustAfterLocalMidnight_roundsUp() {
-        val end = AllDayDates.windowEndUtcMidnight(instantAt(sydney, 2026, 9, 26) + 1, sydney)
-        assertEquals(instantAt(utc, 2026, 9, 27), end)
+        for (zone in zones) {
+            val end = AllDayDates.windowEndUtcMidnight(instantAt(zone, 2026, 9, 26) + 1, zone)
+            assertEquals(instantAt(utc, 2026, 9, 27), end, zone.id)
+        }
     }
 }

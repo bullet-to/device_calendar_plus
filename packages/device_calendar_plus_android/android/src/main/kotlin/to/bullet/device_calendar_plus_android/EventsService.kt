@@ -1895,16 +1895,7 @@ class EventsService(
         toMillis: Long,
         tz: java.util.TimeZone
     ): Int {
-        fun startOfDay(millis: Long): Long {
-            val c = java.util.Calendar.getInstance(tz)
-            c.timeInMillis = millis
-            c.set(java.util.Calendar.HOUR_OF_DAY, 0)
-            c.set(java.util.Calendar.MINUTE, 0)
-            c.set(java.util.Calendar.SECOND, 0)
-            c.set(java.util.Calendar.MILLISECOND, 0)
-            return c.timeInMillis
-        }
-        val diff = startOfDay(toMillis) - startOfDay(fromMillis)
+        val diff = AllDayDates.localMidnight(toMillis, tz) - AllDayDates.localMidnight(fromMillis, tz)
         return Math.round(diff.toDouble() / AllDayDates.MILLIS_PER_DAY).toInt()
     }
 

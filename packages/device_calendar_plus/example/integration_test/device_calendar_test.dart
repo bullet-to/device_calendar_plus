@@ -1312,18 +1312,19 @@ void main() {
     // that touches its date, however short. Android stores all-day events at
     // UTC midnight and compares them against the window's local dates, so a
     // window that starts and ends on the same date must still count as
-    // covering that whole date rather than collapsing to nothing. The
-    // neighbouring days pin the other side: widening the window to its date
-    // must not pull in the day before or after.
-    test('includes an all-day event when the window is a sub-day slice of its '
-        'date', () async {
-      final day = DateTime(2026, 3, 11);
-      const dayOffsets = <String, int>{
-        'all-day before': -1,
-        'all-day on day': 0,
-        'all-day after': 1,
-      };
-      for (final entry in dayOffsets.entries) {
+    // covering that whole date rather than collapsing to nothing. The two
+    // tests below share one fixture shape: all-day events on the day before,
+    // the day itself and the day after, so the neighbours pin the rounding
+    // from both sides. Each test uses its own date because the calendar is
+    // shared across the group.
+    const neighbourOffsets = <String, int>{
+      'all-day before': -1,
+      'all-day on day': 0,
+      'all-day after': 1,
+    };
+
+    Future<void> createAllDayNeighbours(DateTime day) async {
+      for (final entry in neighbourOffsets.entries) {
         final start = DateTime(day.year, day.month, day.day + entry.value);
         await plugin.createEvent(
           calendarId: calendarId,
@@ -1333,6 +1334,15 @@ void main() {
           isAllDay: true,
         );
       }
+    }
+
+    List<String> neighbourTitles(List<Event> events) =>
+        events.map((e) => e.title).where(neighbourOffsets.containsKey).toList();
+
+    test('includes an all-day event when the window is a sub-day slice of its '
+        'date', () async {
+      final day = DateTime(2026, 3, 11);
+      await createAllDayNeighbours(day);
 
       final events = await plugin.listEvents(
         DateTime(day.year, day.month, day.day, 10),
@@ -1341,15 +1351,21 @@ void main() {
       );
 
       expect(
-        events.map((e) => e.title).where(dayOffsets.containsKey).toList(),
+        neighbourTitles(events),
         ['all-day on day'],
         reason:
             "a window inside a date must return that date's all-day event "
             'and nothing from the neighbouring dates',
       );
+    });
 
-      // The other way the end edge could go wrong: a window that ends exactly
-      // on local midnight must not be widened into the next date.
+    // The other way the end edge could go wrong: a window that ends exactly
+    // on local midnight must not be widened into the next date.
+    test('does not widen a window ending on local midnight into the next date',
+        () async {
+      final day = DateTime(2026, 4, 15);
+      await createAllDayNeighbours(day);
+
       final wholeDay = await plugin.listEvents(
         day,
         DateTime(day.year, day.month, day.day + 1),
@@ -1357,7 +1373,7 @@ void main() {
       );
 
       expect(
-        wholeDay.map((e) => e.title).where(dayOffsets.containsKey).toList(),
+        neighbourTitles(wholeDay),
         ['all-day on day'],
         reason:
             'an end on local midnight is exclusive and must not pull in '

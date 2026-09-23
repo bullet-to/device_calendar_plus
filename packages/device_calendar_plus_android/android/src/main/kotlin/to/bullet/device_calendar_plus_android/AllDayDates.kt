@@ -13,6 +13,10 @@ import java.util.TimeZone
  * default zone (read per call, so a runtime zone change is picked up); the
  * parameter exists so the unit tests can drive both hemispheres without a
  * device.
+ *
+ * Every converter is [midnightOfSameDate] with a pair of zones, so this is
+ * also the module's one Calendar-based date floor: recurrence code that
+ * counts calendar days reuses it through [localMidnight].
  */
 internal object AllDayDates {
     const val MILLIS_PER_DAY = 86_400_000L
@@ -50,8 +54,17 @@ internal object AllDayDates {
         localDateToUtcMidnight(endMillis - 1, zone) + MILLIS_PER_DAY
 
     /**
+     * Midnight, in [zone], of the calendar date that [millis] falls on in
+     * [zone]: the start of that instant's local day. Not an all-day
+     * conversion; the recurrence anchor shift uses it to count whole
+     * calendar days across a DST transition.
+     */
+    fun localMidnight(millis: Long, zone: TimeZone = TimeZone.getDefault()): Long =
+        midnightOfSameDate(millis, readIn = zone, writeIn = zone)
+
+    /**
      * Midnight, in [writeIn], of the calendar date that [millis] falls on in
-     * [readIn]. The two public converters are this with the zones swapped.
+     * [readIn]. The public converters are this with the zones chosen.
      */
     private fun midnightOfSameDate(millis: Long, readIn: TimeZone, writeIn: TimeZone): Long {
         val source = Calendar.getInstance(readIn)
