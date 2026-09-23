@@ -130,24 +130,35 @@ void expectTruncatedMaster(
   );
 }
 
-/// Lists the occurrences of `eventId` in the calendar over a window wide
-/// enough to capture the whole series ([windowDays] forward), in date order
-/// as returned by the platform.
+/// Lists the calendar's events matching [test] over a window wide enough to
+/// capture a whole series (a day before [start] to [windowDays] after), in
+/// date order.
+Future<List<Event>> _eventsInWindow(
+  DeviceCalendar plugin,
+  String calendarId,
+  DateTime start,
+  int windowDays,
+  bool Function(Event) test,
+) async {
+  final events = await plugin.listEvents(
+    start.subtract(const Duration(days: 1)),
+    start.add(Duration(days: windowDays)),
+    calendarIds: [calendarId],
+  );
+  return events.where(test).toList()
+    ..sort((a, b) => a.startDate.compareTo(b.startDate));
+}
+
+/// Lists the occurrences of `eventId` in the calendar, in date order.
 Future<List<Event>> occurrencesOf(
   DeviceCalendar plugin,
   String calendarId,
   String eventId,
   DateTime start, {
   int windowDays = 14,
-}) async {
-  final events = await plugin.listEvents(
-    start.subtract(const Duration(days: 1)),
-    start.add(Duration(days: windowDays)),
-    calendarIds: [calendarId],
-  );
-  return events.where((e) => e.eventId == eventId).toList()
-    ..sort((a, b) => a.startDate.compareTo(b.startDate));
-}
+}) =>
+    _eventsInWindow(
+        plugin, calendarId, start, windowDays, (e) => e.eventId == eventId);
 
 /// Lists the events titled [title] in the calendar over the same window as
 /// [occurrencesOf], in date order. This is how a detached occurrence is
@@ -159,15 +170,9 @@ Future<List<Event>> eventsTitled(
   String title,
   DateTime start, {
   int windowDays = 14,
-}) async {
-  final events = await plugin.listEvents(
-    start.subtract(const Duration(days: 1)),
-    start.add(Duration(days: windowDays)),
-    calendarIds: [calendarId],
-  );
-  return events.where((e) => e.title == title).toList()
-    ..sort((a, b) => a.startDate.compareTo(b.startDate));
-}
+}) =>
+    _eventsInWindow(
+        plugin, calendarId, start, windowDays, (e) => e.title == title);
 
 /// The start instants of [events], for comparing two listings occurrence by
 /// occurrence.
@@ -1528,24 +1533,19 @@ void main() {
       final occurrences = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
-      final initialCount = occurrences.length;
-      final target = occurrences[4];
-      final targetMillis = target.startDate.millisecondsSinceEpoch;
 
-      await plugin.deleteEvent(eventId: target.instanceId);
+      await plugin.deleteEvent(eventId: occurrences[4].instanceId);
 
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);
 
-      // The targeted occurrence is gone.
+      // The targeted occurrence is gone and every other one survives, the
+      // earlier ones included (#153).
       expect(
-        after.any((e) => e.startDate.millisecondsSinceEpoch == targetMillis),
-        isFalse,
-        reason: 'the targeted occurrence must be removed',
+        startsOf(after),
+        startsOf([...occurrences]..removeAt(4)),
+        reason: 'only the one occurrence should be removed',
       );
-      // Exactly one occurrence was removed; the rest survive.
-      expect(after.length, initialCount - 1,
-          reason: 'only the one occurrence should be removed');
     });
 
     test('deleteEvent on a recurring eventId removes the whole series',
