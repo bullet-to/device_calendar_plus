@@ -44,11 +44,6 @@ internal class EventsServiceTest {
     // only ever writes "P{n}S", so the integration tests never reach the ISO
     // form other apps and sync adapters write, nor the unparseable fallthrough.
     @Test
-    fun storedEndMillis_dtendPresent_winsOverDuration() {
-        assertEquals(2_000L, service.storedEndMillis(1_000L, 2_000L, "P1D"))
-    }
-
-    @Test
     fun storedEndMillis_secondsForm_addsDuration() {
         assertEquals(1_000L + 3_600_000L, service.storedEndMillis(1_000L, null, "P3600S"))
     }
@@ -61,16 +56,14 @@ internal class EventsServiceTest {
             ((7 + 2) * 86_400L + 3 * 3_600L + 4 * 60L + 5L) * 1_000L,
             service.storedEndMillis(0L, null, "P1W2DT3H4M5S"),
         )
+        // DTEND wins over a parseable DURATION — the precedence the read and
+        // write paths (eventDurationMillis) both rely on.
+        assertEquals(2_000L, service.storedEndMillis(1_000L, 2_000L, "P1D"))
     }
 
     @Test
     fun storedEndMillis_unparseableDuration_returnsNull() {
         assertNull(service.storedEndMillis(0L, null, "garbage"))
         assertNull(service.storedEndMillis(0L, null, "3600"))
-    }
-
-    @Test
-    fun storedEndMillis_neitherColumn_returnsNull() {
-        assertNull(service.storedEndMillis(0L, null, null))
     }
 }

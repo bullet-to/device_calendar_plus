@@ -2,6 +2,8 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'test_helpers.dart';
+
 /// Set by `run_integration_tests.sh` when the target is an Android emulator.
 /// The emulator's Calendar Provider permanently drops a recurring series'
 /// instances after a CONTENT_EXCEPTION_URI insert (verified: 10 occurrences
@@ -28,14 +30,6 @@ Future<({String eventId, DateTime start})> createDailySeries(
     timeZone: 'UTC',
   );
   return (eventId: eventId, start: start);
-}
-
-/// Local midnight [daysFromNow] days from today. Built via the constructor
-/// rather than `DateTime.add`, so the result is a calendar day rather than
-/// 24 hours (which lands an hour off across a DST transition).
-DateTime localMidnight(int daysFromNow) {
-  final now = DateTime.now();
-  return DateTime(now.year, now.month, now.day + daysFromNow);
 }
 
 /// Creates an all-day daily recurring event starting tomorrow (local

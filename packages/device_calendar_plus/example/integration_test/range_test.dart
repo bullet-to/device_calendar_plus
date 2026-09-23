@@ -2,6 +2,8 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'test_helpers.dart';
+
 /// `listEvents` contract tests: wide-range chunking
 /// (builttoroam/device_calendar#452) and reported-start ordering (#122).
 void main() {
@@ -167,10 +169,7 @@ void main() {
     // coincide and the order is right either way.) Matches iOS (#122).
     test('sorts all-day events by their local-midnight start', () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final now = DateTime.now();
-      // Local midnight via the constructor, not `add(Duration(days: 3))`: a
-      // calendar day, not 24h, so it stays at midnight across a DST change.
-      final day = DateTime(now.year, now.month, now.day + 3);
+      final day = localMidnight(3);
       await plugin.createEvent(
         calendarId: calendarId!,
         title: 'all-day',

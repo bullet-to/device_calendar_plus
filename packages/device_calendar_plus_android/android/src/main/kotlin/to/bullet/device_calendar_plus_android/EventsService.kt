@@ -187,7 +187,10 @@ class EventsService(
         val description = if (!cursor.isNull(descriptionIndex)) cursor.getString(descriptionIndex) else null
         val location = if (!cursor.isNull(locationIndex)) cursor.getString(locationIndex) else null
         val rawStart = cursor.getLong(startIndex)
-        // A recurring master stores DURATION, not DTEND (#122).
+        // A recurring master stores DURATION, not DTEND (#122). With neither
+        // usable, a read reports what is stored (a zero-length event); the
+        // write side's one-hour default in eventDurationMillis is a choice made
+        // only when a length must be produced.
         val rawEnd = storedEndMillis(
             rawStart,
             if (!cursor.isNull(endIndex)) cursor.getLong(endIndex) else null,
