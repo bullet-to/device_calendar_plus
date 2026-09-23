@@ -1,3 +1,10 @@
+## Unreleased
+
+### Changed
+- Android: migrated to Flutter's built-in Kotlin, so the KGP deprecation
+  warning no longer prints on every `flutter build`. Minimum supported SDK is
+  now Flutter 3.44 / Dart 3.12 (#133).
+
 ## 0.8.1 - 2026-09-21
 
 ### Fixed

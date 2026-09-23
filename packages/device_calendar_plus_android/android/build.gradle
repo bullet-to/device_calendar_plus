@@ -21,11 +21,12 @@ allprojects {
     }
 }
 
-// Built-in Kotlin: the Kotlin Gradle Plugin is no longer applied here. On
-// AGP 9+ the Android plugin compiles Kotlin itself; on older AGP the Flutter
-// Gradle plugin (3.44+) applies `kotlin-android` to plugin projects that
-// don't. Applying it ourselves is what triggers Flutter's KGP deprecation
-// warning (#133).
+// Built-in Kotlin: the Kotlin Gradle Plugin is no longer applied here. When
+// built-in Kotlin is on (AGP 9+, the default) AGP compiles Kotlin itself; when
+// it's off, the Flutter Gradle plugin (3.44+) applies `kotlin-android` to
+// plugin projects that don't. Applying it ourselves is what triggers Flutter's
+// KGP deprecation warning (#133). This also means the script only configures
+// under Flutter's Gradle plugin: there is no standalone `android/` build.
 apply plugin: "com.android.library"
 
 android {
@@ -73,6 +74,9 @@ kotlin {
 }
 
 dependencies {
+    // Flutter's plugin template declares a bare `kotlin-test`, but picking the
+    // JUnit flavour behind it is a KGP feature; under built-in Kotlin the suite
+    // doesn't compile unless the JUnit 5 artifact is named directly.
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("org.mockito:mockito-core:5.0.0")
 }
