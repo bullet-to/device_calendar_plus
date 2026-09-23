@@ -1,14 +1,14 @@
 import 'dart:io' show Platform;
 
 import 'package:device_calendar_plus/device_calendar_plus.dart';
-import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+
+import 'test_seed.dart';
 
 /// The example app's test-only channel, which seeds calendar provider state
 /// the plugin deliberately can't write itself (Android only; see
 /// `TestSeedChannel.kt`).
-const _testSeed = MethodChannel('to.bullet.device_calendar_plus_example/test');
 
 /// Creates a daily recurring event starting one hour from now (UTC), with
 /// `count` total occurrences. Returns the event ID and the start time.
@@ -1123,32 +1123,25 @@ void main() {
       final keyless = occurrences[3];
       final rekeying = occurrences[6];
 
-      Future<Map<Object?, Object?>?> syncIdsOf(String eventId) =>
-          _testSeed.invokeMethod<Map<Object?, Object?>>(
-              'readSyncIds', {'eventId': eventId});
-
-      final exceptionId = await _testSeed.invokeMethod<String>(
-        'insertKeylessException',
-        {
-          'eventId': series.eventId,
-          'instanceStart': keyless.startDate.millisecondsSinceEpoch,
-          'instanceEnd': keyless.endDate.millisecondsSinceEpoch,
-          'title': 'Keyless #153',
-        },
+      final exceptionId = await insertKeylessException(
+        eventId: series.eventId,
+        instanceStart: keyless.startDate,
+        instanceEnd: keyless.endDate,
+        title: 'Keyless #153',
       );
       expect(exceptionId, isNotEmpty,
           reason: 'the seed must write the old-style exception');
-      expect((await syncIdsOf(series.eventId))?['syncId'], isNull,
+      expect((await readSyncIds(series.eventId))?.syncId, isNull,
           reason: 'the seed must leave the master keyless, #153\'s state');
-      expect((await syncIdsOf(exceptionId!))?['originalSyncId'], isNull,
+      expect((await readSyncIds(exceptionId))?.originalSyncId, isNull,
           reason: 'the seed must leave the exception keyless, #153\'s state');
 
       await plugin.updateEvent(
           eventId: rekeying.instanceId, title: 'Rekeyed #153');
 
-      final masterKey = (await syncIdsOf(series.eventId))?['syncId'];
+      final masterKey = (await readSyncIds(series.eventId))?.syncId;
       expect(masterKey, isNotNull, reason: 'the edit must key the master');
-      expect((await syncIdsOf(exceptionId))?['originalSyncId'], masterKey,
+      expect((await readSyncIds(exceptionId))?.originalSyncId, masterKey,
           reason: 'the old exception must be re-keyed into the family');
 
       final after = await occurrencesOf(
@@ -1709,8 +1702,7 @@ void main() {
         title: 'Detached before tombstone #153',
       );
 
-      final deleted = await _testSeed
-          .invokeMethod<int>('deleteEventPlain', {'eventId': series.eventId});
+      final deleted = await deleteEventPlain(series.eventId);
       expect(deleted, 1, reason: 'the seed must find the master to delete');
 
       expect(await plugin.getEvent(series.eventId), isNull,
@@ -1741,12 +1733,30 @@ void main() {
         notFound,
         reason: 'deleteEvent must not cancel an occurrence of a tombstone',
       );
+      await expectLater(
+        plugin.updateRecurring(
+            series.eventId, EventSpan.allEvents, title: 'Tombstone edit'),
+        notFound,
+        reason: 'updateRecurring(allEvents) must not edit a tombstone',
+      );
+      await expectLater(
+        plugin.updateRecurring(occurrences[2].instanceId,
+            EventSpan.thisAndFollowing, title: 'Tombstone edit'),
+        notFound,
+        reason: 'updateRecurring(thisAndFollowing) must not split a tombstone',
+      );
+      await expectLater(
+        plugin.deleteRecurring(
+            occurrences[2].instanceId, EventSpan.thisAndFollowing),
+        notFound,
+        reason: 'deleteRecurring(thisAndFollowing) must not truncate a '
+            'tombstone',
+      );
 
       // The plugin deletes as a sync adapter, which is what collects it.
       await plugin.deleteEvent(eventId: series.eventId);
       expect(
-        await _testSeed
-            .invokeMethod<int>('deleteEventPlain', {'eventId': series.eventId}),
+        await deleteEventPlain(series.eventId),
         0,
         reason: 'the tombstone must be physically gone after deleteEvent',
       );

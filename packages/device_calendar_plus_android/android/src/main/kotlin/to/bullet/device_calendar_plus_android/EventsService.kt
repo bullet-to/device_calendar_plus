@@ -8,6 +8,18 @@ import java.util.Date
 
 private const val MINUTES_PER_DAY = 1440
 
+/**
+ * Selects an event row by `_ID`, skipping DELETED=1 tombstones. A tombstone
+ * is what a non-sync-adapter delete leaves on an event with a `_sync_id` — a
+ * synced calendar's, or a local series the plugin has keyed (see
+ * [EventsService.ensureLocalSeriesSyncId]). Instances queries already skip
+ * it, so [EventsService.getEvent] and [EventsService.readEventRow] read it as
+ * gone too: otherwise an edit or a per-occurrence delete would write against
+ * a row that never shows in a listing.
+ */
+private val liveEventById =
+    "${CalendarContract.Events._ID} = ? AND ${CalendarContract.Events.DELETED} = 0"
+
 // Default-calendar resolution reuses CalendarService rather than duplicating
 // its cursor logic, so it's injected by the plugin.
 class EventsService(
@@ -859,13 +871,7 @@ class EventsService(
     ): Result<Unit> {
         // The existing row decides all-day date normalization when the call
         // doesn't change the flag.
-        val row = readEventRow(eventId)
-            ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
-                )
-            )
+        val row = readEventRowOrNotFound(eventId).getOrElse { return Result.failure(it) }
 
         // Build ContentValues with only provided fields
         val values = android.content.ContentValues()
@@ -983,7 +989,7 @@ class EventsService(
         endDate: java.util.Date?,
         patch: EventFieldPatch
     ): Result<Unit> {
-        val row = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
+        val row = readRecurringRow(eventId).getOrElse { return Result.failure(it) }.row
 
         val effectiveIsAllDay = patch.isAllDay ?: row.allDay
         val newStart = if (startDate != null) {
@@ -1062,13 +1068,7 @@ class EventsService(
                 )
             }
 
-            val row = readEventRow(eventId)
-                ?: return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.NOT_FOUND,
-                        "Event with ID $eventId not found"
-                    )
-                )
+            val row = readEventRowOrNotFound(eventId).getOrElse { return Result.failure(it) }
 
             // All-day events have no time-of-day and only whole-day durations.
             // The Dart layer can only check these against fields in the same
@@ -1425,7 +1425,8 @@ class EventsService(
             )
         }
 
-        val row = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
+        val series = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
+        val row = series.row
 
         // Truncate the series so the anchor occurrence and every later one
         // stop generating. UNTIL is inclusive, so cutting one second early
@@ -1437,10 +1438,7 @@ class EventsService(
         // when only RRULE changes — touching multiple time columns forces
         // it to regenerate. Without this the master's RRULE is correctly
         // updated on disk but listEvents keeps returning the old expansion.
-        //
-        // readRecurringRow has already rejected a row without a rule.
-        val truncatedRrule =
-            RruleString.withUntil(checkNotNull(row.rrule), timestamp - 1000, row.allDay)
+        val truncatedRrule = RruleString.withUntil(series.rrule, timestamp - 1000, row.allDay)
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, truncatedRrule)
             put(CalendarContract.Events.DTSTART, row.dtstart)
@@ -1470,7 +1468,7 @@ class EventsService(
         eventId: String,
         timestamp: Long
     ): Result<Unit> {
-        val row = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
+        val row = readRecurringRow(eventId).getOrElse { return Result.failure(it) }.row
 
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
@@ -1480,30 +1478,39 @@ class EventsService(
     }
 
     /**
+     * [readEventRow] as a [Result]: NOT_FOUND when the event is missing (or
+     * a DELETED tombstone).
+     */
+    private fun readEventRowOrNotFound(eventId: String): Result<EventRow> =
+        readEventRow(eventId)?.let { Result.success(it) }
+            ?: Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event with ID $eventId not found"
+                )
+            )
+
+    /** A master [row] proven recurring: its [rrule] is the row's, non-null. */
+    private class SeriesRow(val row: EventRow, val rrule: String)
+
+    /**
      * The master row a per-occurrence call addresses — an exception write in
      * [updateEventInstance] and [deleteEventInstance], the split in
      * [deleteRecurringThisAndFollowing]. NOT_FOUND when the event is missing
      * (or a DELETED tombstone), INVALID_ARGUMENTS when it is not recurring,
      * since a one-off event has no occurrence apart from itself.
      */
-    private fun readRecurringRow(eventId: String): Result<EventRow> {
-        val row = readEventRow(eventId)
+    private fun readRecurringRow(eventId: String): Result<SeriesRow> {
+        val row = readEventRowOrNotFound(eventId).getOrElse { return Result.failure(it) }
+        val rrule = row.rrule
             ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
-                )
-            )
-        if (row.rrule == null) {
-            return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.INVALID_ARGUMENTS,
                     "Event $eventId is not recurring, so it has no single occurrence " +
                         "to address; edit or delete the event itself instead"
                 )
             )
-        }
-        return Result.success(row)
+        return Result.success(SeriesRow(row, rrule))
     }
 
     /**
@@ -1543,18 +1550,6 @@ class EventsService(
             )
         return Result.success(exceptionId)
     }
-
-    /**
-     * Selects an event row by `_ID`, skipping DELETED=1 tombstones. A
-     * tombstone is what a non-sync-adapter delete leaves on an event with a
-     * `_sync_id` — a synced calendar's, or a local series the plugin has
-     * keyed (see [ensureLocalSeriesSyncId]). Instances queries already skip
-     * it, so [getEvent] and [readEventRow] read it as gone too: otherwise an
-     * edit or a per-occurrence delete would write against a row that never
-     * shows in a listing.
-     */
-    private val liveEventById =
-        "${CalendarContract.Events._ID} = ? AND ${CalendarContract.Events.DELETED} = 0"
 
     private data class EventRow(
         val id: String,
