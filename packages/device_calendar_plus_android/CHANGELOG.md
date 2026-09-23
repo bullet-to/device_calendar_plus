@@ -8,6 +8,12 @@
   Instances cache — the earlier ones for good. A local series is now given a
   `_sync_id` before its first exception is written, and deleting the series
   removes its detached occurrences with it (#153).
+- `getEvent`, `updateEvent` and `deleteEvent` no longer see an event that
+  another app has deleted but the provider only tombstoned (`DELETED=1`, the
+  fate of any event with a `_sync_id` deleted outside a sync adapter, which
+  now includes a local series edited per occurrence). Such an event reads as
+  not found instead of accepting edits against a row that never shows in
+  `listEvents`.
 
 ### Changed
 - Migrated to Flutter's built-in Kotlin: the plugin no longer applies the

@@ -413,10 +413,15 @@ class EventsService(
                 }
             }
         } else {
-            // Non-recurring event or master event
+            // Non-recurring event or master event. A DELETED=1 row is the
+            // tombstone a non-sync-adapter delete leaves on a series with a
+            // `_sync_id` (a synced one, or a local one the plugin has keyed:
+            // see ensureLocalSeriesSyncId); it reads as gone, as it does in
+            // Instances queries.
             val columns = EventColumns.events
 
-            val selection = "${CalendarContract.Events._ID} = ?"
+            val selection =
+                "${CalendarContract.Events._ID} = ? AND ${CalendarContract.Events.DELETED} = 0"
             val selectionArgs = arrayOf(eventId)
             
             try {
@@ -774,18 +779,28 @@ class EventsService(
 
     /**
      * The bare-event-ID path of [deleteEvent]: deletes the event row itself —
-     * the whole series when recurring.
+     * the whole series when recurring — and any detached occurrences keyed
+     * to it by `original_id`.
+     *
+     * The exceptions have to be named here because the provider cascades a
+     * series delete only to a master with no `_sync_id`, and both a synced
+     * calendar's master and a local one edited per occurrence (see
+     * [ensureLocalSeriesSyncId]) carry one. One selection-based delete covers
+     * master and exceptions together: the provider runs it as a single
+     * transaction over every matching row, so there is no window where the
+     * master is gone but its exceptions are not. A consequence worth keeping:
+     * exceptions orphaned by a master that is already gone still match, so
+     * deleting that ID cleans them up and reports success, not NOT_FOUND.
      */
     private fun deleteEventMaster(eventId: String): Result<Unit> {
-        // Use sync-adapter context so the Calendar Provider physically
-        // removes the row instead of just setting DELETED=1. Without
-        // this, the event survives deletion on real devices (where a
-        // sync adapter is present) and getEvent still returns it.
-        val uri = buildDeleteUri(eventId)
+        // Sync-adapter context so the Calendar Provider physically removes
+        // the rows instead of just setting DELETED=1. Without it, the event
+        // survives deletion on real devices (where a sync adapter is present)
+        // and getEvent still returns it.
         val deletedRows = context.contentResolver.delete(
-            uri,
-            "${CalendarContract.Events._ID} = ?",
-            arrayOf(eventId)
+            buildDeleteUri(eventId),
+            "${CalendarContract.Events._ID} = ? OR ${CalendarContract.Events.ORIGINAL_ID} = ?",
+            arrayOf(eventId, eventId)
         )
 
         if (deletedRows == 0) {
@@ -796,16 +811,6 @@ class EventsService(
                 )
             )
         }
-
-        // The provider cascades a series delete to its exceptions only when
-        // the master has no `_sync_id`; a series edited per occurrence on a
-        // local calendar has one (see ensureLocalSeriesSyncId), so remove its
-        // detached occurrences here rather than leave them behind.
-        context.contentResolver.delete(
-            uri,
-            "${CalendarContract.Events.ORIGINAL_ID} = ?",
-            arrayOf(eventId)
-        )
 
         return Result.success(Unit)
     }
@@ -1590,10 +1595,12 @@ class EventsService(
             CalendarContract.Events.RRULE,
             CalendarContract.Events._SYNC_ID
         )
+        // A DELETED=1 tombstone reads as gone (see getEvent), so no edit or
+        // per-occurrence delete writes an exception against one.
         context.contentResolver.query(
             CalendarContract.Events.CONTENT_URI,
             projection,
-            "${CalendarContract.Events._ID} = ?",
+            "${CalendarContract.Events._ID} = ? AND ${CalendarContract.Events.DELETED} = 0",
             arrayOf(eventId),
             null
         )?.use { cursor ->
@@ -1630,19 +1637,10 @@ class EventsService(
 
     /**
      * Gives a recurring series on a local calendar a `_sync_id` before an
-     * exception is written against it, so the Calendar Provider keeps the
-     * series and its exceptions together.
-     *
-     * The provider tracks a series' exceptions through `_sync_id` /
-     * `original_sync_id`. Without one — a local-account calendar never gets
-     * one, a synced calendar gets it on first sync — an exception insert
-     * deletes the whole family's rows from the Instances cache and re-expands
-     * only the exception (CalendarInstancesHelper's own "TODO: passing rowId
-     * is wrong if this is an exception"), so the master's occurrences vanish
-     * inside the cached range: the earlier ones for good, since only ranges
-     * past the cache re-expand later (#153). A full regeneration doesn't
-     * recover either — it keys exceptions by `original_sync_id`, so the
-     * overridden occurrence comes back beside its exception.
+     * exception is written against it. The Calendar Provider keys a series'
+     * exceptions by `_sync_id` / `original_sync_id`; without one, the
+     * exception insert drops the master's own occurrences from the Instances
+     * cache (#153).
      *
      * Only local calendars are touched: nothing else will ever assign them a
      * `_sync_id`, whereas a synced calendar's adapter owns that column. The
@@ -1652,15 +1650,16 @@ class EventsService(
      * adapter or when `_sync_id` is empty, so once a local series carries
      * one, a delete by a non-sync-adapter caller (the stock Calendar app,
      * say) leaves it as a DELETED=1 row that no adapter will ever collect.
-     * Instances queries skip such rows, and the plugin's own deletes go
-     * through [buildDeleteUri] as a sync adapter, so they are unaffected.
+     * Instances queries skip such rows, [getEvent] and [readEventRow] filter
+     * them out, and the plugin's own deletes go through [buildDeleteUri] as
+     * a sync adapter.
      *
-     * Any exceptions already written against the series before the id
-     * existed — by an older plugin version or another app — are re-keyed by
+     * Exceptions already written against the series before it had an id — by
+     * an older plugin version or another app — are re-keyed by
      * `original_sync_id` so they join the family. That is an upgrade-only
-     * path: this plugin now assigns the id before its first exception write,
-     * so the public API can no longer produce a keyless series with
-     * exceptions and the integration suite cannot reach the branch.
+     * path: the id is now assigned before the first exception write, so the
+     * public API can no longer produce a keyless series with exceptions and
+     * the integration suite cannot reach the branch.
      *
      * [account] is the calendar's (name, type), read by the caller, which
      * needs it for the exception URI as well.

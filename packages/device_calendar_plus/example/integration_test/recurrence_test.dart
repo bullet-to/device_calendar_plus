@@ -149,6 +149,31 @@ Future<List<Event>> occurrencesOf(
     ..sort((a, b) => a.startDate.compareTo(b.startDate));
 }
 
+/// Lists the events titled [title] in the calendar over the same window as
+/// [occurrencesOf], in date order. This is how a detached occurrence is
+/// found: `updateEvent` returns no ID for one and the platforms disagree on
+/// what it would be, so a title unique to the test is the handle.
+Future<List<Event>> eventsTitled(
+  DeviceCalendar plugin,
+  String calendarId,
+  String title,
+  DateTime start, {
+  int windowDays = 14,
+}) async {
+  final events = await plugin.listEvents(
+    start.subtract(const Duration(days: 1)),
+    start.add(Duration(days: windowDays)),
+    calendarIds: [calendarId],
+  );
+  return events.where((e) => e.title == title).toList()
+    ..sort((a, b) => a.startDate.compareTo(b.startDate));
+}
+
+/// The start instants of [events], for comparing two listings occurrence by
+/// occurrence.
+List<int> startsOf(Iterable<Event> events) =>
+    events.map((e) => e.startDate.millisecondsSinceEpoch).toList();
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -899,38 +924,31 @@ void main() {
           plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
       final target = occurrences[4];
-      final targetMillis = target.startDate.millisecondsSinceEpoch;
 
       await plugin.updateEvent(
         eventId: target.instanceId,
         title: 'Just this one',
       );
 
-      // updateEvent returns no ID for the detached exception (the platforms
-      // disagree on what it would be), so the edit is verified through
-      // listEvents: the detached exception must surface in the window with
-      // the new title at the targeted moment.
-      final listed = await plugin.listEvents(
-        series.start.subtract(const Duration(days: 1)),
-        series.start.add(const Duration(days: 14)),
-        calendarIds: [calendarId!],
-      );
+      // The detached exception must surface once, with the new title, at
+      // the targeted moment.
       expect(
-        listed.any((e) =>
-            e.title == 'Just this one' &&
-            e.startDate.millisecondsSinceEpoch == targetMillis),
-        isTrue,
+        startsOf(await eventsTitled(
+            plugin, calendarId!, 'Just this one', series.start)),
+        [target.startDate.millisecondsSinceEpoch],
         reason: 'listEvents must include the detached exception',
       );
 
-      // The master series should still expand into occurrences — all
-      // except the targeted one should keep the original title.
-      final initialCount = occurrences.length;
+      // The master must still expand into every other occurrence — the
+      // earlier ones included (#153) — each with the original title.
       final afterUpdate = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);
-      expect(afterUpdate.length, initialCount - 1,
-          reason:
-              'master should have initialCount-1 occurrences (targeted one is now an exception)');
+      expect(
+        startsOf(afterUpdate),
+        startsOf([...occurrences]..removeAt(4)),
+        reason: 'every occurrence but the targeted one must stay on the '
+            'series',
+      );
       expect(
         afterUpdate.every((e) => e.title == 'Daily Series'),
         isTrue,
@@ -974,12 +992,9 @@ void main() {
     test(
         'updateEvent moving an instance to another day keeps every other '
         'occurrence (#153)', () async {
-      // Issue #153's shape: a weekly BYDAY series ending on a date, one
-      // occurrence moved a day later through its instance ID. On a local
-      // Android calendar the Calendar Provider used to drop the master's
-      // occurrences from its Instances cache after the exception insert —
-      // the earlier ones for good, since only windows past the cached range
-      // re-expand on demand.
+      // The reporter's shape in #153: a weekly BYDAY series ending on a
+      // date, one occurrence moved a day later through its instance ID.
+      // The daily-series test above covers the title-only edit.
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final anchor = DateTime.now().toUtc().add(const Duration(hours: 1));
       final eventId = await plugin.createEvent(
@@ -1007,28 +1022,64 @@ void main() {
 
       final after = await occurrencesOf(plugin, calendarId!, eventId, anchor,
           windowDays: 70);
-      final expectedMaster = [...before]..removeAt(3);
       expect(
-        after.map((e) => e.startDate.millisecondsSinceEpoch).toList(),
-        expectedMaster.map((e) => e.startDate.millisecondsSinceEpoch).toList(),
+        startsOf(after),
+        startsOf([...before]..removeAt(3)),
         reason: 'every occurrence but the moved one must stay on the series, '
             'the earlier ones included (#153)',
       );
 
-      // The moved occurrence is a detached exception; the platforms disagree
-      // on its ID, so find it by title at its new instant.
-      final listed = await plugin.listEvents(
-        anchor.subtract(const Duration(days: 1)),
-        anchor.add(const Duration(days: 70)),
-        calendarIds: [calendarId!],
+      // Read by title, the series is the untouched eight plus the moved one
+      // on its new day — a day later still sorts into the same slot.
+      final titled = await eventsTitled(
+          plugin, calendarId!, 'Weekly #153', anchor,
+          windowDays: 70);
+      expect(
+        startsOf(titled),
+        startsOf(before)..[3] = movedStart.millisecondsSinceEpoch,
+        reason: 'the moved occurrence must appear once, on its new day',
+      );
+    });
+
+    test(
+        'updateEvent on a second occurrence of the same series keeps the '
+        'rest (#153)', () async {
+      // The steady state after a first per-occurrence edit: the series
+      // already carries its key and one exception, and the next exception
+      // must join that family rather than disturb it.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final first = occurrences[2];
+      final second = occurrences[5];
+
+      await plugin.updateEvent(eventId: first.instanceId, title: 'First #153');
+      await plugin.updateEvent(
+          eventId: second.instanceId, title: 'Second #153');
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(
+        startsOf(after),
+        startsOf([...occurrences]
+          ..removeAt(5)
+          ..removeAt(2)),
+        reason: 'every occurrence but the two edited ones must stay on the '
+            'series',
       );
       expect(
-        listed.where((e) =>
-            e.title == 'Weekly #153' &&
-            e.startDate.millisecondsSinceEpoch ==
-                movedStart.millisecondsSinceEpoch),
-        hasLength(1),
-        reason: 'the moved occurrence must appear once, on its new day',
+        startsOf(await eventsTitled(
+            plugin, calendarId!, 'First #153', series.start)),
+        [first.startDate.millisecondsSinceEpoch],
+        reason: 'the first edit must survive the second, once, in place',
+      );
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, 'Second #153', series.start)),
+        [second.startDate.millisecondsSinceEpoch],
+        reason: 'the second edit must detach its own occurrence, once',
       );
     });
 
@@ -1530,19 +1581,13 @@ void main() {
           plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(6));
 
+      Future<List<Event>> detached() =>
+          eventsTitled(plugin, calendarId!, 'Detached #153', series.start);
+
       await plugin.updateEvent(
         eventId: occurrences[4].instanceId,
         title: 'Detached #153',
       );
-      Future<Iterable<Event>> detached() async {
-        final events = await plugin.listEvents(
-          series.start.subtract(const Duration(days: 1)),
-          series.start.add(const Duration(days: 14)),
-          calendarIds: [calendarId!],
-        );
-        return events.where((e) => e.title == 'Detached #153');
-      }
-
       expect(await detached(), hasLength(1),
           reason: 'the edited occurrence must be detached before the delete');
 
