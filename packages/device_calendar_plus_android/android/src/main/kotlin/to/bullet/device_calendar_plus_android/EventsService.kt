@@ -190,15 +190,12 @@ class EventsService(
         val description = if (!cursor.isNull(descriptionIndex)) cursor.getString(descriptionIndex) else null
         val location = if (!cursor.isNull(locationIndex)) cursor.getString(locationIndex) else null
         val rawStart = cursor.getLong(startIndex)
-        // A recurring master row stores DURATION and no DTEND (an expanded
-        // Instances row always has END), so the master's end is derived from
-        // its duration rather than collapsing onto the start (#122).
-        val duration = if (!cursor.isNull(durationIndex)) cursor.getString(durationIndex) else null
-        val rawEnd = when {
-            !cursor.isNull(endIndex) -> cursor.getLong(endIndex)
-            duration != null -> rawStart + (parseDurationMillis(duration) ?: 0L)
-            else -> rawStart
-        }
+        // A recurring master stores DURATION, not DTEND (#122).
+        val rawEnd = storedEndMillis(
+            rawStart,
+            if (!cursor.isNull(endIndex)) cursor.getLong(endIndex) else null,
+            if (!cursor.isNull(durationIndex)) cursor.getString(durationIndex) else null
+        ) ?: rawStart
         val allDay = if (!cursor.isNull(allDayIndex)) cursor.getInt(allDayIndex) == 1 else false
         val availability = if (!cursor.isNull(availabilityIndex)) cursor.getInt(availabilityIndex) else null
         val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else null
@@ -417,9 +414,6 @@ class EventsService(
         // buildEventMapFromCursor), so the Instances row is an exact match on
         // EVENT_ID and BEGIN. The Instances URI still needs a window, and the
         // provider matches any row overlapping it, so a ±1s one is enough.
-        // This used to go through retrieveEvents, whose all-day date filter
-        // reduces a two-second window to an empty date range in every
-        // timezone, so an all-day occurrence could never be resolved (#122).
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
             .appendPath((timestamp - 1000).toString())
             .appendPath((timestamp + 1000).toString())
@@ -1973,14 +1967,13 @@ class EventsService(
         return localCal.timeInMillis
     }
 
+    /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */
+    private fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =
+        dtend ?: duration?.let(::parseDurationMillis)?.let { dtstart + it }
+
     /** Resolves an event's duration, falling back to one hour when unknown. */
-    private fun eventDurationMillis(row: EventRow): Long {
-        if (row.dtend != null) return row.dtend - row.dtstart
-        if (row.duration != null) {
-            parseDurationMillis(row.duration)?.let { return it }
-        }
-        return 3_600_000L
-    }
+    private fun eventDurationMillis(row: EventRow): Long =
+        (storedEndMillis(row.dtstart, row.dtend, row.duration) ?: row.dtstart + 3_600_000L) - row.dtstart
 
     /** Parses an RFC 5545 / Android duration string (e.g. "P3600S", "PT1H"). */
     private fun parseDurationMillis(duration: String): Long? {
