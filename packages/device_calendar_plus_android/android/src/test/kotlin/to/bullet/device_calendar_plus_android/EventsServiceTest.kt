@@ -4,6 +4,7 @@ import android.content.Context
 import org.mockito.Mockito
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 internal class EventsServiceTest {
     private val service = EventsService(
@@ -37,5 +38,39 @@ internal class EventsServiceTest {
         assertEquals("busy", service.availabilityToString(0))
         assertEquals("free", service.availabilityToString(1))
         assertEquals("tentative", service.availabilityToString(2))
+    }
+
+    // A recurring master stores DURATION with a NULL DTEND (#122). The plugin
+    // only ever writes "P{n}S", so the integration tests never reach the ISO
+    // form other apps and sync adapters write, nor the unparseable fallthrough.
+    @Test
+    fun storedEndMillis_dtendPresent_winsOverDuration() {
+        assertEquals(2_000L, service.storedEndMillis(1_000L, 2_000L, "P1D"))
+    }
+
+    @Test
+    fun storedEndMillis_secondsForm_addsDuration() {
+        assertEquals(1_000L + 3_600_000L, service.storedEndMillis(1_000L, null, "P3600S"))
+    }
+
+    @Test
+    fun storedEndMillis_isoForm_addsDuration() {
+        assertEquals(3_600_000L, service.storedEndMillis(0L, null, "PT1H"))
+        assertEquals(86_400_000L, service.storedEndMillis(0L, null, "P1D"))
+        assertEquals(
+            ((7 + 2) * 86_400L + 3 * 3_600L + 4 * 60L + 5L) * 1_000L,
+            service.storedEndMillis(0L, null, "P1W2DT3H4M5S"),
+        )
+    }
+
+    @Test
+    fun storedEndMillis_unparseableDuration_returnsNull() {
+        assertNull(service.storedEndMillis(0L, null, "garbage"))
+        assertNull(service.storedEndMillis(0L, null, "3600"))
+    }
+
+    @Test
+    fun storedEndMillis_neitherColumn_returnsNull() {
+        assertNull(service.storedEndMillis(0L, null, null))
     }
 }

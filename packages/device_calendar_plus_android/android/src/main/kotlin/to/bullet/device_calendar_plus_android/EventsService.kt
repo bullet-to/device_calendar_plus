@@ -1968,15 +1968,15 @@ class EventsService(
     }
 
     /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */
-    private fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =
+    internal fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =
         dtend ?: duration?.let(::parseDurationMillis)?.let { dtstart + it }
 
     /** Resolves an event's duration, falling back to one hour when unknown. */
     private fun eventDurationMillis(row: EventRow): Long =
-        (storedEndMillis(row.dtstart, row.dtend, row.duration) ?: row.dtstart + 3_600_000L) - row.dtstart
+        storedEndMillis(row.dtstart, row.dtend, row.duration)?.let { it - row.dtstart } ?: 3_600_000L
 
     /** Parses an RFC 5545 / Android duration string (e.g. "P3600S", "PT1H"). */
-    private fun parseDurationMillis(duration: String): Long? {
+    internal fun parseDurationMillis(duration: String): Long? {
         val trimmed = duration.trim()
         Regex("P(\\d+)S").matchEntire(trimmed)?.let {
             return it.groupValues[1].toLong() * 1000L

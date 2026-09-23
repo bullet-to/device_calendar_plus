@@ -30,6 +30,36 @@ Future<({String eventId, DateTime start})> createDailySeries(
   return (eventId: eventId, start: start);
 }
 
+/// Local midnight [daysFromNow] days from today. Built via the constructor
+/// rather than `DateTime.add`, so the result is a calendar day rather than
+/// 24 hours (which lands an hour off across a DST transition).
+DateTime localMidnight(int daysFromNow) {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day + daysFromNow);
+}
+
+/// Creates an all-day daily recurring event starting tomorrow (local
+/// midnight), with `count` total occurrences. Returns the event ID, the start
+/// and the end of the first day (the next local midnight, DST-safe).
+Future<({String eventId, DateTime start, DateTime end})>
+    createAllDayDailySeries(
+  DeviceCalendar plugin,
+  String calendarId, {
+  int count = 10,
+}) async {
+  final start = localMidnight(1);
+  final end = localMidnight(2);
+  final eventId = await plugin.createEvent(
+    calendarId: calendarId,
+    title: 'All-day Daily Series',
+    startDate: start,
+    endDate: end,
+    isAllDay: true,
+    recurrenceRule: DailyRecurrence(end: CountEnd(count)),
+  );
+  return (eventId: eventId, start: start, end: end);
+}
+
 /// Creates a weekly recurring event starting at [start] (one hour from now
 /// by default, stored in UTC), with `count` weekly occurrences. The recurring
 /// weekday is the start's weekday unless [daysOfWeek] is given. Returns the
@@ -156,12 +186,6 @@ Future<List<Event>> occurrencesOf(
   );
   return events.where((e) => e.eventId == eventId).toList()
     ..sort((a, b) => a.startDate.compareTo(b.startDate));
-}
-
-/// Local midnight [daysFromNow] days from today.
-DateTime localMidnight(int daysFromNow) {
-  final now = DateTime.now();
-  return DateTime(now.year, now.month, now.day + daysFromNow);
 }
 
 void main() {
@@ -1505,18 +1529,11 @@ void main() {
     test('getEvent resolves an all-day recurring occurrence by instance ID',
         () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final start = localMidnight(1);
-      final eventId = await plugin.createEvent(
-        calendarId: calendarId!,
-        title: 'All-day daily',
-        startDate: start,
-        endDate: start.add(const Duration(days: 1)),
-        isAllDay: true,
-        recurrenceRule: const DailyRecurrence(end: CountEnd(4)),
-      );
+      final series =
+          await createAllDayDailySeries(plugin, calendarId!, count: 4);
 
-      final occurrences =
-          await occurrencesOf(plugin, calendarId!, eventId, start);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, 4,
           reason: 'the series must expand to every occurrence');
 
@@ -1569,24 +1586,14 @@ void main() {
     test('getEvent returns an all-day master ending at the next local midnight',
         () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final start = localMidnight(1);
-      final eventId = await plugin.createEvent(
-        calendarId: calendarId!,
-        title: 'All-day master',
-        startDate: start,
-        endDate: start.add(const Duration(days: 1)),
-        isAllDay: true,
-        recurrenceRule: const DailyRecurrence(end: CountEnd(3)),
-      );
+      final series =
+          await createAllDayDailySeries(plugin, calendarId!, count: 3);
 
-      final master = await plugin.getEvent(eventId);
+      final master = await plugin.getEvent(series.eventId);
       expect(master, isNotNull);
       expect(master!.isAllDay, isTrue);
-      expect(master.startDate, start);
-      // The day after start, via the constructor rather than add() so the
-      // expectation holds across a DST transition.
-      final nextMidnight = DateTime(start.year, start.month, start.day + 1);
-      expect(master.endDate, nextMidnight,
+      expect(master.startDate, series.start);
+      expect(master.endDate, series.end,
           reason: 'an all-day master spans its day, ending at the next '
               'local midnight');
     });

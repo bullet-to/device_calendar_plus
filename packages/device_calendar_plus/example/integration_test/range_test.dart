@@ -2,18 +2,22 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-/// Regression tests for builttoroam/device_calendar#452.
-///
-/// iOS EventKit's `predicateForEvents` silently truncates a date range longer
-/// than ~4 years to the first 4 years, so a naive single query drops the later
-/// events. The fix chunks wide ranges into <=3-year windows and merges the
-/// results — which must return every event exactly once, in start-date order,
-/// even for recurring series whose occurrences straddle a window boundary.
-///
-/// Android has no such limit, so these also serve as a cross-platform contract.
+/// `listEvents` contract tests: wide-range chunking
+/// (builttoroam/device_calendar#452) and reported-start ordering (#122).
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  // Regression tests for builttoroam/device_calendar#452.
+  //
+  // iOS EventKit's `predicateForEvents` silently truncates a date range longer
+  // than ~4 years to the first 4 years, so a naive single query drops the later
+  // events. The fix chunks wide ranges into <=3-year windows and merges the
+  // results — which must return every event exactly once, in start-date
+  // order, even for recurring series whose occurrences straddle a window
+  // boundary.
+  //
+  // Android has no such limit, so these also serve as a cross-platform
+  // contract.
   group('listEvents wide range (>4 year span)', () {
     late DeviceCalendar plugin;
     String? calendarId;
