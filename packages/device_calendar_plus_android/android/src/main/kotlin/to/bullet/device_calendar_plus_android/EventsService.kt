@@ -1494,10 +1494,19 @@ class EventsService(
         // the Instances cache the rewrite above rebuilds, but still on disk,
         // and back in listEvents once the provider next regenerates it.
         // iOS's EKSpan.futureEvents removes those too, so match it: drop every
-        // exception from the anchor's instant onward. The sync-adapter URI
-        // physically removes the rows rather than flagging them DELETED=1.
+        // exception whose ORIGINAL_INSTANCE_TIME is on or after the anchor's.
+        // The slot the exception replaced decides, not where it was moved to:
+        // an occurrence dragged from before the split to after it survives,
+        // and one dragged from after the split to before it goes.
+        //
+        // Done after the truncate so a failure here degrades to the old orphan
+        // state rather than resurrecting edited occurrences: had the exceptions
+        // gone first and the truncate then failed, the provider would keep
+        // generating the original slots and the user's per-occurrence edits
+        // would be lost. The sync-adapter URI physically removes the rows
+        // rather than flagging them DELETED=1.
         context.contentResolver.delete(
-            buildDeleteUri(eventId),
+            syncAdapterEventsUri(row.calendarId),
             "${CalendarContract.Events.ORIGINAL_ID} = ? AND " +
                 "${CalendarContract.Events.ORIGINAL_INSTANCE_TIME} >= ?",
             arrayOf(eventId, timestamp.toString())
@@ -2069,18 +2078,8 @@ class EventsService(
         calendarId: String,
         values: android.content.ContentValues
     ): Int {
-        val account = readCalendarAccount(calendarId)
-        val uri = if (account != null) {
-            CalendarContract.Events.CONTENT_URI.buildUpon()
-                .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
-                .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.first)
-                .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.second)
-                .build()
-        } else {
-            CalendarContract.Events.CONTENT_URI
-        }
         return context.contentResolver.update(
-            uri,
+            syncAdapterEventsUri(calendarId),
             values,
             "${CalendarContract.Events._ID} = ?",
             arrayOf(eventId)
@@ -2088,14 +2087,33 @@ class EventsService(
     }
 
     /**
-     * Builds a delete URI with sync-adapter context for the given event.
-     * Without CALLER_IS_SYNCADAPTER, the Calendar Provider on real devices
-     * only marks the row as DELETED=1 (for sync propagation) instead of
-     * physically removing it. Falls back to the plain URI if the calendar
-     * account can't be read.
+     * The Events URI with sync-adapter context (CALLER_IS_SYNCADAPTER +
+     * ACCOUNT_NAME + ACCOUNT_TYPE) for the calendar's account. Updates
+     * through it may touch protected columns like RRULE, and deletes through
+     * it physically remove rows instead of flagging them DELETED=1. Falls
+     * back to the plain URI if the calendar's account can't be read, which
+     * should only happen if the calendar was deleted between the row read
+     * and the write.
+     */
+    private fun syncAdapterEventsUri(calendarId: String): android.net.Uri {
+        val account = readCalendarAccount(calendarId)
+            ?: return CalendarContract.Events.CONTENT_URI
+        return CalendarContract.Events.CONTENT_URI.buildUpon()
+            .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+            .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.first)
+            .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.second)
+            .build()
+    }
+
+    /**
+     * Builds a delete URI with sync-adapter context for the given event, for
+     * callers that only have an event ID: looks up the event's calendar and
+     * delegates to [syncAdapterEventsUri]. Without CALLER_IS_SYNCADAPTER, the
+     * Calendar Provider on real devices only marks the row as DELETED=1 (for
+     * sync propagation) instead of physically removing it. Falls back to the
+     * plain URI if the event can't be read.
      */
     private fun buildDeleteUri(eventId: String): android.net.Uri {
-        // Look up the event's calendar ID so we can get the account.
         val calendarId = context.contentResolver.query(
             CalendarContract.Events.CONTENT_URI,
             arrayOf(CalendarContract.Events.CALENDAR_ID),
@@ -2108,13 +2126,6 @@ class EventsService(
             } else null
         } ?: return CalendarContract.Events.CONTENT_URI
 
-        val account = readCalendarAccount(calendarId)
-            ?: return CalendarContract.Events.CONTENT_URI
-
-        return CalendarContract.Events.CONTENT_URI.buildUpon()
-            .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
-            .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.first)
-            .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.second)
-            .build()
+        return syncAdapterEventsUri(calendarId)
     }
 }

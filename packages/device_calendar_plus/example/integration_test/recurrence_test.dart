@@ -141,6 +141,66 @@ void expectTruncatedMaster(
   );
 }
 
+/// Lists everything in the calendar over a window wide enough to capture a
+/// whole series starting at [start]: one day before it to [windowDays] after.
+/// Detached occurrences surface here too, so tests that need them filter this
+/// rather than [occurrencesOf].
+Future<List<Event>> listWindow(
+  DeviceCalendar plugin,
+  String calendarId,
+  DateTime start, {
+  int windowDays = 14,
+}) {
+  return plugin.listEvents(
+    start.subtract(const Duration(days: 1)),
+    start.add(Duration(days: windowDays)),
+    calendarIds: [calendarId],
+  );
+}
+
+/// Asserts a `thisAndFollowing` split at [before] left the master's earlier
+/// occurrences ([keeps], by start) and nothing of it on or after the split.
+/// Unlike [expectTruncatedMaster] this pins no count: what the master lists
+/// in a detached occurrence's place varies by platform (the Android
+/// emulator's Instances cache keeps the original slot until it next
+/// regenerates), so only the slots that must survive are named. [ignoring]
+/// is a detached occurrence's own instant, exempt from the split check in
+/// case a platform lists it under the master's ID.
+void expectMasterSplit(
+  List<Event> remaining, {
+  required DateTime before,
+  required Iterable<DateTime> keeps,
+  DateTime? ignoring,
+}) {
+  final starts = remaining.map((e) => e.startDate).toSet();
+  expect(starts, containsAll(keeps),
+      reason: 'the occurrences before the split must survive on the master');
+  expect(
+    remaining
+        .where((e) => e.startDate != ignoring)
+        .every((e) => e.startDate.isBefore(before)),
+    isTrue,
+    reason: 'the original series must not extend past the split point',
+  );
+}
+
+/// The 'Daily Series' events listed at exactly [instant]. Finds a detached
+/// occurrence at the time it was moved to: the platforms disagree on a
+/// detached occurrence's ID, so title and instant are what identify it.
+Future<List<Event>> detachedAt(
+  DeviceCalendar plugin,
+  String calendarId,
+  DateTime seriesStart,
+  DateTime instant,
+) async {
+  final listed = await listWindow(plugin, calendarId, seriesStart);
+  return listed
+      .where((e) =>
+          e.title == 'Daily Series' &&
+          e.startDate.millisecondsSinceEpoch == instant.millisecondsSinceEpoch)
+      .toList();
+}
+
 /// Lists the occurrences of `eventId` in the calendar over a window wide
 /// enough to capture the whole series ([windowDays] forward), in date order
 /// as returned by the platform.
@@ -151,11 +211,8 @@ Future<List<Event>> occurrencesOf(
   DateTime start, {
   int windowDays = 14,
 }) async {
-  final events = await plugin.listEvents(
-    start.subtract(const Duration(days: 1)),
-    start.add(Duration(days: windowDays)),
-    calendarIds: [calendarId],
-  );
+  final events =
+      await listWindow(plugin, calendarId, start, windowDays: windowDays);
   return events.where((e) => e.eventId == eventId).toList()
     ..sort((a, b) => a.startDate.compareTo(b.startDate));
 }
@@ -924,11 +981,7 @@ void main() {
       // disagree on what it would be), so the edit is verified through
       // listEvents: the detached exception must surface in the window with
       // the new title at the targeted moment.
-      final listed = await plugin.listEvents(
-        series.start.subtract(const Duration(days: 1)),
-        series.start.add(const Duration(days: 14)),
-        calendarIds: [calendarId!],
-      );
+      final listed = await listWindow(plugin, calendarId!, series.start);
       expect(
         listed.any((e) =>
             e.title == 'Just this one' &&
@@ -1434,29 +1487,92 @@ void main() {
       final occurrences = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);
       expect(occurrences.length, greaterThanOrEqualTo(8));
-      final moved = occurrences[6];
-      final movedStart = moved.startDate.add(const Duration(hours: 2));
+
+      // Detach one occurrence on each side of the split (anchor at [3]) by
+      // moving it two hours within its own day: [6] must go, [1] must stay.
+      Future<List<Event>> moveWithinDay(Event occurrence) async {
+        final movedStart = occurrence.startDate.add(const Duration(hours: 2));
+        await plugin.updateEvent(
+          eventId: occurrence.instanceId,
+          startDate: movedStart,
+          endDate: occurrence.endDate.add(const Duration(hours: 2)),
+        );
+        return detachedAt(plugin, calendarId!, series.start, movedStart);
+      }
+
+      final movedPast = await moveWithinDay(occurrences[6]);
+      expect(movedPast, hasLength(1),
+          reason: 'the occurrence moved past the split must appear once, at '
+              'its new time');
+      final movedBefore = await moveWithinDay(occurrences[1]);
+      expect(movedBefore, hasLength(1),
+          reason: 'the occurrence moved before the split must appear once, '
+              'at its new time');
+
+      final anchor = occurrences[3];
+      await plugin.deleteRecurring(
+        anchor.instanceId,
+        EventSpan.thisAndFollowing,
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expectMasterSplit(after,
+          before: anchor.startDate,
+          keeps: [occurrences[0].startDate, occurrences[2].startDate]);
+      expect(
+          await detachedAt(
+              plugin, calendarId!, series.start, movedPast.single.startDate),
+          isEmpty,
+          reason: 'a detached occurrence past the split must go with the '
+              'rest of "this and following"');
+      expect(
+          await detachedAt(
+              plugin, calendarId!, series.start, movedBefore.single.startDate),
+          hasLength(1),
+          reason: 'a detached occurrence before the split must survive it');
+      if (Platform.isAndroid) {
+        // On Android the detached occurrence is its own Events row, and
+        // listEvents reads the Instances cache, which the truncate rebuilds
+        // from the master alone — so an orphaned row and a removed one look
+        // the same there until the cache next regenerates. The bare-ID read
+        // goes straight to the row. (iOS reports the master's identifier for
+        // a detached occurrence, so the same read would find the master.)
+        expect(await plugin.getEvent(movedPast.single.eventId), isNull,
+            reason: 'the detached occurrence\'s own row must be removed, not '
+                'just dropped from the Instances cache');
+        expect(await plugin.getEvent(movedBefore.single.eventId), isNotNull,
+            reason: 'the detached occurrence before the split must keep its '
+                'own row');
+      }
+    });
+
+    test('thisAndFollowing keeps a detached occurrence by its original slot',
+        () async {
+      // Which side of the split a detached occurrence falls on is decided by
+      // the slot it replaced in the series, not by where it was moved to:
+      // iOS's EKSpan.futureEvents goes by the occurrence date, and Android's
+      // ORIGINAL_INSTANCE_TIME bound is built to match. So an occurrence
+      // dragged from before the split to after it survives the split.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
+
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(8));
+
+      // Move [2] onto [7]'s day, offset by two hours so it can't be confused
+      // with the master's own [7].
+      final moved = occurrences[2];
+      const shift = Duration(days: 5, hours: 2);
+      final movedStart = moved.startDate.add(shift);
       await plugin.updateEvent(
         eventId: moved.instanceId,
         startDate: movedStart,
-        endDate: moved.endDate.add(const Duration(hours: 2)),
+        endDate: moved.endDate.add(shift),
       );
-
-      // The platforms disagree on a detached occurrence's ID, so find it by
-      // title at its new instant.
-      Future<Iterable<Event>> detached() async {
-        final listed = await plugin.listEvents(
-          series.start.subtract(const Duration(days: 1)),
-          series.start.add(const Duration(days: 14)),
-          calendarIds: [calendarId!],
-        );
-        return listed.where((e) =>
-            e.title == 'Daily Series' &&
-            e.startDate.millisecondsSinceEpoch ==
-                movedStart.millisecondsSinceEpoch);
-      }
-
-      final movedEvent = (await detached()).toList();
+      final movedEvent =
+          await detachedAt(plugin, calendarId!, series.start, movedStart);
       expect(movedEvent, hasLength(1),
           reason: 'the moved occurrence must appear once, at its new time');
 
@@ -1468,20 +1584,24 @@ void main() {
 
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);
-      expectTruncatedMaster(after, before: anchor.startDate, count: 3);
-      expect(await detached(), isEmpty,
-          reason: 'a detached occurrence past the split must go with the '
-              'rest of "this and following"');
+      expectMasterSplit(after,
+          before: anchor.startDate,
+          keeps: [occurrences[0].startDate, occurrences[1].startDate],
+          ignoring: movedStart);
       if (Platform.isAndroid) {
-        // On Android the detached occurrence is its own Events row, and
-        // listEvents reads the Instances cache, which the truncate rebuilds
-        // from the master alone — so an orphaned row and a removed one look
-        // the same there until the cache next regenerates. The bare-ID read
-        // goes straight to the row. (iOS reports the master's identifier for
-        // a detached occurrence, so the same read would find the master.)
-        expect(await plugin.getEvent(movedEvent.single.eventId), isNull,
-            reason: 'the detached occurrence\'s own row must be removed, not '
-                'just dropped from the Instances cache');
+        expect(await plugin.getEvent(movedEvent.single.eventId), isNotNull,
+            reason: 'the moved occurrence must keep its own row');
+      }
+      // The emulator's Calendar Provider drops the moved copy from its
+      // Instances cache once the master's rule ends before it, although the
+      // row is intact (the bare-ID read above proves it), so the listing is
+      // asserted on physical devices and iOS.
+      if (!_isAndroidEmulator) {
+        expect(
+            await detachedAt(plugin, calendarId!, series.start, movedStart),
+            hasLength(1),
+            reason: 'an occurrence from before the split survives it even '
+                'when it was moved past the split');
       }
     });
 
