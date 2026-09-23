@@ -7,6 +7,7 @@ import android.provider.CalendarContract
 import java.util.Date
 
 private const val MINUTES_PER_DAY = 1440
+private const val MILLIS_PER_DAY = 86_400_000L
 
 // Default-calendar resolution reuses CalendarService rather than duplicating
 // its cursor logic, so it's injected by the plugin.
@@ -32,7 +33,7 @@ class EventsService(
         // passes local-midnight millis. We widen the Instances query to cover
         // UTC midnight boundaries too, then post-filter by date. (issue #20)
         val queryStartUtcMidnight = localMillisToUtcMidnight(startMillis)
-        val queryEndUtcMidnight = localMillisToUtcMidnight(endMillis)
+        val queryEndUtcMidnight = allDayWindowEndUtcMidnight(endMillis)
 
         val effectiveStart = minOf(startMillis, queryStartUtcMidnight)
         val effectiveEnd = maxOf(endMillis, queryEndUtcMidnight)
@@ -112,6 +113,22 @@ class EventsService(
     private fun localMillisToUtcMidnight(millis: Long): Long = localDateToUtcMidnight(millis)
 
     /**
+     * The exclusive UTC-midnight edge an all-day event is compared against for
+     * a window ending at [endMillis] (local).
+     *
+     * A window's end is exclusive, so an end sitting exactly on a local
+     * midnight already names the day boundary and maps to that date's UTC
+     * midnight. Any other end lies inside a date, and the window has to cover
+     * that whole date — otherwise a window that starts and ends on the same
+     * date (e.g. 10:00–11:00) collapses to an empty all-day range and drops the
+     * day's all-day event, which iOS EventKit's overlap predicate includes. So
+     * an end inside a date rounds up to the next UTC midnight. Both cases are
+     * "the UTC midnight after the local date of the last covered instant".
+     */
+    internal fun allDayWindowEndUtcMidnight(endMillis: Long): Long =
+        localDateToUtcMidnight(endMillis - 1) + MILLIS_PER_DAY
+
+    /**
      * Checks whether an event (all-day or timed) falls within the query range.
      * All-day events are compared by UTC calendar date; timed events by millis.
      */
@@ -127,7 +144,7 @@ class EventsService(
         if (isAllDay) {
             // All-day BEGIN/END are UTC midnights. If end <= begin, it's a
             // single-day event stored without the +1 day convention.
-            val effectiveEnd = if (eventEnd <= eventBegin) eventBegin + 86_400_000L else eventEnd
+            val effectiveEnd = if (eventEnd <= eventBegin) eventBegin + MILLIS_PER_DAY else eventEnd
             return effectiveEnd > startUtcMidnight && eventBegin < endUtcMidnight
         }
         // Timed events: half-open overlap. A zero-duration (instantaneous) event
