@@ -1425,22 +1425,7 @@ class EventsService(
             )
         }
 
-        val row = readEventRow(eventId)
-            ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
-                )
-            )
-
-        if (row.rrule == null) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "Event $eventId is not recurring; use deleteEvent instead"
-                )
-            )
-        }
+        val row = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
         // Truncate the series so the anchor occurrence and every later one
         // stop generating. UNTIL is inclusive, so cutting one second early
@@ -1452,7 +1437,10 @@ class EventsService(
         // when only RRULE changes — touching multiple time columns forces
         // it to regenerate. Without this the master's RRULE is correctly
         // updated on disk but listEvents keeps returning the old expansion.
-        val truncatedRrule = RruleString.withUntil(row.rrule, timestamp - 1000, row.allDay)
+        //
+        // readRecurringRow has already rejected a row without a rule.
+        val truncatedRrule =
+            RruleString.withUntil(checkNotNull(row.rrule), timestamp - 1000, row.allDay)
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, truncatedRrule)
             put(CalendarContract.Events.DTSTART, row.dtstart)
@@ -1492,9 +1480,11 @@ class EventsService(
     }
 
     /**
-     * The master row an exception is written against: NOT_FOUND when the
-     * event is missing (or a DELETED tombstone), INVALID_ARGUMENTS when it is
-     * not recurring, since an occurrence of a one-off event is the event.
+     * The master row a per-occurrence call addresses — an exception write in
+     * [updateEventInstance] and [deleteEventInstance], the split in
+     * [deleteRecurringThisAndFollowing]. NOT_FOUND when the event is missing
+     * (or a DELETED tombstone), INVALID_ARGUMENTS when it is not recurring,
+     * since a one-off event has no occurrence apart from itself.
      */
     private fun readRecurringRow(eventId: String): Result<EventRow> {
         val row = readEventRow(eventId)
@@ -1508,7 +1498,8 @@ class EventsService(
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "Event $eventId is not recurring; pass a bare event ID instead"
+                    "Event $eventId is not recurring, so it has no single occurrence " +
+                        "to address; edit or delete the event itself instead"
                 )
             )
         }
@@ -1535,7 +1526,7 @@ class EventsService(
         asSyncAdapter: Boolean
     ): Result<String> {
         val account = readCalendarAccount(row.calendarId)
-        ensureLocalSeriesSyncId(row, account)
+        ensureLocalSeriesSyncId(row, account).getOrElse { return Result.failure(it) }
 
         val base = CalendarContract.Events.CONTENT_EXCEPTION_URI
         val uri = (if (asSyncAdapter && account != null) syncAdapterUri(base, account) else base)
@@ -1661,20 +1652,26 @@ class EventsService(
      * an older plugin version or another app — are re-keyed by
      * `original_sync_id` so they join the family. That is an upgrade-only
      * path: the id is now assigned before the first exception write, so the
-     * public API can no longer produce a keyless series with exceptions and
-     * the integration suite cannot reach the branch. It was checked by hand
-     * on the emulator (API 34) instead: a keyless 10-occurrence series with a
-     * keyless exception written the old way (Instances holding only the
-     * exception, #153's state), then a second occurrence edited through the
-     * plugin — afterwards the exception carried the new id and Instances
-     * held the eight untouched occurrences and both exceptions, once each.
+     * public API can no longer produce a keyless series with exceptions. The
+     * integration suite reaches it through the example app's test seed
+     * channel, which performs the old plugin's write (a plain insert on the
+     * exception URI) to recreate #153's on-disk state before an edit goes
+     * through here.
+     *
+     * Fails with OPERATION_FAILED when the provider refuses the key write —
+     * matching no row, whatever the reason — so the caller never writes an
+     * exception against a master that is still keyless, which is the very
+     * write #153 comes from. A master that vanished between the caller's
+     * read and now lands here too: the exception insert would throw on the
+     * missing original anyway, and the outer catch maps that to
+     * OPERATION_FAILED as well.
      *
      * [account] is the series' calendar account, read by [insertException],
      * the only caller.
      */
-    private fun ensureLocalSeriesSyncId(row: EventRow, account: CalendarAccount?) {
-        if (row.syncId != null) return
-        if (account?.isLocal != true) return
+    private fun ensureLocalSeriesSyncId(row: EventRow, account: CalendarAccount?): Result<Unit> {
+        if (row.syncId != null) return Result.success(Unit)
+        if (account?.isLocal != true) return Result.success(Unit)
 
         val syncId = "device_calendar_plus:${java.util.UUID.randomUUID()}"
         val uri = syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
@@ -1686,10 +1683,14 @@ class EventsService(
             "${CalendarContract.Events._ID} = ?",
             arrayOf(row.id)
         )
-        // 0 means the master vanished between the caller's read and now: the
-        // exception insert that follows reports NOT_FOUND, and there is no
-        // family left to re-key.
-        if (updated == 0) return
+        if (updated == 0) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.OPERATION_FAILED,
+                    "Could not key series ${row.id} before writing its exception"
+                )
+            )
+        }
         context.contentResolver.update(
             uri,
             android.content.ContentValues().apply {
@@ -1698,6 +1699,7 @@ class EventsService(
             "${CalendarContract.Events.ORIGINAL_ID} = ?",
             arrayOf(row.id)
         )
+        return Result.success(Unit)
     }
 
     /** Inserts a fresh event row, using DURATION when recurring and DTEND otherwise. */

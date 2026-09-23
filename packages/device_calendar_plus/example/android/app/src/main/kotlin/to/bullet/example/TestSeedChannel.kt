@@ -48,6 +48,61 @@ object TestSeedChannel {
                         result.error("TEST_SEED_FAILED", e.message, null)
                     }
                 }
+                // A plain (non-sync-adapter) delete, the kind another app
+                // issues. On an event with a `_sync_id` the provider does not
+                // remove the row but tombstones it (DELETED=1) for a sync
+                // adapter to collect — the state the plugin's tombstone
+                // filter has to see through. Returns the rows the provider
+                // reports touched.
+                "deleteEventPlain" -> {
+                    try {
+                        val eventId = call.argument<String>("eventId")!!.toLong()
+                        val deleted = contentResolver.delete(
+                            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+                            null,
+                            null
+                        )
+                        result.success(deleted)
+                    } catch (e: Exception) {
+                        result.error("TEST_SEED_FAILED", e.message, null)
+                    }
+                }
+                // The write an older plugin version made for a per-occurrence
+                // edit: a plain insert on the exception URI against a master
+                // with no `_sync_id`, so the exception gets no
+                // `original_sync_id` either and the provider drops the
+                // master's own occurrences from its Instances cache (#153's
+                // on-disk state). Lets the suite reach the upgrade re-key the
+                // plugin performs before its own next exception write.
+                // Returns the exception's event ID.
+                "insertKeylessException" -> {
+                    try {
+                        val masterId = call.argument<String>("eventId")!!.toLong()
+                        val instanceStart = call.argument<Number>("instanceStart")!!.toLong()
+                        val instanceEnd = call.argument<Number>("instanceEnd")!!.toLong()
+                        val title = call.argument<String>("title")!!
+                        val uri = ContentUris.withAppendedId(
+                            CalendarContract.Events.CONTENT_EXCEPTION_URI,
+                            masterId
+                        )
+                        // The provider refuses DTEND on an exception
+                        // ("Exceptions can't overwrite dtend"); it takes
+                        // DURATION, as the plugin's own writer sends.
+                        val values = ContentValues().apply {
+                            put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, instanceStart)
+                            put(CalendarContract.Events.DTSTART, instanceStart)
+                            put(
+                                CalendarContract.Events.DURATION,
+                                "P${(instanceEnd - instanceStart) / 1000}S"
+                            )
+                            put(CalendarContract.Events.TITLE, title)
+                        }
+                        val inserted = contentResolver.insert(uri, values)
+                        result.success(inserted?.lastPathSegment)
+                    } catch (e: Exception) {
+                        result.error("TEST_SEED_FAILED", e.message, null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }

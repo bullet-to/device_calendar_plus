@@ -1,6 +1,14 @@
+import 'dart:io' show Platform;
+
 import 'package:device_calendar_plus/device_calendar_plus.dart';
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+
+/// The example app's test-only channel, which seeds calendar provider state
+/// the plugin deliberately can't write itself (Android only; see
+/// `TestSeedChannel.kt`).
+const _testSeed = MethodChannel('to.bullet.device_calendar_plus_example/test');
 
 /// Creates a daily recurring event starting one hour from now (UTC), with
 /// `count` total occurrences. Returns the event ID and the start time.
@@ -21,25 +29,28 @@ Future<({String eventId, DateTime start})> createDailySeries(
   return (eventId: eventId, start: start);
 }
 
-/// Creates a weekly recurring event starting at [start] (one hour from now
-/// by default, stored in UTC), with `count` weekly occurrences. The recurring
-/// weekday is the start's weekday unless [daysOfWeek] is given. Returns the
-/// event ID and the start time.
+/// Creates a weekly recurring event titled [title], starting at [start] (one
+/// hour from now by default, stored in UTC) and ending per [end] (`count`
+/// weekly occurrences by default). The recurring weekday is the start's
+/// weekday unless [daysOfWeek] is given. Returns the event ID and the start
+/// time.
 Future<({String eventId, DateTime start})> createWeeklySeries(
   DeviceCalendar plugin,
   String calendarId, {
+  String title = 'Weekly Series',
   int count = 5,
+  RecurrenceEnd? end,
   List<DayOfWeek>? daysOfWeek,
   DateTime? start,
 }) async {
   start ??= DateTime.now().add(const Duration(hours: 1));
   final eventId = await plugin.createEvent(
     calendarId: calendarId,
-    title: 'Weekly Series',
+    title: title,
     startDate: start,
     endDate: start.add(const Duration(hours: 1)),
     recurrenceRule:
-        WeeklyRecurrence(daysOfWeek: daysOfWeek, end: CountEnd(count)),
+        WeeklyRecurrence(daysOfWeek: daysOfWeek, end: end ?? CountEnd(count)),
     timeZone: 'UTC',
   );
   return (eventId: eventId, start: start);
@@ -1002,17 +1013,15 @@ void main() {
       // The daily-series test above covers the title-only edit.
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final anchor = DateTime.now().toUtc().add(const Duration(hours: 1));
-      final eventId = await plugin.createEvent(
-        calendarId: calendarId!,
+      final series = await createWeeklySeries(
+        plugin,
+        calendarId!,
         title: 'Weekly #153',
-        startDate: anchor,
-        endDate: anchor.add(const Duration(hours: 1)),
-        recurrenceRule: WeeklyRecurrence(
-          daysOfWeek: [weekdayOf(anchor)],
-          end: UntilEnd(anchor.add(const Duration(days: 7 * 8 + 1))),
-        ),
-        timeZone: 'UTC',
+        daysOfWeek: [weekdayOf(anchor)],
+        start: anchor,
+        end: UntilEnd(anchor.add(const Duration(days: 7 * 8 + 1))),
       );
+      final eventId = series.eventId;
       final before = await occurrencesOf(plugin, calendarId!, eventId, anchor,
           windowDays: 70);
       expect(before.length, 9, reason: 'the anchor plus eight weekly repeats');
@@ -1087,6 +1096,64 @@ void main() {
         reason: 'the second edit must detach its own occurrence, once',
       );
     });
+
+    test(
+        'updateEvent on a series with a keyless exception from an older '
+        'version re-keys it and restores the rest (#153)', () async {
+      // Android-only: the upgrade path. Anyone who edited an occurrence with
+      // the previous plugin version has #153's on-disk state — a master with
+      // no `_sync_id`, an exception with no `original_sync_id`, and the
+      // provider's Instances cache holding only the exception. The public
+      // API can no longer produce that state, so the example app's seed
+      // channel performs the old write; the next edit through the plugin
+      // must key the master, re-key the old exception into its family, and
+      // bring every untouched occurrence back.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(7));
+      final keyless = occurrences[3];
+      final rekeying = occurrences[6];
+
+      final exceptionId = await _testSeed.invokeMethod<String>(
+        'insertKeylessException',
+        {
+          'eventId': series.eventId,
+          'instanceStart': keyless.startDate.millisecondsSinceEpoch,
+          'instanceEnd': keyless.endDate.millisecondsSinceEpoch,
+          'title': 'Keyless #153',
+        },
+      );
+      expect(exceptionId, isNotEmpty,
+          reason: 'the seed must write the old-style exception');
+
+      await plugin.updateEvent(
+          eventId: rekeying.instanceId, title: 'Rekeyed #153');
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(
+        startsOf(after),
+        startsOf([...occurrences]
+          ..removeAt(6)
+          ..removeAt(3)),
+        reason: 'keying the master must bring back every occurrence but the '
+            'two detached ones',
+      );
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, 'Keyless #153', series.start)),
+        [keyless.startDate.millisecondsSinceEpoch],
+        reason: 'the old exception must survive the re-key, once, in place',
+      );
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, 'Rekeyed #153', series.start)),
+        [rekeying.startDate.millisecondsSinceEpoch],
+        reason: 'the new edit must detach its own occurrence, once',
+      );
+    }, skip: !Platform.isAndroid);
 
     test('updateEvent on a recurring eventId updates the whole series',
         () async {
@@ -1599,5 +1666,70 @@ void main() {
       expect(await detached(), isEmpty,
           reason: 'deleting the series must remove its detached occurrence');
     });
+
+    test(
+        'a series another app tombstoned reads as gone, and deleteEvent '
+        'collects it (#153)', () async {
+      // Android-only: a plain (non-sync-adapter) delete of an event with a
+      // `_sync_id` — which a local series carries once an occurrence has
+      // been edited (#153) — leaves the provider a DELETED=1 tombstone
+      // rather than removing the row. Instances queries skip it, so every
+      // read path the plugin keys off the Events table must skip it too,
+      // and the plugin's own delete (a sync adapter's) must still collect
+      // it. The example app's seed channel issues the plain delete.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 10);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(occurrences.length, greaterThanOrEqualTo(6));
+
+      // Key the master: edit one occurrence through the plugin.
+      await plugin.updateEvent(
+        eventId: occurrences[4].instanceId,
+        title: 'Detached before tombstone #153',
+      );
+
+      final deleted = await _testSeed
+          .invokeMethod<int>('deleteEventPlain', {'eventId': series.eventId});
+      expect(deleted, 1, reason: 'the seed must find the master to delete');
+
+      expect(await plugin.getEvent(series.eventId), isNull,
+          reason: 'getEvent must not read a tombstone');
+      expect(
+        await occurrencesOf(plugin, calendarId!, series.eventId, series.start),
+        isEmpty,
+        reason: 'the tombstoned series must have no occurrences listed',
+      );
+      final notFound = throwsA(isA<DeviceCalendarException>().having(
+        (e) => e.errorCode,
+        'errorCode',
+        DeviceCalendarError.notFound,
+      ));
+      await expectLater(
+        plugin.updateEvent(eventId: series.eventId, title: 'Tombstone edit'),
+        notFound,
+        reason: 'updateEvent must not edit a tombstone',
+      );
+      await expectLater(
+        plugin.updateEvent(
+            eventId: occurrences[2].instanceId, title: 'Tombstone edit'),
+        notFound,
+        reason: 'updateEvent must not write an exception against a tombstone',
+      );
+      await expectLater(
+        plugin.deleteEvent(eventId: occurrences[2].instanceId),
+        notFound,
+        reason: 'deleteEvent must not cancel an occurrence of a tombstone',
+      );
+
+      // The plugin deletes as a sync adapter, which is what collects it.
+      await plugin.deleteEvent(eventId: series.eventId);
+      expect(
+        await _testSeed
+            .invokeMethod<int>('deleteEventPlain', {'eventId': series.eventId}),
+        0,
+        reason: 'the tombstone must be physically gone after deleteEvent',
+      );
+    }, skip: !Platform.isAndroid);
   });
 }
