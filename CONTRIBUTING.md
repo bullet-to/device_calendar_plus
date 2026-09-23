@@ -118,7 +118,7 @@ cd android
 
 The example keeps the template's `android.builtInKotlin=false` (see its
 `gradle.properties`), so only the flagged run has AGP compile the plugin's
-Kotlin itself — the mode any AGP 9 app that enables the property builds in.
+Kotlin itself — AGP 9's default for any app that drops or flips that line.
 `-P` overrides the property for that run only; nothing needs editing.
 
 ## Pull Requests
