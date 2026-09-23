@@ -1350,6 +1350,22 @@ void main() {
             "a window inside a date must return that date's all-day event "
             'and nothing from the neighbouring dates',
       );
+
+      // The other way the end edge could go wrong: a window that ends exactly
+      // on local midnight must not be widened into the next date.
+      final wholeDay = await plugin.listEvents(
+        day,
+        DateTime(day.year, day.month, day.day + 1),
+        calendarIds: [calendarId],
+      );
+
+      expect(
+        wholeDay.map((e) => e.title).where(dayOffsets.containsKey).toList(),
+        ['all-day on day'],
+        reason:
+            'an end on local midnight is exclusive and must not pull in '
+            'the next date',
+      );
     });
   });
 }

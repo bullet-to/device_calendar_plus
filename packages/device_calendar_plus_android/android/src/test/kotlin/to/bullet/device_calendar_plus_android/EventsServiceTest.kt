@@ -13,7 +13,11 @@ internal class EventsServiceTest {
         Mockito.mock(CalendarService::class.java),
     )
 
+    // One zone each side of UTC: Sydney's local midnight lands on the previous
+    // UTC date, Los Angeles's on the same UTC date, so a rounding slip shows
+    // up in one hemisphere even if it cancels out in the other.
     private val sydney = TimeZone.getTimeZone("Australia/Sydney")
+    private val losAngeles = TimeZone.getTimeZone("America/Los_Angeles")
     private val utc = TimeZone.getTimeZone("UTC")
 
     private fun at(zone: TimeZone, year: Int, month: Int, day: Int, hour: Int = 0, minute: Int = 0): Long =
@@ -40,6 +44,18 @@ internal class EventsServiceTest {
     @Test
     fun allDayWindowEndUtcMidnight_endJustAfterLocalMidnight_roundsUp() {
         val end = service.allDayWindowEndUtcMidnight(at(sydney, 2026, 9, 26) + 1, sydney)
+        assertEquals(at(utc, 2026, 9, 27), end)
+    }
+
+    @Test
+    fun allDayWindowEndUtcMidnight_endOnLocalMidnight_westOfUtc_isThatDatesUtcMidnight() {
+        val end = service.allDayWindowEndUtcMidnight(at(losAngeles, 2026, 9, 26), losAngeles)
+        assertEquals(at(utc, 2026, 9, 26), end)
+    }
+
+    @Test
+    fun allDayWindowEndUtcMidnight_endInsideDate_westOfUtc_roundsUpToNextUtcMidnight() {
+        val end = service.allDayWindowEndUtcMidnight(at(losAngeles, 2026, 9, 26, 11), losAngeles)
         assertEquals(at(utc, 2026, 9, 27), end)
     }
 
