@@ -1,6 +1,10 @@
 ## Unreleased
 
 ### Fixed
+- Android: `getEvent` resolves all-day recurring instance IDs (it always
+  returned null), returns a recurring master's real end date instead of a
+  zero-length one, and `listEvents` orders all-day events by their local
+  midnight among timed events in non-UTC zones, as iOS does (#122).
 - Android: `updateEvent` or `deleteEvent` on a single occurrence of a
   recurring event in a local calendar no longer makes the other occurrences
   disappear — the earlier ones for good (#153).

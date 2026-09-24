@@ -30,8 +30,7 @@ class EventsService(
     fun retrieveEvents(
         startDate: Date,
         endDate: Date,
-        calendarIds: List<String>?,
-        eventId: String? = null
+        calendarIds: List<String>?
     ): Result<List<Map<String, Any>>> {
         readAccessFailure(context)?.let { return Result.failure(it) }
 
@@ -43,16 +42,13 @@ class EventsService(
         // All-day events are stored at UTC midnight boundaries, but the caller
         // passes local-midnight millis. We widen the Instances query to cover
         // UTC midnight boundaries too, then post-filter by date. (issue #20)
-        val queryStartUtcMidnight = localMillisToUtcMidnight(startMillis)
-        val queryEndUtcMidnight = localMillisToUtcMidnight(endMillis)
+        val queryStartUtcMidnight = localDateToUtcMidnight(startMillis)
+        val queryEndUtcMidnight = localDateToUtcMidnight(endMillis)
 
         val effectiveStart = minOf(startMillis, queryStartUtcMidnight)
         val effectiveEnd = maxOf(endMillis, queryEndUtcMidnight)
 
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            .appendPath(effectiveStart.toString())
-            .appendPath(effectiveEnd.toString())
-            .build()
+        val uri = EventColumns.instancesUri(effectiveStart, effectiveEnd)
 
         val columns = EventColumns.instances
 
@@ -63,11 +59,6 @@ class EventsService(
             val placeholders = calendarIds.joinToString(",") { "?" }
             selections.add("${CalendarContract.Instances.CALENDAR_ID} IN ($placeholders)")
             args.addAll(calendarIds)
-        }
-
-        if (eventId != null) {
-            selections.add("${CalendarContract.Instances.EVENT_ID} = ?")
-            args.add(eventId)
         }
 
         val selection = if (selections.isNotEmpty()) selections.joinToString(" AND ") else null
@@ -113,16 +104,19 @@ class EventsService(
                 )
             )
         }
-        
+
+        // Sort on the map's startDate, not the cursor's BEGIN: the cursor is
+        // in BEGIN order, but buildEventMapFromCursor rewrites all-day starts
+        // from UTC midnight to local midnight, so the two orders diverge once
+        // all-day and timed events mix in a non-UTC zone (#122). Mirrors iOS.
+        // sortBy is stable, so BEGIN order still breaks ties. startDate is
+        // always present in the map, so the cast is a hard invariant, not a
+        // fallback.
+        events.sortBy { it["startDate"] as Long }
+
         return Result.success(events)
     }
     
-    /**
-     * Converts local millis to UTC midnight of the same local calendar date.
-     * E.g. Dec 25 00:00 AEDT (UTC+11) → Dec 25 00:00 UTC.
-     */
-    private fun localMillisToUtcMidnight(millis: Long): Long = localDateToUtcMidnight(millis)
-
     /**
      * Checks whether an event (all-day or timed) falls within the query range.
      * All-day events are compared by UTC calendar date; timed events by millis.
@@ -186,6 +180,7 @@ class EventsService(
         val locationIndex = cursor.getColumnIndexOrThrow(columns.location)
         val startIndex = cursor.getColumnIndexOrThrow(columns.start)
         val endIndex = cursor.getColumnIndexOrThrow(columns.end)
+        val durationIndex = cursor.getColumnIndexOrThrow(columns.duration)
         val allDayIndex = cursor.getColumnIndexOrThrow(columns.allDay)
         val availabilityIndex = cursor.getColumnIndexOrThrow(columns.availability)
         val statusIndex = cursor.getColumnIndexOrThrow(columns.status)
@@ -200,7 +195,15 @@ class EventsService(
         val description = if (!cursor.isNull(descriptionIndex)) cursor.getString(descriptionIndex) else null
         val location = if (!cursor.isNull(locationIndex)) cursor.getString(locationIndex) else null
         val rawStart = cursor.getLong(startIndex)
-        val rawEnd = if (!cursor.isNull(endIndex)) cursor.getLong(endIndex) else rawStart
+        // A recurring master stores DURATION, not DTEND (#122). With neither
+        // usable, a read reports what is stored (a zero-length event); the
+        // write side's one-hour default in eventDurationMillis is a choice made
+        // only when a length must be produced.
+        val rawEnd = storedEndMillis(
+            rawStart,
+            if (!cursor.isNull(endIndex)) cursor.getLong(endIndex) else null,
+            if (!cursor.isNull(durationIndex)) cursor.getString(durationIndex) else null
+        ) ?: rawStart
         val allDay = if (!cursor.isNull(allDayIndex)) cursor.getInt(allDayIndex) == 1 else false
         val availability = if (!cursor.isNull(availabilityIndex)) cursor.getInt(availabilityIndex) else null
         val status = if (!cursor.isNull(statusIndex)) cursor.getInt(statusIndex) else null
@@ -399,69 +402,67 @@ class EventsService(
         }
     }
     
+    /**
+     * Reads one event: the master row for a bare [eventId], or the occurrence
+     * that starts at [timestamp] when one is given. Null when nothing matches.
+     */
     fun getEvent(eventId: String, timestamp: Long?): Result<Map<String, Any>?> {
         readAccessFailure(context)?.let { return Result.failure(it) }
 
-        if (timestamp != null) {
-            // Recurring event with timestamp
-            val occurrenceMillis = timestamp
-            
-            // Query ±1 second around the exact occurrence time
-            // We use a small window since we have the precise timestamp
-            val startMillis = occurrenceMillis - 1000
-            val endMillis = occurrenceMillis + 1000
-            
-            val startDate = Date(startMillis)
-            val endDate = Date(endMillis)
-            
-            // Use retrieveEvents with event ID filter
-            val eventsResult = retrieveEvents(startDate, endDate, null, eventId)
-            
-            return eventsResult.mapCatching { events ->
-                // Find closest match to the occurrence time
-                events.minByOrNull { event ->
-                    val eventStart = event["startDate"] as? Long ?: return@minByOrNull Long.MAX_VALUE
-                    kotlin.math.abs(eventStart - occurrenceMillis)
-                }
-            }
-        } else {
-            // Non-recurring event or master event.
-            val columns = EventColumns.events
+        if (timestamp == null) {
+            return querySingleEvent(
+                CalendarContract.Events.CONTENT_URI,
+                EventColumns.events,
+                liveEventById,
+                arrayOf(eventId)
+            )
+        }
 
-            val selection = liveEventById
-            val selectionArgs = arrayOf(eventId)
-            
-            try {
-                context.contentResolver.query(
-                    CalendarContract.Events.CONTENT_URI,
-                    columns.projection,
-                    selection,
-                    selectionArgs,
-                    null
-                )?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        return Result.success(buildEventMapFromCursor(cursor, columns))
-                    } else {
-                        return Result.success(null)
-                    }
-                }
-                
-                return Result.success(null)
-            } catch (e: SecurityException) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.PERMISSION_DENIED,
-                        "Calendar permission denied: ${e.message}"
-                    )
-                )
-            } catch (e: Exception) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.UNKNOWN_ERROR,
-                        "Failed to query event: ${e.message}"
-                    )
-                )
+        // An instance ID carries the occurrence's raw BEGIN (see
+        // buildEventMapFromCursor), so the Instances row is an exact match on
+        // EVENT_ID and BEGIN. The window only exists because the Instances URI
+        // needs one; its width is arbitrary, provided it overlaps the row.
+        val uri = EventColumns.instancesUri(timestamp - 1000, timestamp + 1000)
+        return querySingleEvent(
+            uri,
+            EventColumns.instances,
+            "${CalendarContract.Instances.EVENT_ID} = ? AND ${CalendarContract.Instances.BEGIN} = ?",
+            arrayOf(eventId, timestamp.toString())
+        )
+    }
+
+    /** The first row of [uri] matching [selection] as an event map, or null. */
+    private fun querySingleEvent(
+        uri: android.net.Uri,
+        columns: EventColumns,
+        selection: String,
+        selectionArgs: Array<String>
+    ): Result<Map<String, Any>?> {
+        try {
+            val event = context.contentResolver.query(
+                uri,
+                columns.projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) buildEventMapFromCursor(cursor, columns) else null
             }
+            return Result.success(event)
+        } catch (e: SecurityException) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied: ${e.message}"
+                )
+            )
+        } catch (e: Exception) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.UNKNOWN_ERROR,
+                    "Failed to query event: ${e.message}"
+                )
+            )
         }
     }
 
@@ -1998,80 +1999,16 @@ class EventsService(
         return localDateToUtcMidnight(date.time)
     }
 
-    /**
-     * Converts local-time millis to UTC midnight, preserving the calendar date.
-     * Used when writing all-day events: Android stores them as UTC midnight
-     * boundaries, so a local "June 5" must become "June 5 00:00 UTC".
-     */
-    private fun localDateToUtcMidnight(localMillis: Long): Long {
-        val local = java.util.Calendar.getInstance()
-        local.timeInMillis = localMillis
-        val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        utc.set(
-            local.get(java.util.Calendar.YEAR),
-            local.get(java.util.Calendar.MONTH),
-            local.get(java.util.Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        utc.set(java.util.Calendar.MILLISECOND, 0)
-        return utc.timeInMillis
-    }
-
-    /**
-     * Converts UTC millis to local midnight, preserving the calendar date.
-     * Used when reading all-day events: Android stores them as UTC midnight
-     * boundaries, and we need to present the date in the device's local time.
-     */
-    private fun utcToLocalMidnight(utcMillis: Long): Long {
-        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        utcCal.timeInMillis = utcMillis
-        val localCal = java.util.Calendar.getInstance()
-        localCal.set(
-            utcCal.get(java.util.Calendar.YEAR),
-            utcCal.get(java.util.Calendar.MONTH),
-            utcCal.get(java.util.Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        localCal.set(java.util.Calendar.MILLISECOND, 0)
-        return localCal.timeInMillis
-    }
-
     /** Resolves an event's duration, falling back to one hour when unknown. */
-    private fun eventDurationMillis(row: EventRow): Long {
-        if (row.dtend != null) return row.dtend - row.dtstart
-        if (row.duration != null) {
-            parseDurationMillis(row.duration)?.let { return it }
-        }
-        return 3_600_000L
-    }
-
-    /** Parses an RFC 5545 / Android duration string (e.g. "P3600S", "PT1H"). */
-    private fun parseDurationMillis(duration: String): Long? {
-        val trimmed = duration.trim()
-        Regex("P(\\d+)S").matchEntire(trimmed)?.let {
-            return it.groupValues[1].toLong() * 1000L
-        }
-        val match = Regex(
-            "P(?:(\\d+)W)?(?:(\\d+)D)?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?)?"
-        ).matchEntire(trimmed) ?: return null
-        var seconds = 0L
-        match.groupValues[1].toLongOrNull()?.let { seconds += it * 7 * 24 * 3600 }
-        match.groupValues[2].toLongOrNull()?.let { seconds += it * 24 * 3600 }
-        match.groupValues[3].toLongOrNull()?.let { seconds += it * 3600 }
-        match.groupValues[4].toLongOrNull()?.let { seconds += it * 60 }
-        match.groupValues[5].toLongOrNull()?.let { seconds += it }
-        return seconds * 1000L
-    }
+    private fun eventDurationMillis(row: EventRow): Long =
+        storedEndMillis(row.dtstart, row.dtend, row.duration)?.let { it - row.dtstart } ?: 3_600_000L
 
     /** Number of occurrences of [eventId] that start before [beforeMillis]. */
     private fun countInstancesBefore(eventId: String, beforeMillis: Long): Int {
         // Five-year look-back window: covers daily/weekly/monthly easily, and
         // yearly rules with an interval of up to five.
         val windowStart = beforeMillis - 5L * 366 * 24 * 3600 * 1000
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
-            .appendPath(windowStart.toString())
-            .appendPath(beforeMillis.toString())
-            .build()
+        val uri = EventColumns.instancesUri(windowStart, beforeMillis)
         var count = 0
         context.contentResolver.query(
             uri,

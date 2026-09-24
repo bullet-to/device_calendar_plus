@@ -2,18 +2,25 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-/// Regression tests for builttoroam/device_calendar#452.
-///
-/// iOS EventKit's `predicateForEvents` silently truncates a date range longer
-/// than ~4 years to the first 4 years, so a naive single query drops the later
-/// events. The fix chunks wide ranges into <=3-year windows and merges the
-/// results — which must return every event exactly once, in start-date order,
-/// even for recurring series whose occurrences straddle a window boundary.
-///
-/// Android has no such limit, so these also serve as a cross-platform contract.
+import 'series_fixtures.dart';
+import 'test_helpers.dart';
+
+/// `listEvents` contract tests: wide-range chunking
+/// (builttoroam/device_calendar#452) and reported-start ordering (#122).
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  // Regression tests for builttoroam/device_calendar#452.
+  //
+  // iOS EventKit's `predicateForEvents` silently truncates a date range longer
+  // than ~4 years to the first 4 years, so a naive single query drops the later
+  // events. The fix chunks wide ranges into <=3-year windows and merges the
+  // results — which must return every event exactly once, in start-date
+  // order, even for recurring series whose occurrences straddle a window
+  // boundary.
+  //
+  // Android has no such limit, so these also serve as a cross-platform
+  // contract.
   group('listEvents wide range (>4 year span)', () {
     late DeviceCalendar plugin;
     String? calendarId;
@@ -131,6 +138,74 @@ void main() {
         occurrenceCount,
         reason: 'expected all $occurrenceCount monthly occurrences across the '
             'span (crossing a window boundary)',
+      );
+    });
+  });
+
+  group('listEvents ordering', () {
+    late DeviceCalendar plugin;
+    String? calendarId;
+
+    setUpAll(() async {
+      plugin = DeviceCalendar.instance;
+      await plugin.requestPermissions();
+      calendarId = await plugin.createCalendar(
+        name: 'Ordering Test ${DateTime.now().millisecondsSinceEpoch}',
+        colorHex: '#3366FF',
+      );
+    });
+
+    tearDownAll(() async {
+      if (calendarId != null) {
+        await plugin.deleteCalendar(calendarId!);
+      }
+    });
+
+    // An all-day event's stored instant (UTC midnight) and its reported start
+    // (local midnight) differ by the zone offset, so sorting on the stored
+    // instant puts it on the wrong side of any timed event that falls
+    // between the two. The timed events here bracket local midnight from
+    // -4h to +8h, so in every non-UTC zone at least one of them sits in that
+    // gap and exposes a sort on the raw instant. (In UTC the two instants
+    // coincide and the order is right either way.) Matches iOS (#122).
+    test('sorts all-day events by their local-midnight start', () async {
+      final id = requireCalendar(calendarId);
+      final day = localMidnight(3);
+      await plugin.createEvent(
+        calendarId: id,
+        title: 'all-day',
+        startDate: day,
+        endDate: day.add(const Duration(days: 1)),
+        isAllDay: true,
+      );
+      const timedOffsets = <String, Duration>{
+        'timed -4h': Duration(hours: -4),
+        'timed -30m': Duration(minutes: -30),
+        'timed +30m': Duration(minutes: 30),
+        'timed +8h': Duration(hours: 8),
+      };
+      for (final entry in timedOffsets.entries) {
+        final start = day.add(entry.value);
+        await plugin.createEvent(
+          calendarId: id,
+          title: entry.key,
+          startDate: start,
+          endDate: start.add(const Duration(minutes: 30)),
+        );
+      }
+
+      final ours = {'all-day', ...timedOffsets.keys};
+      final events = await plugin.listEvents(
+        day.subtract(const Duration(days: 1)),
+        day.add(const Duration(days: 2)),
+        calendarIds: [id],
+      );
+
+      expect(
+        events.map((e) => e.title).where(ours.contains).toList(),
+        ['timed -4h', 'timed -30m', 'all-day', 'timed +30m', 'timed +8h'],
+        reason: 'listEvents must order by the start date it reports, so an '
+            'all-day event sits at its local midnight among the timed ones',
       );
     });
   });

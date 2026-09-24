@@ -1,6 +1,16 @@
 ## Unreleased
 
 ### Fixed
+- `getEvent` resolves the instance ID of an all-day recurring occurrence. The
+  lookup went through the all-day date filter with a two-second window, which
+  collapses to an empty date range in every timezone, so it always returned
+  null; it now matches the Instances row on `EVENT_ID` and `BEGIN` (#122).
+- `getEvent` with a bare recurring ID returns the master's real end date.
+  A recurring row stores `DURATION` with no `DTEND`, and the end used to fall
+  back to the start (#122).
+- `listEvents` sorts on the start date it reports, so an all-day event lands
+  at its local midnight among timed events in non-UTC zones instead of at its
+  stored UTC-midnight instant. Matches iOS (#122).
 - Editing or deleting a single occurrence of a recurring event on a local
   calendar no longer makes the rest of the series disappear. The Calendar
   Provider keys a series' exceptions by `_sync_id`, which a local calendar
