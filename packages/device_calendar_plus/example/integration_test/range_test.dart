@@ -2,6 +2,7 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'series_fixtures.dart';
 import 'test_helpers.dart';
 
 /// `listEvents` contract tests: wide-range chunking
@@ -168,10 +169,10 @@ void main() {
     // gap and exposes a sort on the raw instant. (In UTC the two instants
     // coincide and the order is right either way.) Matches iOS (#122).
     test('sorts all-day events by their local-midnight start', () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final id = requireCalendar(calendarId);
       final day = localMidnight(3);
       await plugin.createEvent(
-        calendarId: calendarId!,
+        calendarId: id,
         title: 'all-day',
         startDate: day,
         endDate: day.add(const Duration(days: 1)),
@@ -186,7 +187,7 @@ void main() {
       for (final entry in timedOffsets.entries) {
         final start = day.add(entry.value);
         await plugin.createEvent(
-          calendarId: calendarId!,
+          calendarId: id,
           title: entry.key,
           startDate: start,
           endDate: start.add(const Duration(minutes: 30)),
@@ -197,7 +198,7 @@ void main() {
       final events = await plugin.listEvents(
         day.subtract(const Duration(days: 1)),
         day.add(const Duration(days: 2)),
-        calendarIds: [calendarId!],
+        calendarIds: [id],
       );
 
       expect(

@@ -8,6 +8,21 @@ import 'test_helpers.dart';
 // assertions the per-occurrence tests share. Imported by recurrence_test.dart,
 // recurrence_read_test.dart and tombstone_test.dart.
 
+/// The group's calendar, checked to exist: setUpAll must have created it.
+String requireCalendar(String? calendarId) {
+  expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+  return calendarId!;
+}
+
+/// A series factory: creates a recurring event of [count] occurrences in the
+/// calendar and returns its event ID and start. [createDailySeries] and
+/// [createAllDayDailySeries] are the two on offer.
+typedef SeriesFactory = Future<({String eventId, DateTime start})> Function(
+  DeviceCalendar plugin,
+  String calendarId, {
+  int count,
+});
+
 /// A seeded series: its event ID and start, and its occurrences as listed
 /// right after it was created — the baseline a per-occurrence test compares
 /// against.
@@ -37,25 +52,23 @@ Future<({String eventId, DateTime start})> createDailySeries(
 }
 
 /// Creates an all-day daily recurring event starting tomorrow (local
-/// midnight), with `count` total occurrences. Returns the event ID, the start
-/// and the end of the first day (the next local midnight, DST-safe).
-Future<({String eventId, DateTime start, DateTime end})>
-createAllDayDailySeries(
+/// midnight, DST-safe) and spanning its day, with `count` total occurrences.
+/// Returns the event ID and the start.
+Future<({String eventId, DateTime start})> createAllDayDailySeries(
   DeviceCalendar plugin,
   String calendarId, {
   int count = 10,
 }) async {
   final start = localMidnight(1);
-  final end = localMidnight(2);
   final eventId = await plugin.createEvent(
     calendarId: calendarId,
     title: 'All-day Daily Series',
     startDate: start,
-    endDate: end,
+    endDate: localMidnight(2),
     isAllDay: true,
     recurrenceRule: DailyRecurrence(end: CountEnd(count)),
   );
-  return (eventId: eventId, start: start, end: end);
+  return (eventId: eventId, start: start);
 }
 
 /// Creates a weekly recurring event titled [title], starting at [start] (one
@@ -163,19 +176,26 @@ Future<void> expectDetachedOnce(
   );
 }
 
-/// The arrange step the per-occurrence tests share: a daily series of ten
-/// with its occurrences listed, at least [minOccurrences] of them. Checks the
-/// group's calendar exists first.
+/// The arrange step the per-occurrence tests share: a daily series of
+/// [count] made by [create] (timed, by default) with its occurrences listed,
+/// at least [minOccurrences] of them. Checks the group's calendar exists
+/// first.
 Future<SeededSeries> seedDailySeries(
   DeviceCalendar plugin,
   String? calendarId, {
+  SeriesFactory create = createDailySeries,
+  int count = 10,
   int minOccurrences = 6,
 }) async {
-  expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-  final series = await createDailySeries(plugin, calendarId!, count: 10);
+  final id = requireCalendar(calendarId);
+  final series = await create(plugin, id, count: count);
   final occurrences =
-      await occurrencesOf(plugin, calendarId, series.eventId, series.start);
-  expect(occurrences.length, greaterThanOrEqualTo(minOccurrences));
+      await occurrencesOf(plugin, id, series.eventId, series.start);
+  expect(
+    occurrences.length,
+    greaterThanOrEqualTo(minOccurrences),
+    reason: 'the series must expand to at least $minOccurrences occurrences',
+  );
   return (
     eventId: series.eventId,
     start: series.start,

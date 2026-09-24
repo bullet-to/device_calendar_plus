@@ -3,48 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'series_fixtures.dart';
-
-/// The group's calendar, checked to exist: setUpAll must have created it.
-String requireCalendar(String? calendarId) {
-  expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-  return calendarId!;
-}
-
-/// The arrange step the instance-ID tests share: a daily series of [count]
-/// (all-day when [allDay]) with its occurrences listed, checked to have
-/// expanded to every one of them.
-Future<List<Event>> seedAndListSeries(
-  DeviceCalendar plugin,
-  String? calendarId, {
-  required bool allDay,
-  required int count,
-}) async {
-  final id = requireCalendar(calendarId);
-  final ({String eventId, DateTime start}) series;
-  if (allDay) {
-    final allDaySeries = await createAllDayDailySeries(
-      plugin,
-      id,
-      count: count,
-    );
-    series = (eventId: allDaySeries.eventId, start: allDaySeries.start);
-  } else {
-    series = await createDailySeries(plugin, id, count: count);
-  }
-
-  final occurrences = await occurrencesOf(
-    plugin,
-    id,
-    series.eventId,
-    series.start,
-  );
-  expect(
-    occurrences.length,
-    count,
-    reason: 'the series must expand to every occurrence',
-  );
-  return occurrences;
-}
+import 'test_helpers.dart';
 
 /// Asserts `getEvent` resolves every one of [occurrences] by the instance ID
 /// `listEvents` handed out, reporting the same occurrence: its ID, all-day
@@ -98,33 +57,34 @@ void main() {
     test(
       'getEvent resolves an all-day recurring occurrence by instance ID',
       () async {
-        final occurrences = await seedAndListSeries(
+        final series = await seedDailySeries(
           plugin,
           calendarId,
-          allDay: true,
+          create: createAllDayDailySeries,
           count: 4,
+          minOccurrences: 4,
         );
         expect(
-          occurrences.map((o) => o.isAllDay),
+          series.occurrences.map((o) => o.isAllDay),
           everyElement(isTrue),
           reason: 'listEvents must report the occurrences as all-day',
         );
 
-        await expectOccurrencesResolveByInstanceId(plugin, occurrences);
+        await expectOccurrencesResolveByInstanceId(plugin, series.occurrences);
       },
     );
 
     test(
       'getEvent resolves a timed recurring occurrence by instance ID',
       () async {
-        final occurrences = await seedAndListSeries(
+        final series = await seedDailySeries(
           plugin,
           calendarId,
-          allDay: false,
           count: 4,
+          minOccurrences: 4,
         );
 
-        await expectOccurrencesResolveByInstanceId(plugin, occurrences);
+        await expectOccurrencesResolveByInstanceId(plugin, series.occurrences);
       },
     );
 
@@ -164,7 +124,7 @@ void main() {
         expect(master.startDate, series.start);
         expect(
           master.endDate,
-          series.end,
+          localMidnight(2),
           reason:
               'an all-day master spans its day, ending at the next '
               'local midnight',
