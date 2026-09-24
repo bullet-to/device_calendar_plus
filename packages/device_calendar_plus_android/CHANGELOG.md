@@ -1,5 +1,22 @@
 ## Unreleased
 
+### Fixed
+- Editing or deleting a single occurrence of a recurring event on a local
+  calendar no longer makes the rest of the series disappear. The Calendar
+  Provider keys a series' exceptions by `_sync_id`, which a local calendar
+  never gets, so the exception insert wiped the master's occurrences from its
+  Instances cache — the earlier ones for good. A local series is now given a
+  `_sync_id` before its first exception is written, and deleting the series
+  removes its detached occurrences with it (#153).
+- `getEvent`, `updateEvent`, `updateRecurring`, and `deleteEvent` /
+  `deleteRecurring` for anything short of the whole series no longer see an
+  event that another app has deleted but the provider only tombstoned
+  (`DELETED=1`, the fate of any event with a `_sync_id` deleted outside a
+  sync adapter, which now includes a local series edited per occurrence).
+  Such an event reads as not found instead of accepting edits against a row
+  that never shows in `listEvents`. A whole-series delete still collects the
+  tombstone, since it runs as a sync adapter.
+
 ### Changed
 - Migrated to Flutter's built-in Kotlin: the plugin no longer applies the
   Kotlin Gradle Plugin itself, which silences the KGP deprecation warning on

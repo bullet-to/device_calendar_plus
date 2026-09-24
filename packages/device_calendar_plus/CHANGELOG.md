@@ -1,5 +1,10 @@
 ## Unreleased
 
+### Fixed
+- Android: `updateEvent` or `deleteEvent` on a single occurrence of a
+  recurring event in a local calendar no longer makes the other occurrences
+  disappear — the earlier ones for good (#153).
+
 ### Changed
 - Android: migrated to Flutter's built-in Kotlin, so the KGP deprecation
   warning no longer prints on every `flutter build`. Minimum supported SDK is
