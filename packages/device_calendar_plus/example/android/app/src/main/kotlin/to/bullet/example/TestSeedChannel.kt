@@ -9,7 +9,9 @@ import io.flutter.plugin.common.MethodChannel
 
 /**
  * Test-only channel used by the integration tests to seed calendar
- * provider state the plugin deliberately can't write itself.
+ * provider state the plugin deliberately can't write itself. The Dart side
+ * is `integration_test/test_seed.dart`, which owns the channel name and a
+ * typed wrapper per method.
  */
 object TestSeedChannel {
     fun register(flutterEngine: FlutterEngine, contentResolver: ContentResolver) {
@@ -22,34 +24,113 @@ object TestSeedChannel {
                 // sync adapter would: a CALLER_IS_SYNCADAPTER update scoped to
                 // the plugin's local test account. This simulates an external
                 // app (e.g. Google Calendar) assigning a custom event color.
-                "setEventColor" -> {
-                    try {
-                        val eventId = call.argument<String>("eventId")!!.toLong()
-                        val color = call.argument<Number>("color")!!.toInt()
-                        val uri = ContentUris
-                            .withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
-                            .buildUpon()
-                            .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
-                            // Plugin-created local calendars use account name
-                            // "local" with ACCOUNT_TYPE_LOCAL (see the plugin's
-                            // CalendarService.createCalendar).
-                            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, "local")
-                            .appendQueryParameter(
-                                CalendarContract.Calendars.ACCOUNT_TYPE,
-                                CalendarContract.ACCOUNT_TYPE_LOCAL
-                            )
-                            .build()
-                        val values = ContentValues().apply {
-                            put(CalendarContract.Events.EVENT_COLOR, color)
-                        }
-                        val updated = contentResolver.update(uri, values, null, null)
-                        result.success(updated)
-                    } catch (e: Exception) {
-                        result.error("TEST_SEED_FAILED", e.message, null)
+                "setEventColor" -> result.reply {
+                    val eventId = call.argument<String>("eventId")!!.toLong()
+                    val color = call.argument<Number>("color")!!.toInt()
+                    val uri = ContentUris
+                        .withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+                        .buildUpon()
+                        .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+                        // Plugin-created local calendars use account name
+                        // "local" with ACCOUNT_TYPE_LOCAL (see the plugin's
+                        // CalendarService.createCalendar).
+                        .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, "local")
+                        .appendQueryParameter(
+                            CalendarContract.Calendars.ACCOUNT_TYPE,
+                            CalendarContract.ACCOUNT_TYPE_LOCAL
+                        )
+                        .build()
+                    val values = ContentValues().apply {
+                        put(CalendarContract.Events.EVENT_COLOR, color)
+                    }
+                    contentResolver.update(uri, values, null, null)
+                }
+                // A plain (non-sync-adapter) delete, the kind another app
+                // issues. On an event with a `_sync_id` the provider does not
+                // remove the row but tombstones it (DELETED=1) for a sync
+                // adapter to collect — the state the plugin's tombstone
+                // filter has to see through. Returns the rows the provider
+                // reports touched.
+                "deleteEventPlain" -> result.reply {
+                    val eventId = call.argument<String>("eventId")!!.toLong()
+                    contentResolver.delete(
+                        ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+                        null,
+                        null
+                    )
+                }
+                // The write an older plugin version made for a per-occurrence
+                // edit: a plain insert on the exception URI against a master
+                // with no `_sync_id`, so the exception gets no
+                // `original_sync_id` either and the provider drops the
+                // master's own occurrences from its Instances cache (#153's
+                // on-disk state). Lets the suite reach the upgrade re-key the
+                // plugin performs before its own next exception write.
+                // Returns the exception's event ID.
+                "insertKeylessException" -> result.reply {
+                    val masterId = call.argument<String>("eventId")!!.toLong()
+                    val instanceStart = call.argument<Number>("instanceStart")!!.toLong()
+                    val instanceEnd = call.argument<Number>("instanceEnd")!!.toLong()
+                    val title = call.argument<String>("title")!!
+                    val uri = ContentUris.withAppendedId(
+                        CalendarContract.Events.CONTENT_EXCEPTION_URI,
+                        masterId
+                    )
+                    // The provider refuses DTEND on an exception
+                    // ("Exceptions can't overwrite dtend"); it takes
+                    // DURATION, as the plugin's own writer sends.
+                    val values = ContentValues().apply {
+                        put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, instanceStart)
+                        put(CalendarContract.Events.DTSTART, instanceStart)
+                        put(
+                            CalendarContract.Events.DURATION,
+                            "P${(instanceEnd - instanceStart) / 1000}S"
+                        )
+                        put(CalendarContract.Events.TITLE, title)
+                    }
+                    contentResolver.insert(uri, values)?.lastPathSegment
+                }
+                // The provider's own keys for an event row: `_sync_id` and
+                // `original_sync_id`, as {"syncId": ..., "originalSyncId":
+                // ...} (null for an unkeyed row, or the whole map null when
+                // the row is missing). The plugin never exposes them, but
+                // they are what the provider's full regeneration (a timezone
+                // change, a reboot) keys a series' exceptions by, so a test
+                // of the #153 re-key has to read them directly.
+                "readSyncIds" -> result.reply {
+                    val eventId = call.argument<String>("eventId")!!.toLong()
+                    val projection = arrayOf(
+                        CalendarContract.Events._SYNC_ID,
+                        CalendarContract.Events.ORIGINAL_SYNC_ID
+                    )
+                    contentResolver.query(
+                        ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+                        projection,
+                        null,
+                        null,
+                        null
+                    )?.use { cursor ->
+                        if (!cursor.moveToFirst()) return@use null
+                        mapOf(
+                            "syncId" to cursor.getString(0),
+                            "originalSyncId" to cursor.getString(1)
+                        )
                     }
                 }
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    /**
+     * Answers with [block]'s value, or a `TEST_SEED_FAILED` error carrying
+     * the exception's message: the one envelope every seed method shares.
+     */
+    private inline fun MethodChannel.Result.reply(block: () -> Any?) {
+        try {
+            success(block())
+        } catch (e: Exception) {
+            error("TEST_SEED_FAILED", e.message, null)
         }
     }
 }

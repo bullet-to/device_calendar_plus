@@ -105,6 +105,22 @@ cd android
 ./gradlew :device_calendar_plus_android:test
 ```
 
+If you touched `packages/device_calendar_plus_android/android/build.gradle`
+or any Gradle file under `packages/device_calendar_plus/example/android/`, run
+both again under built-in Kotlin (Flutter 3.47+):
+```bash
+cd packages/device_calendar_plus/example
+flutter build apk --debug -Pandroid.builtInKotlin=true
+
+cd android
+./gradlew :device_calendar_plus_android:test -Pandroid.builtInKotlin=true
+```
+
+The example keeps the template's `android.builtInKotlin=false` (see its
+`gradle.properties`), so only the flagged run has AGP compile the plugin's
+Kotlin itself — AGP 9's default for any app that drops or flips that line.
+`-P` overrides the property for that run only; nothing needs editing.
+
 ## Pull Requests
 
 - **One feature per PR.** Each PR should branch off `main` and contain only its own changes.
