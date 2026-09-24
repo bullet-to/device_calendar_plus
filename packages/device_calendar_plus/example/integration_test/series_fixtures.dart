@@ -162,8 +162,9 @@ Future<SeededSeries> seedDailySeries(
 /// The other arrange step the per-occurrence tests share: edits [series]'
 /// occurrence at [index] through its instance ID, detaching it under
 /// [title], and checks it is listed exactly once before the test goes on to
-/// delete around it.
-Future<void> detachOccurrence(
+/// delete around it. Returns the detached occurrence's event ID as listed —
+/// on Android, the exception row's own `_ID`.
+Future<String> detachOccurrence(
   DeviceCalendar plugin,
   String calendarId,
   SeededSeries series,
@@ -174,9 +175,11 @@ Future<void> detachOccurrence(
     eventId: series.occurrences[index].instanceId,
     title: title,
   );
+  final detached = await eventsTitled(plugin, calendarId, title, series.start);
   expect(
-    await eventsTitled(plugin, calendarId, title, series.start),
+    detached,
     hasLength(1),
     reason: 'the edited occurrence must be detached before the delete',
   );
+  return detached.single.eventId;
 }

@@ -26,21 +26,27 @@ final throwsNotFound = throwsA(isA<DeviceCalendarException>().having(
 /// the plugin keys off the Events table must skip it too, and the plugin's
 /// own delete (a sync adapter's) must still collect it.
 ///
-/// Returns the series (its occurrences as listed before the tombstone) and
-/// the title the edited occurrence was detached under.
-Future<({SeededSeries series, String detachedTitle})> tombstoneSeries(
-    DeviceCalendar plugin, String? calendarId) async {
+/// Returns the series (its occurrences as listed before the tombstone), the
+/// title the edited occurrence was detached under, and the exception row's
+/// own event ID.
+Future<({SeededSeries series, String detachedTitle, String exceptionId})>
+    tombstoneSeries(DeviceCalendar plugin, String? calendarId) async {
   final series = await seedDailySeries(plugin, calendarId);
   final detachedTitle =
       'Detached before tombstone #153 ${DateTime.now().millisecondsSinceEpoch}';
 
   // Key the master: edit one occurrence through the plugin.
-  await detachOccurrence(plugin, calendarId!, series, 4, detachedTitle);
+  final exceptionId =
+      await detachOccurrence(plugin, calendarId!, series, 4, detachedTitle);
 
   final deleted = await deleteEventPlain(series.eventId);
   expect(deleted, 1, reason: 'the seed must find the master to delete');
 
-  return (series: series, detachedTitle: detachedTitle);
+  return (
+    series: series,
+    detachedTitle: detachedTitle,
+    exceptionId: exceptionId,
+  );
 }
 
 void main() {
@@ -159,19 +165,20 @@ void main() {
 
       // The plugin deletes as a sync adapter, which is what collects it;
       // its `_ID = ? OR ORIGINAL_ID = ?` selection takes the tombstoned
-      // exception along with the master.
+      // exception along with the master. The seed's read of the Events row
+      // does not filter DELETED=1, so a null there is the row physically
+      // gone, not merely tombstoned.
       await plugin.deleteEvent(eventId: t.series.eventId);
       expect(
-        await deleteEventPlain(t.series.eventId),
-        0,
+        await readSyncIds(t.series.eventId),
+        isNull,
         reason: 'the tombstone must be physically gone after deleteEvent',
       );
       expect(
-        await eventsTitled(
-            plugin, calendarId!, t.detachedTitle, t.series.start),
-        isEmpty,
-        reason: 'the detached occurrence must stay gone once the plugin '
-            'has collected the series',
+        await readSyncIds(t.exceptionId),
+        isNull,
+        reason: 'the tombstoned exception must be physically gone once the '
+            'plugin has collected the series',
       );
     });
   }, skip: !Platform.isAndroid);

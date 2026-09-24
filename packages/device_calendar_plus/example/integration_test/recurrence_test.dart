@@ -482,13 +482,8 @@ void main() {
     // thisAndFollowing split. Passes on real Android devices.
     test('thisAndFollowing splits so the anchor occurrence carries the change',
         () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(6),
-          reason: 'the daily series should have expanded into occurrences');
+      final series = await seedDailySeries(plugin, calendarId);
+      final occurrences = series.occurrences;
       final splitPoint = occurrences[4];
       final splitMillis = splitPoint.startDate.millisecondsSinceEpoch;
 

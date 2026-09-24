@@ -871,7 +871,7 @@ class EventsService(
     ): Result<Unit> {
         // The existing row decides all-day date normalization when the call
         // doesn't change the flag.
-        val row = readEventRowOrNotFound(eventId).getOrElse { return Result.failure(it) }
+        val row = readEventRow(eventId).getOrElse { return Result.failure(it) }
 
         // Build ContentValues with only provided fields
         val values = android.content.ContentValues()
@@ -989,9 +989,9 @@ class EventsService(
         endDate: java.util.Date?,
         patch: EventFieldPatch
     ): Result<Unit> {
-        val (row) = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
+        val series = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
-        val effectiveIsAllDay = patch.isAllDay ?: row.allDay
+        val effectiveIsAllDay = patch.isAllDay ?: series.row.allDay
         val newStart = if (startDate != null) {
             toStorageMillis(startDate, effectiveIsAllDay)
         } else {
@@ -1002,7 +1002,7 @@ class EventsService(
         val newEnd = if (endDate != null) {
             toStorageMillis(endDate, effectiveIsAllDay)
         } else {
-            timestamp + eventDurationMillis(row)
+            timestamp + eventDurationMillis(series.row)
         }
         if (newEnd <= newStart) {
             return Result.failure(
@@ -1029,7 +1029,7 @@ class EventsService(
         // HAS_ALARM. Unchanged inherits the parent's value implicitly.
         applyRemindersHasAlarm(values, patch.reminders)
 
-        val exceptionId = insertException(row, values, asSyncAdapter = false)
+        val exceptionId = insertException(series, values, asSyncAdapter = false)
             .getOrElse { return Result.failure(it) }
         // Reminder rows attach to the detached exception's own event id.
         applyRemindersRows(exceptionId.toLong(), patch.reminders)
@@ -1068,7 +1068,7 @@ class EventsService(
                 )
             }
 
-            val row = readEventRowOrNotFound(eventId).getOrElse { return Result.failure(it) }
+            val row = readEventRow(eventId).getOrElse { return Result.failure(it) }
 
             // All-day events have no time-of-day and only whole-day durations.
             // The Dart layer can only check these against fields in the same
@@ -1457,29 +1457,21 @@ class EventsService(
         eventId: String,
         timestamp: Long
     ): Result<Unit> {
-        val (row) = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
+        val series = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
             put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CANCELED)
         }
-        return insertException(row, values, asSyncAdapter = true).map { }
+        return insertException(series, values, asSyncAdapter = true).map { }
     }
 
     /**
-     * [readEventRow] as a [Result]: NOT_FOUND when the event is missing (or
-     * a DELETED tombstone).
+     * A master [row] proven recurring: its [rrule] is the row's, non-null.
+     * The type is what the series writers — [insertException] and
+     * [ensureLocalSeriesSyncId] — take, so a one-off event's row cannot
+     * reach them.
      */
-    private fun readEventRowOrNotFound(eventId: String): Result<EventRow> =
-        readEventRow(eventId)?.let { Result.success(it) }
-            ?: Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
-                )
-            )
-
-    /** A master [row] proven recurring: its [rrule] is the row's, non-null. */
     private data class SeriesRow(val row: EventRow, val rrule: String)
 
     /**
@@ -1491,7 +1483,7 @@ class EventsService(
      * row [updateRecurring] already read.
      */
     private fun readRecurringRow(eventId: String): Result<SeriesRow> {
-        val row = readEventRowOrNotFound(eventId).getOrElse { return Result.failure(it) }
+        val row = readEventRow(eventId).getOrElse { return Result.failure(it) }
         return row.asSeries()
     }
 
@@ -1512,7 +1504,7 @@ class EventsService(
     }
 
     /**
-     * Inserts an exception row carrying [values] against the series [row]:
+     * Inserts an exception row carrying [values] against [series]' master:
      * the one write behind every per-occurrence edit or delete. It owns the
      * #153 keying — a local series gets its `_sync_id` here, before the
      * insert — so a future exception writer cannot skip it. Returns the new
@@ -1526,23 +1518,23 @@ class EventsService(
      * kept rather than unified blind.
      */
     private fun insertException(
-        row: EventRow,
+        series: SeriesRow,
         values: android.content.ContentValues,
         asSyncAdapter: Boolean
     ): Result<String> {
-        ensureLocalSeriesSyncId(row).getOrElse { return Result.failure(it) }
+        ensureLocalSeriesSyncId(series).getOrElse { return Result.failure(it) }
 
         val base = CalendarContract.Events.CONTENT_EXCEPTION_URI
-        val uri = (if (asSyncAdapter) syncAdapterUri(base, row.account) else base)
+        val uri = (if (asSyncAdapter) syncAdapterUri(base, series.row.account) else base)
             .buildUpon()
-            .appendPath(row.id)
+            .appendPath(series.row.id)
             .build()
 
         val exceptionId = context.contentResolver.insert(uri, values)?.lastPathSegment
             ?: return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
-                    "Failed to write an exception for event ${row.id}"
+                    "Failed to write an exception for event ${series.row.id}"
                 )
             )
         return Result.success(exceptionId)
@@ -1571,8 +1563,11 @@ class EventsService(
         val syncId: String?
     )
 
-    /** Reads the master row of an event straight from the Events table. */
-    private fun readEventRow(eventId: String): EventRow? {
+    /**
+     * Reads the master row of an event straight from the Events table:
+     * NOT_FOUND when the event is missing (or a DELETED tombstone).
+     */
+    private fun readEventRow(eventId: String): Result<EventRow> {
         val projection = arrayOf(
             CalendarContract.Events._ID,
             CalendarContract.Events.CALENDAR_ID,
@@ -1598,7 +1593,7 @@ class EventsService(
             arrayOf(eventId),
             null
         )?.use { cursor ->
-            if (!cursor.moveToFirst()) return null
+            if (!cursor.moveToFirst()) return@use
             fun str(column: String): String? {
                 val index = cursor.getColumnIndexOrThrow(column)
                 return if (cursor.isNull(index)) null else cursor.getString(index)
@@ -1607,7 +1602,7 @@ class EventsService(
                 val index = cursor.getColumnIndexOrThrow(column)
                 return if (cursor.isNull(index)) null else cursor.getLong(index)
             }
-            return EventRow(
+            return Result.success(EventRow(
                 id = str(CalendarContract.Events._ID) ?: eventId,
                 calendarId = str(CalendarContract.Events.CALENDAR_ID) ?: "",
                 account = cursor.calendarAccount(),
@@ -1625,9 +1620,14 @@ class EventsService(
                 ),
                 rrule = str(CalendarContract.Events.RRULE),
                 syncId = str(CalendarContract.Events._SYNC_ID)
-            )
+            ))
         }
-        return null
+        return Result.failure(
+            CalendarException(
+                PlatformExceptionCodes.NOT_FOUND,
+                "Event with ID $eventId not found"
+            )
+        )
     }
 
     /**
@@ -1666,7 +1666,8 @@ class EventsService(
      * missing original anyway, and the outer catch maps that to
      * OPERATION_FAILED as well.
      */
-    private fun ensureLocalSeriesSyncId(row: EventRow): Result<Unit> {
+    private fun ensureLocalSeriesSyncId(series: SeriesRow): Result<Unit> {
+        val row = series.row
         if (row.syncId != null) return Result.success(Unit)
         if (!row.account.isLocal) return Result.success(Unit)
 
