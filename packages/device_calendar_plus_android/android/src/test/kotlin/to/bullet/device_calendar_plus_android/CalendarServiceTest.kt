@@ -19,9 +19,10 @@ import kotlin.test.assertEquals
  * it from CALENDAR_ACCESS_LEVEL. The plugin exposes no way to seed a
  * below-contributor row (createCalendar always inserts CAL_ACCESS_OWNER; a
  * sync-adapter insert could set CAL_ACCESS_READ, but a test-only hook for
- * that isn't worth adding), nor a row with a NULL id or display name, so
- * they are faked here (#126). (createCalendar's non-local refusal IS
- * reachable on a bare emulator, and lives in sources_test.dart.)
+ * that isn't worth adding), nor a row with a NULL display name, so they are
+ * faked here (#126). (createCalendar's non-local refusal IS reachable on a
+ * bare emulator, and lives in sources_test.dart, as does the unknown-calendar
+ * notFound, in device_calendar_test.dart.)
  */
 internal class CalendarServiceTest {
     private val resolver: ContentResolver = Mockito.mock(ContentResolver::class.java)
@@ -66,7 +67,7 @@ internal class CalendarServiceTest {
     private fun accessLevelRow(level: Int) =
         mapOf(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL to level)
 
-    private fun calendarRow(id: String?, name: String?) = mapOf(
+    private fun calendarRow(id: String, name: String?) = mapOf(
         CalendarContract.Calendars._ID to id,
         CalendarContract.Calendars.CALENDAR_DISPLAY_NAME to name,
         CalendarContract.Calendars.CALENDAR_COLOR to null,
@@ -104,30 +105,16 @@ internal class CalendarServiceTest {
         verify(resolver, never()).delete(any(), any(), any())
     }
 
-    @Test
-    fun deleteCalendar_unknownCalendar_isNotFound() {
-        providerReturns(cursorOf())
-
-        val result = service.deleteCalendar("7")
-
-        assertEquals(PlatformExceptionCodes.NOT_FOUND, codeOf(result))
-        verify(resolver, never()).delete(any(), any(), any())
-    }
-
     // --- listCalendars ---
 
-    // Dart casts `id` and `name` with `as String`, so a provider row with a
-    // NULL in either used to crash listCalendars for every calendar: a row
-    // without an id is skipped, a missing display name reads as "".
+    // Dart casts `name` with `as String`, so a provider row with a NULL
+    // display name used to crash listCalendars for every calendar.
     @Test
-    fun listCalendars_tolerantOfNullIdAndName() {
-        providerReturns(
-            cursorOf(calendarRow(id = null, name = "Ghost"), calendarRow(id = "4", name = null))
-        )
+    fun listCalendars_nullDisplayNameReadsAsEmpty() {
+        providerReturns(cursorOf(calendarRow(id = "4", name = null)))
 
-        val calendars = service.listCalendars().getOrThrow()
+        val calendar = service.listCalendars().getOrThrow().single()
 
-        val calendar = calendars.single()
         assertEquals("4", calendar["id"])
         assertEquals("", calendar["name"])
     }

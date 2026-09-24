@@ -273,7 +273,7 @@ class DeviceCalendar {
   }) async {
     requireNonBlank(name, name: 'name', label: 'Calendar name');
     if (colorHex != null) {
-      validateColorHex(colorHex);
+      colorHex = normalizeColorHex(colorHex);
     }
 
     await _ensurePermission(CalendarAccessLevel.full);
@@ -297,7 +297,8 @@ class DeviceCalendar {
   /// Passing neither is a no-op. Requires full access.
   ///
   /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) for a
-  /// calendar that can't be modified (see [deleteCalendar] for what counts).
+  /// calendar that can't be modified — on iOS that's a superset of
+  /// [Calendar.readOnly]; `doc/calendars.md` has the per-platform detail.
   Future<void> updateCalendar(
     String calendarId, {
     String? name,
@@ -318,7 +319,7 @@ class DeviceCalendar {
       requireNonBlank(name, name: 'name', label: 'Calendar name');
     }
     if (colorHex != null) {
-      validateColorHex(colorHex);
+      colorHex = normalizeColorHex(colorHex);
     }
 
     await _ensurePermission(CalendarAccessLevel.full);

@@ -17,19 +17,27 @@ Color? colorFromHex(String? hex) {
 
 final RegExp _writableHex = RegExp(r'^#?[0-9a-fA-F]{6}$');
 
-/// Throws [ArgumentError] unless [hex] is `#RRGGBB` (the `#` optional): the
-/// one form both platforms store the same way and [colorFromHex] reads back.
-/// Anything else used to reach the platform and be stored silently as black
-/// (#126). An alpha byte is deliberately not a write form — iOS drops it and
-/// Android stores it, so the platforms would disagree on what was written.
+/// Returns [hex] as canonical `#RRGGBB` (uppercase, `#` present), or throws
+/// [ArgumentError] unless it is `#RRGGBB` with the `#` optional and
+/// surrounding whitespace allowed: the one form both platforms store the same
+/// way and [colorFromHex] reads back. Anything else used to reach the
+/// platform and be stored silently as black (#126). An alpha byte is
+/// deliberately not a write form — iOS drops it and Android stores it, so the
+/// platforms would disagree on what was written.
+///
+/// The returned value is what goes over the channel, so the native side gets
+/// one shape and needs no trimming or fallback of its own.
 ///
 /// Package-internal: shared by `createCalendar` and `updateCalendar`.
-void validateColorHex(String hex) {
-  if (!_writableHex.hasMatch(hex.trim())) {
+String normalizeColorHex(String hex) {
+  final trimmed = hex.trim();
+  if (!_writableHex.hasMatch(trimmed)) {
     throw ArgumentError.value(
       hex,
       'colorHex',
       'Expected a hex color like #RRGGBB',
     );
   }
+  final digits = trimmed.startsWith('#') ? trimmed.substring(1) : trimmed;
+  return '#${digits.toUpperCase()}';
 }

@@ -11,10 +11,10 @@
   can wipe (#126).
 - `createCalendar` / `updateCalendar` throw `ArgumentError` for a `colorHex`
   that isn't `#RRGGBB` (the `#` optional) instead of storing it silently as
-  black (#126).
+  black, and forward the canonical `#RRGGBB` to the platform (#126).
 - `deleteCalendar('')` throws `ArgumentError`, like the other mutations (#126).
 - Android `listCalendars` no longer crashes on a provider row with a NULL
-  id or display name (#126).
+  display name (#126).
 
 ### Docs
 - `CalendarSource.supportsCalendarCreation`, `CreateCalendarOptionsIos` and

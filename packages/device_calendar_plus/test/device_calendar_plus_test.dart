@@ -195,8 +195,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   Future<void> updateCalendar(
       String calendarId, String? name, String? colorHex) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
-    lastUpdateCalendar =
-        (calendarId: calendarId, name: name, colorHex: colorHex);
+    lastUpdateCalendar = (calendarId: calendarId, name: name, colorHex: colorHex);
   }
 
   @override
@@ -499,8 +498,7 @@ void main() {
 
       test('manual mode (null) never prompts, even when notDetermined',
           () async {
-        mockPlatform
-            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
         await DeviceCalendar.instance.listCalendars();
         expect(mockPlatform.requestPermissionsCallCount, 0);
       });
@@ -508,8 +506,7 @@ void main() {
       test('full mode requests full access for a read op when notDetermined',
           () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
-        mockPlatform
-            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.granted);
 
         await DeviceCalendar.instance.listCalendars();
@@ -520,8 +517,7 @@ void main() {
 
       test('asNeeded mode requests write-only for an add-only op', () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
-        mockPlatform
-            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.writeOnly);
 
         await createAnEvent();
@@ -531,8 +527,7 @@ void main() {
 
       test('asNeeded mode requests full access for a read op', () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
-        mockPlatform
-            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.granted);
 
         await DeviceCalendar.instance.listCalendars();
@@ -542,8 +537,7 @@ void main() {
 
       test('full mode requests full access even for an add-only op', () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
-        mockPlatform
-            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.granted);
 
         await createAnEvent();
@@ -589,8 +583,7 @@ void main() {
       test('a no-op update does not prompt (guard runs after the no-op return)',
           () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
-        mockPlatform
-            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
 
         // No changed fields: a valid no-op that must not trigger a prompt.
         await DeviceCalendar.instance.updateEvent(eventId: 'evt');
@@ -614,8 +607,7 @@ void main() {
 
       test('throws permissionDenied when the prompt is declined', () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
-        mockPlatform
-            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.denied);
 
         await expectLater(
@@ -641,8 +633,7 @@ void main() {
           () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
         // notDetermined = Android "can ask again"; the request itself is declined.
-        mockPlatform
-            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.denied);
 
         await expectLater(
@@ -1070,40 +1061,54 @@ void main() {
     // What createCalendar / updateCalendar accept for colorHex: #RRGGBB only
     // (the # optional), because an alpha byte is stored by Android and
     // dropped by iOS (#126). A malformed value used to reach the platform,
-    // where both sides silently stored black. Driven through both entry
-    // points so the table also covers the guard's wiring on each.
+    // where both sides silently stored black. What does reach it is the
+    // canonical '#RRGGBB', so the native side needs no trimming of its own.
+    // Driven through both entry points so the table also covers the guard's
+    // wiring on each, with each entry point's own mock record asserted.
     group('colorHex', () {
-      final writers = <String, Future<void> Function(String colorHex)>{
-        'createCalendar': (hex) =>
-            DeviceCalendar.instance.createCalendar(name: 'x', colorHex: hex),
-        'updateCalendar': (hex) => DeviceCalendar.instance
-            .updateCalendar('calendar-123', colorHex: hex),
+      final writers = <
+          String,
+          ({
+            Future<void> Function(String colorHex) write,
+            String? Function() forwarded,
+          })>{
+        'createCalendar': (
+          write: (hex) =>
+              DeviceCalendar.instance.createCalendar(name: 'x', colorHex: hex),
+          forwarded: () => mockPlatform.lastCreateCalendar?.colorHex,
+        ),
+        'updateCalendar': (
+          write: (hex) => DeviceCalendar.instance
+              .updateCalendar('calendar-123', colorHex: hex),
+          forwarded: () => mockPlatform.lastUpdateCalendar?.colorHex,
+        ),
       };
       bool reachedPlatform() =>
           mockPlatform.lastCreateCalendar != null ||
           mockPlatform.lastUpdateCalendar != null;
 
-      for (final MapEntry(key: entryPoint, value: write) in writers.entries) {
+      for (final MapEntry(key: entryPoint, value: writer) in writers.entries) {
         group('via $entryPoint', () {
           Future<void> rejects(String hex) async {
-            await expectLater(() => write(hex), throwsArgumentError);
+            await expectLater(() => writer.write(hex), throwsArgumentError);
             // Awaited above, so the platform call has had its chance.
             expect(reachedPlatform(), isFalse);
           }
 
           test('accepts #RRGGBB', () async {
-            await write('#FF5733');
-            expect(reachedPlatform(), isTrue);
+            await writer.write('#FF5733');
+            expect(writer.forwarded(), '#FF5733');
           });
 
-          test('accepts a bare RRGGBB', () async {
-            await write('ff5733');
-            expect(reachedPlatform(), isTrue);
+          test('accepts a bare RRGGBB and forwards it with the #', () async {
+            await writer.write('ff5733');
+            expect(writer.forwarded(), '#FF5733');
           });
 
-          test('accepts surrounding whitespace', () async {
-            await write(' #FF5733 ');
-            expect(reachedPlatform(), isTrue);
+          test('accepts surrounding whitespace and forwards it trimmed',
+              () async {
+            await writer.write(' #ff5733 ');
+            expect(writer.forwarded(), '#FF5733');
           });
 
           test('rejects #AARRGGBB', () => rejects('#80FF5733'));
@@ -1198,8 +1203,7 @@ void main() {
         expect(mockPlatform.lastUpdateEvent, isNotNull);
       });
 
-      test('throws ArgumentError on a negative reminder in Patch.set',
-          () async {
+      test('throws ArgumentError on a negative reminder in Patch.set', () async {
         expect(
           () => DeviceCalendar.instance.updateEvent(
             eventId: 'event-123',
@@ -1256,8 +1260,7 @@ void main() {
           start: DateTime(2024, 3, 19, 10, 0),
         );
         expect(result, 'mock-event-id');
-        expect(mockPlatform.lastUpdateRecurring?.start,
-            DateTime(2024, 3, 19, 10, 0));
+        expect(mockPlatform.lastUpdateRecurring?.start, DateTime(2024, 3, 19, 10, 0));
       });
 
       test('throws ArgumentError when isAllDay is true with sub-day duration',
@@ -1633,8 +1636,7 @@ void main() {
       test('autoPermissions never prompts for the modal, even on notDetermined',
           () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
-        mockPlatform
-            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
 
         await DeviceCalendar.instance.showCreateEventModal();
 

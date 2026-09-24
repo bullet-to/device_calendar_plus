@@ -50,10 +50,10 @@ class CalendarService(
                 val visibleIndex = cursor.getColumnIndex(CalendarContract.Calendars.VISIBLE)
                 
                 while (cursor.moveToNext()) {
-                    // Exotic provider rows can carry NULLs here; Dart casts both
-                    // with `as String`, so a row without an id is unusable and a
-                    // missing display name reads as empty (#126).
-                    val id = cursor.getString(idIndex) ?: continue
+                    val id = cursor.getString(idIndex)
+                    // A sync adapter can insert a row without a display name;
+                    // Dart casts it with `as String`, so NULL reads as empty
+                    // (#126). _ID is the INTEGER PRIMARY KEY and can't be NULL.
                     val name = cursor.getString(nameIndex) ?: ""
                     val color = if (!cursor.isNull(colorIndex)) cursor.getInt(colorIndex) else null
                     val accessLevel = cursor.getInt(accessLevelIndex)
