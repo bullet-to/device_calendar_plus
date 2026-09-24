@@ -42,8 +42,8 @@ class EventsService(
         // All-day events are stored at UTC midnight boundaries, but the caller
         // passes local-midnight millis. We widen the Instances query to cover
         // UTC midnight boundaries too, then post-filter by date. (issue #20)
-        val queryStartUtcMidnight = localMillisToUtcMidnight(startMillis)
-        val queryEndUtcMidnight = localMillisToUtcMidnight(endMillis)
+        val queryStartUtcMidnight = localDateToUtcMidnight(startMillis)
+        val queryEndUtcMidnight = localDateToUtcMidnight(endMillis)
 
         val effectiveStart = minOf(startMillis, queryStartUtcMidnight)
         val effectiveEnd = maxOf(endMillis, queryEndUtcMidnight)
@@ -109,18 +109,14 @@ class EventsService(
         // in BEGIN order, but buildEventMapFromCursor rewrites all-day starts
         // from UTC midnight to local midnight, so the two orders diverge once
         // all-day and timed events mix in a non-UTC zone (#122). Mirrors iOS.
-        // sortBy is stable, so BEGIN order still breaks ties.
+        // sortBy is stable, so BEGIN order still breaks ties. startDate is
+        // always present in the map, so the cast is a hard invariant, not a
+        // fallback.
         events.sortBy { it["startDate"] as Long }
 
         return Result.success(events)
     }
     
-    /**
-     * Converts local millis to UTC midnight of the same local calendar date.
-     * E.g. Dec 25 00:00 AEDT (UTC+11) → Dec 25 00:00 UTC.
-     */
-    private fun localMillisToUtcMidnight(millis: Long): Long = localDateToUtcMidnight(millis)
-
     /**
      * Checks whether an event (all-day or timed) falls within the query range.
      * All-day events are compared by UTC calendar date; timed events by millis.

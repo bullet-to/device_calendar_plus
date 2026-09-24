@@ -12,8 +12,10 @@ import java.util.TimeZone
 
 /**
  * Converts local-time millis to UTC midnight, preserving the calendar date.
- * Used when writing all-day events: Android stores them as UTC midnight
- * boundaries, so a local "June 5" must become "June 5 00:00 UTC".
+ * E.g. Dec 25 00:00 AEDT (UTC+11) -> Dec 25 00:00 UTC. Android stores
+ * all-day events as UTC midnight boundaries, so a local "June 5" must become
+ * "June 5 00:00 UTC" when writing one, and a local query window must be
+ * widened to the UTC midnights of its dates to read one back.
  */
 internal fun localDateToUtcMidnight(localMillis: Long): Long {
     val local = Calendar.getInstance()

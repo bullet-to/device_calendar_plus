@@ -4,6 +4,48 @@ import 'package:integration_test/integration_test.dart';
 
 import 'series_fixtures.dart';
 
+/// The group's calendar, checked to exist: setUpAll must have created it.
+String requireCalendar(String? calendarId) {
+  expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+  return calendarId!;
+}
+
+/// The arrange step the instance-ID tests share: a daily series of [count]
+/// (all-day when [allDay]) with its occurrences listed, checked to have
+/// expanded to every one of them.
+Future<List<Event>> seedAndListSeries(
+  DeviceCalendar plugin,
+  String? calendarId, {
+  required bool allDay,
+  required int count,
+}) async {
+  final id = requireCalendar(calendarId);
+  final ({String eventId, DateTime start}) series;
+  if (allDay) {
+    final allDaySeries = await createAllDayDailySeries(
+      plugin,
+      id,
+      count: count,
+    );
+    series = (eventId: allDaySeries.eventId, start: allDaySeries.start);
+  } else {
+    series = await createDailySeries(plugin, id, count: count);
+  }
+
+  final occurrences = await occurrencesOf(
+    plugin,
+    id,
+    series.eventId,
+    series.start,
+  );
+  expect(
+    occurrences.length,
+    count,
+    reason: 'the series must expand to every occurrence',
+  );
+  return occurrences;
+}
+
 /// Asserts `getEvent` resolves every one of [occurrences] by the instance ID
 /// `listEvents` handed out, reporting the same occurrence: its ID, all-day
 /// flag, start and end.
@@ -56,27 +98,11 @@ void main() {
     test(
       'getEvent resolves an all-day recurring occurrence by instance ID',
       () async {
-        expect(
+        final occurrences = await seedAndListSeries(
+          plugin,
           calendarId,
-          isNotNull,
-          reason: 'setUpAll must create a calendar',
-        );
-        final series = await createAllDayDailySeries(
-          plugin,
-          calendarId!,
+          allDay: true,
           count: 4,
-        );
-
-        final occurrences = await occurrencesOf(
-          plugin,
-          calendarId!,
-          series.eventId,
-          series.start,
-        );
-        expect(
-          occurrences.length,
-          4,
-          reason: 'the series must expand to every occurrence',
         );
         expect(
           occurrences.map((o) => o.isAllDay),
@@ -91,23 +117,11 @@ void main() {
     test(
       'getEvent resolves a timed recurring occurrence by instance ID',
       () async {
-        expect(
-          calendarId,
-          isNotNull,
-          reason: 'setUpAll must create a calendar',
-        );
-        final series = await createDailySeries(plugin, calendarId!, count: 4);
-
-        final occurrences = await occurrencesOf(
+        final occurrences = await seedAndListSeries(
           plugin,
-          calendarId!,
-          series.eventId,
-          series.start,
-        );
-        expect(
-          occurrences.length,
-          4,
-          reason: 'the series must expand to every occurrence',
+          calendarId,
+          allDay: false,
+          count: 4,
         );
 
         await expectOccurrencesResolveByInstanceId(plugin, occurrences);
@@ -117,8 +131,11 @@ void main() {
     // Android stores a recurring master as DTSTART + DURATION with no DTEND,
     // so the master's end must come from its duration.
     test('getEvent returns a timed master with its real end date', () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 3);
+      final series = await createDailySeries(
+        plugin,
+        requireCalendar(calendarId),
+        count: 3,
+      );
 
       final master = await plugin.getEvent(series.eventId);
       expect(master, isNotNull);
@@ -135,14 +152,9 @@ void main() {
     test(
       'getEvent returns an all-day master ending at the next local midnight',
       () async {
-        expect(
-          calendarId,
-          isNotNull,
-          reason: 'setUpAll must create a calendar',
-        );
         final series = await createAllDayDailySeries(
           plugin,
-          calendarId!,
+          requireCalendar(calendarId),
           count: 3,
         );
 
