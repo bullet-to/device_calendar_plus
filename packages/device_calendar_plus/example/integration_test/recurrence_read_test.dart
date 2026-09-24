@@ -4,6 +4,29 @@ import 'package:integration_test/integration_test.dart';
 
 import 'series_fixtures.dart';
 
+/// Asserts `getEvent` resolves every one of [occurrences] by the instance ID
+/// `listEvents` handed out, reporting the same occurrence: its ID, all-day
+/// flag, start and end.
+Future<void> expectOccurrencesResolveByInstanceId(
+  DeviceCalendar plugin,
+  List<Event> occurrences,
+) async {
+  for (final occurrence in occurrences) {
+    final fetched = await plugin.getEvent(occurrence.instanceId);
+    expect(
+      fetched,
+      isNotNull,
+      reason:
+          'getEvent must resolve the instance ID listEvents '
+          'returned (${occurrence.instanceId})',
+    );
+    expect(fetched!.instanceId, occurrence.instanceId);
+    expect(fetched.isAllDay, occurrence.isAllDay);
+    expect(fetched.startDate, occurrence.startDate);
+    expect(fetched.endDate, occurrence.endDate);
+  }
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -55,21 +78,13 @@ void main() {
           4,
           reason: 'the series must expand to every occurrence',
         );
+        expect(
+          occurrences.map((o) => o.isAllDay),
+          everyElement(isTrue),
+          reason: 'listEvents must report the occurrences as all-day',
+        );
 
-        for (final occurrence in occurrences) {
-          final fetched = await plugin.getEvent(occurrence.instanceId);
-          expect(
-            fetched,
-            isNotNull,
-            reason:
-                'getEvent must resolve the instance ID listEvents '
-                'returned (${occurrence.instanceId})',
-          );
-          expect(fetched!.instanceId, occurrence.instanceId);
-          expect(fetched.isAllDay, isTrue);
-          expect(fetched.startDate, occurrence.startDate);
-          expect(fetched.endDate, occurrence.endDate);
-        }
+        await expectOccurrencesResolveByInstanceId(plugin, occurrences);
       },
     );
 
@@ -95,16 +110,7 @@ void main() {
           reason: 'the series must expand to every occurrence',
         );
 
-        final target = occurrences[2];
-        final fetched = await plugin.getEvent(target.instanceId);
-        expect(
-          fetched,
-          isNotNull,
-          reason: 'getEvent must resolve the instance ID listEvents returned',
-        );
-        expect(fetched!.instanceId, target.instanceId);
-        expect(fetched.startDate, target.startDate);
-        expect(fetched.endDate, target.endDate);
+        await expectOccurrencesResolveByInstanceId(plugin, occurrences);
       },
     );
 

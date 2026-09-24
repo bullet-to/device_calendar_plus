@@ -424,7 +424,8 @@ class EventsService(
 
         // An instance ID carries the occurrence's raw BEGIN (see
         // buildEventMapFromCursor), so the Instances row is an exact match on
-        // EVENT_ID and BEGIN; a ±1s window is enough to overlap it.
+        // EVENT_ID and BEGIN. The window only exists because the Instances URI
+        // needs one; its width is arbitrary, provided it overlaps the row.
         val uri = instancesUri(timestamp - 1000, timestamp + 1000)
         return querySingleEvent(
             uri,
@@ -2002,80 +2003,9 @@ class EventsService(
         return localDateToUtcMidnight(date.time)
     }
 
-    /**
-     * Converts local-time millis to UTC midnight, preserving the calendar date.
-     * Used when writing all-day events: Android stores them as UTC midnight
-     * boundaries, so a local "June 5" must become "June 5 00:00 UTC".
-     */
-    private fun localDateToUtcMidnight(localMillis: Long): Long {
-        val local = java.util.Calendar.getInstance()
-        local.timeInMillis = localMillis
-        val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        utc.set(
-            local.get(java.util.Calendar.YEAR),
-            local.get(java.util.Calendar.MONTH),
-            local.get(java.util.Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        utc.set(java.util.Calendar.MILLISECOND, 0)
-        return utc.timeInMillis
-    }
-
-    /**
-     * Converts UTC millis to local midnight, preserving the calendar date.
-     * Used when reading all-day events: Android stores them as UTC midnight
-     * boundaries, and we need to present the date in the device's local time.
-     */
-    private fun utcToLocalMidnight(utcMillis: Long): Long {
-        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
-        utcCal.timeInMillis = utcMillis
-        val localCal = java.util.Calendar.getInstance()
-        localCal.set(
-            utcCal.get(java.util.Calendar.YEAR),
-            utcCal.get(java.util.Calendar.MONTH),
-            utcCal.get(java.util.Calendar.DAY_OF_MONTH),
-            0, 0, 0
-        )
-        localCal.set(java.util.Calendar.MILLISECOND, 0)
-        return localCal.timeInMillis
-    }
-
-    /**
-     * The Instances URI for the window [[beginMillis], [endMillis]]. The
-     * Instances table can only be queried through a window, and the provider
-     * matches any occurrence overlapping it.
-     */
-    private fun instancesUri(beginMillis: Long, endMillis: Long): android.net.Uri =
-        CalendarContract.Instances.CONTENT_URI.buildUpon()
-            .appendPath(beginMillis.toString())
-            .appendPath(endMillis.toString())
-            .build()
-
-    /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */
-    internal fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =
-        dtend ?: duration?.let(::parseDurationMillis)?.let { dtstart + it }
-
     /** Resolves an event's duration, falling back to one hour when unknown. */
     private fun eventDurationMillis(row: EventRow): Long =
         storedEndMillis(row.dtstart, row.dtend, row.duration)?.let { it - row.dtstart } ?: 3_600_000L
-
-    /** Parses an RFC 5545 / Android duration string (e.g. "P3600S", "PT1H"). */
-    private fun parseDurationMillis(duration: String): Long? {
-        val trimmed = duration.trim()
-        Regex("P(\\d+)S").matchEntire(trimmed)?.let {
-            return it.groupValues[1].toLong() * 1000L
-        }
-        val match = Regex(
-            "P(?:(\\d+)W)?(?:(\\d+)D)?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?)?"
-        ).matchEntire(trimmed) ?: return null
-        var seconds = 0L
-        match.groupValues[1].toLongOrNull()?.let { seconds += it * 7 * 24 * 3600 }
-        match.groupValues[2].toLongOrNull()?.let { seconds += it * 24 * 3600 }
-        match.groupValues[3].toLongOrNull()?.let { seconds += it * 3600 }
-        match.groupValues[4].toLongOrNull()?.let { seconds += it * 60 }
-        match.groupValues[5].toLongOrNull()?.let { seconds += it }
-        return seconds * 1000L
-    }
 
     /** Number of occurrences of [eventId] that start before [beforeMillis]. */
     private fun countInstancesBefore(eventId: String, beforeMillis: Long): Int {
