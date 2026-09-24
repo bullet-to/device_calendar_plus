@@ -2100,14 +2100,16 @@ class EventsService(
 
     /**
      * The [CalendarAccount] of the Events row under the cursor, from its
-     * ACCOUNT_NAME and ACCOUNT_TYPE columns. A NULL column reads as "", so
-     * the one policy holds wherever an account is read off a row.
+     * ACCOUNT_NAME and ACCOUNT_TYPE columns. The provider guarantees both
+     * on every calendar, so a NULL is a broken invariant and throws rather
+     * than standing in a made-up value — the one policy holds wherever an
+     * account is read off a row.
      */
     private fun android.database.Cursor.calendarAccount(): CalendarAccount {
-        fun str(column: String): String {
-            val index = getColumnIndexOrThrow(column)
-            return if (isNull(index)) "" else getString(index)
-        }
+        fun str(column: String): String =
+            checkNotNull(getString(getColumnIndexOrThrow(column))) {
+                "Events row has no $column"
+            }
         return CalendarAccount(
             name = str(CalendarContract.Events.ACCOUNT_NAME),
             type = str(CalendarContract.Events.ACCOUNT_TYPE)

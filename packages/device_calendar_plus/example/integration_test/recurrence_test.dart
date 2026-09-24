@@ -232,6 +232,28 @@ Future<({String eventId, DateTime start, List<Event> occurrences})>
   );
 }
 
+/// The other arrange step the per-occurrence tests share: edits [series]'
+/// occurrence at [index] through its instance ID, detaching it under
+/// [title], and checks it is listed exactly once before the test goes on to
+/// delete around it.
+Future<void> detachOccurrence(
+  DeviceCalendar plugin,
+  String calendarId,
+  ({String eventId, DateTime start, List<Event> occurrences}) series,
+  int index,
+  String title,
+) async {
+  await plugin.updateEvent(
+    eventId: series.occurrences[index].instanceId,
+    title: title,
+  );
+  expect(
+    await eventsTitled(plugin, calendarId, title, series.start),
+    hasLength(1),
+    reason: 'the edited occurrence must be detached before the delete',
+  );
+}
+
 /// Matches a [DeviceCalendarException] carrying [DeviceCalendarError.notFound].
 final throwsNotFound = throwsA(isA<DeviceCalendarException>().having(
   (e) => e.errorCode,
@@ -265,15 +287,7 @@ Future<
       'Detached before tombstone #153 ${DateTime.now().millisecondsSinceEpoch}';
 
   // Key the master: edit one occurrence through the plugin.
-  await plugin.updateEvent(
-    eventId: series.occurrences[4].instanceId,
-    title: detachedTitle,
-  );
-  expect(
-    await eventsTitled(plugin, calendarId!, detachedTitle, series.start),
-    hasLength(1),
-    reason: 'the edited occurrence must be detached before the delete',
-  );
+  await detachOccurrence(plugin, calendarId!, series, 4, detachedTitle);
 
   final deleted = await deleteEventPlain(series.eventId);
   expect(deleted, 1, reason: 'the seed must find the master to delete');
@@ -1709,17 +1723,11 @@ void main() {
       // Android calendar the provider stops cascading once the series has
       // the `_sync_id` the #153 fix gives it, so the plugin cascades itself.
       final series = await seedDailySeries(plugin, calendarId);
-      final occurrences = series.occurrences;
 
       Future<List<Event>> detached() =>
           eventsTitled(plugin, calendarId!, 'Detached #153', series.start);
 
-      await plugin.updateEvent(
-        eventId: occurrences[4].instanceId,
-        title: 'Detached #153',
-      );
-      expect(await detached(), hasLength(1),
-          reason: 'the edited occurrence must be detached before the delete');
+      await detachOccurrence(plugin, calendarId!, series, 4, 'Detached #153');
 
       await plugin.deleteEvent(eventId: series.eventId);
 
@@ -1728,6 +1736,33 @@ void main() {
       expect(after, isEmpty, reason: 'the whole series should be gone');
       expect(await detached(), isEmpty,
           reason: 'deleting the series must remove its detached occurrence');
+    });
+  });
+
+  // A plain (non-sync-adapter) delete of a keyed series leaves the provider
+  // a DELETED=1 tombstone rather than removing the row (#153). Instances
+  // queries skip it, so every plugin path keyed off the Events table must
+  // read it as gone — and the plugin's own delete must still collect it.
+  // Android-only: iOS has no tombstones. Each test tombstones its own
+  // series through [tombstoneSeries].
+  group('Tombstoned series (#153)', () {
+    late DeviceCalendar plugin;
+    String? calendarId;
+
+    setUpAll(() async {
+      plugin = DeviceCalendar.instance;
+      await plugin.requestPermissions();
+
+      calendarId = await plugin.createCalendar(
+        name: 'Tombstone Test ${DateTime.now().millisecondsSinceEpoch}',
+        colorHex: '#FF00FF',
+      );
+    });
+
+    tearDownAll(() async {
+      if (calendarId != null) {
+        await plugin.deleteCalendar(calendarId!);
+      }
     });
 
     test('getEvent and listEvents read a tombstoned series as gone (#153)',
