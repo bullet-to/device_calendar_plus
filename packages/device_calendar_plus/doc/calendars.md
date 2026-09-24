@@ -56,8 +56,8 @@ that's the local source and iCloud, on Android the local account type. Any
 other source or account type throws `DeviceCalendarException(readOnly)` before
 anything is written.
 
-`colorHex` takes `#RRGGBB` (or `#AARRGGBB`; the `#` is optional). Anything else
-throws `ArgumentError`.
+`colorHex` takes `#RRGGBB` (the `#` is optional). Anything else throws
+`ArgumentError`.
 
 ## Update a calendar
 
@@ -76,9 +76,13 @@ await plugin.deleteCalendar(calendarId);
 ```
 
 Deletes the calendar and all of its events. Throws
-`DeviceCalendarException(readOnly)` for a calendar that can't be deleted: on
-iOS one EventKit marks immutable or read-only (Birthdays, subscribed feeds,
-holiday calendars), on Android one whose access level is below contributor —
-the same calendars `listCalendars` reports as `readOnly`.
+`DeviceCalendarException(readOnly)` for a calendar that can't be deleted. On
+Android that's one whose access level is below contributor — exactly the
+calendars `listCalendars` reports as `readOnly`. On iOS it's any calendar
+`listCalendars` reports as `readOnly` (Birthdays, subscribed feeds, holiday
+calendars), plus ones EventKit marks immutable: their properties can't be
+edited and they can't be deleted even though events can still be added (an
+account's default calendar, say). So on iOS `Calendar.readOnly == false` isn't
+a guarantee that a rename or delete will be accepted.
 
 Creating, updating, and deleting calendars all require full access.

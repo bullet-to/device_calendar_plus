@@ -1,4 +1,5 @@
 import 'package:device_calendar_plus/device_calendar_plus.dart';
+import 'package:device_calendar_plus/src/color_hex.dart';
 import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -66,6 +67,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   /// callers keep their unchanged signature. Set to a sentinel before each
   /// captured call so "passed null" is distinguishable from "never called".
   Object? lastCreateEventReminders = 'unset';
+  ({String name, String? colorHex})? lastCreateCalendar;
   ({String calendarId, String? name, String? colorHex})? lastUpdateCalendar;
   ({String eventId, int? timestamp})? lastDeleteEvent;
 
@@ -186,6 +188,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     CreateCalendarPlatformOptions? platformOptions,
   ) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
+    lastCreateCalendar = (name: name, colorHex: colorHex);
     return 'mock-calendar-id';
   }
 
@@ -1033,21 +1036,15 @@ void main() {
       });
 
       // Regression (#126): a malformed hex used to reach the platform, where
-      // both sides silently stored black.
+      // both sides silently stored black. What counts as malformed is pinned
+      // in the validateColorHex group; this only checks the guard is wired.
       test('throws ArgumentError for a malformed colorHex', () async {
         expect(
           () => DeviceCalendar.instance
               .createCalendar(name: 'x', colorHex: 'not-a-color'),
           throwsArgumentError,
         );
-      });
-
-      test('accepts #RRGGBB, #AARRGGBB, and a bare RRGGBB', () async {
-        for (final hex in ['#FF5733', '#80FF5733', 'ff5733']) {
-          final id = await DeviceCalendar.instance
-              .createCalendar(name: 'x', colorHex: hex);
-          expect(id, 'mock-calendar-id', reason: hex);
-        }
+        expect(mockPlatform.lastCreateCalendar, isNull);
       });
     });
 
@@ -1639,6 +1636,43 @@ void main() {
 
     test('returns null for unparseable string', () {
       expect(cal(colorHex: 'notacolor').color, isNull);
+    });
+  });
+
+  // The write-side counterpart: what createCalendar / updateCalendar accept
+  // for colorHex. Only #RRGGBB, because an alpha byte is stored by Android
+  // and dropped by iOS (#126).
+  group('validateColorHex', () {
+    test('accepts #RRGGBB', () {
+      expect(() => validateColorHex('#FF5733'), returnsNormally);
+    });
+
+    test('accepts a bare RRGGBB', () {
+      expect(() => validateColorHex('ff5733'), returnsNormally);
+    });
+
+    test('accepts surrounding whitespace', () {
+      expect(() => validateColorHex(' #FF5733 '), returnsNormally);
+    });
+
+    test('rejects #AARRGGBB', () {
+      expect(() => validateColorHex('#80FF5733'), throwsArgumentError);
+    });
+
+    test('rejects a non-hex string', () {
+      expect(() => validateColorHex('not-a-color'), throwsArgumentError);
+    });
+
+    test('rejects shorthand #RGB', () {
+      expect(() => validateColorHex('#FFF'), throwsArgumentError);
+    });
+
+    test('rejects non-hex digits', () {
+      expect(() => validateColorHex('#GG0000'), throwsArgumentError);
+    });
+
+    test('rejects an empty string', () {
+      expect(() => validateColorHex(''), throwsArgumentError);
     });
   });
 

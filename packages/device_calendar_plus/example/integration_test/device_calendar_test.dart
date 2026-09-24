@@ -372,21 +372,6 @@ void main() {
       }
     });
 
-    test('Error Handling - Delete with Empty ID', () async {
-      // Regression (#126): deleteCalendar lacked the empty-id guard the other
-      // mutations have, so '' went to the platform as a real lookup.
-      expect(() => plugin.deleteCalendar('   '), throwsArgumentError);
-    });
-
-    test('Error Handling - Create with Malformed Color', () async {
-      // Regression (#126): a malformed hex used to be stored silently as black
-      // on both platforms.
-      expect(
-        () => plugin.createCalendar(name: 'Bad Color', colorHex: 'not-a-color'),
-        throwsArgumentError,
-      );
-    });
-
     test('Error Handling - Update and Delete a Read-only Calendar', () async {
       // Regression (#126): iOS mapped a refused delete to operationFailed and
       // Android renamed/deleted any row it was handed, so the documented

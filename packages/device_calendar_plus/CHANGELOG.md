@@ -9,8 +9,9 @@
   as `listSources` already reports and iOS already does for non-creatable
   sources, instead of leaving a phantom calendar the account's sync adapter
   can wipe (#126).
-- A malformed `colorHex` on `createCalendar` / `updateCalendar` throws
-  `ArgumentError` instead of being stored silently as black (#126).
+- `createCalendar` / `updateCalendar` throw `ArgumentError` for a `colorHex`
+  that isn't `#RRGGBB` (the `#` optional) instead of storing it silently as
+  black (#126).
 - `deleteCalendar('')` throws `ArgumentError`, like the other mutations (#126).
 - Android `listCalendars` no longer crashes on a provider row with a NULL
   id or display name (#126).

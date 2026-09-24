@@ -17,17 +17,22 @@ import kotlin.test.assertTrue
 
 /**
  * The Calendar Provider has no "immutable" flag, so the write guards derive
- * it from CALENDAR_ACCESS_LEVEL, and createCalendar refuses the account types
- * listSources reports as non-creatable. None of that can be set up from an
- * integration test — a third-party app only ever gets owner-level rows out of
- * the provider — so the rows are faked here (#126).
+ * it from CALENDAR_ACCESS_LEVEL. An integration test can't produce those rows
+ * — a third-party app only ever gets owner-level rows out of the provider —
+ * nor a row with a NULL id or display name, so they are faked here (#126).
+ * (createCalendar's non-local refusal IS reachable on a bare emulator, and
+ * lives in sources_test.dart.)
  */
 internal class CalendarServiceTest {
     private val resolver: ContentResolver = Mockito.mock(ContentResolver::class.java)
     private val context: Context = Mockito.mock(Context::class.java).also {
         Mockito.`when`(it.contentResolver).thenReturn(resolver)
     }
-    private val service = CalendarService(context)
+
+    // Both permission tiers are granted, stated here rather than inherited
+    // from the mocked Context's checkPermission defaulting to 0 (which happens
+    // to be PERMISSION_GRANTED).
+    private val service = CalendarService(context, fullAccess = { null }, readAccess = { null })
 
     /** A cursor over [rows], each a column-name → value map. */
     private fun cursorOf(vararg rows: Map<String, Any?>): Cursor {
@@ -71,19 +76,6 @@ internal class CalendarServiceTest {
 
     private fun codeOf(result: Result<*>): String =
         (result.exceptionOrNull() as CalendarException).code
-
-    // --- createCalendar ---
-
-    // listSources marks every non-local account supportsCalendarCreation=false,
-    // but createCalendar used to CALLER_IS_SYNCADAPTER-insert under it anyway,
-    // leaving a phantom calendar the real sync adapter can wipe.
-    @Test
-    fun createCalendar_nonLocalAccountType_isReadOnlyAndNeverInserts() {
-        val result = service.createCalendar("Work", null, "someone@gmail.com", "com.google")
-
-        assertEquals(PlatformExceptionCodes.READ_ONLY, codeOf(result))
-        verify(resolver, never()).insert(any(), any())
-    }
 
     // --- updateCalendar ---
 

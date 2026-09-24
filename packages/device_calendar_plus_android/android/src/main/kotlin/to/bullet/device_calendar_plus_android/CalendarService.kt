@@ -4,10 +4,20 @@ import android.content.Context
 import android.net.Uri
 import android.provider.CalendarContract
 
-class CalendarService(private val context: Context) {
+/**
+ * [fullAccess] and [readAccess] are the permission gates, injected so a unit
+ * test can state "access is granted" instead of inheriting it from whatever
+ * the mocked Context and the android.jar stubs happen to return. Production
+ * uses the shared gates in PermissionGates.kt.
+ */
+class CalendarService(
+    private val context: Context,
+    private val fullAccess: (Context) -> CalendarException? = ::fullAccessFailure,
+    private val readAccess: (Context) -> CalendarException? = ::readAccessFailure,
+) {
 
     fun listCalendars(): Result<List<Map<String, Any>>> {
-        readAccessFailure(context)?.let { return Result.failure(it) }
+        readAccess(context)?.let { return Result.failure(it) }
 
         val calendars = mutableListOf<Map<String, Any>>()
         
@@ -112,7 +122,7 @@ class CalendarService(private val context: Context) {
     }
 
     fun listSources(): Result<List<Map<String, Any>>> {
-        readAccessFailure(context)?.let { return Result.failure(it) }
+        readAccess(context)?.let { return Result.failure(it) }
 
         val sources = mutableListOf<Map<String, Any>>()
         val seen = mutableSetOf<String>()
@@ -189,12 +199,8 @@ class CalendarService(private val context: Context) {
             null
         )?.use { cursor ->
             if (!cursor.moveToFirst()) return@use null
-            val index = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL)
-            if (cursor.isNull(index)) CalendarContract.Calendars.CAL_ACCESS_NONE else cursor.getInt(index)
-        } ?: return CalendarException(
-            PlatformExceptionCodes.NOT_FOUND,
-            "Calendar with ID $calendarId not found"
-        )
+            cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL))
+        } ?: return calendarNotFound(calendarId)
 
         if (isReadOnly(accessLevel)) {
             return CalendarException(
@@ -204,6 +210,16 @@ class CalendarService(private val context: Context) {
         }
         return null
     }
+
+    /**
+     * Raised by writeRefusal when the row isn't there, and again by the
+     * post-write zero-row checks as a backstop for a calendar that vanished
+     * between the two.
+     */
+    private fun calendarNotFound(calendarId: String) = CalendarException(
+        PlatformExceptionCodes.NOT_FOUND,
+        "Calendar with ID $calendarId not found"
+    )
 
     private fun accountTypeToSourceType(accountType: String): String {
         return when (accountType) {
@@ -216,7 +232,7 @@ class CalendarService(private val context: Context) {
     }
 
     fun createCalendar(name: String, colorHex: String?, accountNameParam: String?, accountTypeParam: String?): Result<String> {
-        fullAccessFailure(context)?.let { return Result.failure(it) }
+        fullAccess(context)?.let { return Result.failure(it) }
 
         val accountName = accountNameParam ?: "local"
         val accountType = accountTypeParam ?: CalendarContract.ACCOUNT_TYPE_LOCAL
@@ -295,7 +311,7 @@ class CalendarService(private val context: Context) {
     }
     
     fun updateCalendar(calendarId: String, name: String?, colorHex: String?): Result<Unit> {
-        fullAccessFailure(context)?.let { return Result.failure(it) }
+        fullAccess(context)?.let { return Result.failure(it) }
 
         try {
             writeRefusal(calendarId)?.let { return Result.failure(it) }
@@ -324,12 +340,7 @@ class CalendarService(private val context: Context) {
             )
             
             if (updatedRows == 0) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.NOT_FOUND,
-                        "Calendar with ID $calendarId not found"
-                    )
-                )
+                return Result.failure(calendarNotFound(calendarId))
             }
             
             return Result.success(Unit)
@@ -351,7 +362,7 @@ class CalendarService(private val context: Context) {
     }
     
     fun deleteCalendar(calendarId: String): Result<Unit> {
-        fullAccessFailure(context)?.let { return Result.failure(it) }
+        fullAccess(context)?.let { return Result.failure(it) }
 
         try {
             writeRefusal(calendarId)?.let { return Result.failure(it) }
@@ -363,12 +374,7 @@ class CalendarService(private val context: Context) {
             )
             
             if (deletedRows == 0) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.NOT_FOUND,
-                        "Calendar with ID $calendarId not found"
-                    )
-                )
+                return Result.failure(calendarNotFound(calendarId))
             }
             
             return Result.success(Unit)

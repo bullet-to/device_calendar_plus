@@ -255,11 +255,11 @@ class DeviceCalendar {
 
   /// Creates a calendar and returns its ID.
   ///
-  /// [colorHex] is an optional `#RRGGBB` (or `#AARRGGBB`) color; anything
-  /// else throws [ArgumentError]. [platformOptions] targets a specific
-  /// account (see [listSources]); without it a sensible default account is
-  /// chosen (iOS: iCloud, else local; Android: the local account type).
-  /// Requires full access.
+  /// [colorHex] is an optional `#RRGGBB` color; anything else throws
+  /// [ArgumentError]. [platformOptions] targets a specific account (see
+  /// [listSources]); without it a sensible default account is chosen (iOS:
+  /// iCloud, else local; Android: the local account type). Requires full
+  /// access.
   ///
   /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) when
   /// the targeted source or account type can't hold a new calendar, i.e. one
@@ -296,8 +296,8 @@ class DeviceCalendar {
     }
   }
 
-  /// Updates a calendar's [name] and/or [colorHex] (`#RRGGBB` or
-  /// `#AARRGGBB`; anything else throws [ArgumentError]).
+  /// Updates a calendar's [name] and/or [colorHex] (`#RRGGBB`; anything else
+  /// throws [ArgumentError]).
   ///
   /// Passing neither is a no-op. Requires full access.
   ///
@@ -353,10 +353,14 @@ class DeviceCalendar {
   /// Deletes a calendar and all of its events. Requires full access.
   ///
   /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) for a
-  /// calendar that can't be deleted: on iOS one EventKit marks immutable or
-  /// read-only (Birthdays, subscribed feeds, holiday calendars), on Android
-  /// one whose access level is below contributor — the same calendars
-  /// [listCalendars] reports as [Calendar.readOnly].
+  /// calendar that can't be deleted. On Android that is one whose access
+  /// level is below contributor — exactly the calendars [listCalendars]
+  /// reports as [Calendar.readOnly]. On iOS it is any calendar
+  /// [listCalendars] reports as [Calendar.readOnly] (Birthdays, subscribed
+  /// feeds, holiday calendars), plus ones EventKit marks immutable: their
+  /// properties can't be edited and they can't be deleted even though events
+  /// can still be added, e.g. an account's default calendar. So on iOS a
+  /// calendar with [Calendar.readOnly] `false` can still be refused.
   Future<void> deleteCalendar(String calendarId) async {
     // An empty id targets no calendar (matches updateCalendar / deleteEvent).
     if (calendarId.trim().isEmpty) {
