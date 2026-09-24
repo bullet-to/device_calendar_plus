@@ -17,8 +17,7 @@ Future<void> expectOccurrencesResolveByInstanceId(
     expect(
       fetched,
       isNotNull,
-      reason:
-          'getEvent must resolve the instance ID listEvents '
+      reason: 'getEvent must resolve the instance ID listEvents '
           'returned (${occurrence.instanceId})',
     );
     expect(fetched!.instanceId, occurrence.instanceId);
@@ -88,6 +87,24 @@ void main() {
       },
     );
 
+    // The miss branch: an instance ID whose occurrence is gone. Both
+    // platforms return null when nothing matches (iOS's ±1s window, Android's
+    // exact EVENT_ID + BEGIN row), and deleting the occurrence is the only way
+    // a caller ends up holding such an ID.
+    test('getEvent returns null for a deleted occurrence\'s instance ID',
+        () async {
+      final series = await seedDailySeries(plugin, calendarId);
+      final stale = series.occurrences[4].instanceId;
+
+      await plugin.deleteEvent(eventId: stale);
+
+      expect(
+        await plugin.getEvent(stale),
+        isNull,
+        reason: 'a deleted occurrence\'s instance ID must not resolve',
+      );
+    });
+
     // Android stores a recurring master as DTSTART + DURATION with no DTEND,
     // so the master's end must come from its duration.
     test('getEvent returns a timed master with its real end date', () async {
@@ -103,8 +120,7 @@ void main() {
       expect(
         master.endDate.difference(master.startDate),
         const Duration(hours: 1),
-        reason:
-            'the master must carry the series duration, not a '
+        reason: 'the master must carry the series duration, not a '
             'zero-length end',
       );
     });
@@ -124,9 +140,8 @@ void main() {
         expect(master.startDate, series.start);
         expect(
           master.endDate,
-          localMidnight(2),
-          reason:
-              'an all-day master spans its day, ending at the next '
+          nextLocalMidnight(series.start),
+          reason: 'an all-day master spans its day, ending at the next '
               'local midnight',
         );
       },

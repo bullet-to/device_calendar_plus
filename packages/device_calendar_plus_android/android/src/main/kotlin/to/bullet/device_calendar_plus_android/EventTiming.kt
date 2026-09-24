@@ -1,14 +1,12 @@
 package to.bullet.device_calendar_plus_android
 
-import android.net.Uri
-import android.provider.CalendarContract
 import java.util.Calendar
 import java.util.TimeZone
 
 // The time and duration arithmetic behind EventsService: how the Calendar
-// Provider stores an all-day day, how a row's end is derived, and how an
-// Instances window is addressed. Pure functions with no Context or provider
-// access, so a unit test can drive them directly.
+// Provider stores an all-day day and how a row's end is derived. Pure
+// functions with no Context, provider or android.* access, so a plain JVM
+// unit test can drive them directly.
 
 /**
  * Converts local-time millis to UTC midnight, preserving the calendar date.
@@ -49,17 +47,6 @@ internal fun utcToLocalMidnight(utcMillis: Long): Long {
     localCal.set(Calendar.MILLISECOND, 0)
     return localCal.timeInMillis
 }
-
-/**
- * The Instances URI for the window [[beginMillis], [endMillis]]. The
- * Instances table can only be queried through a window, and the provider
- * matches any occurrence overlapping it.
- */
-internal fun instancesUri(beginMillis: Long, endMillis: Long): Uri =
-    CalendarContract.Instances.CONTENT_URI.buildUpon()
-        .appendPath(beginMillis.toString())
-        .appendPath(endMillis.toString())
-        .build()
 
 /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */
 internal fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =

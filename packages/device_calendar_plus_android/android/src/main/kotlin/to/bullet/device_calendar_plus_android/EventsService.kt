@@ -48,7 +48,7 @@ class EventsService(
         val effectiveStart = minOf(startMillis, queryStartUtcMidnight)
         val effectiveEnd = maxOf(endMillis, queryEndUtcMidnight)
 
-        val uri = instancesUri(effectiveStart, effectiveEnd)
+        val uri = EventColumns.instancesUri(effectiveStart, effectiveEnd)
 
         val columns = EventColumns.instances
 
@@ -422,7 +422,7 @@ class EventsService(
         // buildEventMapFromCursor), so the Instances row is an exact match on
         // EVENT_ID and BEGIN. The window only exists because the Instances URI
         // needs one; its width is arbitrary, provided it overlaps the row.
-        val uri = instancesUri(timestamp - 1000, timestamp + 1000)
+        val uri = EventColumns.instancesUri(timestamp - 1000, timestamp + 1000)
         return querySingleEvent(
             uri,
             EventColumns.instances,
@@ -2008,7 +2008,7 @@ class EventsService(
         // Five-year look-back window: covers daily/weekly/monthly easily, and
         // yearly rules with an interval of up to five.
         val windowStart = beforeMillis - 5L * 366 * 24 * 3600 * 1000
-        val uri = instancesUri(windowStart, beforeMillis)
+        val uri = EventColumns.instancesUri(windowStart, beforeMillis)
         var count = 0
         context.contentResolver.query(
             uri,

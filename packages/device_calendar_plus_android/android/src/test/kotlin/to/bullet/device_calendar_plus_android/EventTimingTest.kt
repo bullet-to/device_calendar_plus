@@ -21,12 +21,7 @@ internal class EventTimingTest {
             ((7 + 2) * 86_400L + 3 * 3_600L + 4 * 60L + 5L) * 1_000L,
             storedEndMillis(0L, null, "P1W2DT3H4M5S"),
         )
-    }
-
-    // The precedence the read path and the write path (eventDurationMillis)
-    // both rely on.
-    @Test
-    fun storedEndMillis_dtendPresent_ignoresDuration() {
+        // DTEND wins over DURATION when both are stored.
         assertEquals(2_000L, storedEndMillis(1_000L, 2_000L, "P1D"))
     }
 

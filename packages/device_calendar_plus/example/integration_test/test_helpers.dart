@@ -9,3 +9,9 @@ DateTime localMidnight(int daysFromNow) {
   final now = DateTime.now();
   return DateTime(now.year, now.month, now.day + daysFromNow);
 }
+
+/// Local midnight of the calendar day after [day], DST-safe: built from the
+/// date rather than by adding 24 hours, so a test that already holds a day
+/// can name its end without reading the clock again.
+DateTime nextLocalMidnight(DateTime day) =>
+    DateTime(day.year, day.month, day.day + 1);

@@ -64,7 +64,7 @@ Future<({String eventId, DateTime start})> createAllDayDailySeries(
     calendarId: calendarId,
     title: 'All-day Daily Series',
     startDate: start,
-    endDate: localMidnight(2),
+    endDate: nextLocalMidnight(start),
     isAllDay: true,
     recurrenceRule: DailyRecurrence(end: CountEnd(count)),
   );
