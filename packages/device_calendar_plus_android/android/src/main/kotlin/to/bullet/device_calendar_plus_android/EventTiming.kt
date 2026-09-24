@@ -1,0 +1,29 @@
+package to.bullet.device_calendar_plus_android
+
+
+// The duration arithmetic behind EventsService: how a row's end is derived
+// from DTEND or DTSTART + DURATION. Pure functions with no Context, provider
+// or android.* access, so a plain JVM unit test can drive them directly. The
+// all-day date conversions live in AllDayDates.
+
+/** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */
+internal fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =
+    dtend ?: duration?.let(::parseDurationMillis)?.let { dtstart + it }
+
+/** Parses an RFC 5545 / Android duration string (e.g. "P3600S", "PT1H"). */
+private fun parseDurationMillis(duration: String): Long? {
+    val trimmed = duration.trim()
+    Regex("P(\\d+)S").matchEntire(trimmed)?.let {
+        return it.groupValues[1].toLong() * 1000L
+    }
+    val match = Regex(
+        "P(?:(\\d+)W)?(?:(\\d+)D)?(?:T(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?)?"
+    ).matchEntire(trimmed) ?: return null
+    var seconds = 0L
+    match.groupValues[1].toLongOrNull()?.let { seconds += it * 7 * 24 * 3600 }
+    match.groupValues[2].toLongOrNull()?.let { seconds += it * 24 * 3600 }
+    match.groupValues[3].toLongOrNull()?.let { seconds += it * 3600 }
+    match.groupValues[4].toLongOrNull()?.let { seconds += it * 60 }
+    match.groupValues[5].toLongOrNull()?.let { seconds += it }
+    return seconds * 1000L
+}

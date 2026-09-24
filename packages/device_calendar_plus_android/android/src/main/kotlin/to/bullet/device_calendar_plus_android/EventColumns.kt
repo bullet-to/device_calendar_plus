@@ -1,5 +1,6 @@
 package to.bullet.device_calendar_plus_android
 
+import android.net.Uri
 import android.provider.CalendarContract
 
 /**
@@ -23,6 +24,7 @@ internal data class EventColumns(
     val location: String,
     val start: String,
     val end: String,
+    val duration: String,
     val allDay: String,
     val availability: String,
     val status: String,
@@ -40,6 +42,7 @@ internal data class EventColumns(
         location,
         start,
         end,
+        duration,
         allDay,
         availability,
         status,
@@ -59,6 +62,7 @@ internal data class EventColumns(
             location = CalendarContract.Events.EVENT_LOCATION,
             start = CalendarContract.Events.DTSTART,
             end = CalendarContract.Events.DTEND,
+            duration = CalendarContract.Events.DURATION,
             allDay = CalendarContract.Events.ALL_DAY,
             availability = CalendarContract.Events.AVAILABILITY,
             status = CalendarContract.Events.STATUS,
@@ -79,5 +83,16 @@ internal data class EventColumns(
             start = CalendarContract.Instances.BEGIN,
             end = CalendarContract.Instances.END,
         )
+
+        /**
+         * The Instances URI for the window [[beginMillis], [endMillis]]: how
+         * the Instances table is addressed. It can only be queried through a
+         * window, and the provider matches any occurrence overlapping it.
+         */
+        fun instancesUri(beginMillis: Long, endMillis: Long): Uri =
+            CalendarContract.Instances.CONTENT_URI.buildUpon()
+                .appendPath(beginMillis.toString())
+                .appendPath(endMillis.toString())
+                .build()
     }
 }
