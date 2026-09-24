@@ -2,9 +2,10 @@ import 'dart:io' show Platform;
 import 'dart:ui' show Color;
 
 import 'package:device_calendar_plus/device_calendar_plus.dart';
-import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+
+import 'test_seed.dart';
 
 /// Probes whether the given calendar's source supports event availability.
 ///
@@ -615,12 +616,7 @@ void main() {
       // example app exposes a test-only channel that stamps it directly via
       // ContentResolver using a sync-adapter URI on the local test calendar,
       // simulating a color set externally (e.g. in Google Calendar).
-      final updated = await const MethodChannel(
-        'to.bullet.device_calendar_plus_example/test',
-      ).invokeMethod<int>('setEventColor', {
-        'eventId': eventId,
-        'color': 0xFFFF0000,
-      });
+      final updated = await setEventColor(eventId, 0xFFFF0000);
       expect(updated, 1);
 
       // getEvent reads via the Events projection.

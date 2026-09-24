@@ -19,6 +19,9 @@
 - `CalendarSource.supportsCalendarCreation`, `CreateCalendarOptionsIos` and
   `CreateCalendarOptionsAndroid` describe what the code actually does: iOS
   creates under iCloud or local, Android under the local account type (#126).
+- Android: `updateEvent` or `deleteEvent` on a single occurrence of a
+  recurring event in a local calendar no longer makes the other occurrences
+  disappear — the earlier ones for good (#153).
 
 ### Changed
 - Android: migrated to Flutter's built-in Kotlin, so the KGP deprecation
