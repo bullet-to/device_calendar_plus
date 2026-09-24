@@ -19,6 +19,10 @@
 - `CalendarSource.supportsCalendarCreation`, `CreateCalendarOptionsIos` and
   `CreateCalendarOptionsAndroid` describe what the code actually does: iOS
   creates under iCloud or local, Android under the local account type (#126).
+- Android: `getEvent` resolves all-day recurring instance IDs (it always
+  returned null), returns a recurring master's real end date instead of a
+  zero-length one, and `listEvents` orders all-day events by their local
+  midnight among timed events in non-UTC zones, as iOS does (#122).
 - Android: `updateEvent` or `deleteEvent` on a single occurrence of a
   recurring event in a local calendar no longer makes the other occurrences
   disappear — the earlier ones for good (#153).

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'series_fixtures.dart';
+import 'test_helpers.dart';
 import 'test_seed.dart';
 
 /// Creates a weekly series pinned (BYDAY) to its own start weekday, for the
@@ -661,9 +662,7 @@ void main() {
       // the next calendar day, not a day early or late around midnight.
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
 
-      final today = DateTime.now();
-      final start =
-          DateTime(today.year, today.month, today.day + 1); // local midnight
+      final start = localMidnight(1);
       final newDay = weekdayOf(start.add(const Duration(days: 1)));
       final eventId = await plugin.createEvent(
         calendarId: calendarId!,
