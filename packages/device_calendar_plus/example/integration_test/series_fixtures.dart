@@ -1,10 +1,12 @@
 import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'test_helpers.dart';
+
 // The shared fixtures for tests that arrange a recurring series and read it
 // back: creating one, listing its occurrences, and the arrange steps and
-// assertions the per-occurrence tests share. Imported by recurrence_test.dart
-// and tombstone_test.dart.
+// assertions the per-occurrence tests share. Imported by recurrence_test.dart,
+// recurrence_read_test.dart and tombstone_test.dart.
 
 /// A seeded series: its event ID and start, and its occurrences as listed
 /// right after it was created — the baseline a per-occurrence test compares
@@ -32,6 +34,28 @@ Future<({String eventId, DateTime start})> createDailySeries(
     timeZone: 'UTC',
   );
   return (eventId: eventId, start: start);
+}
+
+/// Creates an all-day daily recurring event starting tomorrow (local
+/// midnight), with `count` total occurrences. Returns the event ID, the start
+/// and the end of the first day (the next local midnight, DST-safe).
+Future<({String eventId, DateTime start, DateTime end})>
+createAllDayDailySeries(
+  DeviceCalendar plugin,
+  String calendarId, {
+  int count = 10,
+}) async {
+  final start = localMidnight(1);
+  final end = localMidnight(2);
+  final eventId = await plugin.createEvent(
+    calendarId: calendarId,
+    title: 'All-day Daily Series',
+    startDate: start,
+    endDate: end,
+    isAllDay: true,
+    recurrenceRule: DailyRecurrence(end: CountEnd(count)),
+  );
+  return (eventId: eventId, start: start, end: end);
 }
 
 /// Creates a weekly recurring event titled [title], starting at [start] (one
