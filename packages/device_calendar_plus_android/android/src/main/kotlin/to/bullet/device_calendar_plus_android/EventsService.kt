@@ -989,7 +989,7 @@ class EventsService(
         endDate: java.util.Date?,
         patch: EventFieldPatch
     ): Result<Unit> {
-        val row = readRecurringRow(eventId).getOrElse { return Result.failure(it) }.row
+        val (row) = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
         val effectiveIsAllDay = patch.isAllDay ?: row.allDay
         val newStart = if (startDate != null) {
@@ -1107,11 +1107,11 @@ class EventsService(
 
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    eventId, row, timestamp, newStartMillis,
+                    row, timestamp, newStartMillis,
                     durationMinutes, recurrenceRule, patch
                 )
                 else -> updateRecurringAllEvents(
-                    eventId, row, timestamp, newStartMillis,
+                    row, timestamp, newStartMillis,
                     durationMinutes, recurrenceRule, patch
                 )
             }
@@ -1133,7 +1133,6 @@ class EventsService(
     }
 
     private fun updateRecurringAllEvents(
-        eventId: String,
         row: EventRow,
         timestamp: Long?,
         newStartMillis: Long?,
@@ -1215,19 +1214,18 @@ class EventsService(
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
+                    "Event with ID ${row.id} not found"
                 )
             )
         }
 
         // Reminder rows attach to the (master) event row by EVENT_ID — the same
         // for recurring and non-recurring, so no DURATION/RRULE interaction.
-        applyRemindersRows(eventId.toLong(), patch.reminders)
-        return Result.success(eventId)
+        applyRemindersRows(row.id.toLong(), patch.reminders)
+        return Result.success(row.id)
     }
 
     private fun updateRecurringThisAndFollowing(
-        eventId: String,
         row: EventRow,
         timestamp: Long?,
         newStartMillis: Long?,
@@ -1244,7 +1242,7 @@ class EventsService(
             )
         }
 
-        val series = row.asSeries().getOrElse { return Result.failure(it) }
+        val (_, rrule) = row.asSeries().getOrElse { return Result.failure(it) }
 
         // Effective field values for the new series: the patch value when one
         // is given, otherwise the master's existing value.
@@ -1271,12 +1269,12 @@ class EventsService(
                 // Rule unchanged: the new series inherits the original rule. A
                 // COUNT must drop by the occurrences left on the old series,
                 // or the new series would over-generate.
-                val originalCount = RruleString.count(series.rrule)
+                val originalCount = RruleString.count(rrule)
                 if (originalCount != null) {
-                    val before = countInstancesBefore(eventId, timestamp)
-                    RruleString.withCount(series.rrule, maxOf(1, originalCount - before))
+                    val before = countInstancesBefore(row.id, timestamp)
+                    RruleString.withCount(rrule, maxOf(1, originalCount - before))
                 } else {
-                    series.rrule
+                    rrule
                 }
             }
         }
@@ -1316,7 +1314,7 @@ class EventsService(
         val effectiveReminders = when (val r = patch.reminders) {
             is EventFieldPatch.RemindersPatch.Set -> r.minutes
             is EventFieldPatch.RemindersPatch.Clear -> emptyList()
-            EventFieldPatch.RemindersPatch.Unchanged -> queryReminderMinutes(eventId.toLong())
+            EventFieldPatch.RemindersPatch.Unchanged -> queryReminderMinutes(row.id.toLong())
         }
         if (effectiveReminders.isNotEmpty()) {
             insertReminderRows(newEventId.toLong(), effectiveReminders)
@@ -1331,7 +1329,7 @@ class EventsService(
         // DTSTART/DURATION with their existing values to force Android's
         // CalendarProvider to invalidate the Instances cache (it doesn't
         // always when only RRULE changes — see deleteRecurringThisAndFollowing).
-        val truncatedRrule = RruleString.withUntil(series.rrule, timestamp - 1000, row.allDay)
+        val truncatedRrule = RruleString.withUntil(rrule, timestamp - 1000, row.allDay)
         val truncateValues = android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, truncatedRrule)
             put(CalendarContract.Events.DTSTART, row.dtstart)
@@ -1350,7 +1348,7 @@ class EventsService(
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
-                    "Failed to truncate original series for event $eventId"
+                    "Failed to truncate original series for event ${row.id}"
                 )
             )
         }
@@ -1417,8 +1415,7 @@ class EventsService(
             )
         }
 
-        val series = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
-        val row = series.row
+        val (row, rrule) = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
         // Truncate the series so the anchor occurrence and every later one
         // stop generating. UNTIL is inclusive, so cutting one second early
@@ -1430,7 +1427,7 @@ class EventsService(
         // when only RRULE changes — touching multiple time columns forces
         // it to regenerate. Without this the master's RRULE is correctly
         // updated on disk but listEvents keeps returning the old expansion.
-        val truncatedRrule = RruleString.withUntil(series.rrule, timestamp - 1000, row.allDay)
+        val truncatedRrule = RruleString.withUntil(rrule, timestamp - 1000, row.allDay)
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, truncatedRrule)
             put(CalendarContract.Events.DTSTART, row.dtstart)
@@ -1460,7 +1457,7 @@ class EventsService(
         eventId: String,
         timestamp: Long
     ): Result<Unit> {
-        val row = readRecurringRow(eventId).getOrElse { return Result.failure(it) }.row
+        val (row) = readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
@@ -1483,7 +1480,7 @@ class EventsService(
             )
 
     /** A master [row] proven recurring: its [rrule] is the row's, non-null. */
-    private class SeriesRow(val row: EventRow, val rrule: String)
+    private data class SeriesRow(val row: EventRow, val rrule: String)
 
     /**
      * The master row a per-occurrence call addresses — an exception write in
@@ -2102,8 +2099,9 @@ class EventsService(
      * The [CalendarAccount] of the Events row under the cursor, from its
      * ACCOUNT_NAME and ACCOUNT_TYPE columns. The provider guarantees both
      * on every calendar, so a NULL is a broken invariant and throws rather
-     * than standing in a made-up value — the one policy holds wherever an
-     * account is read off a row.
+     * than standing in a made-up value — the one policy for the account
+     * columns, wherever they are read off a row. ([readEventRow]'s other
+     * non-null columns keep their older fallbacks.)
      */
     private fun android.database.Cursor.calendarAccount(): CalendarAccount {
         fun str(column: String): String =
