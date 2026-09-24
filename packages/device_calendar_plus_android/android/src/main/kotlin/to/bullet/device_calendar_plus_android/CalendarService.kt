@@ -8,16 +8,16 @@ import android.provider.CalendarContract
  * [fullAccess] and [readAccess] are the permission gates, injected so a unit
  * test can state "access is granted" instead of inheriting it from whatever
  * the mocked Context and the android.jar stubs happen to return. Production
- * uses the shared gates in PermissionGates.kt.
+ * uses the shared gates in PermissionGates.kt over the same [context].
  */
 class CalendarService(
     private val context: Context,
-    private val fullAccess: (Context) -> CalendarException? = ::fullAccessFailure,
-    private val readAccess: (Context) -> CalendarException? = ::readAccessFailure,
+    private val fullAccess: () -> CalendarException? = { fullAccessFailure(context) },
+    private val readAccess: () -> CalendarException? = { readAccessFailure(context) },
 ) {
 
     fun listCalendars(): Result<List<Map<String, Any>>> {
-        readAccess(context)?.let { return Result.failure(it) }
+        readAccess()?.let { return Result.failure(it) }
 
         val calendars = mutableListOf<Map<String, Any>>()
         
@@ -122,7 +122,7 @@ class CalendarService(
     }
 
     fun listSources(): Result<List<Map<String, Any>>> {
-        readAccess(context)?.let { return Result.failure(it) }
+        readAccess()?.let { return Result.failure(it) }
 
         val sources = mutableListOf<Map<String, Any>>()
         val seen = mutableSetOf<String>()
@@ -205,7 +205,7 @@ class CalendarService(
         if (isReadOnly(accessLevel)) {
             return CalendarException(
                 PlatformExceptionCodes.READ_ONLY,
-                "Calendar is read-only and cannot be modified or deleted"
+                "Calendar with ID $calendarId is read-only and cannot be modified or deleted"
             )
         }
         return null
@@ -232,7 +232,7 @@ class CalendarService(
     }
 
     fun createCalendar(name: String, colorHex: String?, accountNameParam: String?, accountTypeParam: String?): Result<String> {
-        fullAccess(context)?.let { return Result.failure(it) }
+        fullAccess()?.let { return Result.failure(it) }
 
         val accountName = accountNameParam ?: "local"
         val accountType = accountTypeParam ?: CalendarContract.ACCOUNT_TYPE_LOCAL
@@ -311,7 +311,7 @@ class CalendarService(
     }
     
     fun updateCalendar(calendarId: String, name: String?, colorHex: String?): Result<Unit> {
-        fullAccess(context)?.let { return Result.failure(it) }
+        fullAccess()?.let { return Result.failure(it) }
 
         try {
             writeRefusal(calendarId)?.let { return Result.failure(it) }
@@ -362,7 +362,7 @@ class CalendarService(
     }
     
     fun deleteCalendar(calendarId: String): Result<Unit> {
-        fullAccess(context)?.let { return Result.failure(it) }
+        fullAccess()?.let { return Result.failure(it) }
 
         try {
             writeRefusal(calendarId)?.let { return Result.failure(it) }

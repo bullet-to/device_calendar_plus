@@ -48,8 +48,11 @@ internal class CalendarServiceTest {
         }
         Mockito.`when`(cursor.getColumnIndex(anyString()))
             .thenAnswer { columns.indexOf(it.getArgument<String>(0)) }
-        Mockito.`when`(cursor.getColumnIndexOrThrow(anyString()))
-            .thenAnswer { columns.indexOf(it.getArgument<String>(0)) }
+        Mockito.`when`(cursor.getColumnIndexOrThrow(anyString())).thenAnswer { inv ->
+            val column = inv.getArgument<String>(0)
+            columns.indexOf(column).takeIf { it >= 0 }
+                ?: throw IllegalArgumentException("no column $column")
+        }
         Mockito.`when`(cursor.isNull(anyInt())).thenAnswer { cell(it) == null }
         Mockito.`when`(cursor.getString(anyInt())).thenAnswer { cell(it) as String? }
         Mockito.`when`(cursor.getInt(anyInt())).thenAnswer { (cell(it) as Int?) ?: 0 }
@@ -125,25 +128,19 @@ internal class CalendarServiceTest {
 
     // --- listCalendars ---
 
-    // Dart casts `name` with `as String`, so a provider row with a NULL
-    // display name used to crash listCalendars for every calendar.
+    // Dart casts `id` and `name` with `as String`, so a provider row with a
+    // NULL in either used to crash listCalendars for every calendar: a row
+    // without an id is skipped, a missing display name reads as "".
     @Test
-    fun listCalendars_nullDisplayName_readsAsEmptyString() {
-        providerReturns(cursorOf(calendarRow(id = "3", name = null)))
-
-        val calendars = service.listCalendars().getOrThrow()
-
-        assertEquals("", calendars.single()["name"])
-    }
-
-    @Test
-    fun listCalendars_nullId_skipsTheRow() {
+    fun listCalendars_tolerantOfNullIdAndName() {
         providerReturns(
-            cursorOf(calendarRow(id = null, name = "Ghost"), calendarRow(id = "4", name = "Real"))
+            cursorOf(calendarRow(id = null, name = "Ghost"), calendarRow(id = "4", name = null))
         )
 
         val calendars = service.listCalendars().getOrThrow()
 
-        assertEquals(listOf("4"), calendars.map { it["id"] })
+        val calendar = calendars.single()
+        assertEquals("4", calendar["id"])
+        assertEquals("", calendar["name"])
     }
 }

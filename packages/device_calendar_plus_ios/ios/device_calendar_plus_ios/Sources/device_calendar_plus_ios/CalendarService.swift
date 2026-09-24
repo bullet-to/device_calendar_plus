@@ -242,8 +242,8 @@ class CalendarService {
   /// say). Those are refused too — the refusal set is a superset of the
   /// list's `readOnly`, and the public docs say so.
   ///
-  /// Pure so the truth table can be pinned without an `EKCalendar`, which a
-  /// test can't construct with these flags set.
+  /// Pure so the immutable-yet-writable cell can be pinned without an
+  /// `EKCalendar`, which a test can't construct with these flags set.
   static func readOnlyRefusal(
     isImmutable: Bool, allowsContentModifications: Bool, title: String
   ) -> CalendarError? {

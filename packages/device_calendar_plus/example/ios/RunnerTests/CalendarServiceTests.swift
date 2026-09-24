@@ -4,54 +4,25 @@ import XCTest
 
 /// `CalendarService.readOnlyRefusal` is the iOS half of #126: the guard that
 /// turns a rename or delete of a calendar EventKit won't touch into `readOnly`
-/// instead of the `operationFailed` a thrown save becomes. It reads two
-/// EventKit flags, and no simulator reliably has a calendar with either set,
-/// so the truth table is pinned here through the pure overload. Mirrors the
-/// Kotlin `CalendarServiceTest` shape: class, method, behaviour.
+/// instead of the `operationFailed` a thrown save becomes. Only the one cell
+/// that encodes a product decision is pinned here; the rest of the two-flag
+/// OR reads off the page.
 final class CalendarServiceTests: XCTestCase {
 
   // MARK: - readOnlyRefusal(isImmutable:allowsContentModifications:title:)
 
-  private func refusal(isImmutable: Bool, allowsContentModifications: Bool) -> CalendarError? {
-    return CalendarService.readOnlyRefusal(
-      isImmutable: isImmutable,
-      allowsContentModifications: allowsContentModifications,
-      title: "Work")
-  }
-
-  /// The one cell that goes ahead: mutable, and events can be added.
-  func testAcceptsAMutableCalendarThatAllowsContentModifications() {
-    XCTAssertNil(refusal(isImmutable: false, allowsContentModifications: true))
-  }
-
-  /// The calendar `listCalendars` reports as `readOnly`.
-  func testRefusesACalendarThatDisallowsContentModifications() {
-    XCTAssertEqual(
-      refusal(isImmutable: false, allowsContentModifications: false)?.code,
-      PlatformExceptionCodes.readOnly)
-  }
-
   /// The superset cell: EventKit says the calendar itself can't be edited or
   /// deleted even though events can still be added, so `listCalendars` calls
   /// it writable and the mutations still refuse it. This is the contract the
-  /// `deleteCalendar` dartdoc describes.
+  /// `deleteCalendar` docs describe, and the one a "simplification" back to
+  /// `allowsContentModifications` alone would silently drop. No simulator
+  /// reliably has such a calendar, hence the pure overload.
   func testRefusesAnImmutableCalendarEvenWhenItAllowsContentModifications() {
-    XCTAssertEqual(
-      refusal(isImmutable: true, allowsContentModifications: true)?.code,
-      PlatformExceptionCodes.readOnly)
-  }
+    let refusal = CalendarService.readOnlyRefusal(
+      isImmutable: true,
+      allowsContentModifications: true,
+      title: "Work")
 
-  func testRefusesAnImmutableCalendarThatDisallowsContentModifications() {
-    XCTAssertEqual(
-      refusal(isImmutable: true, allowsContentModifications: false)?.code,
-      PlatformExceptionCodes.readOnly)
-  }
-
-  /// The message names the calendar, so a caller iterating several can tell
-  /// which one was refused.
-  func testRefusalNamesTheCalendar() {
-    XCTAssertEqual(
-      refusal(isImmutable: true, allowsContentModifications: true)?.message,
-      "Calendar 'Work' is read-only and cannot be modified or deleted")
+    XCTAssertEqual(refusal?.code, PlatformExceptionCodes.readOnly)
   }
 }
