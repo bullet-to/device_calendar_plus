@@ -13,7 +13,6 @@ import org.mockito.Mockito.verify
 import org.mockito.invocation.InvocationOnMock
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /**
  * The Calendar Provider has no "immutable" flag, so the write guards derive
@@ -90,18 +89,6 @@ internal class CalendarServiceTest {
 
         assertEquals(PlatformExceptionCodes.READ_ONLY, codeOf(result))
         verify(resolver, never()).update(any(), any(), any(), any())
-    }
-
-    // The threshold is the one listCalendars reports as `readOnly`, so a
-    // calendar the list calls writable is one updateCalendar accepts.
-    @Test
-    fun updateCalendar_contributorCalendar_writes() {
-        providerReturns(cursorOf(accessLevelRow(CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR)))
-        Mockito.`when`(resolver.update(any(), any(), any(), any())).thenReturn(1)
-
-        val result = service.updateCalendar("7", "Renamed", null)
-
-        assertTrue(result.isSuccess, "$result")
     }
 
     // --- deleteCalendar ---

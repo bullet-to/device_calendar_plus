@@ -55,17 +55,6 @@ android {
     }
 
     testOptions {
-        // CalendarServiceTest drives CalendarService against a mocked
-        // ContentResolver, and its path crosses android.jar stubs on the way
-        // (ContentValues, CalendarContract's Uri constants); stubbed defaults
-        // let those pass through instead of throwing "Stub!".
-        //
-        // This is module-wide: every unit test here now gets a silent
-        // 0/null/false from any android.jar call it strays into, not a loud
-        // failure. So no assertion may rest on a stubbed default — the
-        // OS-shaped facts a test needs (the permission gates, say) must be
-        // injected, as CalendarServiceTest does.
-        unitTests.returnDefaultValues = true
         unitTests.all {
             useJUnitPlatform()
 

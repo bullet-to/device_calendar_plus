@@ -1039,11 +1039,12 @@ void main() {
       // both sides silently stored black. What counts as malformed is pinned
       // in the validateColorHex group; this only checks the guard is wired.
       test('throws ArgumentError for a malformed colorHex', () async {
-        expect(
+        await expectLater(
           () => DeviceCalendar.instance
               .createCalendar(name: 'x', colorHex: 'not-a-color'),
           throwsArgumentError,
         );
+        // Awaited above, so the platform call has had its chance to happen.
         expect(mockPlatform.lastCreateCalendar, isNull);
       });
     });
@@ -1073,11 +1074,12 @@ void main() {
       // Regression (#126): a malformed hex used to reach the platform, where
       // both sides silently stored black.
       test('throws ArgumentError for a malformed colorHex', () async {
-        expect(
+        await expectLater(
           () => DeviceCalendar.instance
               .updateCalendar('calendar-123', colorHex: 'not-a-color'),
           throwsArgumentError,
         );
+        // Awaited above, so the platform call has had its chance to happen.
         expect(mockPlatform.lastUpdateCalendar, isNull);
       });
     });
