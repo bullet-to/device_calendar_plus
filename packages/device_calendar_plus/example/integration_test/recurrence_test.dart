@@ -232,6 +232,60 @@ Future<({String eventId, DateTime start, List<Event> occurrences})>
   );
 }
 
+/// Matches a [DeviceCalendarException] carrying [DeviceCalendarError.notFound].
+final throwsNotFound = throwsA(isA<DeviceCalendarException>().having(
+  (e) => e.errorCode,
+  'errorCode',
+  DeviceCalendarError.notFound,
+));
+
+/// The arrange step the tombstone tests share, Android-only (#153): a daily
+/// series keyed by editing one occurrence through the plugin, then deleted
+/// by another app — the example app's seed channel issues a plain
+/// (non-sync-adapter) delete of the master.
+///
+/// A plain delete of an event with a `_sync_id` — which a local series
+/// carries once an occurrence has been edited (#153) — leaves the provider
+/// a DELETED=1 tombstone rather than removing the row, and tombstones its
+/// exceptions along with it. Instances queries skip it, so every read path
+/// the plugin keys off the Events table must skip it too, and the plugin's
+/// own delete (a sync adapter's) must still collect it.
+///
+/// Returns the series, its occurrences as listed before the tombstone, and
+/// the title the edited occurrence was detached under.
+Future<
+    ({
+      String eventId,
+      DateTime start,
+      List<Event> occurrences,
+      String detachedTitle,
+    })> tombstoneSeries(DeviceCalendar plugin, String? calendarId) async {
+  final series = await seedDailySeries(plugin, calendarId);
+  final detachedTitle =
+      'Detached before tombstone #153 ${DateTime.now().millisecondsSinceEpoch}';
+
+  // Key the master: edit one occurrence through the plugin.
+  await plugin.updateEvent(
+    eventId: series.occurrences[4].instanceId,
+    title: detachedTitle,
+  );
+  expect(
+    await eventsTitled(plugin, calendarId!, detachedTitle, series.start),
+    hasLength(1),
+    reason: 'the edited occurrence must be detached before the delete',
+  );
+
+  final deleted = await deleteEventPlain(series.eventId);
+  expect(deleted, 1, reason: 'the seed must find the master to delete');
+
+  return (
+    eventId: series.eventId,
+    start: series.start,
+    occurrences: series.occurrences,
+    detachedTitle: detachedTitle,
+  );
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -1676,31 +1730,9 @@ void main() {
           reason: 'deleting the series must remove its detached occurrence');
     });
 
-    test(
-        'a series another app tombstoned reads as gone, and deleteEvent '
-        'collects it (#153)', () async {
-      // Android-only: a plain (non-sync-adapter) delete of an event with a
-      // `_sync_id` — which a local series carries once an occurrence has
-      // been edited (#153) — leaves the provider a DELETED=1 tombstone
-      // rather than removing the row. Instances queries skip it, so every
-      // read path the plugin keys off the Events table must skip it too,
-      // and the plugin's own delete (a sync adapter's) must still collect
-      // it. The example app's seed channel issues the plain delete.
-      final series = await seedDailySeries(plugin, calendarId);
-      final occurrences = series.occurrences;
-
-      // Key the master: edit one occurrence through the plugin.
-      await plugin.updateEvent(
-        eventId: occurrences[4].instanceId,
-        title: 'Detached before tombstone #153',
-      );
-      Future<List<Event>> detached() => eventsTitled(
-          plugin, calendarId!, 'Detached before tombstone #153', series.start);
-      expect(await detached(), hasLength(1),
-          reason: 'the edited occurrence must be detached before the delete');
-
-      final deleted = await deleteEventPlain(series.eventId);
-      expect(deleted, 1, reason: 'the seed must find the master to delete');
+    test('getEvent and listEvents read a tombstoned series as gone (#153)',
+        () async {
+      final series = await tombstoneSeries(plugin, calendarId);
 
       expect(await plugin.getEvent(series.eventId), isNull,
           reason: 'getEvent must not read a tombstone');
@@ -1711,47 +1743,74 @@ void main() {
       );
       // The plain delete tombstones the exceptions along with the master,
       // so the detached occurrence drops out of the listing too.
-      expect(await detached(), isEmpty,
-          reason: 'the tombstoned series must list no detached occurrence');
-      final notFound = throwsA(isA<DeviceCalendarException>().having(
-        (e) => e.errorCode,
-        'errorCode',
-        DeviceCalendarError.notFound,
-      ));
-      final gates = <(String, Future<void> Function())>[
-        (
-          'updateEvent must not edit a tombstone',
-          () => plugin.updateEvent(
-              eventId: series.eventId, title: 'Tombstone edit'),
-        ),
-        (
-          'updateEvent must not write an exception against a tombstone',
-          () => plugin.updateEvent(
-              eventId: occurrences[2].instanceId, title: 'Tombstone edit'),
-        ),
-        (
-          'deleteEvent must not cancel an occurrence of a tombstone',
-          () => plugin.deleteEvent(eventId: occurrences[2].instanceId),
-        ),
-        (
-          'updateRecurring(allEvents) must not edit a tombstone',
-          () => plugin.updateRecurring(
-              series.eventId, EventSpan.allEvents, title: 'Tombstone edit'),
-        ),
-        (
-          'updateRecurring(thisAndFollowing) must not split a tombstone',
-          () => plugin.updateRecurring(occurrences[2].instanceId,
-              EventSpan.thisAndFollowing, title: 'Tombstone edit'),
-        ),
-        (
-          'deleteRecurring(thisAndFollowing) must not truncate a tombstone',
-          () => plugin.deleteRecurring(
-              occurrences[2].instanceId, EventSpan.thisAndFollowing),
-        ),
-      ];
-      for (final (reason, gate) in gates) {
-        await expectLater(gate(), notFound, reason: reason);
-      }
+      expect(
+        await eventsTitled(
+            plugin, calendarId!, series.detachedTitle, series.start),
+        isEmpty,
+        reason: 'the tombstoned series must list no detached occurrence',
+      );
+    }, skip: !Platform.isAndroid);
+
+    test(
+        'updateEvent reports notFound on a tombstone, bare and instance ID '
+        '(#153)', () async {
+      final series = await tombstoneSeries(plugin, calendarId);
+
+      await expectLater(
+        plugin.updateEvent(eventId: series.eventId, title: 'Tombstone edit'),
+        throwsNotFound,
+        reason: 'updateEvent must not edit a tombstone',
+      );
+      await expectLater(
+        plugin.updateEvent(
+            eventId: series.occurrences[2].instanceId, title: 'Tombstone edit'),
+        throwsNotFound,
+        reason: 'updateEvent must not write an exception against a tombstone',
+      );
+    }, skip: !Platform.isAndroid);
+
+    test('updateRecurring reports notFound on a tombstone, both spans (#153)',
+        () async {
+      final series = await tombstoneSeries(plugin, calendarId);
+
+      await expectLater(
+        plugin.updateRecurring(series.eventId, EventSpan.allEvents,
+            title: 'Tombstone edit'),
+        throwsNotFound,
+        reason: 'updateRecurring(allEvents) must not edit a tombstone',
+      );
+      await expectLater(
+        plugin.updateRecurring(
+            series.occurrences[2].instanceId, EventSpan.thisAndFollowing,
+            title: 'Tombstone edit'),
+        throwsNotFound,
+        reason: 'updateRecurring(thisAndFollowing) must not split a tombstone',
+      );
+    }, skip: !Platform.isAndroid);
+
+    test(
+        'deleteEvent and deleteRecurring on an occurrence of a tombstone '
+        'report notFound (#153)', () async {
+      final series = await tombstoneSeries(plugin, calendarId);
+
+      await expectLater(
+        plugin.deleteEvent(eventId: series.occurrences[2].instanceId),
+        throwsNotFound,
+        reason: 'deleteEvent must not cancel an occurrence of a tombstone',
+      );
+      await expectLater(
+        plugin.deleteRecurring(
+            series.occurrences[2].instanceId, EventSpan.thisAndFollowing),
+        throwsNotFound,
+        reason: 'deleteRecurring(thisAndFollowing) must not truncate a '
+            'tombstone',
+      );
+    }, skip: !Platform.isAndroid);
+
+    test(
+        'deleteEvent on the series ID collects the tombstone and its '
+        'exception (#153)', () async {
+      final series = await tombstoneSeries(plugin, calendarId);
 
       // The plugin deletes as a sync adapter, which is what collects it;
       // its `_ID = ? OR ORIGINAL_ID = ?` selection takes the tombstoned
@@ -1762,9 +1821,13 @@ void main() {
         0,
         reason: 'the tombstone must be physically gone after deleteEvent',
       );
-      expect(await detached(), isEmpty,
-          reason: 'the detached occurrence must stay gone once the plugin '
-              'has collected the series');
+      expect(
+        await eventsTitled(
+            plugin, calendarId!, series.detachedTitle, series.start),
+        isEmpty,
+        reason: 'the detached occurrence must stay gone once the plugin '
+            'has collected the series',
+      );
     }, skip: !Platform.isAndroid);
   });
 }

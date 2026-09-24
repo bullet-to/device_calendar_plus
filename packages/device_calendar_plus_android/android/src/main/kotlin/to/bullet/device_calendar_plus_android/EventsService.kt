@@ -1244,14 +1244,7 @@ class EventsService(
             )
         }
 
-        if (row.rrule == null) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "Event $eventId is not recurring; use updateEvent instead"
-                )
-            )
-        }
+        val series = row.asSeries().getOrElse { return Result.failure(it) }
 
         // Effective field values for the new series: the patch value when one
         // is given, otherwise the master's existing value.
@@ -1278,12 +1271,12 @@ class EventsService(
                 // Rule unchanged: the new series inherits the original rule. A
                 // COUNT must drop by the occurrences left on the old series,
                 // or the new series would over-generate.
-                val originalCount = RruleString.count(row.rrule)
+                val originalCount = RruleString.count(series.rrule)
                 if (originalCount != null) {
                     val before = countInstancesBefore(eventId, timestamp)
-                    RruleString.withCount(row.rrule, maxOf(1, originalCount - before))
+                    RruleString.withCount(series.rrule, maxOf(1, originalCount - before))
                 } else {
-                    row.rrule
+                    series.rrule
                 }
             }
         }
@@ -1338,7 +1331,7 @@ class EventsService(
         // DTSTART/DURATION with their existing values to force Android's
         // CalendarProvider to invalidate the Instances cache (it doesn't
         // always when only RRULE changes — see deleteRecurringThisAndFollowing).
-        val truncatedRrule = RruleString.withUntil(row.rrule, timestamp - 1000, row.allDay)
+        val truncatedRrule = RruleString.withUntil(series.rrule, timestamp - 1000, row.allDay)
         val truncateValues = android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, truncatedRrule)
             put(CalendarContract.Events.DTSTART, row.dtstart)
@@ -1496,20 +1489,29 @@ class EventsService(
      * The master row a per-occurrence call addresses — an exception write in
      * [updateEventInstance] and [deleteEventInstance], the split in
      * [deleteRecurringThisAndFollowing]. NOT_FOUND when the event is missing
-     * (or a DELETED tombstone), INVALID_ARGUMENTS when it is not recurring,
-     * since a one-off event has no occurrence apart from itself.
+     * (or a DELETED tombstone), then [asSeries]. The split in
+     * [updateRecurringThisAndFollowing] takes that second step alone, on the
+     * row [updateRecurring] already read.
      */
     private fun readRecurringRow(eventId: String): Result<SeriesRow> {
         val row = readEventRowOrNotFound(eventId).getOrElse { return Result.failure(it) }
-        val rrule = row.rrule
+        return row.asSeries()
+    }
+
+    /**
+     * This master row as a [SeriesRow]: INVALID_ARGUMENTS when it is not
+     * recurring, since a one-off event has no occurrence apart from itself.
+     */
+    private fun EventRow.asSeries(): Result<SeriesRow> {
+        val rrule = this.rrule
             ?: return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "Event $eventId is not recurring, so it has no single occurrence " +
+                    "Event $id is not recurring, so it has no single occurrence " +
                         "to address; edit or delete the event itself instead"
                 )
             )
-        return Result.success(SeriesRow(row, rrule))
+        return Result.success(SeriesRow(this, rrule))
     }
 
     /**
@@ -1611,10 +1613,7 @@ class EventsService(
             return EventRow(
                 id = str(CalendarContract.Events._ID) ?: eventId,
                 calendarId = str(CalendarContract.Events.CALENDAR_ID) ?: "",
-                account = CalendarAccount(
-                    name = str(CalendarContract.Events.ACCOUNT_NAME) ?: "",
-                    type = str(CalendarContract.Events.ACCOUNT_TYPE) ?: ""
-                ),
+                account = cursor.calendarAccount(),
                 title = str(CalendarContract.Events.TITLE) ?: "",
                 description = str(CalendarContract.Events.DESCRIPTION),
                 location = str(CalendarContract.Events.EVENT_LOCATION),
@@ -2100,6 +2099,22 @@ class EventsService(
     }
 
     /**
+     * The [CalendarAccount] of the Events row under the cursor, from its
+     * ACCOUNT_NAME and ACCOUNT_TYPE columns. A NULL column reads as "", so
+     * the one policy holds wherever an account is read off a row.
+     */
+    private fun android.database.Cursor.calendarAccount(): CalendarAccount {
+        fun str(column: String): String {
+            val index = getColumnIndexOrThrow(column)
+            return if (isNull(index)) "" else getString(index)
+        }
+        return CalendarAccount(
+            name = str(CalendarContract.Events.ACCOUNT_NAME),
+            type = str(CalendarContract.Events.ACCOUNT_TYPE)
+        )
+    }
+
+    /**
      * Updates an event row with sync-adapter context (CALLER_IS_SYNCADAPTER +
      * ACCOUNT_NAME + ACCOUNT_TYPE query params on the URI). Required when
      * the values touch protected columns like RRULE — without sync-adapter
@@ -2151,14 +2166,7 @@ class EventsService(
             null
         )?.use { cursor ->
             if (!cursor.moveToFirst()) return@use null
-            CalendarAccount(
-                name = cursor.getString(
-                    cursor.getColumnIndexOrThrow(CalendarContract.Events.ACCOUNT_NAME)
-                ),
-                type = cursor.getString(
-                    cursor.getColumnIndexOrThrow(CalendarContract.Events.ACCOUNT_TYPE)
-                )
-            )
+            cursor.calendarAccount()
         } ?: return CalendarContract.Events.CONTENT_URI
 
         return syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
