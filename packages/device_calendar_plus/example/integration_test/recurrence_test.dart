@@ -6,10 +6,6 @@ import 'package:integration_test/integration_test.dart';
 
 import 'test_seed.dart';
 
-/// The example app's test-only channel, which seeds calendar provider state
-/// the plugin deliberately can't write itself (Android only; see
-/// `TestSeedChannel.kt`).
-
 /// Creates a daily recurring event starting one hour from now (UTC), with
 /// `count` total occurrences. Returns the event ID and the start time.
 Future<({String eventId, DateTime start})> createDailySeries(
@@ -189,6 +185,52 @@ Future<List<Event>> eventsTitled(
 /// occurrence.
 List<int> startsOf(Iterable<Event> events) =>
     events.map((e) => e.startDate.millisecondsSinceEpoch).toList();
+
+/// The start instants of [events] except those at [indexes]: an earlier
+/// listing with some occurrences detached, in whatever order the indexes are
+/// named.
+List<int> startsExcept(List<Event> events, Set<int> indexes) => startsOf(
+    events.indexed.where((e) => !indexes.contains(e.$1)).map((e) => e.$2));
+
+/// Asserts the occurrence detached as [title] is listed exactly once, at
+/// [at]'s start, over the same window as [occurrencesOf].
+Future<void> expectDetachedOnce(
+  DeviceCalendar plugin,
+  String calendarId,
+  String title,
+  Event at,
+  DateTime start, {
+  required String reason,
+  int windowDays = 14,
+}) async {
+  expect(
+    startsOf(await eventsTitled(plugin, calendarId, title, start,
+        windowDays: windowDays)),
+    [at.startDate.millisecondsSinceEpoch],
+    reason: reason,
+  );
+}
+
+/// The arrange step the per-occurrence tests share: a daily series of ten
+/// with its occurrences listed, at least [minOccurrences] of them. Checks the
+/// group's calendar exists first.
+Future<({String eventId, DateTime start, List<Event> occurrences})>
+    seedDailySeries(
+  DeviceCalendar plugin,
+  String? calendarId, {
+  int minOccurrences = 6,
+}) async {
+  expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+  final series = await createDailySeries(plugin, calendarId!, count: 10);
+  final occurrences =
+      await occurrencesOf(plugin, calendarId, series.eventId, series.start);
+  expect(occurrences.length, greaterThanOrEqualTo(minOccurrences));
+  return (
+    eventId: series.eventId,
+    start: series.start,
+    occurrences: occurrences,
+  );
+}
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -631,12 +673,8 @@ void main() {
 
     test('thisAndFollowing can change the rule from the split point onward',
         () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final series = await seedDailySeries(plugin, calendarId);
+      final occurrences = series.occurrences;
       final splitPoint = occurrences[4];
       final splitMillis = splitPoint.startDate.millisecondsSinceEpoch;
 
@@ -886,12 +924,8 @@ void main() {
       // occurrence, make that occurrence a standalone non-recurring event,
       // and remove every later occurrence. Past occurrences stay in the
       // original series.
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final series = await seedDailySeries(plugin, calendarId);
+      final occurrences = series.occurrences;
       final splitPoint = occurrences[4];
       final splitMillis = splitPoint.startDate.millisecondsSinceEpoch;
 
@@ -933,12 +967,8 @@ void main() {
 
     test('updateEvent with an instance ID edits only the one occurrence',
         () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final series = await seedDailySeries(plugin, calendarId);
+      final occurrences = series.occurrences;
       final target = occurrences[4];
 
       await plugin.updateEvent(
@@ -948,10 +978,8 @@ void main() {
 
       // The detached exception must surface once, with the new title, at
       // the targeted moment.
-      expect(
-        startsOf(await eventsTitled(
-            plugin, calendarId!, 'Just this one', series.start)),
-        [target.startDate.millisecondsSinceEpoch],
+      await expectDetachedOnce(
+        plugin, calendarId!, 'Just this one', target, series.start,
         reason: 'listEvents must include the detached exception',
       );
 
@@ -961,7 +989,7 @@ void main() {
           plugin, calendarId!, series.eventId, series.start);
       expect(
         startsOf(afterUpdate),
-        startsOf([...occurrences]..removeAt(4)),
+        startsExcept(occurrences, {4}),
         reason: 'every occurrence but the targeted one must stay on the '
             'series',
       );
@@ -984,12 +1012,8 @@ void main() {
       // With no endDate, the occurrence's own end stays put — so a startDate
       // beyond it would invert the range. Both platforms must refuse with
       // invalidArguments rather than save an inverted event.
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final series = await seedDailySeries(plugin, calendarId);
+      final occurrences = series.occurrences;
       final target = occurrences[4];
 
       await expectLater(
@@ -1038,7 +1062,7 @@ void main() {
           windowDays: 70);
       expect(
         startsOf(after),
-        startsOf([...before]..removeAt(3)),
+        startsExcept(before, {3}),
         reason: 'every occurrence but the moved one must stay on the series, '
             'the earlier ones included (#153)',
       );
@@ -1061,11 +1085,8 @@ void main() {
       // The steady state after a first per-occurrence edit: the series
       // already carries its key and one exception, and the next exception
       // must join that family rather than disturb it.
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final series = await seedDailySeries(plugin, calendarId);
+      final occurrences = series.occurrences;
       final first = occurrences[2];
       final second = occurrences[5];
 
@@ -1077,22 +1098,16 @@ void main() {
           plugin, calendarId!, series.eventId, series.start);
       expect(
         startsOf(after),
-        startsOf([...occurrences]
-          ..removeAt(5)
-          ..removeAt(2)),
+        startsExcept(occurrences, {2, 5}),
         reason: 'every occurrence but the two edited ones must stay on the '
             'series',
       );
-      expect(
-        startsOf(await eventsTitled(
-            plugin, calendarId!, 'First #153', series.start)),
-        [first.startDate.millisecondsSinceEpoch],
+      await expectDetachedOnce(
+        plugin, calendarId!, 'First #153', first, series.start,
         reason: 'the first edit must survive the second, once, in place',
       );
-      expect(
-        startsOf(await eventsTitled(
-            plugin, calendarId!, 'Second #153', series.start)),
-        [second.startDate.millisecondsSinceEpoch],
+      await expectDetachedOnce(
+        plugin, calendarId!, 'Second #153', second, series.start,
         reason: 'the second edit must detach its own occurrence, once',
       );
     });
@@ -1115,11 +1130,9 @@ void main() {
       // the key buys is the provider's full regeneration (a timezone change,
       // a reboot), which matches exceptions to their series by
       // `original_sync_id` — and no test can trigger that.
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(7));
+      final series =
+          await seedDailySeries(plugin, calendarId, minOccurrences: 7);
+      final occurrences = series.occurrences;
       final keyless = occurrences[3];
       final rekeying = occurrences[6];
 
@@ -1148,22 +1161,16 @@ void main() {
           plugin, calendarId!, series.eventId, series.start);
       expect(
         startsOf(after),
-        startsOf([...occurrences]
-          ..removeAt(6)
-          ..removeAt(3)),
+        startsExcept(occurrences, {3, 6}),
         reason: 'keying the master must bring back every occurrence but the '
             'two detached ones',
       );
-      expect(
-        startsOf(await eventsTitled(
-            plugin, calendarId!, 'Keyless #153', series.start)),
-        [keyless.startDate.millisecondsSinceEpoch],
+      await expectDetachedOnce(
+        plugin, calendarId!, 'Keyless #153', keyless, series.start,
         reason: 'the old exception must survive the re-key, once, in place',
       );
-      expect(
-        startsOf(await eventsTitled(
-            plugin, calendarId!, 'Rekeyed #153', series.start)),
-        [rekeying.startDate.millisecondsSinceEpoch],
+      await expectDetachedOnce(
+        plugin, calendarId!, 'Rekeyed #153', rekeying, series.start,
         reason: 'the new edit must detach its own occurrence, once',
       );
     }, skip: !Platform.isAndroid);
@@ -1577,12 +1584,8 @@ void main() {
 
     test('thisAndFollowing removes the anchor and every later occurrence',
         () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final series = await seedDailySeries(plugin, calendarId);
+      final occurrences = series.occurrences;
       final anchor = occurrences[4];
       final anchorMillis = anchor.startDate.millisecondsSinceEpoch;
 
@@ -1607,12 +1610,8 @@ void main() {
 
     test('deleteEvent with an instance ID removes only the one occurrence',
         () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final series = await seedDailySeries(plugin, calendarId);
+      final occurrences = series.occurrences;
 
       await plugin.deleteEvent(eventId: occurrences[4].instanceId);
 
@@ -1623,7 +1622,7 @@ void main() {
       // earlier ones included (#153).
       expect(
         startsOf(after),
-        startsOf([...occurrences]..removeAt(4)),
+        startsExcept(occurrences, {4}),
         reason: 'only the one occurrence should be removed',
       );
     });
@@ -1655,11 +1654,8 @@ void main() {
       // exception row. Deleting the series must take it along — on a local
       // Android calendar the provider stops cascading once the series has
       // the `_sync_id` the #153 fix gives it, so the plugin cascades itself.
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final series = await seedDailySeries(plugin, calendarId);
+      final occurrences = series.occurrences;
 
       Future<List<Event>> detached() =>
           eventsTitled(plugin, calendarId!, 'Detached #153', series.start);
@@ -1690,17 +1686,18 @@ void main() {
       // read path the plugin keys off the Events table must skip it too,
       // and the plugin's own delete (a sync adapter's) must still collect
       // it. The example app's seed channel issues the plain delete.
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createDailySeries(plugin, calendarId!, count: 10);
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences.length, greaterThanOrEqualTo(6));
+      final series = await seedDailySeries(plugin, calendarId);
+      final occurrences = series.occurrences;
 
       // Key the master: edit one occurrence through the plugin.
       await plugin.updateEvent(
         eventId: occurrences[4].instanceId,
         title: 'Detached before tombstone #153',
       );
+      Future<List<Event>> detached() => eventsTitled(
+          plugin, calendarId!, 'Detached before tombstone #153', series.start);
+      expect(await detached(), hasLength(1),
+          reason: 'the edited occurrence must be detached before the delete');
 
       final deleted = await deleteEventPlain(series.eventId);
       expect(deleted, 1, reason: 'the seed must find the master to delete');
@@ -1712,54 +1709,62 @@ void main() {
         isEmpty,
         reason: 'the tombstoned series must have no occurrences listed',
       );
+      // The plain delete tombstones the exceptions along with the master,
+      // so the detached occurrence drops out of the listing too.
+      expect(await detached(), isEmpty,
+          reason: 'the tombstoned series must list no detached occurrence');
       final notFound = throwsA(isA<DeviceCalendarException>().having(
         (e) => e.errorCode,
         'errorCode',
         DeviceCalendarError.notFound,
       ));
-      await expectLater(
-        plugin.updateEvent(eventId: series.eventId, title: 'Tombstone edit'),
-        notFound,
-        reason: 'updateEvent must not edit a tombstone',
-      );
-      await expectLater(
-        plugin.updateEvent(
-            eventId: occurrences[2].instanceId, title: 'Tombstone edit'),
-        notFound,
-        reason: 'updateEvent must not write an exception against a tombstone',
-      );
-      await expectLater(
-        plugin.deleteEvent(eventId: occurrences[2].instanceId),
-        notFound,
-        reason: 'deleteEvent must not cancel an occurrence of a tombstone',
-      );
-      await expectLater(
-        plugin.updateRecurring(
-            series.eventId, EventSpan.allEvents, title: 'Tombstone edit'),
-        notFound,
-        reason: 'updateRecurring(allEvents) must not edit a tombstone',
-      );
-      await expectLater(
-        plugin.updateRecurring(occurrences[2].instanceId,
-            EventSpan.thisAndFollowing, title: 'Tombstone edit'),
-        notFound,
-        reason: 'updateRecurring(thisAndFollowing) must not split a tombstone',
-      );
-      await expectLater(
-        plugin.deleteRecurring(
-            occurrences[2].instanceId, EventSpan.thisAndFollowing),
-        notFound,
-        reason: 'deleteRecurring(thisAndFollowing) must not truncate a '
-            'tombstone',
-      );
+      final gates = <(String, Future<void> Function())>[
+        (
+          'updateEvent must not edit a tombstone',
+          () => plugin.updateEvent(
+              eventId: series.eventId, title: 'Tombstone edit'),
+        ),
+        (
+          'updateEvent must not write an exception against a tombstone',
+          () => plugin.updateEvent(
+              eventId: occurrences[2].instanceId, title: 'Tombstone edit'),
+        ),
+        (
+          'deleteEvent must not cancel an occurrence of a tombstone',
+          () => plugin.deleteEvent(eventId: occurrences[2].instanceId),
+        ),
+        (
+          'updateRecurring(allEvents) must not edit a tombstone',
+          () => plugin.updateRecurring(
+              series.eventId, EventSpan.allEvents, title: 'Tombstone edit'),
+        ),
+        (
+          'updateRecurring(thisAndFollowing) must not split a tombstone',
+          () => plugin.updateRecurring(occurrences[2].instanceId,
+              EventSpan.thisAndFollowing, title: 'Tombstone edit'),
+        ),
+        (
+          'deleteRecurring(thisAndFollowing) must not truncate a tombstone',
+          () => plugin.deleteRecurring(
+              occurrences[2].instanceId, EventSpan.thisAndFollowing),
+        ),
+      ];
+      for (final (reason, gate) in gates) {
+        await expectLater(gate(), notFound, reason: reason);
+      }
 
-      // The plugin deletes as a sync adapter, which is what collects it.
+      // The plugin deletes as a sync adapter, which is what collects it;
+      // its `_ID = ? OR ORIGINAL_ID = ?` selection takes the tombstoned
+      // exception along with the master.
       await plugin.deleteEvent(eventId: series.eventId);
       expect(
         await deleteEventPlain(series.eventId),
         0,
         reason: 'the tombstone must be physically gone after deleteEvent',
       );
+      expect(await detached(), isEmpty,
+          reason: 'the detached occurrence must stay gone once the plugin '
+              'has collected the series');
     }, skip: !Platform.isAndroid);
   });
 }

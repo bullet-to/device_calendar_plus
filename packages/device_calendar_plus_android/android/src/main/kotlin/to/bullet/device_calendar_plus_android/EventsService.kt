@@ -1210,7 +1210,7 @@ class EventsService(
 
         // RRULE writes require sync-adapter context on Android — see
         // updateEventAsSyncAdapter for the rationale.
-        val updatedRows = updateEventAsSyncAdapter(eventId, row.calendarId, values)
+        val updatedRows = updateEventAsSyncAdapter(row, values)
         if (updatedRows == 0) {
             return Result.failure(
                 CalendarException(
@@ -1346,8 +1346,7 @@ class EventsService(
                 put(CalendarContract.Events.DURATION, row.duration)
             }
         }
-        val truncatedRows =
-            updateEventAsSyncAdapter(eventId, row.calendarId, truncateValues)
+        val truncatedRows = updateEventAsSyncAdapter(row, truncateValues)
         if (truncatedRows == 0) {
             // Roll back the new series so the calendar is left unchanged.
             context.contentResolver.delete(
@@ -1446,7 +1445,7 @@ class EventsService(
                 put(CalendarContract.Events.DURATION, row.duration)
             }
         }
-        val updatedRows = updateEventAsSyncAdapter(eventId, row.calendarId, values)
+        val updatedRows = updateEventAsSyncAdapter(row, values)
         if (updatedRows == 0) {
             return Result.failure(
                 CalendarException(
@@ -1532,11 +1531,10 @@ class EventsService(
         values: android.content.ContentValues,
         asSyncAdapter: Boolean
     ): Result<String> {
-        val account = readCalendarAccount(row.calendarId)
-        ensureLocalSeriesSyncId(row, account).getOrElse { return Result.failure(it) }
+        ensureLocalSeriesSyncId(row).getOrElse { return Result.failure(it) }
 
         val base = CalendarContract.Events.CONTENT_EXCEPTION_URI
-        val uri = (if (asSyncAdapter && account != null) syncAdapterUri(base, account) else base)
+        val uri = (if (asSyncAdapter) syncAdapterUri(base, row.account) else base)
             .buildUpon()
             .appendPath(row.id)
             .build()
@@ -1551,9 +1549,15 @@ class EventsService(
         return Result.success(exceptionId)
     }
 
+    /**
+     * A live master row from the Events view. [account] is the calendar's,
+     * which the view joins in: the sync-adapter URIs every write against
+     * the row needs are built from it, without a second query.
+     */
     private data class EventRow(
         val id: String,
         val calendarId: String,
+        val account: CalendarAccount,
         val title: String,
         val description: String?,
         val location: String?,
@@ -1573,6 +1577,8 @@ class EventsService(
         val projection = arrayOf(
             CalendarContract.Events._ID,
             CalendarContract.Events.CALENDAR_ID,
+            CalendarContract.Events.ACCOUNT_NAME,
+            CalendarContract.Events.ACCOUNT_TYPE,
             CalendarContract.Events.TITLE,
             CalendarContract.Events.DESCRIPTION,
             CalendarContract.Events.EVENT_LOCATION,
@@ -1605,6 +1611,10 @@ class EventsService(
             return EventRow(
                 id = str(CalendarContract.Events._ID) ?: eventId,
                 calendarId = str(CalendarContract.Events.CALENDAR_ID) ?: "",
+                account = CalendarAccount(
+                    name = str(CalendarContract.Events.ACCOUNT_NAME) ?: "",
+                    type = str(CalendarContract.Events.ACCOUNT_TYPE) ?: ""
+                ),
                 title = str(CalendarContract.Events.TITLE) ?: "",
                 description = str(CalendarContract.Events.DESCRIPTION),
                 location = str(CalendarContract.Events.EVENT_LOCATION),
@@ -1650,11 +1660,7 @@ class EventsService(
      * a changed `_sync_id` into the `original_sync_id` of every row whose
      * `original_id` is this master. That is an upgrade-only path: the id is
      * now assigned before the first exception write, so the public API can no
-     * longer produce a keyless series with exceptions. The integration suite
-     * reaches it through the example app's test seed channel, which performs
-     * the old plugin's write (a plain insert on the exception URI) to
-     * recreate #153's on-disk state before an edit goes through here, and
-     * reads the two columns back to check the exception was re-keyed.
+     * longer produce a keyless series with exceptions.
      *
      * Fails with OPERATION_FAILED when the provider refuses the key write —
      * matching no row, whatever the reason — so the caller never writes an
@@ -1663,17 +1669,14 @@ class EventsService(
      * read and now lands here too: the exception insert would throw on the
      * missing original anyway, and the outer catch maps that to
      * OPERATION_FAILED as well.
-     *
-     * [account] is the series' calendar account, read by [insertException],
-     * the only caller.
      */
-    private fun ensureLocalSeriesSyncId(row: EventRow, account: CalendarAccount?): Result<Unit> {
+    private fun ensureLocalSeriesSyncId(row: EventRow): Result<Unit> {
         if (row.syncId != null) return Result.success(Unit)
-        if (account?.isLocal != true) return Result.success(Unit)
+        if (!row.account.isLocal) return Result.success(Unit)
 
         val syncId = "device_calendar_plus:${java.util.UUID.randomUUID()}"
         val updated = context.contentResolver.update(
-            syncAdapterUri(CalendarContract.Events.CONTENT_URI, account),
+            syncAdapterUri(CalendarContract.Events.CONTENT_URI, row.account),
             android.content.ContentValues().apply {
                 put(CalendarContract.Events._SYNC_ID, syncId)
             },
@@ -2097,30 +2100,6 @@ class EventsService(
     }
 
     /**
-     * Reads ACCOUNT_NAME and ACCOUNT_TYPE for a calendar. Needed to build
-     * sync-adapter URIs for event updates.
-     */
-    private fun readCalendarAccount(calendarId: String): CalendarAccount? {
-        val projection = arrayOf(
-            CalendarContract.Calendars.ACCOUNT_NAME,
-            CalendarContract.Calendars.ACCOUNT_TYPE
-        )
-        context.contentResolver.query(
-            CalendarContract.Calendars.CONTENT_URI,
-            projection,
-            "${CalendarContract.Calendars._ID} = ?",
-            arrayOf(calendarId),
-            null
-        )?.use { cursor ->
-            if (!cursor.moveToFirst()) return null
-            val nameIdx = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_NAME)
-            val typeIdx = cursor.getColumnIndexOrThrow(CalendarContract.Calendars.ACCOUNT_TYPE)
-            return CalendarAccount(cursor.getString(nameIdx), cursor.getString(typeIdx))
-        }
-        return null
-    }
-
-    /**
      * Updates an event row with sync-adapter context (CALLER_IS_SYNCADAPTER +
      * ACCOUNT_NAME + ACCOUNT_TYPE query params on the URI). Required when
      * the values touch protected columns like RRULE — without sync-adapter
@@ -2129,29 +2108,17 @@ class EventsService(
      * succeeded while leaving the actual stored values unchanged. Symptom:
      * the next Instances query returns the old expansion as if the RRULE
      * change never happened.
-     *
-     * Falls back to a non-sync-adapter update if the calendar's account
-     * can't be read, which should only happen if the calendar was deleted
-     * between the row read and the update.
      */
     private fun updateEventAsSyncAdapter(
-        eventId: String,
-        calendarId: String,
+        row: EventRow,
         values: android.content.ContentValues
-    ): Int {
-        val account = readCalendarAccount(calendarId)
-        val uri = if (account != null) {
-            syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
-        } else {
-            CalendarContract.Events.CONTENT_URI
-        }
-        return context.contentResolver.update(
-            uri,
+    ): Int =
+        context.contentResolver.update(
+            syncAdapterUri(CalendarContract.Events.CONTENT_URI, row.account),
             values,
             "${CalendarContract.Events._ID} = ?",
-            arrayOf(eventId)
+            arrayOf(row.id)
         )
-    }
 
     /** [base] (an Events or exception URI) with sync-adapter context for [account]. */
     private fun syncAdapterUri(
@@ -2168,25 +2135,31 @@ class EventsService(
      * Builds a delete URI with sync-adapter context for the given event.
      * Without CALLER_IS_SYNCADAPTER, the Calendar Provider on real devices
      * only marks the row as DELETED=1 (for sync propagation) instead of
-     * physically removing it. Falls back to the plain URI if the calendar
-     * account can't be read.
+     * physically removing it. Reads the event's account through a DELETED
+     * tombstone on purpose — collecting one is the point — and falls back
+     * to the plain URI when the row is gone altogether.
      */
     private fun buildDeleteUri(eventId: String): android.net.Uri {
-        // Look up the event's calendar ID so we can get the account.
-        val calendarId = context.contentResolver.query(
+        val account = context.contentResolver.query(
             CalendarContract.Events.CONTENT_URI,
-            arrayOf(CalendarContract.Events.CALENDAR_ID),
+            arrayOf(
+                CalendarContract.Events.ACCOUNT_NAME,
+                CalendarContract.Events.ACCOUNT_TYPE
+            ),
             "${CalendarContract.Events._ID} = ?",
             arrayOf(eventId),
             null
         )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.CALENDAR_ID))
-            } else null
+            if (!cursor.moveToFirst()) return@use null
+            CalendarAccount(
+                name = cursor.getString(
+                    cursor.getColumnIndexOrThrow(CalendarContract.Events.ACCOUNT_NAME)
+                ),
+                type = cursor.getString(
+                    cursor.getColumnIndexOrThrow(CalendarContract.Events.ACCOUNT_TYPE)
+                )
+            )
         } ?: return CalendarContract.Events.CONTENT_URI
-
-        val account = readCalendarAccount(calendarId)
-            ?: return CalendarContract.Events.CONTENT_URI
 
         return syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
     }
