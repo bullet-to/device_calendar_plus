@@ -16,11 +16,12 @@ import kotlin.test.assertEquals
 
 /**
  * The Calendar Provider has no "immutable" flag, so the write guards derive
- * it from CALENDAR_ACCESS_LEVEL. An integration test can't produce those rows
- * — a third-party app only ever gets owner-level rows out of the provider —
- * nor a row with a NULL id or display name, so they are faked here (#126).
- * (createCalendar's non-local refusal IS reachable on a bare emulator, and
- * lives in sources_test.dart.)
+ * it from CALENDAR_ACCESS_LEVEL. The plugin exposes no way to seed a
+ * below-contributor row (createCalendar always inserts CAL_ACCESS_OWNER; a
+ * sync-adapter insert could set CAL_ACCESS_READ, but a test-only hook for
+ * that isn't worth adding), nor a row with a NULL id or display name, so
+ * they are faked here (#126). (createCalendar's non-local refusal IS
+ * reachable on a bare emulator, and lives in sources_test.dart.)
  */
 internal class CalendarServiceTest {
     private val resolver: ContentResolver = Mockito.mock(ContentResolver::class.java)

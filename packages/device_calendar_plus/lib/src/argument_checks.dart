@@ -5,7 +5,11 @@
 /// in its message (`'$label cannot be empty'`).
 ///
 /// Package-internal: shared by every mutation on `DeviceCalendar`.
-void requireNonBlank(String value, String name, String label) {
+void requireNonBlank(
+  String value, {
+  required String name,
+  required String label,
+}) {
   if (value.trim().isEmpty) {
     throw ArgumentError.value(value, name, '$label cannot be empty');
   }

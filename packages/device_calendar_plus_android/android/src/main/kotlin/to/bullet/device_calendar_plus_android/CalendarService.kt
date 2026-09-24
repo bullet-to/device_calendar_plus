@@ -177,11 +177,9 @@ class CalendarService(
         accountType == CalendarContract.ACCOUNT_TYPE_LOCAL
 
     /**
-     * The readOnly definition listCalendars reports. The mutations use the
-     * same one, so on Android the list and the write guards agree exactly: a
-     * calendar the list calls writable is one they accept. iOS is looser in
-     * one direction — its refusal set is a superset of readOnly (immutable
-     * calendars are refused too); see deleteCalendar's dartdoc.
+     * The readOnly definition listCalendars reports. The write guards use the
+     * same one, so on Android the list and the guards agree exactly: a
+     * calendar the list calls writable is one they accept.
      */
     private fun isReadOnly(accessLevel: Int): Boolean =
         accessLevel < CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR

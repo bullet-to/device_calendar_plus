@@ -1,5 +1,4 @@
 import 'package:device_calendar_plus/device_calendar_plus.dart';
-import 'package:device_calendar_plus/src/color_hex.dart';
 import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -196,7 +195,8 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   Future<void> updateCalendar(
       String calendarId, String? name, String? colorHex) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
-    lastUpdateCalendar = (calendarId: calendarId, name: name, colorHex: colorHex);
+    lastUpdateCalendar =
+        (calendarId: calendarId, name: name, colorHex: colorHex);
   }
 
   @override
@@ -499,7 +499,8 @@ void main() {
 
       test('manual mode (null) never prompts, even when notDetermined',
           () async {
-        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform
+            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
         await DeviceCalendar.instance.listCalendars();
         expect(mockPlatform.requestPermissionsCallCount, 0);
       });
@@ -507,7 +508,8 @@ void main() {
       test('full mode requests full access for a read op when notDetermined',
           () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
-        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform
+            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.granted);
 
         await DeviceCalendar.instance.listCalendars();
@@ -518,7 +520,8 @@ void main() {
 
       test('asNeeded mode requests write-only for an add-only op', () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
-        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform
+            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.writeOnly);
 
         await createAnEvent();
@@ -528,7 +531,8 @@ void main() {
 
       test('asNeeded mode requests full access for a read op', () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
-        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform
+            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.granted);
 
         await DeviceCalendar.instance.listCalendars();
@@ -538,7 +542,8 @@ void main() {
 
       test('full mode requests full access even for an add-only op', () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
-        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform
+            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.granted);
 
         await createAnEvent();
@@ -584,7 +589,8 @@ void main() {
       test('a no-op update does not prompt (guard runs after the no-op return)',
           () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
-        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform
+            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
 
         // No changed fields: a valid no-op that must not trigger a prompt.
         await DeviceCalendar.instance.updateEvent(eventId: 'evt');
@@ -608,7 +614,8 @@ void main() {
 
       test('throws permissionDenied when the prompt is declined', () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
-        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform
+            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.denied);
 
         await expectLater(
@@ -634,7 +641,8 @@ void main() {
           () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.full;
         // notDetermined = Android "can ask again"; the request itself is declined.
-        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform
+            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
         mockPlatform.setPostRequestStatus(CalendarPermissionStatus.denied);
 
         await expectLater(
@@ -1034,19 +1042,6 @@ void main() {
           throwsArgumentError,
         );
       });
-
-      // Regression (#126): a malformed hex used to reach the platform, where
-      // both sides silently stored black. What counts as malformed is pinned
-      // in the validateColorHex group; this only checks the guard is wired.
-      test('throws ArgumentError for a malformed colorHex', () async {
-        await expectLater(
-          () => DeviceCalendar.instance
-              .createCalendar(name: 'x', colorHex: 'not-a-color'),
-          throwsArgumentError,
-        );
-        // Awaited above, so the platform call has had its chance to happen.
-        expect(mockPlatform.lastCreateCalendar, isNull);
-      });
     });
 
     group('updateCalendar', () {
@@ -1070,18 +1065,54 @@ void main() {
           throwsArgumentError,
         );
       });
+    });
 
-      // Regression (#126): a malformed hex used to reach the platform, where
-      // both sides silently stored black.
-      test('throws ArgumentError for a malformed colorHex', () async {
-        await expectLater(
-          () => DeviceCalendar.instance
-              .updateCalendar('calendar-123', colorHex: 'not-a-color'),
-          throwsArgumentError,
-        );
-        // Awaited above, so the platform call has had its chance to happen.
-        expect(mockPlatform.lastUpdateCalendar, isNull);
-      });
+    // What createCalendar / updateCalendar accept for colorHex: #RRGGBB only
+    // (the # optional), because an alpha byte is stored by Android and
+    // dropped by iOS (#126). A malformed value used to reach the platform,
+    // where both sides silently stored black. Driven through both entry
+    // points so the table also covers the guard's wiring on each.
+    group('colorHex', () {
+      final writers = <String, Future<void> Function(String colorHex)>{
+        'createCalendar': (hex) =>
+            DeviceCalendar.instance.createCalendar(name: 'x', colorHex: hex),
+        'updateCalendar': (hex) => DeviceCalendar.instance
+            .updateCalendar('calendar-123', colorHex: hex),
+      };
+      bool reachedPlatform() =>
+          mockPlatform.lastCreateCalendar != null ||
+          mockPlatform.lastUpdateCalendar != null;
+
+      for (final MapEntry(key: entryPoint, value: write) in writers.entries) {
+        group('via $entryPoint', () {
+          Future<void> rejects(String hex) async {
+            await expectLater(() => write(hex), throwsArgumentError);
+            // Awaited above, so the platform call has had its chance.
+            expect(reachedPlatform(), isFalse);
+          }
+
+          test('accepts #RRGGBB', () async {
+            await write('#FF5733');
+            expect(reachedPlatform(), isTrue);
+          });
+
+          test('accepts a bare RRGGBB', () async {
+            await write('ff5733');
+            expect(reachedPlatform(), isTrue);
+          });
+
+          test('accepts surrounding whitespace', () async {
+            await write(' #FF5733 ');
+            expect(reachedPlatform(), isTrue);
+          });
+
+          test('rejects #AARRGGBB', () => rejects('#80FF5733'));
+
+          test('rejects shorthand #RGB', () => rejects('#FFF'));
+
+          test('rejects a non-hex string', () => rejects('not-a-color'));
+        });
+      }
     });
 
     group('deleteCalendar', () {
@@ -1167,7 +1198,8 @@ void main() {
         expect(mockPlatform.lastUpdateEvent, isNotNull);
       });
 
-      test('throws ArgumentError on a negative reminder in Patch.set', () async {
+      test('throws ArgumentError on a negative reminder in Patch.set',
+          () async {
         expect(
           () => DeviceCalendar.instance.updateEvent(
             eventId: 'event-123',
@@ -1224,7 +1256,8 @@ void main() {
           start: DateTime(2024, 3, 19, 10, 0),
         );
         expect(result, 'mock-event-id');
-        expect(mockPlatform.lastUpdateRecurring?.start, DateTime(2024, 3, 19, 10, 0));
+        expect(mockPlatform.lastUpdateRecurring?.start,
+            DateTime(2024, 3, 19, 10, 0));
       });
 
       test('throws ArgumentError when isAllDay is true with sub-day duration',
@@ -1600,7 +1633,8 @@ void main() {
       test('autoPermissions never prompts for the modal, even on notDetermined',
           () async {
         DeviceCalendar.instance.autoPermissions = AutoPermissionMode.asNeeded;
-        mockPlatform.setPermissionStatus(CalendarPermissionStatus.notDetermined);
+        mockPlatform
+            .setPermissionStatus(CalendarPermissionStatus.notDetermined);
 
         await DeviceCalendar.instance.showCreateEventModal();
 
@@ -1638,43 +1672,6 @@ void main() {
 
     test('returns null for unparseable string', () {
       expect(cal(colorHex: 'notacolor').color, isNull);
-    });
-  });
-
-  // The write-side counterpart: what createCalendar / updateCalendar accept
-  // for colorHex. Only #RRGGBB, because an alpha byte is stored by Android
-  // and dropped by iOS (#126).
-  group('validateColorHex', () {
-    test('accepts #RRGGBB', () {
-      expect(() => validateColorHex('#FF5733'), returnsNormally);
-    });
-
-    test('accepts a bare RRGGBB', () {
-      expect(() => validateColorHex('ff5733'), returnsNormally);
-    });
-
-    test('accepts surrounding whitespace', () {
-      expect(() => validateColorHex(' #FF5733 '), returnsNormally);
-    });
-
-    test('rejects #AARRGGBB', () {
-      expect(() => validateColorHex('#80FF5733'), throwsArgumentError);
-    });
-
-    test('rejects a non-hex string', () {
-      expect(() => validateColorHex('not-a-color'), throwsArgumentError);
-    });
-
-    test('rejects shorthand #RGB', () {
-      expect(() => validateColorHex('#FFF'), throwsArgumentError);
-    });
-
-    test('rejects non-hex digits', () {
-      expect(() => validateColorHex('#GG0000'), throwsArgumentError);
-    });
-
-    test('rejects an empty string', () {
-      expect(() => validateColorHex(''), throwsArgumentError);
     });
   });
 

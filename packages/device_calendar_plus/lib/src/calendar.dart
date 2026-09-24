@@ -19,10 +19,8 @@ class Calendar {
   /// Whether edits are disallowed (subscribed/shared calendars, server-managed
   /// feeds, etc.).
   ///
-  /// On iOS, `false` does not guarantee [DeviceCalendar.updateCalendar] or
-  /// [DeviceCalendar.deleteCalendar] will succeed: EventKit also refuses
-  /// calendars it marks immutable, which can still take new events (an
-  /// account's default calendar, say). See [DeviceCalendar.deleteCalendar].
+  /// On iOS `false` isn't a guarantee that a rename or delete will be
+  /// accepted; `doc/calendars.md` has the per-platform detail.
   final bool readOnly;
 
   /// Account name or email that owns the calendar, when exposed by the platform.

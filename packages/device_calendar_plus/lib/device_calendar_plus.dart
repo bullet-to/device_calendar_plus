@@ -271,7 +271,7 @@ class DeviceCalendar {
     String? colorHex,
     CreateCalendarPlatformOptions? platformOptions,
   }) async {
-    requireNonBlank(name, 'name', 'Calendar name');
+    requireNonBlank(name, name: 'name', label: 'Calendar name');
     if (colorHex != null) {
       validateColorHex(colorHex);
     }
@@ -305,7 +305,7 @@ class DeviceCalendar {
   }) async {
     // Validate calendarId — an empty id targets no calendar (matches the
     // empty-id guards on updateEvent/updateRecurring).
-    requireNonBlank(calendarId, 'calendarId', 'Calendar ID');
+    requireNonBlank(calendarId, name: 'calendarId', label: 'Calendar ID');
 
     // No changed fields is a valid no-op: nothing to write, so return without
     // a platform call.
@@ -315,7 +315,7 @@ class DeviceCalendar {
 
     // Validate name if provided
     if (name != null) {
-      requireNonBlank(name, 'name', 'Calendar name');
+      requireNonBlank(name, name: 'name', label: 'Calendar name');
     }
     if (colorHex != null) {
       validateColorHex(colorHex);
@@ -338,12 +338,11 @@ class DeviceCalendar {
   /// Deletes a calendar and all of its events. Requires full access.
   ///
   /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) for a
-  /// calendar that can't be deleted. On iOS the refusal set is a superset of
-  /// [Calendar.readOnly] (EventKit's immutable calendars are refused too);
-  /// `doc/calendars.md` has the per-platform detail.
+  /// calendar that can't be deleted — on iOS that's a superset of
+  /// [Calendar.readOnly]; `doc/calendars.md` has the per-platform detail.
   Future<void> deleteCalendar(String calendarId) async {
     // An empty id targets no calendar (matches updateCalendar / deleteEvent).
-    requireNonBlank(calendarId, 'calendarId', 'Calendar ID');
+    requireNonBlank(calendarId, name: 'calendarId', label: 'Calendar ID');
 
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -487,10 +486,10 @@ class DeviceCalendar {
     // Validate fields. A null calendarId is valid (use the default calendar);
     // an explicit but empty/whitespace ID targets nothing — a programmer error.
     if (calendarId != null) {
-      requireNonBlank(calendarId, 'calendarId', 'Calendar ID');
+      requireNonBlank(calendarId, name: 'calendarId', label: 'Calendar ID');
     }
 
-    requireNonBlank(title, 'title', 'Event title');
+    requireNonBlank(title, name: 'title', label: 'Event title');
 
     if (endDate.isBefore(startDate)) {
       throw ArgumentError(
@@ -539,7 +538,7 @@ class DeviceCalendar {
   /// To truncate a series from a split point forward, use [deleteRecurring].
   /// Requires full access.
   Future<void> deleteEvent({required String eventId}) async {
-    requireNonBlank(eventId, 'eventId', 'Event ID');
+    requireNonBlank(eventId, name: 'eventId', label: 'Event ID');
 
     // A bare event ID carries no timestamp and targets the event itself (the
     // whole series when recurring); an instance ID carries the occurrence
@@ -588,7 +587,7 @@ class DeviceCalendar {
     Patch<List<Duration>>? reminders,
   }) async {
     // Validate eventId
-    requireNonBlank(eventId, 'eventId', 'Event ID');
+    requireNonBlank(eventId, name: 'eventId', label: 'Event ID');
 
     // No changed fields is a valid no-op (e.g. the user pressed Save without
     // editing): the event already matches the requested values, so there is
@@ -709,7 +708,7 @@ class DeviceCalendar {
     Patch<RecurrenceRule>? recurrenceRule,
   }) async {
     // Validate instanceId
-    requireNonBlank(instanceId, 'instanceId', 'Instance ID');
+    requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
 
     // Parse the ID — thisAndFollowing acts on a specific occurrence, so it
     // needs an occurrence timestamp.
@@ -819,7 +818,7 @@ class DeviceCalendar {
   /// full access.
   Future<void> deleteRecurring(String instanceId, EventSpan span) async {
     // Validate instanceId
-    requireNonBlank(instanceId, 'instanceId', 'Instance ID');
+    requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
 
     // Parse the ID — thisAndFollowing acts on a specific occurrence, so it
     // needs an occurrence timestamp.

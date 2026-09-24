@@ -239,28 +239,17 @@ class CalendarService {
   /// read-only is refused. `isImmutable` is EventKit's own "cannot be edited
   /// or deleted" flag; it says nothing about adding events, so a calendar can
   /// be immutable yet listed as writable (an account's default calendar,
-  /// say). Those are refused too — the refusal set is a superset of the
-  /// list's `readOnly`, and the public docs say so.
-  ///
-  /// Pure so the immutable-yet-writable cell can be pinned without an
-  /// `EKCalendar`, which a test can't construct with these flags set.
-  static func readOnlyRefusal(
-    isImmutable: Bool, allowsContentModifications: Bool, title: String
-  ) -> CalendarError? {
-    guard isImmutable || !allowsContentModifications else {
+  /// say). Those are refused too — deliberately, so don't "simplify" this to
+  /// `allowsContentModifications` alone. The refusal set is therefore a
+  /// superset of the list's `readOnly`; `doc/calendars.md` owns the wording.
+  private func readOnlyRefusal(_ calendar: EKCalendar) -> CalendarError? {
+    guard calendar.isImmutable || !calendar.allowsContentModifications else {
       return nil
     }
     return CalendarError(
       code: PlatformExceptionCodes.readOnly,
-      message: "Calendar '\(title)' is read-only and cannot be modified or deleted"
+      message: "Calendar '\(calendar.title)' is read-only and cannot be modified or deleted"
     )
-  }
-
-  private func readOnlyRefusal(_ calendar: EKCalendar) -> CalendarError? {
-    return CalendarService.readOnlyRefusal(
-      isImmutable: calendar.isImmutable,
-      allowsContentModifications: calendar.allowsContentModifications,
-      title: calendar.title)
   }
 
   private func sourceTypeToCalendarSourceType(_ type: EKSourceType) -> String {
