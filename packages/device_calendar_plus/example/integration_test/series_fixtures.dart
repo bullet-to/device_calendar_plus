@@ -176,6 +176,32 @@ Future<void> expectDetachedOnce(
   );
 }
 
+/// Asserts a `thisAndFollowing` split at [before] left the master's earlier
+/// occurrences ([keeps], by start) and nothing of it on or after the split.
+/// Pins no count on purpose: what the master lists in a detached
+/// occurrence's place varies by platform, so only the slots that must
+/// survive are named. Shared by recurrence_test.dart and
+/// synced_calendar_test.dart.
+void expectMasterSplit(
+  List<Event> remaining, {
+  required DateTime before,
+  required Iterable<DateTime> keeps,
+}) {
+  final starts = remaining
+      .map((e) => e.startDate.millisecondsSinceEpoch)
+      .toSet();
+  expect(
+    starts,
+    containsAll(keeps.map((d) => d.millisecondsSinceEpoch)),
+    reason: 'the occurrences before the split must survive on the master',
+  );
+  expect(
+    remaining.every((e) => e.startDate.isBefore(before)),
+    isTrue,
+    reason: 'the original series must not extend past the split point',
+  );
+}
+
 /// The arrange step the per-occurrence tests share: a daily series of
 /// [count] made by [create] (timed, by default) with its occurrences listed,
 /// at least [minOccurrences] of them. Checks the group's calendar exists

@@ -64,9 +64,9 @@ Future<bool> removeSyncedAccount() async =>
 /// Puts [eventId] in the state a sync adapter leaves an event in once the
 /// server has it: a `_sync_id` and `DIRTY` cleared. From here a plain write
 /// is what the adapter uploads next, and a sync-adapter write is one the
-/// server never hears of (#132). Returns the rows updated.
-Future<int> markUploaded(String eventId) async =>
-    (await _channel.invokeMethod<int>('markUploaded', {'eventId': eventId}))!;
+/// server never hears of (#132). Throws when there is no such row to mark.
+Future<void> markUploaded(String eventId) =>
+    _channel.invokeMethod<void>('markUploaded', {'eventId': eventId});
 
 /// Reads [eventId]'s `DELETED` and `DIRTY` flags straight from the Events
 /// table — which, unlike the plugin's reads, still lists a tombstone — or

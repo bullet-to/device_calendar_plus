@@ -7,6 +7,18 @@ import 'package:integration_test/integration_test.dart';
 import 'series_fixtures.dart';
 import 'test_seed.dart';
 
+/// The arrange step the synced-calendar tests share: a daily series with its
+/// master in the adapter's "uploaded" state (see [markUploaded]). A row with
+/// no `_sync_id` is removed outright by any caller and starts out DIRTY, so
+/// only an uploaded row shows whether a write left the adapter something to
+/// upload — a DELETED=1 tombstone or a fresh DIRTY=1.
+Future<SeededSeries> seedUploadedSeries(
+    DeviceCalendar plugin, String? calendarId) async {
+  final series = await seedDailySeries(plugin, calendarId);
+  await markUploaded(series.eventId);
+  return series;
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -18,8 +30,8 @@ void main() {
   // of it, so the next sync brings the event back (#132). Android-only:
   // iOS has no such distinction, so the group is skipped there as one. The
   // calendar is a faked synced one (see [createSyncedCalendar]); each test
-  // seeds its own event and puts it in the adapter's "uploaded" state first,
-  // since a row with no `_sync_id` is removed outright by any caller.
+  // seeds its own event in the adapter's "uploaded" state (see
+  // [seedUploadedSeries]).
   group('Writes to a synced calendar (#132)', () {
     late DeviceCalendar plugin;
     String? calendarId;
@@ -47,8 +59,7 @@ void main() {
         startDate: start,
         endDate: start.add(const Duration(hours: 1)),
       );
-      expect(await markUploaded(eventId), 1,
-          reason: 'the seed must find the event to mark uploaded');
+      await markUploaded(eventId);
 
       await plugin.deleteEvent(eventId: eventId);
 
@@ -65,9 +76,7 @@ void main() {
 
     test('deleteEvent on one occurrence writes a dirty cancellation (#161)',
         () async {
-      final series = await seedDailySeries(plugin, calendarId);
-      expect(await markUploaded(series.eventId), 1,
-          reason: 'the seed must find the series to mark uploaded');
+      final series = await seedUploadedSeries(plugin, calendarId);
       final occurrence = series.occurrences[3];
 
       await plugin.deleteEvent(eventId: occurrence.instanceId);
@@ -90,9 +99,7 @@ void main() {
 
     test('updateRecurring(allEvents) marks the series dirty for upload',
         () async {
-      final series = await seedDailySeries(plugin, calendarId);
-      expect(await markUploaded(series.eventId), 1,
-          reason: 'the seed must find the series to mark uploaded');
+      final series = await seedUploadedSeries(plugin, calendarId);
 
       await plugin.updateRecurring(series.eventId, EventSpan.allEvents,
           title: 'Renamed synced series #132');
@@ -106,19 +113,35 @@ void main() {
     });
 
     test(
-        'deleteRecurring(thisAndFollowing) tombstones a detached occurrence '
-        'past the split', () async {
-      final series = await seedDailySeries(plugin, calendarId);
+        'deleteRecurring(thisAndFollowing) truncates the master as a plain '
+        'caller and tombstones a detached occurrence past the split',
+        () async {
+      final series = await seedUploadedSeries(plugin, calendarId);
       final detachedTitle =
           'Detached past split #132 ${DateTime.now().millisecondsSinceEpoch}';
       final exceptionId =
           await detachOccurrence(plugin, calendarId!, series, 5, detachedTitle);
-      expect(await markUploaded(exceptionId), 1,
-          reason: 'the seed must find the detached occurrence to mark uploaded');
+      // The exception uploaded so the delete tombstones rather than removes
+      // it; the master again so that a DIRTY=1 on it afterwards is the
+      // truncation's alone, not the detach's.
+      await markUploaded(exceptionId);
+      await markUploaded(series.eventId);
 
       await plugin.deleteRecurring(
           series.occurrences[3].instanceId, EventSpan.thisAndFollowing);
 
+      // The truncation is a plain RRULE write on a synced calendar — the
+      // premise the fix rests on is that the provider keeps it.
+      expectMasterSplit(
+        await occurrencesOf(plugin, calendarId!, series.eventId, series.start),
+        before: series.occurrences[3].startDate,
+        keeps: [
+          series.occurrences[0].startDate,
+          series.occurrences[2].startDate,
+        ],
+      );
+      expect(await readSyncState(series.eventId), (deleted: false, dirty: true),
+          reason: 'the truncated master must be flagged for upload');
       expect(
         await eventsTitled(plugin, calendarId!, detachedTitle, series.start),
         isEmpty,
@@ -127,6 +150,36 @@ void main() {
       expect(await readSyncState(exceptionId), (deleted: true, dirty: true),
           reason: 'the detached occurrence must survive as a tombstone for '
               'the adapter to upload, not be removed outright');
+    });
+
+    test(
+        'updateRecurring(thisAndFollowing) truncates the master as a plain '
+        'caller and marks it dirty for upload', () async {
+      final series = await seedUploadedSeries(plugin, calendarId);
+      const newTitle = 'Renamed synced tail #132';
+
+      final newSeriesId = await plugin.updateRecurring(
+          series.occurrences[3].instanceId, EventSpan.thisAndFollowing,
+          title: newTitle);
+
+      expectMasterSplit(
+        await occurrencesOf(plugin, calendarId!, series.eventId, series.start),
+        before: series.occurrences[3].startDate,
+        keeps: [
+          series.occurrences[0].startDate,
+          series.occurrences[1].startDate,
+          series.occurrences[2].startDate,
+        ],
+      );
+      expect(await readSyncState(series.eventId), (deleted: false, dirty: true),
+          reason: 'the truncated master must be flagged for upload: written '
+              'as the sync adapter it never reaches the server');
+      expect(
+        startsOf(
+            await occurrencesOf(plugin, calendarId!, newSeriesId, series.start)),
+        startsOf(series.occurrences.skip(3)),
+        reason: 'the new series must carry the occurrences from the split on',
+      );
     });
   }, skip: !Platform.isAndroid);
 }

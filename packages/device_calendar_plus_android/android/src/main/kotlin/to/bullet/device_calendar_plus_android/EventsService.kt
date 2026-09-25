@@ -802,7 +802,14 @@ class EventsService(
     private fun deleteEventMaster(eventId: String): Result<Unit> {
         // On a synced calendar this tombstones the rows (DELETED=1) for the
         // adapter to upload; on a local one it removes them — see writeUri.
-        // Either way the plugin's own reads no longer see them.
+        // Either way the plugin's own reads no longer see them. One
+        // consequence: until the adapter collects a synced tombstone, a
+        // repeat delete of the same ID still matches it and reports success
+        // where getEvent already returns null (and a local calendar or iOS
+        // would say NOT_FOUND). That is the idempotence a no-change mutation
+        // is meant to have, not a bug — and no DELETED=0 filter belongs in
+        // the selection, since the local path relies on it catching
+        // tombstones to collect them.
         val deletedRows = context.contentResolver.delete(
             buildDeleteUri(eventId),
             "${CalendarContract.Events._ID} = ? OR ${CalendarContract.Events.ORIGINAL_ID} = ?",
@@ -1543,11 +1550,13 @@ class EventsService(
      * insert — so a future exception writer cannot skip it. Returns the new
      * exception's own event ID.
      *
-     * Written through [writeUri], the same as every other event write: on a
-     * synced calendar the exception is a plain caller's, marked DIRTY for
-     * the adapter to upload — a cancellation written as the sync adapter
-     * never leaves the device, and the next sync brings the occurrence back
-     * (#132, #161).
+     * Written through [writeUri]: on a synced calendar the exception is a
+     * plain caller's, marked DIRTY for the adapter to upload — a
+     * cancellation written as the sync adapter never leaves the device, and
+     * the next sync brings the occurrence back (#132, #161). On a local
+     * calendar it goes as the stand-in adapter, which is not something the
+     * insert needs (see [writeUri] for which local writes do) but how the
+     * local suites have verified it.
      */
     private fun insertException(
         series: SeriesRow,
@@ -2108,23 +2117,38 @@ class EventsService(
             .build()
 
     /**
-     * The URI a write against [account]'s event rows goes to: [base] (an
-     * Events or exception URI) as a plain caller, or with sync-adapter
-     * context when the account is local.
+     * The URI the series and delete writes against [account]'s event rows
+     * go to: [base] (an Events or exception URI) as a plain caller, or with
+     * sync-adapter context when the account is local.
      *
-     * The provider treats the two callers differently on purpose. A plain
-     * write is what a sync adapter uploads next — an edit marks the row
-     * DIRTY=1, a delete leaves a DELETED=1, DIRTY=1 tombstone the adapter
-     * collects once the server knows — while a sync-adapter write is taken
-     * as the server's own word: applied locally, never uploaded. So on a
-     * synced calendar the plugin must write as the app it is, or its
-     * deletes and series edits never reach the server and the next sync
-     * undoes them, one duplicate per cycle (#132). A local calendar has no
-     * adapter: nothing would ever upload a DIRTY row or collect a
-     * tombstone, so there the plugin stands in as the adapter and rows are
-     * removed outright. (That matters once a local series carries a
-     * `_sync_id`, see [ensureLocalSeriesSyncId]: a plain delete would
-     * tombstone it for good.)
+     * The plugin is a plain caller. The provider treats the two callers
+     * differently on purpose: a plain write is what a sync adapter uploads
+     * next — an edit marks the row DIRTY=1, a delete leaves a DELETED=1,
+     * DIRTY=1 tombstone the adapter collects once the server knows — while
+     * a sync-adapter write is taken as the server's own word: applied
+     * locally, never uploaded. So on a synced calendar every write goes as
+     * the app it is, or deletes and series edits never reach the server and
+     * the next sync undoes them, one duplicate per cycle (#132).
+     *
+     * The adapter's context is borrowed on a local calendar only, and only
+     * where a plain write would not do. Two writes genuinely need it: the
+     * `_sync_id` key in [ensureLocalSeriesSyncId] (the column is read-only
+     * otherwise) and the deletes in [deleteEventMaster] and
+     * [deleteDetachedOccurrencesFrom], because once a local series carries
+     * that key a plain delete leaves a tombstone no adapter will ever
+     * collect. The series edit in [updateEventRow] and the exception insert
+     * in [insertException] also route through here: on a local calendar the
+     * adapter context spares them only the DIRTY/MUTATORS bookkeeping
+     * nobody reads, and they keep it because that is how the local
+     * recurrence and tombstone suites have been verified, not by design.
+     *
+     * Everything else — [insertEvent], the one-off [updateEvent],
+     * [setHasAlarm], the reminder rows and the split rollback delete in
+     * [updateRecurringThisAndFollowing] — writes plain on every account. On
+     * a local calendar a plain insert or update differs from the adapter's
+     * only in that inert bookkeeping, and the rollback deletes a row it
+     * just inserted, which has no `_sync_id` and so is removed outright by
+     * any caller.
      */
     private fun writeUri(base: android.net.Uri, account: CalendarAccount): android.net.Uri =
         if (account.isLocal) syncAdapterUri(base, account) else base
