@@ -7,8 +7,23 @@ import android.net.Uri
 import android.provider.CalendarContract
 import to.bullet.device_calendar_plus_android.EventsService.CalendarAccount
 import to.bullet.device_calendar_plus_android.EventsService.EventRow
-import to.bullet.device_calendar_plus_android.EventsService.ReminderRow
 import to.bullet.device_calendar_plus_android.EventsService.SeriesRow
+
+/**
+ * Where a `thisAndFollowing` update split puts what it carries (#158), as
+ * iOS's EKSpan.futureEvents save does: moved by the whole calendar days the
+ * split moved its anchor, counted in the series' time zone. Not by the raw
+ * millisecond shift, which a DST change between the anchor and a later
+ * slot would put an hour off.
+ *
+ * [slot] is where the new series generates an old series slot: that many
+ * days on, at the new start's time of day. [start] is where a detached
+ * occurrence's own start goes: that many days on, at its own time of day.
+ */
+internal class SplitShift(
+    val slot: (oldSlot: Long) -> Long,
+    val start: (oldStart: Long) -> Long,
+)
 
 /**
  * Carries the detached occurrences past a `thisAndFollowing` update split
@@ -26,8 +41,7 @@ import to.bullet.device_calendar_plus_android.EventsService.SeriesRow
  * [readSeries] reads a master as a [SeriesRow], [keyLocalSeries] gives a
  * local series its `_sync_id` (#153), [reexpand] rewrites a series so the
  * provider re-expands its Instances, [updateRow] is the update-by-ID,
- * [readReminders] reads an event's reminder rows, and [deleteUri] is the
- * Events URI a delete on an account goes to.
+ * and [deleteUri] is the Events URI a delete on an account goes to.
  */
 internal class DetachedOccurrenceCarry(
     private val resolver: ContentResolver,
@@ -35,7 +49,6 @@ internal class DetachedOccurrenceCarry(
     private val keyLocalSeries: (SeriesRow) -> Result<String?>,
     private val reexpand: (SeriesRow) -> Unit,
     private val updateRow: (eventId: String, values: ContentValues) -> Int,
-    private val readReminders: (eventId: Long) -> List<ReminderRow>,
     private val deleteUri: (CalendarAccount) -> Uri,
 ) {
 
@@ -43,13 +56,14 @@ internal class DetachedOccurrenceCarry(
      * Carries the detached occurrences of [master] whose original slot is
      * at or after [fromInstant] onto the series [newMasterId].
      *
-     * The slot moves by [slotShift] — the split's own start shift — because
-     * the new series generates every slot shifted by it; iOS keeps the
-     * pairing across the shift, so Android must too. The same slot rule as
-     * the delete path decides which rows carry over: where each occurrence
-     * was, not where it was moved to. A deleted occurrence is the
-     * exception: iOS keeps its deleted date at the old time, so it carries
-     * over only when [slotShift] is zero.
+     * Each carried occurrence and its slot move as [shift] says, because
+     * the new series generates every slot moved by the split; iOS keeps the
+     * pairing across the move, and moves the occurrence itself by the same
+     * whole days, so Android does too. The same slot rule as the delete
+     * path decides which rows carry over: where each occurrence was, not
+     * where it was moved to. A deleted occurrence is the exception: iOS
+     * keeps its deleted date at the old time, so it carries over only when
+     * the split leaves its slot where it was.
      *
      * How a row carries over depends on the calendar:
      *
@@ -78,11 +92,11 @@ internal class DetachedOccurrenceCarry(
      * carry. Never throws; failures go to logcat.
      *
      * Only for a new series that recurs: one turned into a single event
-     * has no slots for an exception to stand in.
+     * has no slots for an exception to stand in, and iOS drops them.
      */
-    fun carry(master: EventRow, fromInstant: Long, newMasterId: String, slotShift: Long) {
+    fun carry(master: EventRow, fromInstant: Long, newMasterId: String, shift: SplitShift) {
         try {
-            carryOrThrow(master, fromInstant, newMasterId, slotShift)
+            carryOrThrow(master, fromInstant, newMasterId, shift)
         } catch (e: Exception) {
             android.util.Log.w(
                 LOG_TAG,
@@ -98,9 +112,9 @@ internal class DetachedOccurrenceCarry(
         master: EventRow,
         fromInstant: Long,
         newMasterId: String,
-        slotShift: Long
+        shift: SplitShift
     ) {
-        val exceptions = detachedOccurrencesFrom(master, fromInstant, slotShift)
+        val exceptions = detachedOccurrencesFrom(master, fromInstant, shift)
         if (exceptions.isEmpty()) return
 
         val newSeries = readSeries(newMasterId).getOrThrow()
@@ -110,15 +124,15 @@ internal class DetachedOccurrenceCarry(
             val newKey = checkNotNull(keyLocalSeries(newSeries).getOrThrow()) {
                 "Local series $newMasterId has no key"
             }
-            for ((exceptionId, slot) in exceptions) {
-                carryOne(exceptionId, newMasterId) {
-                    moveException(exceptionId, newMasterId, newKey, slot + slotShift)
+            for (exception in exceptions) {
+                carryOne(exception.id, newMasterId) {
+                    moveException(exception, newMasterId, newKey, shift)
                 }
             }
         } else {
-            for ((exceptionId, slot) in exceptions) {
-                carryOne(exceptionId, newMasterId) {
-                    copyException(exceptionId, newSeries, slot + slotShift, master.account)
+            for (exception in exceptions) {
+                carryOne(exception.id, newMasterId) {
+                    copyException(exception, newSeries, shift, master.account)
                 }
             }
         }
@@ -131,26 +145,40 @@ internal class DetachedOccurrenceCarry(
     }
 
     /**
-     * The `_ID` and original slot of each live exception of [master] at or
-     * after [fromInstant] that carries over. A deleted occurrence
-     * ([EventsService.deleteEvent]'s cancelled row) is iOS's deleted date,
-     * which stays at its old time: it carries over only while the split
-     * leaves the slots where they were ([slotShift] zero), and a moved
-     * start brings the occurrence back. Left on the old master, past its
-     * UNTIL, it cancels nothing, as before #158.
+     * One exception row [carry] takes over: its `_ID`, the slot it stands
+     * in for on the new series, and its own start and end as stored (DTEND
+     * null on a row that stores DURATION instead).
+     */
+    private data class DetachedOccurrence(
+        val id: String,
+        val newSlot: Long,
+        val dtstart: Long,
+        val dtend: Long?,
+    )
+
+    /**
+     * Each live exception of [master] at or after [fromInstant] that
+     * carries over, with the new series' slot [shift] maps its own to. A
+     * deleted occurrence ([EventsService.deleteEvent]'s cancelled row) is
+     * iOS's deleted date, which stays at its old time: it carries over only
+     * while the split leaves its slot where it was, and a moved slot brings
+     * the occurrence back. Left on the old master, past its UNTIL, it
+     * cancels nothing, as before #158.
      */
     private fun detachedOccurrencesFrom(
         master: EventRow,
         fromInstant: Long,
-        slotShift: Long
-    ): List<Pair<String, Long>> {
-        val exceptions = mutableListOf<Pair<String, Long>>()
+        shift: SplitShift
+    ): List<DetachedOccurrence> {
+        val exceptions = mutableListOf<DetachedOccurrence>()
         resolver.query(
             CalendarContract.Events.CONTENT_URI,
             arrayOf(
                 CalendarContract.Events._ID,
                 CalendarContract.Events.ORIGINAL_INSTANCE_TIME,
-                CalendarContract.Events.STATUS
+                CalendarContract.Events.STATUS,
+                CalendarContract.Events.DTSTART,
+                CalendarContract.Events.DTEND
             ),
             "${CalendarContract.Events.ORIGINAL_ID} = ? AND " +
                 "${CalendarContract.Events.ORIGINAL_INSTANCE_TIME} >= ? AND " +
@@ -163,10 +191,19 @@ internal class DetachedOccurrenceCarry(
                 cursor.getColumnIndexOrThrow(CalendarContract.Events.ORIGINAL_INSTANCE_TIME)
             val statusIdx = cursor.getColumnIndexOrThrow(CalendarContract.Events.STATUS)
             while (cursor.moveToNext()) {
+                val slot = cursor.getLong(slotIdx)
+                val newSlot = shift.slot(slot)
                 val cancelled = !cursor.isNull(statusIdx) &&
                     cursor.getInt(statusIdx) == CalendarContract.Events.STATUS_CANCELED
-                if (cancelled && slotShift != 0L) continue
-                exceptions += cursor.getString(idIdx) to cursor.getLong(slotIdx)
+                if (cancelled && newSlot != slot) continue
+                exceptions += DetachedOccurrence(
+                    id = cursor.getString(idIdx),
+                    newSlot = newSlot,
+                    // An exception row always stores a DTSTART; one that
+                    // somehow lacks it is taken to start at its slot.
+                    dtstart = cursor.longOrNull(CalendarContract.Events.DTSTART) ?: slot,
+                    dtend = cursor.longOrNull(CalendarContract.Events.DTEND),
+                )
             }
         }
         return exceptions
@@ -186,29 +223,40 @@ internal class DetachedOccurrenceCarry(
     }
 
     /**
-     * Re-points exception row [exceptionId] at [newMasterId]'s slot
-     * [newSlot], keyed by [newKey]: the local-calendar half of [carry].
+     * Re-points [exception]'s row at its slot on [newMasterId], keyed by
+     * [newKey], and moves its own start (and its DTEND, when it stores one)
+     * as [shift] says: the local-calendar half of [carry].
      */
     private fun moveException(
-        exceptionId: String,
+        exception: DetachedOccurrence,
         newMasterId: String,
         newKey: String,
-        newSlot: Long
+        shift: SplitShift
     ) {
         updateRow(
-            exceptionId,
+            exception.id,
             ContentValues().apply {
                 put(CalendarContract.Events.ORIGINAL_ID, newMasterId.toLong())
                 put(CalendarContract.Events.ORIGINAL_SYNC_ID, newKey)
-                put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, newSlot)
+                put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, exception.newSlot)
+                val start = shift.start(exception.dtstart)
+                if (start != exception.dtstart) {
+                    put(CalendarContract.Events.DTSTART, start)
+                    if (exception.dtend != null) {
+                        put(
+                            CalendarContract.Events.DTEND,
+                            start + (exception.dtend - exception.dtstart)
+                        )
+                    }
+                }
             }
         )
     }
 
     /**
-     * Writes exception row [exceptionId]'s occurrence afresh as the
-     * exception of [newSeries] at slot [newSlot], then deletes the old row:
-     * the synced-calendar half of [carry].
+     * Writes [exception]'s occurrence afresh as the exception of
+     * [newSeries] at its slot there, its start moved as [shift] says, then
+     * deletes the old row: the synced-calendar half of [carry].
      *
      * What the copy keeps: every occurrence-level column the plugin reads
      * or the user can set per occurrence ([carriedOccurrenceColumns], plus
@@ -238,14 +286,19 @@ internal class DetachedOccurrenceCarry(
      * failure; the caller skips the occurrence.
      */
     private fun copyException(
-        exceptionId: String,
+        exception: DetachedOccurrence,
         newSeries: SeriesRow,
-        newSlot: Long,
+        shift: SplitShift,
         account: CalendarAccount
     ) {
+        val exceptionId = exception.id
         // Gone since the listing: nothing left to carry.
         val values = readExceptionFields(exceptionId) ?: return
-        values.put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, newSlot)
+        values.put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, exception.newSlot)
+        values.put(
+            CalendarContract.Events.DTSTART,
+            shift.start(values.getAsLong(CalendarContract.Events.DTSTART))
+        )
 
         val oldId = exceptionId.toLong()
         val copyUri = CalendarContract.Events.CONTENT_EXCEPTION_URI
@@ -255,18 +308,20 @@ internal class DetachedOccurrenceCarry(
         // Every child row is keyed to the copy by a back-reference to the
         // result of this first operation, the copy's insert.
         val copyOp = 0
+        // The one selection argument of each child-row delete below, which
+        // that back-reference fills in.
+        val eventIdArg = 0
         val ops = arrayListOf(
             ContentProviderOperation.newInsert(copyUri).withValues(values).build()
         )
 
         ops += ContentProviderOperation.newDelete(CalendarContract.Reminders.CONTENT_URI)
             .withSelection("${CalendarContract.Reminders.EVENT_ID} = ?", arrayOf(""))
-            .withSelectionBackReference(0, copyOp)
+            .withSelectionBackReference(eventIdArg, copyOp)
             .build()
-        for (reminder in readReminders(oldId)) {
+        for (reminder in readReminderRows(oldId)) {
             ops += ContentProviderOperation.newInsert(CalendarContract.Reminders.CONTENT_URI)
-                .withValue(CalendarContract.Reminders.MINUTES, reminder.minutes)
-                .withValue(CalendarContract.Reminders.METHOD, reminder.method)
+                .withValues(reminder)
                 .withValueBackReference(CalendarContract.Reminders.EVENT_ID, copyOp)
                 .build()
         }
@@ -275,7 +330,7 @@ internal class DetachedOccurrenceCarry(
         // the occurrence's own (the one getEvent returns for it) must win.
         ops += ContentProviderOperation.newDelete(CalendarContract.Attendees.CONTENT_URI)
             .withSelection("${CalendarContract.Attendees.EVENT_ID} = ?", arrayOf(""))
-            .withSelectionBackReference(0, copyOp)
+            .withSelectionBackReference(eventIdArg, copyOp)
             .build()
         for (attendee in readAttendeeRows(oldId)) {
             ops += ContentProviderOperation.newInsert(CalendarContract.Attendees.CONTENT_URI)
@@ -360,24 +415,52 @@ internal class DetachedOccurrenceCarry(
         }
 
     /**
+     * Event [eventId]'s [CalendarContract.Reminders] rows, whatever the
+     * method, as insert values without their EVENT_ID.
+     */
+    private fun readReminderRows(eventId: Long): List<ContentValues> =
+        readChildRows(
+            CalendarContract.Reminders.CONTENT_URI,
+            CalendarContract.Reminders.EVENT_ID,
+            eventId,
+            arrayOf(CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD)
+        )
+
+    /**
      * Event [eventId]'s [CalendarContract.Attendees] rows, organizer row
      * included, as insert values without their EVENT_ID.
      */
-    private fun readAttendeeRows(eventId: Long): List<ContentValues> {
-        val columns = arrayOf(
-            CalendarContract.Attendees.ATTENDEE_NAME,
-            CalendarContract.Attendees.ATTENDEE_EMAIL,
-            CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
-            CalendarContract.Attendees.ATTENDEE_TYPE,
-            CalendarContract.Attendees.ATTENDEE_STATUS,
-            CalendarContract.Attendees.ATTENDEE_IDENTITY,
-            CalendarContract.Attendees.ATTENDEE_ID_NAMESPACE
+    private fun readAttendeeRows(eventId: Long): List<ContentValues> =
+        readChildRows(
+            CalendarContract.Attendees.CONTENT_URI,
+            CalendarContract.Attendees.EVENT_ID,
+            eventId,
+            arrayOf(
+                CalendarContract.Attendees.ATTENDEE_NAME,
+                CalendarContract.Attendees.ATTENDEE_EMAIL,
+                CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
+                CalendarContract.Attendees.ATTENDEE_TYPE,
+                CalendarContract.Attendees.ATTENDEE_STATUS,
+                CalendarContract.Attendees.ATTENDEE_IDENTITY,
+                CalendarContract.Attendees.ATTENDEE_ID_NAMESPACE
+            )
         )
+
+    /**
+     * The [columns] of every row of child table [uri] whose [eventIdColumn]
+     * is [eventId], copied as stored (nulls included) into insert values.
+     */
+    private fun readChildRows(
+        uri: Uri,
+        eventIdColumn: String,
+        eventId: Long,
+        columns: Array<String>
+    ): List<ContentValues> {
         val rows = mutableListOf<ContentValues>()
         resolver.query(
-            CalendarContract.Attendees.CONTENT_URI,
+            uri,
             columns,
-            "${CalendarContract.Attendees.EVENT_ID} = ?",
+            "$eventIdColumn = ?",
             arrayOf(eventId.toString()),
             null
         )?.use { cursor ->

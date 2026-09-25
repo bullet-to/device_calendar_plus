@@ -8,9 +8,6 @@ import java.util.Date
 
 private const val MINUTES_PER_DAY = 1440
 
-/** Logcat tag for the best-effort steps whose failures no caller hears of. */
-internal const val LOG_TAG = "DeviceCalendarPlus"
-
 /**
  * Selects an event row by `_ID`, skipping DELETED=1 tombstones. A tombstone
  * is what a non-sync-adapter delete leaves on an event with a `_sync_id` — a
@@ -32,7 +29,8 @@ class EventsService(
 
     /**
      * The second half of a thisAndFollowing update split (#158). Lazy so
-     * the resolver is read on first use, not at construction.
+     * constructing the service doesn't read the resolver, which a mocked
+     * Context (EventsServiceTest's) returns as null.
      */
     private val detachedOccurrenceCarry by lazy {
         DetachedOccurrenceCarry(
@@ -44,7 +42,6 @@ class EventsService(
                 rewriteSeriesForReexpand(row.id, series.rrule, row.dtstart, row.duration)
             },
             updateRow = ::updateEventRow,
-            readReminders = ::queryReminderRows,
             deleteUri = ::deleteUri,
         )
     }
@@ -306,74 +303,50 @@ class EventsService(
     }
 
     /**
-     * One [CalendarContract.Reminders] row as stored: [minutes] before the
-     * event start ([CalendarContract.Reminders.MINUTES_DEFAULT] when the row
-     * names none) and its delivery [method].
-     */
-    internal data class ReminderRow(val minutes: Int, val method: Int)
-
-    /**
-     * Every [CalendarContract.Reminders] row of event [eventId], whatever
-     * the method: the one reminder reader. A null METHOD reads as
-     * METHOD_DEFAULT and a null MINUTES as MINUTES_DEFAULT, the values the
-     * provider gives a row that omits them. Throws when the query does.
-     */
-    private fun queryReminderRows(eventId: Long): List<ReminderRow> {
-        val rows = mutableListOf<ReminderRow>()
-        context.contentResolver.query(
-            CalendarContract.Reminders.CONTENT_URI,
-            arrayOf(
-                CalendarContract.Reminders.MINUTES,
-                CalendarContract.Reminders.METHOD,
-            ),
-            "${CalendarContract.Reminders.EVENT_ID} = ?",
-            arrayOf(eventId.toString()),
-            null
-        )?.use { cursor ->
-            val minutesIdx = cursor.getColumnIndexOrThrow(CalendarContract.Reminders.MINUTES)
-            val methodIdx = cursor.getColumnIndexOrThrow(CalendarContract.Reminders.METHOD)
-            while (cursor.moveToNext()) {
-                rows += ReminderRow(
-                    minutes = if (cursor.isNull(minutesIdx)) {
-                        CalendarContract.Reminders.MINUTES_DEFAULT
-                    } else {
-                        cursor.getInt(minutesIdx)
-                    },
-                    method = if (cursor.isNull(methodIdx)) {
-                        CalendarContract.Reminders.METHOD_DEFAULT
-                    } else {
-                        cursor.getInt(methodIdx)
-                    }
-                )
-            }
-        }
-        return rows
-    }
-
-    /**
      * Reads the relative reminders of an event as whole minutes before start.
      *
      * Keeps only alert/default-method rows (the ones the plugin writes); email
      * and SMS reminders are out of scope and skipped. A row with MINUTES_DEFAULT
      * (-1) carries no fixed offset, so it is skipped too. Returns an empty list
-     * when the event has no qualifying reminders, or when the query fails: a
-     * read that can't list an event's reminders still lists the event.
+     * when the event has no qualifying reminders.
      */
     private fun queryReminderMinutes(eventId: Long): List<Int> {
-        val rows = try {
-            queryReminderRows(eventId)
-        } catch (_: Exception) {
-            return emptyList()
-        }
-        return rows
-            .filter {
-                it.method == CalendarContract.Reminders.METHOD_ALERT ||
-                    it.method == CalendarContract.Reminders.METHOD_DEFAULT
+        val minutes = mutableListOf<Int>()
+        try {
+            context.contentResolver.query(
+                CalendarContract.Reminders.CONTENT_URI,
+                arrayOf(
+                    CalendarContract.Reminders.MINUTES,
+                    CalendarContract.Reminders.METHOD,
+                ),
+                "${CalendarContract.Reminders.EVENT_ID} = ?",
+                arrayOf(eventId.toString()),
+                null
+            )?.use { cursor ->
+                val minutesIdx = cursor.getColumnIndexOrThrow(CalendarContract.Reminders.MINUTES)
+                val methodIdx = cursor.getColumnIndexOrThrow(CalendarContract.Reminders.METHOD)
+                while (cursor.moveToNext()) {
+                    val method = if (cursor.isNull(methodIdx)) {
+                        CalendarContract.Reminders.METHOD_DEFAULT
+                    } else {
+                        cursor.getInt(methodIdx)
+                    }
+                    if (method != CalendarContract.Reminders.METHOD_ALERT &&
+                        method != CalendarContract.Reminders.METHOD_DEFAULT) {
+                        continue
+                    }
+                    if (cursor.isNull(minutesIdx)) continue
+                    val value = cursor.getInt(minutesIdx)
+                    // MINUTES_DEFAULT (-1) means "use the calendar's default" —
+                    // it has no concrete offset to report.
+                    if (value < 0) continue
+                    minutes.add(value)
+                }
             }
-            // MINUTES_DEFAULT (-1) means "use the calendar's default" — it
-            // has no concrete offset to report.
-            .filter { it.minutes >= 0 }
-            .map { it.minutes }
+        } catch (_: Exception) {
+            // Silently return what we have if the reminder query fails.
+        }
+        return minutes
     }
 
     private fun queryAttendees(eventId: Long): List<Map<String, Any?>> {
@@ -769,7 +742,7 @@ class EventsService(
                     // is the same whether or not the event recurs, so the
                     // RRULE/DURATION handling above is untouched.
                     if (reminders != null && reminders.isNotEmpty()) {
-                        insertAlertReminders(eventId.toLong(), reminders)
+                        insertReminderRows(eventId.toLong(), reminders)
                     }
                     return Result.success(eventId)
                 }
@@ -1364,7 +1337,7 @@ class EventsService(
             EventFieldPatch.RemindersPatch.Unchanged -> queryReminderMinutes(row.id.toLong())
         }
         if (effectiveReminders.isNotEmpty()) {
-            insertAlertReminders(newEventId.toLong(), effectiveReminders)
+            insertReminderRows(newEventId.toLong(), effectiveReminders)
             setHasAlarm(newEventId.toLong(), row.calendarId, true)
         }
 
@@ -1395,7 +1368,32 @@ class EventsService(
         // The split is committed by now, so the carry is best-effort and
         // reports nothing (see DetachedOccurrenceCarry.carry).
         if (effectiveRrule != null) {
-            detachedOccurrenceCarry.carry(row, timestamp, newEventId, newStart - timestamp)
+            // The frame resolveSeriesTimes moved the anchor in, above.
+            val tz = seriesTimeZone(row.timeZone, effectiveIsAllDay)
+            val dayDelta = calendarDaysBetween(timestamp, newStart, tz)
+            val shift = SplitShift(
+                slot = { shiftDate(it, timestamp, newStart, tz, effectiveIsAllDay) },
+                start = {
+                    java.util.Calendar.getInstance(tz).apply {
+                        timeInMillis = it
+                        add(java.util.Calendar.DAY_OF_YEAR, dayDelta)
+                    }.timeInMillis
+                },
+            )
+            detachedOccurrenceCarry.carry(row, timestamp, newEventId, shift)
+        } else {
+            // A new event that doesn't recur has no slot for them to stand
+            // in: iOS drops them, as a thisAndFollowing delete does.
+            try {
+                deleteDetachedOccurrencesFrom(row, timestamp)
+            } catch (e: Exception) {
+                android.util.Log.w(
+                    LOG_TAG,
+                    "Split of event ${row.id} committed, but its detached " +
+                        "occurrences past it could not be removed",
+                    e
+                )
+            }
         }
 
         return Result.success(newEventId)
@@ -1817,23 +1815,12 @@ class EventsService(
      * Inserts one [CalendarContract.Reminders] row per minute value, each a
      * relative METHOD_ALERT reminder that many minutes before the event start.
      */
-    private fun insertAlertReminders(eventId: Long, minutes: List<Int>) =
-        insertReminderRows(
-            eventId,
-            minutes.map { ReminderRow(it, CalendarContract.Reminders.METHOD_ALERT) }
-        )
-
-    /**
-     * Inserts one [CalendarContract.Reminders] row per [ReminderRow]: the one
-     * insert loop behind every reminder write but [DetachedOccurrenceCarry]'s
-     * batch.
-     */
-    private fun insertReminderRows(eventId: Long, reminders: List<ReminderRow>) {
-        for (reminder in reminders) {
+    private fun insertReminderRows(eventId: Long, minutes: List<Int>) {
+        for (m in minutes) {
             val values = android.content.ContentValues().apply {
                 put(CalendarContract.Reminders.EVENT_ID, eventId)
-                put(CalendarContract.Reminders.MINUTES, reminder.minutes)
-                put(CalendarContract.Reminders.METHOD, reminder.method)
+                put(CalendarContract.Reminders.MINUTES, m)
+                put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
             }
             context.contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, values)
         }
@@ -1890,7 +1877,7 @@ class EventsService(
             is EventFieldPatch.RemindersPatch.Set -> {
                 deleteReminderRows(eventId)
                 if (patch.minutes.isNotEmpty()) {
-                    insertAlertReminders(eventId, patch.minutes)
+                    insertReminderRows(eventId, patch.minutes)
                 }
             }
         }
