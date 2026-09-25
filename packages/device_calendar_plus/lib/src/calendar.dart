@@ -16,7 +16,11 @@ class Calendar {
   /// Parsed [colorHex] as a Flutter [Color], or `null` if absent or unparseable.
   Color? get color => colorFromHex(colorHex);
 
-  /// Whether edits are disallowed (subscribed/shared calendars, server-managed feeds, etc.).
+  /// Whether edits are disallowed (subscribed/shared calendars, server-managed
+  /// feeds, etc.).
+  ///
+  /// On iOS `false` isn't a guarantee that a rename or delete will be
+  /// accepted; `doc/calendars.md` has the per-platform detail.
   final bool readOnly;
 
   /// Account name or email that owns the calendar, when exposed by the platform.

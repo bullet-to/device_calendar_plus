@@ -6,6 +6,40 @@
   occurrence that had been edited on its own behind as an orphan row, which
   came back in `listEvents` once the provider next rebuilt its Instances
   cache; iOS removes it, so Android does too.
+- `updateCalendar` and `deleteCalendar` refuse a calendar whose access level
+  is below contributor — the same calendars `listCalendars` reports as
+  `readOnly` — with `READ_ONLY` before writing, instead of renaming or
+  deleting any row they were handed (#126).
+- `createCalendar` refuses a non-local `accountType` with `READ_ONLY`, as
+  `listSources` already reports, instead of sync-adapter-inserting a phantom
+  calendar into another account's namespace (#126).
+- `listCalendars` reads a NULL display name as empty instead of handing Dart
+  a null it casts (#126).
+- `getEvent` resolves the instance ID of an all-day recurring occurrence. The
+  lookup went through the all-day date filter with a two-second window, which
+  collapses to an empty date range in every timezone, so it always returned
+  null; it now matches the Instances row on `EVENT_ID` and `BEGIN` (#122).
+- `getEvent` with a bare recurring ID returns the master's real end date.
+  A recurring row stores `DURATION` with no `DTEND`, and the end used to fall
+  back to the start (#122).
+- `listEvents` sorts on the start date it reports, so an all-day event lands
+  at its local midnight among timed events in non-UTC zones instead of at its
+  stored UTC-midnight instant. Matches iOS (#122).
+- Editing or deleting a single occurrence of a recurring event on a local
+  calendar no longer makes the rest of the series disappear. The Calendar
+  Provider keys a series' exceptions by `_sync_id`, which a local calendar
+  never gets, so the exception insert wiped the master's occurrences from its
+  Instances cache — the earlier ones for good. A local series is now given a
+  `_sync_id` before its first exception is written, and deleting the series
+  removes its detached occurrences with it (#153).
+- `getEvent`, `updateEvent`, `updateRecurring`, and `deleteEvent` /
+  `deleteRecurring` for anything short of the whole series no longer see an
+  event that another app has deleted but the provider only tombstoned
+  (`DELETED=1`, the fate of any event with a `_sync_id` deleted outside a
+  sync adapter, which now includes a local series edited per occurrence).
+  Such an event reads as not found instead of accepting edits against a row
+  that never shows in `listEvents`. A whole-series delete still collects the
+  tombstone, since it runs as a sync adapter.
 
 ### Changed
 - Migrated to Flutter's built-in Kotlin: the plugin no longer applies the
@@ -14,6 +48,13 @@
   plugins that apply KGP themselves (#133).
 - Minimum supported SDK is now Flutter 3.44 / Dart 3.12, as the migration
   requires.
+
+### Fixed
+- `listEvents` returns an all-day event when the window is a sub-day slice of
+  its date (e.g. 10:00–11:00). The all-day date filter mapped both window
+  edges to the same UTC midnight, so the range collapsed to nothing; the end
+  edge now rounds up to the next UTC midnight when it isn't on a local
+  midnight. Matches iOS.
 
 ## 0.7.2 - 2026-09-21
 

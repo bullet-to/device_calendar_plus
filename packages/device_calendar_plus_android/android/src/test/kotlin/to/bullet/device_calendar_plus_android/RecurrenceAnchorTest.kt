@@ -1,6 +1,5 @@
 package to.bullet.device_calendar_plus_android
 
-import java.util.Calendar
 import java.util.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,10 +13,7 @@ internal class RecurrenceAnchorTest {
     private val stockholm = TimeZone.getTimeZone("Europe/Stockholm")
 
     private fun at(year: Int, month: Int, day: Int, hour: Int = 10): Long =
-        Calendar.getInstance(stockholm).apply {
-            clear()
-            set(year, month - 1, day, hour, 0, 0)
-        }.timeInMillis
+        instantAt(stockholm, year, month, day, hour)
 
     // The #140 report: a Saturday series switched to Sundays must anchor on
     // the Sunday after the split occurrence, not stay on the Saturday.

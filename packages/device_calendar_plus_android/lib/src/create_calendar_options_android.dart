@@ -2,9 +2,13 @@ import 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 
 /// Android-specific options for creating a calendar.
 ///
-/// Use this class to specify the account name for the calendar on Android.
-/// The calendar will be created under the local account type with the
-/// specified account name.
+/// Use this class to specify the account the calendar is created under. Only
+/// the local account type (`ACCOUNT_TYPE_LOCAL`, the default) accepts new
+/// calendars from a third-party app; any other [accountType] is refused with
+/// `DeviceCalendarError.readOnly`, matching what
+/// [CalendarSource.supportsCalendarCreation] reports for it. Other account
+/// types belong to their sync adapters, which can wipe a calendar they didn't
+/// create.
 ///
 /// Example:
 /// ```dart
@@ -21,10 +25,12 @@ class CreateCalendarOptionsAndroid extends CreateCalendarPlatformOptions {
   /// Defaults to "local" if not specified via platform options.
   final String accountName;
 
-  /// The account type for the calendar (e.g. "com.google", "LOCAL").
+  /// The account type for the calendar.
   ///
   /// Use values from [CalendarSource.accountType] returned by
-  /// [DeviceCalendar.listSources].
+  /// [DeviceCalendar.listSources]. Only `ACCOUNT_TYPE_LOCAL` (`"LOCAL"`) is
+  /// accepted; a sync-adapter type such as `"com.google"` throws
+  /// `DeviceCalendarError.readOnly`.
   ///
   /// If not provided, defaults to `ACCOUNT_TYPE_LOCAL`.
   final String? accountType;

@@ -67,9 +67,15 @@ class CalendarSource {
 
   /// Whether this source supports calendar creation from this app.
   ///
-  /// - **iOS**: true for local, CalDAV, and Exchange sources
-  /// - **Android**: true only for local accounts (other account types are
-  ///   managed by their sync adapters and may reject third-party calendars)
+  /// [DeviceCalendar.createCalendar] rejects a source reporting `false` with
+  /// [DeviceCalendarError.readOnly] rather than attempting the write.
+  ///
+  /// - **iOS**: true for the local source and iCloud. Other CalDAV accounts
+  ///   (Google, Fastmail…) and Exchange refuse third-party calendars at save
+  ///   time with an opaque EventKit error.
+  /// - **Android**: true only for the local account type. Other account types
+  ///   belong to their sync adapters, which can wipe a calendar they didn't
+  ///   create on their next sync.
   final bool supportsCalendarCreation;
 
   const CalendarSource({

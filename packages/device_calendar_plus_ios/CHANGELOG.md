@@ -1,3 +1,11 @@
+## Unreleased
+
+### Fixed
+- `deleteCalendar` refuses a calendar EventKit marks immutable or read-only
+  with `READ_ONLY` before asking the store, instead of surfacing the refused
+  remove as `OPERATION_FAILED`. `updateCalendar` now checks `isImmutable`
+  too, EventKit's own flag for "can't be edited or deleted" (#126).
+
 ## 0.7.1 - 2026-09-21
 
 ### Fixed

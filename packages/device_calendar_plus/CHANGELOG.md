@@ -4,11 +4,45 @@
 - Android: `deleteRecurring` with `thisAndFollowing` no longer leaves behind
   an occurrence on or after the split that had been edited on its own,
   matching iOS.
+- `updateCalendar` and `deleteCalendar` throw the documented `readOnly` for a
+  calendar that can't be modified, on both platforms. iOS used to surface a
+  refused delete as `operationFailed`; Android renamed or deleted any row it
+  was handed (#126).
+- Android `createCalendar` refuses a non-local `accountType` with `readOnly`,
+  as `listSources` already reports and iOS already does for non-creatable
+  sources, instead of leaving a phantom calendar the account's sync adapter
+  can wipe (#126).
+- `createCalendar` / `updateCalendar` throw `ArgumentError` for a `colorHex`
+  that isn't `#RRGGBB` (the `#` optional) instead of storing it silently as
+  black, and forward the canonical `#RRGGBB` to the platform (#126).
+- `deleteCalendar('')` throws `ArgumentError`, like the other mutations (#126).
+- Android `listCalendars` no longer crashes on a provider row with a NULL
+  display name (#126).
+
+### Docs
+- `CalendarSource.supportsCalendarCreation`, `CreateCalendarOptionsIos` and
+  `CreateCalendarOptionsAndroid` describe what the code actually does: iOS
+  creates under iCloud or local, Android under the local account type (#126).
+- Android: `getEvent` resolves all-day recurring instance IDs (it always
+  returned null), returns a recurring master's real end date instead of a
+  zero-length one, and `listEvents` orders all-day events by their local
+  midnight among timed events in non-UTC zones, as iOS does (#122).
+- Android: `updateEvent` or `deleteEvent` on a single occurrence of a
+  recurring event in a local calendar no longer makes the other occurrences
+  disappear — the earlier ones for good (#153).
 
 ### Changed
 - Android: migrated to Flutter's built-in Kotlin, so the KGP deprecation
   warning no longer prints on every `flutter build`. Minimum supported SDK is
   now Flutter 3.44 / Dart 3.12 (#133).
+
+### Fixed
+- Android: `listEvents` returns an all-day event when the window is a sub-day
+  slice of its date (e.g. 10:00–11:00), as iOS does. The all-day date filter
+  collapsed such a window to an empty range and dropped the event.
+- `listEvents` rejects an `endDate` before `startDate` with `ArgumentError`,
+  like the other date-range methods, and answers an empty range
+  (`endDate == startDate`) with no events on both platforms.
 
 ## 0.8.1 - 2026-09-21
 

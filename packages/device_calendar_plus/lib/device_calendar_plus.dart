@@ -1,11 +1,13 @@
 import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
 import 'package:flutter/services.dart';
 
+import 'src/argument_checks.dart';
 import 'src/auto_permission_mode.dart';
 import 'src/calendar.dart';
 import 'src/calendar_access_level.dart';
 import 'src/calendar_permission_status.dart';
 import 'src/calendar_source.dart';
+import 'src/color_hex.dart';
 import 'src/device_calendar_error.dart';
 import 'src/event.dart';
 import 'src/event_availability.dart';
@@ -254,20 +256,24 @@ class DeviceCalendar {
 
   /// Creates a calendar and returns its ID.
   ///
-  /// [colorHex] is an optional `#RRGGBB` color. [platformOptions] targets a
-  /// specific account (see [listSources]); without it a sensible default
-  /// account is chosen. Requires full access.
+  /// [colorHex] is an optional `#RRGGBB` color; anything else throws
+  /// [ArgumentError]. [platformOptions] targets a specific account (see
+  /// [listSources]); without it a sensible default account is chosen (iOS:
+  /// iCloud, else local; Android: the local account type). Requires full
+  /// access.
+  ///
+  /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) when
+  /// the targeted source or account type can't hold a new calendar, i.e. one
+  /// [listSources] reports with [CalendarSource.supportsCalendarCreation]
+  /// `false`.
   Future<String> createCalendar({
     required String name,
     String? colorHex,
     CreateCalendarPlatformOptions? platformOptions,
   }) async {
-    if (name.trim().isEmpty) {
-      throw ArgumentError.value(
-        name,
-        'name',
-        'Calendar name cannot be empty',
-      );
+    requireNonBlank(name, name: 'name', label: 'Calendar name');
+    if (colorHex != null) {
+      colorHex = normalizeColorHex(colorHex);
     }
 
     await _ensurePermission(CalendarAccessLevel.full);
@@ -285,9 +291,14 @@ class DeviceCalendar {
     }
   }
 
-  /// Updates a calendar's [name] and/or [colorHex] (`#RRGGBB`).
+  /// Updates a calendar's [name] and/or [colorHex] (`#RRGGBB`; anything else
+  /// throws [ArgumentError]).
   ///
   /// Passing neither is a no-op. Requires full access.
+  ///
+  /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) for a
+  /// calendar that can't be modified — on iOS that's a superset of
+  /// [Calendar.readOnly]; `doc/calendars.md` has the per-platform detail.
   Future<void> updateCalendar(
     String calendarId, {
     String? name,
@@ -295,13 +306,7 @@ class DeviceCalendar {
   }) async {
     // Validate calendarId — an empty id targets no calendar (matches the
     // empty-id guards on updateEvent/updateRecurring).
-    if (calendarId.trim().isEmpty) {
-      throw ArgumentError.value(
-        calendarId,
-        'calendarId',
-        'Calendar ID cannot be empty',
-      );
-    }
+    requireNonBlank(calendarId, name: 'calendarId', label: 'Calendar ID');
 
     // No changed fields is a valid no-op: nothing to write, so return without
     // a platform call.
@@ -310,12 +315,11 @@ class DeviceCalendar {
     }
 
     // Validate name if provided
-    if (name != null && name.trim().isEmpty) {
-      throw ArgumentError.value(
-        name,
-        'name',
-        'Calendar name cannot be empty',
-      );
+    if (name != null) {
+      requireNonBlank(name, name: 'name', label: 'Calendar name');
+    }
+    if (colorHex != null) {
+      colorHex = normalizeColorHex(colorHex);
     }
 
     await _ensurePermission(CalendarAccessLevel.full);
@@ -335,8 +339,12 @@ class DeviceCalendar {
   /// Deletes a calendar and all of its events. Requires full access.
   ///
   /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) for a
-  /// calendar that can't be deleted (e.g. a system-managed account calendar).
+  /// calendar that can't be deleted — on iOS that's a superset of
+  /// [Calendar.readOnly]; `doc/calendars.md` has the per-platform detail.
   Future<void> deleteCalendar(String calendarId) async {
+    // An empty id targets no calendar (matches updateCalendar / deleteEvent).
+    requireNonBlank(calendarId, name: 'calendarId', label: 'Calendar ID');
+
     await _ensurePermission(CalendarAccessLevel.full);
     try {
       await DeviceCalendarPlusPlatform.instance.deleteCalendar(calendarId);
@@ -352,7 +360,9 @@ class DeviceCalendar {
 
   /// Lists events overlapping the half-open range `[startDate, endDate)`, sorted
   /// by start date. An event starting exactly at [endDate] is excluded. Ranges
-  /// longer than 4 years are supported.
+  /// longer than 4 years are supported. An empty range (`endDate` equal to
+  /// `startDate`) returns no events; an [endDate] before [startDate] is an
+  /// [ArgumentError].
   ///
   /// [calendarIds] filters to specific calendars; null or empty means all.
   ///
@@ -364,6 +374,14 @@ class DeviceCalendar {
     DateTime endDate, {
     List<String>? calendarIds,
   }) async {
+    if (endDate.isBefore(startDate)) {
+      throw ArgumentError('End date must be after start date');
+    }
+    // `[t, t)` is empty by definition. Answer it here so both platforms agree:
+    // Android's all-day widening would otherwise return the date's all-day
+    // events but none of its timed ones for a zero-width window.
+    if (endDate.isAtSameMomentAs(startDate)) return const [];
+
     await _ensurePermission(CalendarAccessLevel.full);
     try {
       final List<Map<String, dynamic>> rawEvents =
@@ -478,21 +496,11 @@ class DeviceCalendar {
   }) async {
     // Validate fields. A null calendarId is valid (use the default calendar);
     // an explicit but empty/whitespace ID targets nothing — a programmer error.
-    if (calendarId != null && calendarId.trim().isEmpty) {
-      throw ArgumentError.value(
-        calendarId,
-        'calendarId',
-        'Calendar ID cannot be empty',
-      );
+    if (calendarId != null) {
+      requireNonBlank(calendarId, name: 'calendarId', label: 'Calendar ID');
     }
 
-    if (title.trim().isEmpty) {
-      throw ArgumentError.value(
-        title,
-        'title',
-        'Event title cannot be empty',
-      );
-    }
+    requireNonBlank(title, name: 'title', label: 'Event title');
 
     if (endDate.isBefore(startDate)) {
       throw ArgumentError(
@@ -541,13 +549,7 @@ class DeviceCalendar {
   /// To truncate a series from a split point forward, use [deleteRecurring].
   /// Requires full access.
   Future<void> deleteEvent({required String eventId}) async {
-    if (eventId.trim().isEmpty) {
-      throw ArgumentError.value(
-        eventId,
-        'eventId',
-        'Event ID cannot be empty',
-      );
-    }
+    requireNonBlank(eventId, name: 'eventId', label: 'Event ID');
 
     // A bare event ID carries no timestamp and targets the event itself (the
     // whole series when recurring); an instance ID carries the occurrence
@@ -596,13 +598,7 @@ class DeviceCalendar {
     Patch<List<Duration>>? reminders,
   }) async {
     // Validate eventId
-    if (eventId.trim().isEmpty) {
-      throw ArgumentError.value(
-        eventId,
-        'eventId',
-        'Event ID cannot be empty',
-      );
-    }
+    requireNonBlank(eventId, name: 'eventId', label: 'Event ID');
 
     // No changed fields is a valid no-op (e.g. the user pressed Save without
     // editing): the event already matches the requested values, so there is
@@ -723,13 +719,7 @@ class DeviceCalendar {
     Patch<RecurrenceRule>? recurrenceRule,
   }) async {
     // Validate instanceId
-    if (instanceId.trim().isEmpty) {
-      throw ArgumentError.value(
-        instanceId,
-        'instanceId',
-        'Instance ID cannot be empty',
-      );
-    }
+    requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
 
     // Parse the ID — thisAndFollowing acts on a specific occurrence, so it
     // needs an occurrence timestamp.
@@ -841,13 +831,7 @@ class DeviceCalendar {
   /// full access.
   Future<void> deleteRecurring(String instanceId, EventSpan span) async {
     // Validate instanceId
-    if (instanceId.trim().isEmpty) {
-      throw ArgumentError.value(
-        instanceId,
-        'instanceId',
-        'Instance ID cannot be empty',
-      );
-    }
+    requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
 
     // Parse the ID — thisAndFollowing acts on a specific occurrence, so it
     // needs an occurrence timestamp.

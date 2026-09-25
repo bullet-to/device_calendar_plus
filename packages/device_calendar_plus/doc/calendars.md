@@ -51,13 +51,23 @@ final scopedAndroid = await plugin.createCalendar(
 
 Returns the new calendar's ID.
 
+Only a source with `supportsCalendarCreation` can hold a new calendar — on iOS
+that's the local source and iCloud, on Android the local account type. Any
+other source or account type throws `DeviceCalendarException(readOnly)` before
+anything is written.
+
+`colorHex` takes `#RRGGBB` (the `#` is optional). Anything else throws
+`ArgumentError`.
+
 ## Update a calendar
 
 ```dart
 await plugin.updateCalendar(calendarId, name: 'Q3 Planning', colorHex: '#3366FF');
 ```
 
-Pass `name`, `colorHex`, or both. Passing neither is a no-op.
+Pass `name`, `colorHex`, or both. Passing neither is a no-op. Throws
+`DeviceCalendarException(readOnly)` for a calendar that can't be modified (see
+below).
 
 ## Delete a calendar
 
@@ -66,7 +76,13 @@ await plugin.deleteCalendar(calendarId);
 ```
 
 Deletes the calendar and all of its events. Throws
-`DeviceCalendarException(readOnly)` for a calendar that can't be deleted (e.g. a
-system-managed account calendar).
+`DeviceCalendarException(readOnly)` for a calendar that can't be deleted. On
+Android that's one whose access level is below contributor — exactly the
+calendars `listCalendars` reports as `readOnly`. On iOS it's any calendar
+`listCalendars` reports as `readOnly` (Birthdays, subscribed feeds, holiday
+calendars), plus ones EventKit marks immutable: their properties can't be
+edited and they can't be deleted even though events can still be added (an
+account's default calendar, say). So on iOS `Calendar.readOnly == false` isn't
+a guarantee that a rename or delete will be accepted.
 
 Creating, updating, and deleting calendars all require full access.

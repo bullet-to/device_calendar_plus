@@ -4,10 +4,20 @@ import android.content.Context
 import android.net.Uri
 import android.provider.CalendarContract
 
-class CalendarService(private val context: Context) {
+/**
+ * [fullAccess] and [readAccess] are the permission gates, injected so a unit
+ * test can state "access is granted" instead of inheriting it from whatever
+ * the mocked Context and the android.jar stubs happen to return. Production
+ * uses the shared gates in PermissionGates.kt over the same [context].
+ */
+class CalendarService(
+    private val context: Context,
+    private val fullAccess: () -> CalendarException? = { fullAccessFailure(context) },
+    private val readAccess: () -> CalendarException? = { readAccessFailure(context) },
+) {
 
     fun listCalendars(): Result<List<Map<String, Any>>> {
-        readAccessFailure(context)?.let { return Result.failure(it) }
+        readAccess()?.let { return Result.failure(it) }
 
         val calendars = mutableListOf<Map<String, Any>>()
         
@@ -41,7 +51,10 @@ class CalendarService(private val context: Context) {
                 
                 while (cursor.moveToNext()) {
                     val id = cursor.getString(idIndex)
-                    val name = cursor.getString(nameIndex)
+                    // A sync adapter can insert a row without a display name;
+                    // Dart casts it with `as String`, so NULL reads as empty
+                    // (#126). _ID is the INTEGER PRIMARY KEY and can't be NULL.
+                    val name = cursor.getString(nameIndex) ?: ""
                     val color = if (!cursor.isNull(colorIndex)) cursor.getInt(colorIndex) else null
                     val accessLevel = cursor.getInt(accessLevelIndex)
                     val accountName = if (!cursor.isNull(accountNameIndex)) cursor.getString(accountNameIndex) else null
@@ -49,8 +62,7 @@ class CalendarService(private val context: Context) {
                     val isPrimary = if (!cursor.isNull(isPrimaryIndex)) cursor.getInt(isPrimaryIndex) == 1 else false
                     val visible = if (!cursor.isNull(visibleIndex)) cursor.getInt(visibleIndex) == 1 else true
                     
-                    // Determine if read-only based on access level
-                    val readOnly = accessLevel < CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR
+                    val readOnly = isReadOnly(accessLevel)
                     
                     // Convert color to hex string
                     val colorHex = color?.let { ColorHelper.colorToHex(it) }
@@ -110,7 +122,7 @@ class CalendarService(private val context: Context) {
     }
 
     fun listSources(): Result<List<Map<String, Any>>> {
-        readAccessFailure(context)?.let { return Result.failure(it) }
+        readAccess()?.let { return Result.failure(it) }
 
         val sources = mutableListOf<Map<String, Any>>()
         val seen = mutableSetOf<String>()
@@ -138,7 +150,7 @@ class CalendarService(private val context: Context) {
                             "accountName" to accountName,
                             "accountType" to accountType,
                             "type" to accountTypeToSourceType(accountType),
-                            "supportsCalendarCreation" to (accountType == CalendarContract.ACCOUNT_TYPE_LOCAL),
+                            "supportsCalendarCreation" to supportsCalendarCreation(accountType),
                         ))
                     }
                 }
@@ -155,6 +167,60 @@ class CalendarService(private val context: Context) {
         return Result.success(sources)
     }
 
+    /**
+     * Only the local account type can hold a calendar this app creates. Every
+     * other type belongs to a sync adapter, and a calendar inserted into its
+     * namespace behind its back is one it can wipe on the next sync. One
+     * definition, so what listSources reports is what createCalendar enforces.
+     */
+    private fun supportsCalendarCreation(accountType: String): Boolean =
+        accountType == CalendarContract.ACCOUNT_TYPE_LOCAL
+
+    /**
+     * The readOnly definition listCalendars reports. The write guards use the
+     * same one, so on Android the list and the guards agree exactly: a
+     * calendar the list calls writable is one they accept.
+     */
+    private fun isReadOnly(accessLevel: Int): Boolean =
+        accessLevel < CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR
+
+    /**
+     * The refusal for a calendar the app can't rename, recolor or delete,
+     * decided before any write. The provider has no immutable flag and would
+     * update or delete any row it's handed, so this is where the readOnly the
+     * API documents comes from on Android (#126). `null` means go ahead.
+     */
+    private fun writeRefusal(calendarId: String): CalendarException? {
+        val accessLevel = context.contentResolver.query(
+            CalendarContract.Calendars.CONTENT_URI,
+            arrayOf(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL),
+            "${CalendarContract.Calendars._ID} = ?",
+            arrayOf(calendarId),
+            null
+        )?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            cursor.getInt(cursor.getColumnIndexOrThrow(CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL))
+        } ?: return calendarNotFound(calendarId)
+
+        if (isReadOnly(accessLevel)) {
+            return CalendarException(
+                PlatformExceptionCodes.READ_ONLY,
+                "Calendar with ID $calendarId is read-only and cannot be modified or deleted"
+            )
+        }
+        return null
+    }
+
+    /**
+     * Raised by writeRefusal when the row isn't there, and again by the
+     * post-write zero-row checks as a backstop for a calendar that vanished
+     * between the two.
+     */
+    private fun calendarNotFound(calendarId: String) = CalendarException(
+        PlatformExceptionCodes.NOT_FOUND,
+        "Calendar with ID $calendarId not found"
+    )
+
     private fun accountTypeToSourceType(accountType: String): String {
         return when (accountType) {
             CalendarContract.ACCOUNT_TYPE_LOCAL -> "local"
@@ -166,10 +232,24 @@ class CalendarService(private val context: Context) {
     }
 
     fun createCalendar(name: String, colorHex: String?, accountNameParam: String?, accountTypeParam: String?): Result<String> {
-        fullAccessFailure(context)?.let { return Result.failure(it) }
+        fullAccess()?.let { return Result.failure(it) }
 
         val accountName = accountNameParam ?: "local"
         val accountType = accountTypeParam ?: CalendarContract.ACCOUNT_TYPE_LOCAL
+
+        // Refuse what listSources reports as non-creatable, the way iOS refuses
+        // a non-iCloud/local source, instead of leaving a phantom calendar in
+        // a sync adapter's namespace.
+        if (!supportsCalendarCreation(accountType)) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.READ_ONLY,
+                    "Account type '$accountType' does not allow calendars to be created. " +
+                        "Use the local account type (a source listSources reports " +
+                        "supportsCalendarCreation for)."
+                )
+            )
+        }
         
         // Android automatically creates the account when inserting the first calendar
         try {
@@ -231,9 +311,11 @@ class CalendarService(private val context: Context) {
     }
     
     fun updateCalendar(calendarId: String, name: String?, colorHex: String?): Result<Unit> {
-        fullAccessFailure(context)?.let { return Result.failure(it) }
+        fullAccess()?.let { return Result.failure(it) }
 
         try {
+            writeRefusal(calendarId)?.let { return Result.failure(it) }
+
             // Prepare values to update
             val values = android.content.ContentValues()
             
@@ -258,12 +340,7 @@ class CalendarService(private val context: Context) {
             )
             
             if (updatedRows == 0) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.NOT_FOUND,
-                        "Calendar with ID $calendarId not found"
-                    )
-                )
+                return Result.failure(calendarNotFound(calendarId))
             }
             
             return Result.success(Unit)
@@ -285,9 +362,11 @@ class CalendarService(private val context: Context) {
     }
     
     fun deleteCalendar(calendarId: String): Result<Unit> {
-        fullAccessFailure(context)?.let { return Result.failure(it) }
+        fullAccess()?.let { return Result.failure(it) }
 
         try {
+            writeRefusal(calendarId)?.let { return Result.failure(it) }
+
             val deletedRows = context.contentResolver.delete(
                 CalendarContract.Calendars.CONTENT_URI,
                 "${CalendarContract.Calendars._ID} = ?",
@@ -295,12 +374,7 @@ class CalendarService(private val context: Context) {
             )
             
             if (deletedRows == 0) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.NOT_FOUND,
-                        "Calendar with ID $calendarId not found"
-                    )
-                )
+                return Result.failure(calendarNotFound(calendarId))
             }
             
             return Result.success(Unit)

@@ -2,9 +2,10 @@ import 'dart:io' show Platform;
 import 'dart:ui' show Color;
 
 import 'package:device_calendar_plus/device_calendar_plus.dart';
-import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+
+import 'test_seed.dart';
 
 /// Probes whether the given calendar's source supports event availability.
 ///
@@ -371,6 +372,59 @@ void main() {
       }
     });
 
+    test('Error Handling - Update and Delete a Read-only Calendar', () async {
+      // Regression (#126): iOS mapped a refused delete to operationFailed and
+      // Android renamed/deleted any row it was handed, so the documented
+      // readOnly never surfaced. Needs a calendar the OS marks read-only
+      // (Birthdays, a subscribed .ics feed, a holiday calendar); a bare
+      // simulator or emulator may not have one.
+      final calendars = await plugin.listCalendars();
+      final readOnly = calendars.where((c) => c.readOnly).firstOrNull;
+      if (readOnly == null) {
+        markTestSkipped('No read-only calendar on this device');
+        return;
+      }
+      final throwsReadOnly = throwsA(
+        isA<DeviceCalendarException>().having(
+          (e) => e.errorCode,
+          'errorCode',
+          DeviceCalendarError.readOnly,
+        ),
+      );
+
+      await expectLater(
+        plugin.updateCalendar(readOnly.id, name: 'Renamed'),
+        throwsReadOnly,
+      );
+      await expectLater(plugin.deleteCalendar(readOnly.id), throwsReadOnly);
+
+      // Refused means untouched.
+      final after = (await plugin.listCalendars())
+          .firstWhere((c) => c.id == readOnly.id);
+      expect(after.name, readOnly.name);
+    });
+
+    test('Error Handling - Update and Delete an Unknown Calendar', () async {
+      // Regression (#126): Android now decides notFound from the access-level
+      // query that runs before the write, not from the zero-row write result;
+      // iOS from calendar(withIdentifier:). Both must agree through the real
+      // provider.
+      final unknownId = 'nonexistent-${DateTime.now().millisecondsSinceEpoch}';
+      final throwsNotFound = throwsA(
+        isA<DeviceCalendarException>().having(
+          (e) => e.errorCode,
+          'errorCode',
+          DeviceCalendarError.notFound,
+        ),
+      );
+
+      await expectLater(
+        plugin.updateCalendar(unknownId, name: 'Renamed'),
+        throwsNotFound,
+      );
+      await expectLater(plugin.deleteCalendar(unknownId), throwsNotFound);
+    });
+
     test('Color Format Variations', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
 
@@ -568,12 +622,7 @@ void main() {
       // example app exposes a test-only channel that stamps it directly via
       // ContentResolver using a sync-adapter URI on the local test calendar,
       // simulating a color set externally (e.g. in Google Calendar).
-      final updated = await const MethodChannel(
-        'to.bullet.device_calendar_plus_example/test',
-      ).invokeMethod<int>('setEventColor', {
-        'eventId': eventId,
-        'color': 0xFFFF0000,
-      });
+      final updated = await setEventColor(eventId, 0xFFFF0000);
       expect(updated, 1);
 
       // getEvent reads via the Events projection.
@@ -1306,6 +1355,79 @@ void main() {
       );
       expect(after.where((e) => e.title == 'Holiday Trip'), isEmpty,
           reason: 'Must not appear after last day');
+    });
+
+    // iOS EventKit's overlap predicate returns an all-day event for any window
+    // that touches its date, however short. Android stores all-day events at
+    // UTC midnight and compares them against the window's local dates, so a
+    // window that starts and ends on the same date must still count as
+    // covering that whole date rather than collapsing to nothing. The two
+    // tests below share one fixture shape: all-day events on the day before,
+    // the day itself and the day after, so the neighbours pin the rounding
+    // from both sides. Each test uses its own date because the calendar is
+    // shared across the group.
+    const neighbourOffsets = <String, int>{
+      'all-day before': -1,
+      'all-day on day': 0,
+      'all-day after': 1,
+    };
+
+    Future<void> createAllDayNeighbours(DateTime day) async {
+      for (final entry in neighbourOffsets.entries) {
+        final start = DateTime(day.year, day.month, day.day + entry.value);
+        await plugin.createEvent(
+          calendarId: calendarId,
+          title: entry.key,
+          startDate: start,
+          endDate: DateTime(start.year, start.month, start.day + 1),
+          isAllDay: true,
+        );
+      }
+    }
+
+    List<String> neighbourTitles(List<Event> events) =>
+        events.map((e) => e.title).where(neighbourOffsets.containsKey).toList();
+
+    test('includes an all-day event when the window is a sub-day slice of its '
+        'date', () async {
+      final day = DateTime(2026, 3, 11);
+      await createAllDayNeighbours(day);
+
+      final events = await plugin.listEvents(
+        DateTime(day.year, day.month, day.day, 10),
+        DateTime(day.year, day.month, day.day, 11),
+        calendarIds: [calendarId],
+      );
+
+      expect(
+        neighbourTitles(events),
+        ['all-day on day'],
+        reason:
+            "a window inside a date must return that date's all-day event "
+            'and nothing from the neighbouring dates',
+      );
+    });
+
+    // The other way the end edge could go wrong: a window that ends exactly
+    // on local midnight must not be widened into the next date.
+    test('does not widen a window ending on local midnight into the next date',
+        () async {
+      final day = DateTime(2026, 4, 15);
+      await createAllDayNeighbours(day);
+
+      final wholeDay = await plugin.listEvents(
+        day,
+        DateTime(day.year, day.month, day.day + 1),
+        calendarIds: [calendarId],
+      );
+
+      expect(
+        neighbourTitles(wholeDay),
+        ['all-day on day'],
+        reason:
+            'an end on local midnight is exclusive and must not pull in '
+            'the next date',
+      );
     });
   });
 }
