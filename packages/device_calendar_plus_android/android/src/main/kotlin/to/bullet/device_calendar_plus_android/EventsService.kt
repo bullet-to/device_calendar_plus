@@ -1380,6 +1380,8 @@ class EventsService(
      * shifted by it; iOS keeps the pairing across the shift, so Android
      * must too. The same slot rule as the delete path decides which rows
      * carry over: where each occurrence was, not where it was moved to.
+     * A deleted occurrence is the exception: iOS keeps its deleted date at
+     * the old time, so it carries over only when [slotShift] is zero.
      *
      * How a row carries over depends on the calendar:
      *
@@ -1411,7 +1413,8 @@ class EventsService(
             CalendarContract.Events.CONTENT_URI,
             arrayOf(
                 CalendarContract.Events._ID,
-                CalendarContract.Events.ORIGINAL_INSTANCE_TIME
+                CalendarContract.Events.ORIGINAL_INSTANCE_TIME,
+                CalendarContract.Events.STATUS
             ),
             "${CalendarContract.Events.ORIGINAL_ID} = ? AND " +
                 "${CalendarContract.Events.ORIGINAL_INSTANCE_TIME} >= ? AND " +
@@ -1420,6 +1423,15 @@ class EventsService(
             null
         )?.use { cursor ->
             while (cursor.moveToNext()) {
+                val cancelled = !cursor.isNull(2) &&
+                    cursor.getInt(2) == CalendarContract.Events.STATUS_CANCELED
+                // A deleted occurrence ([deleteEventInstance]'s cancelled
+                // row) is iOS's deleted date, which stays at its old time:
+                // it carries over only while the split leaves the slots
+                // where they were, and a moved start brings the occurrence
+                // back. Left on the old master, past its UNTIL, it cancels
+                // nothing, as before #158.
+                if (cancelled && slotShift != 0L) continue
                 exceptions += cursor.getString(0) to cursor.getLong(1)
             }
         }
@@ -1512,7 +1524,7 @@ class EventsService(
         // Whatever the provider seeded the exception with from its master,
         // the occurrence's own reminders replace it.
         deleteReminderRows(copyId.toLong())
-        copyReminderRows(from = exceptionId, to = copyId)
+        insertReminderRows(copyId.toLong(), queryReminderRows(exceptionId))
 
         context.contentResolver.delete(
             deleteUri(account),
@@ -1571,30 +1583,26 @@ class EventsService(
             }
         }
 
-    /** Copies every [CalendarContract.Reminders] row of event [from] onto event [to]. */
-    private fun copyReminderRows(from: String, to: String) {
+    /**
+     * Every [CalendarContract.Reminders] row of event [eventId] as
+     * (minutes, method) pairs, whatever the method: unlike
+     * [queryReminderMinutes], which keeps only the alert reminders the
+     * plugin exposes, this is for a faithful copy of the rows.
+     */
+    private fun queryReminderRows(eventId: String): List<Pair<Int, Int>> {
         val rows = mutableListOf<Pair<Int, Int>>()
         context.contentResolver.query(
             CalendarContract.Reminders.CONTENT_URI,
             arrayOf(CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD),
             "${CalendarContract.Reminders.EVENT_ID} = ?",
-            arrayOf(from),
+            arrayOf(eventId),
             null
         )?.use { cursor ->
             while (cursor.moveToNext()) {
                 rows += cursor.getInt(0) to cursor.getInt(1)
             }
         }
-        for ((minutes, method) in rows) {
-            context.contentResolver.insert(
-                CalendarContract.Reminders.CONTENT_URI,
-                android.content.ContentValues().apply {
-                    put(CalendarContract.Reminders.EVENT_ID, to.toLong())
-                    put(CalendarContract.Reminders.MINUTES, minutes)
-                    put(CalendarContract.Reminders.METHOD, method)
-                }
-            )
-        }
+        return rows
     }
 
     // -- deleteRecurring (issue #43) --
@@ -2034,12 +2042,20 @@ class EventsService(
      * Inserts one [CalendarContract.Reminders] row per minute value, each a
      * relative METHOD_ALERT reminder that many minutes before the event start.
      */
-    private fun insertReminderRows(eventId: Long, minutes: List<Int>) {
-        for (m in minutes) {
+    @JvmName("insertAlertReminderRows")
+    private fun insertReminderRows(eventId: Long, minutes: List<Int>) =
+        insertReminderRows(eventId, minutes.map { it to CalendarContract.Reminders.METHOD_ALERT })
+
+    /**
+     * Inserts one [CalendarContract.Reminders] row per (minutes, method)
+     * pair: the one insert loop behind every reminder write.
+     */
+    private fun insertReminderRows(eventId: Long, reminders: List<Pair<Int, Int>>) {
+        for ((minutes, method) in reminders) {
             val values = android.content.ContentValues().apply {
                 put(CalendarContract.Reminders.EVENT_ID, eventId)
-                put(CalendarContract.Reminders.MINUTES, m)
-                put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
+                put(CalendarContract.Reminders.MINUTES, minutes)
+                put(CalendarContract.Reminders.METHOD, method)
             }
             context.contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, values)
         }

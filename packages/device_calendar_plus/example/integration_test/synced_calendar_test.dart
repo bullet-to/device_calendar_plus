@@ -275,5 +275,56 @@ void main() {
           series.occurrences[5], series.start,
           reason: 'the detached occurrence must survive the split');
     });
+
+    test(
+        'updateRecurring(thisAndFollowing) carries a deleted occurrence past '
+        'the split to a cancelled exception of the new series and tombstones '
+        'the old one (#158)', () async {
+      // The split leaves the start where it is: a moved start brings a
+      // deleted occurrence back, as on iOS, so nothing is carried then (see
+      // recurrence_test.dart).
+      final series = await seedUploadedSeries(plugin, calendarId);
+      final tag = DateTime.now().millisecondsSinceEpoch;
+      final slot = series.occurrences[5].startDate;
+      await plugin.deleteEvent(eventId: series.occurrences[5].instanceId);
+      final cancellationId = await exceptionIdOf(series.eventId, slot);
+      expect(cancellationId, isNotNull,
+          reason: 'the delete must be a cancelled exception row of the series');
+      // Uploaded: its `_sync_id` is now the server's name for "occurrence 5
+      // of the OLD series, cancelled".
+      await markUploaded(cancellationId!);
+      final newTitle = 'Synced tail past deleted #158 $tag';
+
+      final newSeriesId = await plugin.updateRecurring(
+          series.occurrences[3].instanceId, EventSpan.thisAndFollowing,
+          title: newTitle);
+
+      expect(await readSyncState(cancellationId), (deleted: true, dirty: true),
+          reason: 'the old cancellation must be left as a tombstone for the '
+              'adapter to upload');
+      final copyId = await exceptionIdOf(newSeriesId, slot);
+      expect(copyId, isNotNull,
+          reason: 'the cancellation must be written afresh against the new '
+              'series, at the same slot');
+      expect(await readSyncState(copyId!), (deleted: false, dirty: true),
+          reason: 'the copy must be flagged for upload');
+      expect((await plugin.getEvent(copyId))?.status, EventStatus.canceled,
+          reason: 'the copy must still cancel its slot');
+
+      // As for a detached occurrence: the upload keys the new master, the
+      // provider passes the key on to the copy, and the next expansion
+      // pairs them (a no-change rewrite of the series stands in for the
+      // adapter's writes).
+      await markUploaded(newSeriesId);
+      await plugin.updateRecurring(newSeriesId, EventSpan.allEvents,
+          start: series.occurrences[3].startDate);
+
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, newTitle, series.start)),
+        startsExcept(series.occurrences, {0, 1, 2, 5}),
+        reason: 'the new series must keep the deleted slot deleted',
+      );
+    });
   }, skip: !Platform.isAndroid);
 }
