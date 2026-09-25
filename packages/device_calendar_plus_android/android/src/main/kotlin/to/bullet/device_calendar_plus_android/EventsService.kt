@@ -1367,7 +1367,7 @@ class EventsService(
     }
 
     /**
-     * Moves the detached occurrences of [master] whose original slot is at
+     * Carries the detached occurrences of [master] whose original slot is at
      * or after [fromInstant] onto the series [newMasterId]: the second half
      * of a `thisAndFollowing` update, and its counterpart to the delete
      * path's [deleteDetachedOccurrencesFrom] (#158).
@@ -1379,17 +1379,23 @@ class EventsService(
      * split's own start shift — because the new series generates every slot
      * shifted by it; iOS keeps the pairing across the shift, so Android
      * must too. The same slot rule as the delete path decides which rows
-     * move: where each occurrence was, not where it was moved to.
+     * carry over: where each occurrence was, not where it was moved to.
      *
-     * The new master needs a key first: the provider pairs an exception
-     * with its slot by ORIGINAL_SYNC_ID, not ORIGINAL_ID. On a local
-     * calendar that key is [ensureLocalSeriesSyncId]'s (#153). A synced
-     * one has none until its adapter uploads it, so ORIGINAL_SYNC_ID is
-     * cleared rather than left naming the old series, and the pairing waits
-     * on that upload: the provider's `original_sync_update` trigger copies
-     * the new `_sync_id` onto the exception, and the series' next expansion
-     * pairs them. Each row is a plain caller's update, so on a synced
-     * calendar it is DIRTY for the adapter to upload (#132).
+     * How a row carries over depends on the calendar:
+     *
+     * - Local: the row itself moves ([moveException]). Nothing but the
+     *   device reads it, and a move keeps every column. The new master is
+     *   keyed by [ensureLocalSeriesSyncId] first (#153): the provider pairs
+     *   an exception with its slot by ORIGINAL_SYNC_ID, not ORIGINAL_ID.
+     * - Synced: the occurrence is copied to a fresh exception of the new
+     *   master and the old row deleted ([copyException]). An uploaded
+     *   exception's `_sync_id` is the server's name for "this occurrence of
+     *   the OLD series", and rewriting ORIGINAL_ID/ORIGINAL_SYNC_ID locally
+     *   does not rename it: once the truncated old series reaches the
+     *   server, the server drops that instance as outside it and the adapter
+     *   deletes the row outright, taking the user's edit with it (seen with
+     *   Google's adapter on device). A fresh keyless row is new to the
+     *   server, and the old row's tombstone tells it the old one is gone.
      *
      * Only called when the new series recurs: one turned into a single
      * event has no slots for an exception to stand in.
@@ -1420,28 +1426,25 @@ class EventsService(
         if (exceptions.isEmpty()) return Result.success(Unit)
 
         val newSeries = readRecurringRow(newMasterId).getOrElse { return Result.failure(it) }
-        val newKey = ensureLocalSeriesSyncId(newSeries).getOrElse { return Result.failure(it) }
-
-        for ((exceptionId, slot) in exceptions) {
-            updateEventRow(
-                exceptionId,
-                android.content.ContentValues().apply {
-                    put(CalendarContract.Events.ORIGINAL_ID, newMasterId.toLong())
-                    if (newKey != null) {
-                        put(CalendarContract.Events.ORIGINAL_SYNC_ID, newKey)
-                    } else {
-                        putNull(CalendarContract.Events.ORIGINAL_SYNC_ID)
-                    }
-                    put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, slot + slotShift)
-                }
-            )
+        if (master.account.isLocal) {
+            val newKey = ensureLocalSeriesSyncId(newSeries)
+                .getOrElse { return Result.failure(it) }
+            for ((exceptionId, slot) in exceptions) {
+                moveException(exceptionId, newMasterId, newKey, slot + slotShift)
+            }
+        } else {
+            for ((exceptionId, slot) in exceptions) {
+                copyException(exceptionId, newSeries, slot + slotShift, master.account)
+                    .getOrElse { return Result.failure(it) }
+            }
         }
 
         // The new series was expanded when it was inserted, before it had
         // any exceptions, and moving them onto it does not re-expand it: it
         // would still generate the slots they now stand in for. Rewriting
         // its (unchanged) time columns and rule forces the provider to, as
-        // in the truncate above.
+        // in the truncate above. (Harmless after a copy, whose exception
+        // insert expands on its own.)
         val row = newSeries.row
         updateEventRow(row.id, android.content.ContentValues().apply {
             put(CalendarContract.Events.RRULE, newSeries.rrule)
@@ -1451,6 +1454,147 @@ class EventsService(
             }
         })
         return Result.success(Unit)
+    }
+
+    /**
+     * Re-points exception row [exceptionId] at [newMasterId]'s slot
+     * [newSlot], keyed by [newKey]: the local-calendar half of
+     * [reparentDetachedOccurrencesFrom].
+     */
+    private fun moveException(
+        exceptionId: String,
+        newMasterId: String,
+        newKey: String?,
+        newSlot: Long
+    ) {
+        updateEventRow(
+            exceptionId,
+            android.content.ContentValues().apply {
+                put(CalendarContract.Events.ORIGINAL_ID, newMasterId.toLong())
+                if (newKey != null) {
+                    put(CalendarContract.Events.ORIGINAL_SYNC_ID, newKey)
+                } else {
+                    putNull(CalendarContract.Events.ORIGINAL_SYNC_ID)
+                }
+                put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, newSlot)
+            }
+        )
+    }
+
+    /**
+     * Writes exception row [exceptionId]'s occurrence afresh as the
+     * exception of [newSeries] at slot [newSlot], reminders included, then
+     * deletes the old row: the synced-calendar half of
+     * [reparentDetachedOccurrencesFrom].
+     *
+     * The copy is a plain insert through [insertException] with no
+     * `_sync_id`, so it is DIRTY and new to the server. The new master is
+     * usually not uploaded yet, which leaves the copy's ORIGINAL_SYNC_ID
+     * empty until it is: the provider's `original_sync_update` trigger
+     * fills it in when the adapter keys the master. The delete goes through
+     * [deleteUri] (plain on a synced account), so an uploaded row stays as
+     * a tombstone for the adapter to send.
+     *
+     * The copy goes in first, so a failure leaves the old row in place
+     * rather than neither.
+     */
+    private fun copyException(
+        exceptionId: String,
+        newSeries: SeriesRow,
+        newSlot: Long,
+        account: CalendarAccount
+    ): Result<Unit> {
+        // Gone since the listing: nothing left to carry.
+        val values = readExceptionFields(exceptionId) ?: return Result.success(Unit)
+        values.put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, newSlot)
+
+        val copyId = insertException(newSeries, values).getOrElse { return Result.failure(it) }
+        // Whatever the provider seeded the exception with from its master,
+        // the occurrence's own reminders replace it.
+        deleteReminderRows(copyId.toLong())
+        copyReminderRows(from = exceptionId, to = copyId)
+
+        context.contentResolver.delete(
+            deleteUri(account),
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(exceptionId)
+        )
+        return Result.success(Unit)
+    }
+
+    /**
+     * The occurrence-level fields of exception row [exceptionId] as the
+     * values of a fresh exception insert, each one set (nulls included) so
+     * nothing is inherited from the new master; null when the row is gone.
+     * The end goes as DURATION, the column the provider expects on an
+     * exception of a recurring parent (see [updateEventInstance]).
+     */
+    private fun readExceptionFields(exceptionId: String): android.content.ContentValues? =
+        context.contentResolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            arrayOf(
+                CalendarContract.Events.TITLE,
+                CalendarContract.Events.DESCRIPTION,
+                CalendarContract.Events.EVENT_LOCATION,
+                CalendarContract.Events.CUSTOM_APP_URI,
+                CalendarContract.Events.DTSTART,
+                CalendarContract.Events.DTEND,
+                CalendarContract.Events.DURATION,
+                CalendarContract.Events.ALL_DAY,
+                CalendarContract.Events.EVENT_TIMEZONE,
+                CalendarContract.Events.AVAILABILITY,
+                CalendarContract.Events.STATUS,
+                CalendarContract.Events.HAS_ALARM
+            ),
+            "${CalendarContract.Events._ID} = ?",
+            arrayOf(exceptionId),
+            null
+        )?.use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            fun str(i: Int): String? = if (cursor.isNull(i)) null else cursor.getString(i)
+            fun int(i: Int): Int? = if (cursor.isNull(i)) null else cursor.getInt(i)
+            val dtstart = cursor.getLong(4)
+            val dtend = if (cursor.isNull(5)) null else cursor.getLong(5)
+            val end = storedEndMillis(dtstart, dtend, str(6)) ?: (dtstart + 3_600_000L)
+            android.content.ContentValues().apply {
+                put(CalendarContract.Events.TITLE, str(0))
+                put(CalendarContract.Events.DESCRIPTION, str(1))
+                put(CalendarContract.Events.EVENT_LOCATION, str(2))
+                put(CalendarContract.Events.CUSTOM_APP_URI, str(3))
+                put(CalendarContract.Events.DTSTART, dtstart)
+                put(CalendarContract.Events.DURATION, "P${(end - dtstart) / 1000}S")
+                put(CalendarContract.Events.ALL_DAY, int(7) ?: 0)
+                put(CalendarContract.Events.EVENT_TIMEZONE, str(8))
+                put(CalendarContract.Events.AVAILABILITY, int(9))
+                put(CalendarContract.Events.STATUS, int(10))
+                put(CalendarContract.Events.HAS_ALARM, int(11) ?: 0)
+            }
+        }
+
+    /** Copies every [CalendarContract.Reminders] row of event [from] onto event [to]. */
+    private fun copyReminderRows(from: String, to: String) {
+        val rows = mutableListOf<Pair<Int, Int>>()
+        context.contentResolver.query(
+            CalendarContract.Reminders.CONTENT_URI,
+            arrayOf(CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD),
+            "${CalendarContract.Reminders.EVENT_ID} = ?",
+            arrayOf(from),
+            null
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                rows += cursor.getInt(0) to cursor.getInt(1)
+            }
+        }
+        for ((minutes, method) in rows) {
+            context.contentResolver.insert(
+                CalendarContract.Reminders.CONTENT_URI,
+                android.content.ContentValues().apply {
+                    put(CalendarContract.Reminders.EVENT_ID, to.toLong())
+                    put(CalendarContract.Reminders.MINUTES, minutes)
+                    put(CalendarContract.Reminders.METHOD, method)
+                }
+            )
+        }
     }
 
     // -- deleteRecurring (issue #43) --

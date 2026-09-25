@@ -206,26 +206,49 @@ void main() {
     });
 
     test(
-        'updateRecurring(thisAndFollowing) re-parents a detached occurrence '
-        'past the split onto the unsynced new series (#158)', () async {
+        'updateRecurring(thisAndFollowing) carries a detached occurrence past '
+        'the split to a fresh exception of the new series and tombstones the '
+        'old one (#158)', () async {
       final series = await seedUploadedSeries(plugin, calendarId);
       final tag = DateTime.now().millisecondsSinceEpoch;
       final detachedTitle = 'Detached past update split #158 $tag';
       final exceptionId =
           await detachOccurrence(plugin, calendarId!, series, 5, detachedTitle);
-      // Uploaded, so a DIRTY=1 afterwards is the re-parenting's alone.
+      await plugin.updateEvent(
+          eventId: exceptionId,
+          reminders: Patch.set([const Duration(minutes: 20)]));
+      // Uploaded: its `_sync_id` is now the server's name for "occurrence 5
+      // of the OLD series".
       await markUploaded(exceptionId);
       final newTitle = 'Synced tail #158 $tag';
+      const shift = Duration(hours: 1);
+      final newSlot = series.occurrences[5].startDate.add(shift);
 
       final newSeriesId = await plugin.updateRecurring(
           series.occurrences[3].instanceId, EventSpan.thisAndFollowing,
-          title: newTitle);
+          title: newTitle, start: series.occurrences[3].startDate.add(shift));
 
-      expect(await readSyncState(exceptionId), (deleted: false, dirty: true),
-          reason: 'the re-parented exception must be flagged for upload');
-      expect((await readSyncIds(exceptionId))!.originalSyncId, isNull,
-          reason: 'the exception must not stay keyed to the old series, and '
-              'the new one has no server key yet');
+      // Moving the uploaded row onto the new series does not change its
+      // server identity: once the truncated old series is uploaded, the
+      // server drops that instance as outside it and the adapter deletes
+      // the row, edit and all (seen with Google's adapter on device).
+      expect(await readSyncState(exceptionId), (deleted: true, dirty: true),
+          reason: 'the old exception must be left as a tombstone for the '
+              'adapter to upload, not moved onto the new series');
+      final copyId = await exceptionIdOf(newSeriesId, newSlot);
+      expect(copyId, isNotNull,
+          reason: 'the occurrence must be written afresh as an exception of '
+              'the new series, at its slot shifted with the split');
+      expect(await readSyncIds(copyId!), (syncId: null, originalSyncId: null),
+          reason: 'the copy must be new to the server, and the new series '
+              'has no server key yet');
+      expect(await readSyncState(copyId), (deleted: false, dirty: true),
+          reason: 'the copy must be flagged for upload');
+      final copy = await plugin.getEvent(copyId);
+      expect(copy?.startDate, series.occurrences[5].startDate,
+          reason: 'the copy must keep the occurrence\'s own time');
+      expect(copy?.reminders, [const Duration(minutes: 20)],
+          reason: 'the copy must keep the occurrence\'s own reminders');
 
       // The provider pairs an exception with its slot by the master's server
       // key, which the new series gets only once its adapter uploads it, so
@@ -235,15 +258,17 @@ void main() {
       // that expansion; here a no-change rewrite of the series stands in.)
       await markUploaded(newSeriesId);
       final newKey = (await readSyncIds(newSeriesId))!.syncId;
-      expect((await readSyncIds(exceptionId))!.originalSyncId, newKey,
-          reason: 'the exception must follow the new master\'s server key');
+      expect((await readSyncIds(copyId))!.originalSyncId, newKey,
+          reason: 'the copy must follow the new master\'s server key');
       await plugin.updateRecurring(newSeriesId, EventSpan.allEvents,
-          start: series.occurrences[3].startDate);
+          start: series.occurrences[3].startDate.add(shift));
 
       expect(
         startsOf(await eventsTitled(
             plugin, calendarId!, newTitle, series.start)),
-        startsExcept(series.occurrences, {0, 1, 2, 5}),
+        startsExcept(series.occurrences, {0, 1, 2, 5})
+            .map((s) => s + shift.inMilliseconds)
+            .toList(),
         reason: 'the new series must skip the detached occurrence\'s slot',
       );
       await expectDetachedOnce(plugin, calendarId!, detachedTitle,
