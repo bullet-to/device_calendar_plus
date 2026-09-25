@@ -78,6 +78,22 @@ Future<SyncState?> readSyncState(String eventId) async {
   return (deleted: row['deleted'] as bool, dirty: row['dirty'] as bool);
 }
 
+/// Adds a required guest [email] ([name]) to [eventId] as a plain insert on
+/// the Attendees table, the way another calendar app invites someone: the
+/// plugin reads attendees but has no API to write them.
+Future<void> addAttendee(String eventId,
+        {required String email, required String name}) =>
+    _channel.invokeMethod<String>(
+        'addAttendee', {'eventId': eventId, 'email': email, 'name': name});
+
+/// Makes the provider re-expand series [eventId] the way a sync adapter's
+/// own write to it would: its RRULE, DTSTART and DURATION rewritten with
+/// the values they have, as the adapter. On a device the adapter's writes
+/// (after an upload, say) bring that expansion; a test has no adapter, so
+/// this stands in for them. Throws when the row is missing or not a series.
+Future<void> touchSeries(String eventId) =>
+    _channel.invokeMethod<void>('touchSeries', {'eventId': eventId});
+
 /// The event ID of the exception row written against master [eventId] for
 /// the occurrence at [instanceStart], or null when there is none. The plugin
 /// returns no ID for a cancelled occurrence, so its row is found by the slot

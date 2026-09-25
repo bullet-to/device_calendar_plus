@@ -1077,7 +1077,7 @@ class EventsService {
   ///
   /// This is the anchor-shift that lets a single `updateRecurring` move both
   /// the time and the day of a series (issue #103). Android's counterpart is
-  /// `shiftDate`.
+  /// `SplitShift.slot`.
   private func shiftStart(
     _ base: Date,
     reference: Date,

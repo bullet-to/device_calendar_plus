@@ -60,7 +60,7 @@ internal object RecurrenceAnchor {
         repeat(MAX_LOOKAHEAD_DAYS) {
             if (matcher.generates(cal)) return cal.timeInMillis
             // Whole-day steps keep the wall-clock time across DST (mirrors
-            // shiftDate).
+            // SplitShift).
             cal.add(Calendar.DAY_OF_MONTH, 1)
         }
         return null

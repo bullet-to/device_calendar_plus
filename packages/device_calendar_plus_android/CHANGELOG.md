@@ -1,6 +1,15 @@
 ## Unreleased
 
 ### Fixed
+- `updateRecurring` with `thisAndFollowing` now carries an occurrence that
+  was edited on its own, and falls on or after the split, into the new
+  series, as iOS does. It keeps its own title, time, reminders and other
+  edits, and the new series no longer lists a second copy beside it. When
+  the split moves the start, the occurrence's slot moves by the same number
+  of days. An occurrence deleted on its own stays deleted if the start stays
+  put, and comes back if the start moves, matching iOS. On a synced calendar
+  the occurrence is re-created on the new series and the old one is deleted,
+  since the server ties it to the old series (#158).
 - Deletes and recurring edits on a synced calendar (Google, Exchange, any
   account but local) now reach the server. The plugin wrote them as the
   calendar's own sync adapter, which the provider takes as the server's word:

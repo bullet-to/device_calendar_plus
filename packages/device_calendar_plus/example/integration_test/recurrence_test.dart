@@ -137,6 +137,18 @@ Future<List<Event>> detachedAt(
       .toList();
 }
 
+/// The next first Sunday of November, the day US clocks fall back, at UTC
+/// midnight.
+DateTime nextUsFallBack() {
+  final now = DateTime.now().toUtc();
+  for (var year = now.year;; year++) {
+    final nov1 = DateTime.utc(year, 11, 1);
+    final sunday =
+        nov1.add(Duration(days: (DateTime.sunday - nov1.weekday) % 7));
+    if (sunday.isAfter(now)) return sunday;
+  }
+}
+
 /// Asserts a detached occurrence ([moved], as [moveOccurrence] returned it)
 /// went with a `thisAndFollowing` split: absent from the listing and, on
 /// Android, its own Events row gone too. There a detached occurrence is its
@@ -925,6 +937,422 @@ void main() {
       expect(detachedOccurrences.single.startDate.millisecondsSinceEpoch,
           splitMillis);
     });
+
+    // Detached occurrences across an update split (#158). iOS's
+    // EKSpan.futureEvents save re-parents a detached occurrence whose slot
+    // is past the split onto the new series: it keeps its own edits, and the
+    // new series skips its slot rather than generating a duplicate there.
+    // Which series it ends up on is decided by the slot it replaced, not by
+    // where it was moved to, as for the delete path's "... by its original
+    // slot" tests. A split that moves the anchor by whole days moves the
+    // occurrence and its slot by the same days; one that clears the rule
+    // drops it.
+
+    /// The start shift of a [splitAfterDrags] split.
+    const splitShift = Duration(hours: 1);
+
+    /// Seeds a daily series, moves each of [drags]' occurrences (`index`) by
+    /// its `move`, retitled `'<label> <tag>'` so it can be found, then splits
+    /// the series at [3] with a thisAndFollowing update that shifts the start
+    /// by [splitShift] and sets the rule [ruleFor] gives for the series, if
+    /// any. The series has [count] occurrences. Returns the moved occurrences
+    /// and their titles in [drags]' order, and the new series' starts.
+    Future<
+        ({
+          SeededSeries series,
+          List<Event> moved,
+          List<String> titles,
+          String newSeriesId,
+          List<int> newStarts,
+        })> splitAfterDrags(
+      List<(int index, Duration move, String label)> drags, {
+      Patch<RecurrenceRule>? Function(SeededSeries series)? ruleFor,
+      int count = 10,
+    }) async {
+      final series = await seedDailySeries(
+        plugin,
+        calendarId,
+        count: count,
+        minOccurrences: count,
+      );
+      final id = calendarId!;
+      final tag = DateTime.now().microsecondsSinceEpoch;
+      final moved = <Event>[];
+      final titles = <String>[];
+      for (final (index, move, label) in drags) {
+        final title = '$label $tag';
+        titles.add(title);
+        moved.add(await moveOccurrence(plugin, id, series, index, move, title));
+      }
+
+      final newTitle = 'New series after drags $tag';
+      final anchor = series.occurrences[3];
+      final newSeriesId = await plugin.updateRecurring(
+        anchor.instanceId,
+        EventSpan.thisAndFollowing,
+        title: newTitle,
+        start: anchor.startDate.add(splitShift),
+        recurrenceRule: ruleFor?.call(series),
+      );
+      final newStarts = startsOf(
+        await eventsTitled(plugin, id, newTitle, series.start),
+      );
+      return (
+        series: series,
+        moved: moved,
+        titles: titles,
+        newSeriesId: newSeriesId,
+        newStarts: newStarts,
+      );
+    }
+
+    test(
+      'thisAndFollowing update carries a detached occurrence past the split '
+      'into the new series',
+      () async {
+        // Even when the split also moves the start, which moves the slot
+        // with it. One before the split stays on the old series.
+        const withinDay = Duration(hours: 2);
+        final split = await splitAfterDrags([
+          (6, withinDay, 'Detached past update split'),
+          (1, withinDay, 'Detached before update split'),
+        ]);
+        final series = split.series;
+        final id = calendarId!;
+        final [pastTitle, beforeTitle] = split.titles;
+        final [movedPast, movedBefore] = split.moved;
+
+        // The new series: every slot from the anchor on, shifted, except the
+        // detached one's — no duplicate beside it.
+        final slot6 = series.occurrences[6].startDate.add(splitShift);
+        expect(
+          split.newStarts,
+          isNot(contains(slot6.millisecondsSinceEpoch)),
+          reason: 'the new series must skip the slot of the detached '
+              'occurrence it took over, not generate a duplicate there',
+        );
+        expect(
+          split.newStarts,
+          containsAll([3, 4, 5, 7, 8].map((i) => series.occurrences[i]
+              .startDate
+              .add(splitShift)
+              .millisecondsSinceEpoch)),
+          reason: 'the new series must carry every other slot from the anchor '
+              'on, shifted',
+        );
+
+        // Both detached occurrences keep their own edits and times.
+        await expectDetachedOnce(plugin, id, pastTitle, movedPast, series.start,
+            reason: 'the detached occurrence past the split must survive '
+                'with its own title and time');
+        await expectDetachedOnce(
+            plugin, id, beforeTitle, movedBefore, series.start,
+            reason: 'the detached occurrence before the split must survive '
+                'untouched');
+
+        // Re-parented, not merely kept: deleting the new series takes the
+        // detached occurrence past the split with it, and leaves the one
+        // before the split on the old series.
+        await plugin.deleteEvent(eventId: split.newSeriesId);
+        expect(await eventsTitled(plugin, id, pastTitle, series.start), isEmpty,
+            reason: 'the detached occurrence past the split must belong to '
+                'the new series');
+        await expectDetachedOnce(
+            plugin, id, beforeTitle, movedBefore, series.start,
+            reason: 'the detached occurrence before the split must stay on '
+                'the old series');
+      },
+    );
+
+    test(
+      'thisAndFollowing update carries an occurrence dragged from past the '
+      'split to before it by its original slot',
+      () async {
+        // [6] moved onto [1]'s day: its slot is past the split, so it goes
+        // to the new series, whose slot it keeps standing in for.
+        final split = await splitAfterDrags([
+          (
+            6,
+            const Duration(days: -5, hours: 2),
+            'Dragged across update split',
+          ),
+        ]);
+        final slot6 = split.series.occurrences[6].startDate
+            .add(splitShift)
+            .millisecondsSinceEpoch;
+        expect(split.newStarts, isNot(contains(slot6)),
+            reason: 'the new series must skip [6]\'s slot, which the moved '
+                'occurrence stands in for');
+        // It sits before the split, so the split's time shift must not
+        // move it.
+        await expectDetachedOnce(plugin, calendarId!, split.titles.single,
+            split.moved.single, split.series.start,
+            reason: 'the moved occurrence must survive once, with its own '
+                'title at its dragged time');
+
+        await plugin.deleteEvent(eventId: split.newSeriesId);
+        expect(
+            await eventsTitled(
+                plugin, calendarId!, split.titles.single, split.series.start),
+            isEmpty,
+            reason: 'the moved occurrence must belong to the new series, and '
+                'go with it');
+      },
+    );
+
+    test(
+      'thisAndFollowing update leaves an occurrence dragged from before the '
+      'split to past it by its original slot',
+      () async {
+        // [1] moved onto [6]'s day: its slot is before the split, so it
+        // stays on the old series, and nothing detached stands in for [6].
+        final split = await splitAfterDrags([
+          (
+            1,
+            const Duration(days: 5, hours: 2),
+            'Dragged across update split',
+          ),
+        ]);
+        final slot6 = split.series.occurrences[6].startDate
+            .add(splitShift)
+            .millisecondsSinceEpoch;
+        expect(split.newStarts, contains(slot6),
+            reason: 'the new series must still generate [6]\'s slot, which '
+                'nothing detached stands in for');
+
+        await plugin.deleteEvent(eventId: split.newSeriesId);
+        // The listing half is unverified on Android (#159), as in the
+        // delete path's "keeps a detached occurrence by its original slot":
+        // the row read still runs.
+        await expectDetachedKept(
+          plugin,
+          calendarId!,
+          split.titles.single,
+          split.series,
+          split.moved.single,
+          listed: !Platform.isAndroid,
+        );
+      },
+    );
+
+    test(
+      'thisAndFollowing update with a new rule moves a detached occurrence '
+      'past the split by the days the anchor moved',
+      () async {
+        // A weekly rule on the weekday two days after the anchor re-anchors
+        // the new series onto that day (#140), and iOS moves each detached
+        // occurrence by the same two days, keeping its time of day. The
+        // series is stored in UTC, so the weekday is read in UTC (#103).
+        // The rule generates [5], [12] and [19]: [10]'s slot moves onto
+        // [12], a day the new series generates, so the pairing shows as a
+        // skipped slot there; [6]'s moves onto [8], which it doesn't.
+        const twoDays = Duration(days: 2);
+        final split = await splitAfterDrags(
+          [
+            (6, const Duration(hours: 2), 'Detached past rule change'),
+            (10, const Duration(hours: 2), 'Detached onto new rule slot'),
+          ],
+          ruleFor: (series) => Patch.set(WeeklyRecurrence(
+            daysOfWeek: [
+              weekdayOf(series.occurrences[5].startDate.toUtc()),
+            ],
+            end: const CountEnd(3),
+          )),
+          count: 12,
+        );
+        final id = calendarId!;
+        final series = split.series;
+
+        // Where [12] would be: the series is stored in UTC, so whole days
+        // are exact durations.
+        final slot12 =
+            series.occurrences[10].startDate.add(twoDays).add(splitShift);
+        expect(
+          split.newStarts,
+          contains(series.occurrences[5].startDate
+              .add(splitShift)
+              .millisecondsSinceEpoch),
+          reason: 'the new series must start on the new rule\'s weekday',
+        );
+        expect(
+          split.newStarts,
+          isNot(contains(slot12.millisecondsSinceEpoch)),
+          reason: 'the new series must skip the slot [10]\'s detached '
+              'occurrence moved onto, not generate a duplicate there',
+        );
+
+        for (final (i, title) in split.titles.indexed) {
+          expect(
+            startsOf(await eventsTitled(plugin, id, title, series.start)),
+            [split.moved[i].startDate.add(twoDays).millisecondsSinceEpoch],
+            reason: 'the detached occurrence must be listed once, moved by '
+                'the days the split moved the anchor, as iOS moves it',
+          );
+        }
+
+        await plugin.deleteEvent(eventId: split.newSeriesId);
+        for (final title in split.titles) {
+          expect(await eventsTitled(plugin, id, title, series.start), isEmpty,
+              reason: 'the detached occurrence must belong to the new series');
+        }
+      },
+    );
+
+    test(
+      'thisAndFollowing update that clears the rule drops a detached '
+      'occurrence past the split',
+      () async {
+        // The new event no longer recurs, so no slot is left for the
+        // occurrence to stand in: iOS drops it, as a thisAndFollowing delete
+        // does. One before the split stays.
+        const withinDay = Duration(hours: 2);
+        final split = await splitAfterDrags([
+          (6, withinDay, 'Detached past rule clear'),
+          (1, withinDay, 'Detached before rule clear'),
+        ], ruleFor: (_) => const Patch.clear());
+        final id = calendarId!;
+        final [pastTitle, beforeTitle] = split.titles;
+        final [movedPast, movedBefore] = split.moved;
+
+        await expectDetachedGone(
+            plugin, id, pastTitle, split.series, movedPast);
+        await expectDetachedOnce(
+            plugin, id, beforeTitle, movedBefore, split.series.start,
+            reason: 'the detached occurrence before the split must survive '
+                'untouched');
+      },
+    );
+
+    test(
+      'thisAndFollowing update across a DST change carries a detached '
+      'occurrence by calendar days',
+      () async {
+        // A New York series across the November fall-back, split from before
+        // it to after it: the new start is three calendar days on, but three
+        // days and an hour of elapsed time. iOS moves the slot and the
+        // detached occurrence by the three days, so the new series skips the
+        // slot at its own 10:00 instead of generating it beside an
+        // occurrence carried an hour off.
+        final id = requireCalendar(calendarId);
+        final fallBack = nextUsFallBack();
+        // 10:00 EDT, three days before the change.
+        final start =
+            DateTime.utc(fallBack.year, fallBack.month, fallBack.day - 3, 14);
+        final tag = DateTime.now().microsecondsSinceEpoch;
+        final eventId = await plugin.createEvent(
+          calendarId: id,
+          title: 'DST series $tag',
+          startDate: start,
+          endDate: start.add(const Duration(hours: 1)),
+          recurrenceRule: const DailyRecurrence(end: CountEnd(12)),
+          timeZone: 'America/New_York',
+        );
+        final occurrences = await occurrencesOf(plugin, id, eventId, start);
+        expect(occurrences.length, 12,
+            reason: 'the series must expand to every occurrence');
+        final SeededSeries series =
+            (eventId: eventId, start: start, occurrences: occurrences);
+        final title = 'Detached across DST $tag';
+        final moved = await moveOccurrence(
+            plugin, id, series, 8, const Duration(hours: 2), title);
+
+        // [1] (10:00 EDT) to the day after the change, 10:00 EST.
+        final newTitle = 'New series across DST $tag';
+        await plugin.updateRecurring(
+          occurrences[1].instanceId,
+          EventSpan.thisAndFollowing,
+          title: newTitle,
+          start: DateTime.utc(
+              fallBack.year, fallBack.month, fallBack.day + 1, 15),
+        );
+
+        // [8] was 10:00 EST, and three calendar days on is 10:00 EST too.
+        const threeDays = Duration(days: 3);
+        final slot8 = occurrences[8].startDate.add(threeDays);
+        final newStarts =
+            startsOf(await eventsTitled(plugin, id, newTitle, start));
+        expect(newStarts, isNot(contains(slot8.millisecondsSinceEpoch)),
+            reason: 'the new series must skip the slot the detached '
+                'occurrence stands in for, three calendar days on');
+        expect(
+          newStarts,
+          containsAll([
+            slot8.subtract(const Duration(days: 1)).millisecondsSinceEpoch,
+            slot8.add(const Duration(days: 1)).millisecondsSinceEpoch,
+          ]),
+          reason: 'the new series must generate the slots either side',
+        );
+        expect(
+          startsOf(await eventsTitled(plugin, id, title, start)),
+          [moved.startDate.add(threeDays).millisecondsSinceEpoch],
+          reason: 'the detached occurrence must move by three calendar days, '
+              'keeping its own time of day',
+        );
+      },
+    );
+
+    // A single-occurrence delete past the split (#158). iOS keeps it
+    // deleted in the new series while the split leaves the start where it
+    // was; a split that moves the start brings it back, since iOS's deleted
+    // date stays at the old time and no longer matches the moved slot. On
+    // Android the delete is itself an exception row, a cancelled one, so the
+    // detached-occurrence carry decides this and is built to match.
+    for (final (shift, outcome, atSlot6, slot6Reason) in [
+      (
+        Duration.zero,
+        'keeps it deleted',
+        (int slot) => isNot(contains(slot)),
+        'the new series must keep the deleted occurrence past the split '
+            'deleted',
+      ),
+      (
+        const Duration(hours: 1),
+        'brings it back when the start moves',
+        (int slot) => contains(slot),
+        'the new series must bring the deleted occurrence back at its '
+            'moved slot, as iOS does',
+      ),
+    ]) {
+      test(
+        'thisAndFollowing update past a deleted occurrence $outcome',
+        () async {
+          final series = await seedDailySeries(
+            plugin,
+            calendarId,
+            minOccurrences: 10,
+          );
+          final id = calendarId!;
+          final tag = DateTime.now().microsecondsSinceEpoch;
+
+          await plugin.deleteEvent(eventId: series.occurrences[6].instanceId);
+
+          final newTitle = 'New series past deleted $tag';
+          final anchor = series.occurrences[3];
+          await plugin.updateRecurring(
+            anchor.instanceId,
+            EventSpan.thisAndFollowing,
+            title: newTitle,
+            start: anchor.startDate.add(shift),
+          );
+
+          final newStarts = startsOf(
+            await eventsTitled(plugin, id, newTitle, series.start),
+          );
+          final slot6 =
+              series.occurrences[6].startDate.add(shift).millisecondsSinceEpoch;
+          expect(newStarts, atSlot6(slot6), reason: slot6Reason);
+          expect(
+            newStarts,
+            containsAll([3, 4, 5, 7, 8].map((i) => series.occurrences[i]
+                .startDate
+                .add(shift)
+                .millisecondsSinceEpoch)),
+            reason: 'the new series must carry every other slot from the '
+                'anchor on, shifted',
+          );
+        },
+      );
+    }
 
     test('updateEvent with an instance ID edits only the one occurrence',
         () async {

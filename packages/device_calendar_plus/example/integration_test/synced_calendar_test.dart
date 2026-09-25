@@ -204,5 +204,142 @@ void main() {
         reason: 'the new series must carry the occurrences from the split on',
       );
     });
+
+    test(
+        'updateRecurring(thisAndFollowing) carries a detached occurrence past '
+        'the split to a fresh exception of the new series and tombstones the '
+        'old one (#158)', () async {
+      final series = await seedUploadedSeries(plugin, calendarId);
+      final tag = DateTime.now().millisecondsSinceEpoch;
+      final detachedTitle = 'Detached past update split #158 $tag';
+      final exceptionId =
+          await detachOccurrence(plugin, calendarId!, series, 5, detachedTitle);
+      // The occurrence's own edits, each of which the copy must keep: the
+      // plugin's writable fields, a color and a guest another app set.
+      await plugin.updateEvent(
+          eventId: exceptionId,
+          description: Patch.set('Detached description $tag'),
+          location: Patch.set('Detached location $tag'),
+          availability: EventAvailability.free,
+          reminders: Patch.set([const Duration(minutes: 20)]));
+      await setEventColor(exceptionId, 0xFF00AA00);
+      await addAttendee(exceptionId,
+          email: 'guest-$tag@example.test', name: 'Detached guest');
+      // Uploaded: its `_sync_id` is now the server's name for "occurrence 5
+      // of the OLD series".
+      await markUploaded(exceptionId);
+      final newTitle = 'Synced tail #158 $tag';
+      const shift = Duration(hours: 1);
+      final newSlot = series.occurrences[5].startDate.add(shift);
+
+      final newSeriesId = await plugin.updateRecurring(
+          series.occurrences[3].instanceId, EventSpan.thisAndFollowing,
+          title: newTitle, start: series.occurrences[3].startDate.add(shift));
+
+      // Moving the uploaded row onto the new series does not change its
+      // server identity: once the truncated old series is uploaded, the
+      // server drops that instance as outside it and the adapter deletes
+      // the row, edit and all (seen with Google's adapter on device).
+      expect(await readSyncState(exceptionId), (deleted: true, dirty: true),
+          reason: 'the old exception must be left as a tombstone for the '
+              'adapter to upload, not moved onto the new series');
+      final copyId = await exceptionIdOf(newSeriesId, newSlot);
+      expect(copyId, isNotNull,
+          reason: 'the occurrence must be written afresh as an exception of '
+              'the new series, at its slot shifted with the split');
+      expect(await readSyncIds(copyId!), (syncId: null, originalSyncId: null),
+          reason: 'the copy must be new to the server, and the new series '
+              'has no server key yet');
+      expect(await readSyncState(copyId), (deleted: false, dirty: true),
+          reason: 'the copy must be flagged for upload');
+      final copy = await plugin.getEvent(copyId);
+      expect(copy?.startDate, series.occurrences[5].startDate,
+          reason: 'the copy must keep the occurrence\'s own time');
+      expect(copy?.reminders, [const Duration(minutes: 20)],
+          reason: 'the copy must keep the occurrence\'s own reminders');
+      expect(copy?.description, 'Detached description $tag',
+          reason: 'the copy must keep the occurrence\'s own description');
+      expect(copy?.location, 'Detached location $tag',
+          reason: 'the copy must keep the occurrence\'s own location');
+      expect(copy?.availability, EventAvailability.free,
+          reason: 'the copy must keep the occurrence\'s own availability');
+      expect(copy?.colorHex, '#00AA00',
+          reason: 'the copy must keep the occurrence\'s own color');
+      expect(copy?.attendees?.map((a) => a.emailAddress),
+          ['guest-$tag@example.test'],
+          reason: 'the copy must keep the occurrence\'s own guests');
+
+      // The provider pairs an exception with its slot by the master's server
+      // key, which the new series gets only once its adapter uploads it, so
+      // until then the pairing is pending. The upload keys the master, the
+      // provider's own trigger passes the key on to the exception, and the
+      // series' next expansion pairs them (see [touchSeries]).
+      await markUploaded(newSeriesId);
+      final newKey = (await readSyncIds(newSeriesId))!.syncId;
+      expect((await readSyncIds(copyId))!.originalSyncId, newKey,
+          reason: 'the copy must follow the new master\'s server key');
+      await touchSeries(newSeriesId);
+
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, newTitle, series.start)),
+        startsExcept(series.occurrences, {0, 1, 2, 5})
+            .map((s) => s + shift.inMilliseconds)
+            .toList(),
+        reason: 'the new series must skip the detached occurrence\'s slot',
+      );
+      await expectDetachedOnce(plugin, calendarId!, detachedTitle,
+          series.occurrences[5], series.start,
+          reason: 'the detached occurrence must survive the split');
+    });
+
+    test(
+        'updateRecurring(thisAndFollowing) carries a deleted occurrence past '
+        'the split to a cancelled exception of the new series and tombstones '
+        'the old one (#158)', () async {
+      // The split leaves the start where it is: a moved start brings a
+      // deleted occurrence back, as on iOS, so nothing is carried then (see
+      // recurrence_test.dart).
+      final series = await seedUploadedSeries(plugin, calendarId);
+      final tag = DateTime.now().millisecondsSinceEpoch;
+      final slot = series.occurrences[5].startDate;
+      await plugin.deleteEvent(eventId: series.occurrences[5].instanceId);
+      final cancellationId = await exceptionIdOf(series.eventId, slot);
+      expect(cancellationId, isNotNull,
+          reason: 'the delete must be a cancelled exception row of the series');
+      // Uploaded: its `_sync_id` is now the server's name for "occurrence 5
+      // of the OLD series, cancelled".
+      await markUploaded(cancellationId!);
+      final newTitle = 'Synced tail past deleted #158 $tag';
+
+      final newSeriesId = await plugin.updateRecurring(
+          series.occurrences[3].instanceId, EventSpan.thisAndFollowing,
+          title: newTitle);
+
+      expect(await readSyncState(cancellationId), (deleted: true, dirty: true),
+          reason: 'the old cancellation must be left as a tombstone for the '
+              'adapter to upload');
+      final copyId = await exceptionIdOf(newSeriesId, slot);
+      expect(copyId, isNotNull,
+          reason: 'the cancellation must be written afresh against the new '
+              'series, at the same slot');
+      expect(await readSyncState(copyId!), (deleted: false, dirty: true),
+          reason: 'the copy must be flagged for upload');
+      expect((await plugin.getEvent(copyId))?.status, EventStatus.canceled,
+          reason: 'the copy must still cancel its slot');
+
+      // As for a detached occurrence: the upload keys the new master, the
+      // provider passes the key on to the copy, and the next expansion
+      // pairs them.
+      await markUploaded(newSeriesId);
+      await touchSeries(newSeriesId);
+
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, newTitle, series.start)),
+        startsExcept(series.occurrences, {0, 1, 2, 5}),
+        reason: 'the new series must keep the deleted slot deleted',
+      );
+    });
   }, skip: !Platform.isAndroid);
 }
