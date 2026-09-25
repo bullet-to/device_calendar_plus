@@ -1020,73 +1020,106 @@ void main() {
     // The slot rule across an update split (#158), as for the delete path's
     // "... by its original slot" tests: which series a detached occurrence
     // ends up on is decided by the slot it replaced, not by where it was
-    // moved to. One dragged from past the split to before it goes to the new
-    // series, whose slot it keeps standing in for; one dragged from before
-    // the split to past it stays on the old series.
-    for (final (index, move, outcome, atSlot6, slot6Reason, afterNewDeleted)
-        in [
-      (
-        6,
-        const Duration(days: -5, hours: 2),
-        'carries an occurrence dragged from past the split to before it',
-        (int slot) => isNot(contains(slot)),
-        'the new series must skip [6]\'s slot, which the moved occurrence '
-            'stands in for',
-        (DeviceCalendar plugin, String id, String title, SeededSeries series,
-                Event moved) async =>
-            expect(await eventsTitled(plugin, id, title, series.start), isEmpty,
-                reason: 'the moved occurrence must belong to the new series, '
-                    'and go with it'),
-      ),
-      (
-        1,
-        const Duration(days: 5, hours: 2),
-        'leaves an occurrence dragged from before the split to past it',
-        (int slot) => contains(slot),
-        'the new series must still generate [6]\'s slot, which nothing '
-            'detached stands in for',
-        (DeviceCalendar plugin, String id, String title, SeededSeries series,
-                Event moved) =>
-            // The listing half is unverified on Android (#159), as in the
-            // delete path's "keeps a detached occurrence by its original
-            // slot": the row read still runs.
-            expectDetachedKept(plugin, id, title, series, moved,
-                listed: !Platform.isAndroid),
-      ),
-    ]) {
-      test('thisAndFollowing update $outcome by its original slot', () async {
-        final series = await seedDailySeries(
-          plugin,
-          calendarId,
-          minOccurrences: 10,
-        );
-        final id = calendarId!;
-        final tag = DateTime.now().microsecondsSinceEpoch;
-        final title = 'Dragged across update split $tag';
-        final moved =
-            await moveOccurrence(plugin, id, series, index, move, title);
+    // moved to.
 
-        const shift = Duration(hours: 1);
-        final newTitle = 'New series across drag $tag';
-        final anchor = series.occurrences[3];
-        final newSeriesId = await plugin.updateRecurring(
-          anchor.instanceId,
-          EventSpan.thisAndFollowing,
-          title: newTitle,
-          start: anchor.startDate.add(shift),
-        );
+    /// The start shift of [dragThenSplit]'s split.
+    const splitShift = Duration(hours: 1);
 
-        final newStarts = startsOf(
-          await eventsTitled(plugin, id, newTitle, series.start),
-        );
-        final slot6 =
-            series.occurrences[6].startDate.add(shift).millisecondsSinceEpoch;
-        expect(newStarts, atSlot6(slot6), reason: slot6Reason);
+    /// Seeds a daily series, moves its occurrence [index] by [move] (retitled
+    /// so it can be found), then splits the series at [3] with a
+    /// thisAndFollowing update that shifts the start by [splitShift].
+    Future<
+        ({
+          SeededSeries series,
+          Event moved,
+          String title,
+          String newSeriesId,
+          List<int> newStarts,
+        })> dragThenSplit(int index, Duration move) async {
+      final series = await seedDailySeries(
+        plugin,
+        calendarId,
+        minOccurrences: 10,
+      );
+      final id = calendarId!;
+      final tag = DateTime.now().microsecondsSinceEpoch;
+      final title = 'Dragged across update split $tag';
+      final moved =
+          await moveOccurrence(plugin, id, series, index, move, title);
 
-        await plugin.deleteEvent(eventId: newSeriesId);
-        await afterNewDeleted(plugin, id, title, series, moved);
-      });
+      final newTitle = 'New series across drag $tag';
+      final anchor = series.occurrences[3];
+      final newSeriesId = await plugin.updateRecurring(
+        anchor.instanceId,
+        EventSpan.thisAndFollowing,
+        title: newTitle,
+        start: anchor.startDate.add(splitShift),
+      );
+      final newStarts = startsOf(
+        await eventsTitled(plugin, id, newTitle, series.start),
+      );
+      return (
+        series: series,
+        moved: moved,
+        title: title,
+        newSeriesId: newSeriesId,
+        newStarts: newStarts,
+      );
     }
+
+    test(
+      'thisAndFollowing update carries an occurrence dragged from past the '
+      'split to before it by its original slot',
+      () async {
+        // [6] moved onto [1]'s day: its slot is past the split, so it goes
+        // to the new series, whose slot it keeps standing in for.
+        final split =
+            await dragThenSplit(6, const Duration(days: -5, hours: 2));
+        final slot6 = split.series.occurrences[6].startDate
+            .add(splitShift)
+            .millisecondsSinceEpoch;
+        expect(split.newStarts, isNot(contains(slot6)),
+            reason: 'the new series must skip [6]\'s slot, which the moved '
+                'occurrence stands in for');
+
+        await plugin.deleteEvent(eventId: split.newSeriesId);
+        expect(
+            await eventsTitled(
+                plugin, calendarId!, split.title, split.series.start),
+            isEmpty,
+            reason: 'the moved occurrence must belong to the new series, and '
+                'go with it');
+      },
+    );
+
+    test(
+      'thisAndFollowing update leaves an occurrence dragged from before the '
+      'split to past it by its original slot',
+      () async {
+        // [1] moved onto [6]'s day: its slot is before the split, so it
+        // stays on the old series, and nothing detached stands in for [6].
+        final split = await dragThenSplit(1, const Duration(days: 5, hours: 2));
+        final slot6 = split.series.occurrences[6].startDate
+            .add(splitShift)
+            .millisecondsSinceEpoch;
+        expect(split.newStarts, contains(slot6),
+            reason: 'the new series must still generate [6]\'s slot, which '
+                'nothing detached stands in for');
+
+        await plugin.deleteEvent(eventId: split.newSeriesId);
+        // The listing half is unverified on Android (#159), as in the
+        // delete path's "keeps a detached occurrence by its original slot":
+        // the row read still runs.
+        await expectDetachedKept(
+          plugin,
+          calendarId!,
+          split.title,
+          split.series,
+          split.moved,
+          listed: !Platform.isAndroid,
+        );
+      },
+    );
 
     // A single-occurrence delete past the split (#158). iOS keeps it
     // deleted in the new series while the split leaves the start where it
@@ -1099,7 +1132,7 @@ void main() {
         Duration.zero,
         'keeps it deleted',
         (int slot) => isNot(contains(slot)),
-        'the new series must keep the occurrence deleted past the split '
+        'the new series must keep the deleted occurrence past the split '
             'deleted',
       ),
       (
