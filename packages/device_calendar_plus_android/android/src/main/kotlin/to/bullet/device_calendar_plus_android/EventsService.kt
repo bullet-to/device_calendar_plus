@@ -1354,7 +1354,103 @@ class EventsService(
             )
         }
 
+        // Moved after the truncate, for the reason the delete path sweeps
+        // after it (see deleteRecurringThisAndFollowing): a failure here
+        // leaves the exceptions on the old series rather than losing them.
+        if (effectiveRrule != null) {
+            reparentDetachedOccurrencesFrom(
+                row, timestamp, newEventId, newStart - timestamp
+            ).getOrElse { return Result.failure(it) }
+        }
+
         return Result.success(newEventId)
+    }
+
+    /**
+     * Moves the detached occurrences of [master] whose original slot is at
+     * or after [fromInstant] onto the series [newMasterId]: the second half
+     * of a `thisAndFollowing` update, and its counterpart to the delete
+     * path's [deleteDetachedOccurrencesFrom] (#158).
+     *
+     * iOS's EKSpan.futureEvents save re-parents them: each keeps its own
+     * edits (title, moved time), and the new series skips its slot instead
+     * of generating a second occurrence beside it. Left keyed to the old
+     * master, Android would list both. The slot moves by [slotShift] — the
+     * split's own start shift — because the new series generates every slot
+     * shifted by it; iOS keeps the pairing across the shift, so Android
+     * must too. The same slot rule as the delete path decides which rows
+     * move: where each occurrence was, not where it was moved to.
+     *
+     * The new master needs a key first: the provider pairs an exception
+     * with its slot by ORIGINAL_SYNC_ID, not ORIGINAL_ID. On a local
+     * calendar that key is [ensureLocalSeriesSyncId]'s (#153). A synced
+     * one has none until its adapter uploads it, so ORIGINAL_SYNC_ID is
+     * cleared rather than left naming the old series, and the pairing waits
+     * on that upload: the provider's `original_sync_update` trigger copies
+     * the new `_sync_id` onto the exception, and the series' next expansion
+     * pairs them. Each row is a plain caller's update, so on a synced
+     * calendar it is DIRTY for the adapter to upload (#132).
+     *
+     * Only called when the new series recurs: one turned into a single
+     * event has no slots for an exception to stand in.
+     */
+    private fun reparentDetachedOccurrencesFrom(
+        master: EventRow,
+        fromInstant: Long,
+        newMasterId: String,
+        slotShift: Long
+    ): Result<Unit> {
+        val exceptions = mutableListOf<Pair<String, Long>>()
+        context.contentResolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            arrayOf(
+                CalendarContract.Events._ID,
+                CalendarContract.Events.ORIGINAL_INSTANCE_TIME
+            ),
+            "${CalendarContract.Events.ORIGINAL_ID} = ? AND " +
+                "${CalendarContract.Events.ORIGINAL_INSTANCE_TIME} >= ? AND " +
+                "${CalendarContract.Events.DELETED} = 0",
+            arrayOf(master.id, fromInstant.toString()),
+            null
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                exceptions += cursor.getString(0) to cursor.getLong(1)
+            }
+        }
+        if (exceptions.isEmpty()) return Result.success(Unit)
+
+        val newSeries = readRecurringRow(newMasterId).getOrElse { return Result.failure(it) }
+        val newKey = ensureLocalSeriesSyncId(newSeries).getOrElse { return Result.failure(it) }
+
+        for ((exceptionId, slot) in exceptions) {
+            updateEventRow(
+                exceptionId,
+                android.content.ContentValues().apply {
+                    put(CalendarContract.Events.ORIGINAL_ID, newMasterId.toLong())
+                    if (newKey != null) {
+                        put(CalendarContract.Events.ORIGINAL_SYNC_ID, newKey)
+                    } else {
+                        putNull(CalendarContract.Events.ORIGINAL_SYNC_ID)
+                    }
+                    put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, slot + slotShift)
+                }
+            )
+        }
+
+        // The new series was expanded when it was inserted, before it had
+        // any exceptions, and moving them onto it does not re-expand it: it
+        // would still generate the slots they now stand in for. Rewriting
+        // its (unchanged) time columns and rule forces the provider to, as
+        // in the truncate above.
+        val row = newSeries.row
+        updateEventRow(row.id, android.content.ContentValues().apply {
+            put(CalendarContract.Events.RRULE, newSeries.rrule)
+            put(CalendarContract.Events.DTSTART, row.dtstart)
+            if (row.duration != null) {
+                put(CalendarContract.Events.DURATION, row.duration)
+            }
+        })
+        return Result.success(Unit)
     }
 
     // -- deleteRecurring (issue #43) --
@@ -1514,7 +1610,8 @@ class EventsService(
     /**
      * The master row a per-occurrence call addresses — an exception write in
      * [updateEventInstance] and [deleteEventInstance], the split in
-     * [deleteRecurringThisAndFollowing]. NOT_FOUND when the event is missing
+     * [deleteRecurringThisAndFollowing], the new series that
+     * [reparentDetachedOccurrencesFrom] keys. NOT_FOUND when the event is missing
      * (or a DELETED tombstone), then [asSeries]. The split in
      * [updateRecurringThisAndFollowing] takes that second step alone, on the
      * row [updateRecurring] already read.
@@ -1701,11 +1798,14 @@ class EventsService(
      * read and now lands here too: the exception insert would throw on the
      * missing original anyway, and the outer catch maps that to
      * OPERATION_FAILED as well.
+     *
+     * Returns the series' key: the one it had, the one just assigned, or
+     * null on a synced calendar whose adapter has not keyed it yet.
      */
-    private fun ensureLocalSeriesSyncId(series: SeriesRow): Result<Unit> {
+    private fun ensureLocalSeriesSyncId(series: SeriesRow): Result<String?> {
         val row = series.row
-        if (row.syncId != null) return Result.success(Unit)
-        if (!row.account.isLocal) return Result.success(Unit)
+        if (row.syncId != null) return Result.success(row.syncId)
+        if (!row.account.isLocal) return Result.success(null)
 
         val syncId = "device_calendar_plus:${java.util.UUID.randomUUID()}"
         val updated = context.contentResolver.update(
@@ -1724,7 +1824,7 @@ class EventsService(
                 )
             )
         }
-        return Result.success(Unit)
+        return Result.success(syncId)
     }
 
     /** Inserts a fresh event row, using DURATION when recurring and DTEND otherwise. */

@@ -204,5 +204,51 @@ void main() {
         reason: 'the new series must carry the occurrences from the split on',
       );
     });
+
+    test(
+        'updateRecurring(thisAndFollowing) re-parents a detached occurrence '
+        'past the split onto the unsynced new series (#158)', () async {
+      final series = await seedUploadedSeries(plugin, calendarId);
+      final tag = DateTime.now().millisecondsSinceEpoch;
+      final detachedTitle = 'Detached past update split #158 $tag';
+      final exceptionId =
+          await detachOccurrence(plugin, calendarId!, series, 5, detachedTitle);
+      // Uploaded, so a DIRTY=1 afterwards is the re-parenting's alone.
+      await markUploaded(exceptionId);
+      final newTitle = 'Synced tail #158 $tag';
+
+      final newSeriesId = await plugin.updateRecurring(
+          series.occurrences[3].instanceId, EventSpan.thisAndFollowing,
+          title: newTitle);
+
+      expect(await readSyncState(exceptionId), (deleted: false, dirty: true),
+          reason: 'the re-parented exception must be flagged for upload');
+      expect((await readSyncIds(exceptionId))!.originalSyncId, isNull,
+          reason: 'the exception must not stay keyed to the old series, and '
+              'the new one has no server key yet');
+
+      // The provider pairs an exception with its slot by the master's server
+      // key, which the new series gets only once its adapter uploads it, so
+      // until then the pairing is pending. The upload keys the master, the
+      // provider's own trigger passes the key on to the exception, and the
+      // series' next expansion pairs them. (The adapter's own writes bring
+      // that expansion; here a no-change rewrite of the series stands in.)
+      await markUploaded(newSeriesId);
+      final newKey = (await readSyncIds(newSeriesId))!.syncId;
+      expect((await readSyncIds(exceptionId))!.originalSyncId, newKey,
+          reason: 'the exception must follow the new master\'s server key');
+      await plugin.updateRecurring(newSeriesId, EventSpan.allEvents,
+          start: series.occurrences[3].startDate);
+
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, newTitle, series.start)),
+        startsExcept(series.occurrences, {0, 1, 2, 5}),
+        reason: 'the new series must skip the detached occurrence\'s slot',
+      );
+      await expectDetachedOnce(plugin, calendarId!, detachedTitle,
+          series.occurrences[5], series.start,
+          reason: 'the detached occurrence must survive the split');
+    });
   }, skip: !Platform.isAndroid);
 }

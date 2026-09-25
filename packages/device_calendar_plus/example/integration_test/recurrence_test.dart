@@ -1863,5 +1863,96 @@ void main() {
           ? false
           : 'iOS: anchoring a split on a detached slot is notFound (#124)',
     );
+
+    test(
+      'thisAndFollowing update carries a detached occurrence past the split '
+      'into the new series',
+      () async {
+        // iOS's EKSpan.futureEvents save re-parents a detached occurrence
+        // whose slot is past the split onto the new series (#158): it keeps
+        // its own edits, and the new series skips its slot rather than
+        // generating a duplicate there — even when the split also moves the
+        // start, which moves the slot with it. One before the split stays on
+        // the old series.
+        final series = await seedDailySeries(
+          plugin,
+          calendarId,
+          minOccurrences: 10,
+        );
+        final id = calendarId!;
+        final tag = DateTime.now().microsecondsSinceEpoch;
+
+        const withinDay = Duration(hours: 2);
+        final pastTitle = 'Detached past update split $tag';
+        final beforeTitle = 'Detached before update split $tag';
+        final movedPast = await moveOccurrence(
+          plugin,
+          id,
+          series,
+          6,
+          withinDay,
+          pastTitle,
+        );
+        final movedBefore = await moveOccurrence(
+          plugin,
+          id,
+          series,
+          1,
+          withinDay,
+          beforeTitle,
+        );
+
+        const shift = Duration(hours: 1);
+        final newTitle = 'New series $tag';
+        final anchor = series.occurrences[3];
+        final newSeriesId = await plugin.updateRecurring(
+          anchor.instanceId,
+          EventSpan.thisAndFollowing,
+          title: newTitle,
+          start: anchor.startDate.add(shift),
+        );
+
+        // The new series: every slot from the anchor on, shifted, except the
+        // detached one's — no duplicate beside it.
+        final newStarts = startsOf(
+          await eventsTitled(plugin, id, newTitle, series.start),
+        );
+        final slot6 = series.occurrences[6].startDate.add(shift);
+        expect(
+          newStarts,
+          isNot(contains(slot6.millisecondsSinceEpoch)),
+          reason: 'the new series must skip the slot of the detached '
+              'occurrence it took over, not generate a duplicate there',
+        );
+        expect(
+          newStarts,
+          containsAll([3, 4, 5, 7, 8].map((i) =>
+              series.occurrences[i].startDate.add(shift).millisecondsSinceEpoch)),
+          reason: 'the new series must carry every other slot from the anchor '
+              'on, shifted',
+        );
+
+        // Both detached occurrences keep their own edits and times.
+        await expectDetachedOnce(plugin, id, pastTitle, movedPast, series.start,
+            reason: 'the detached occurrence past the split must survive '
+                'with its own title and time');
+        await expectDetachedOnce(
+            plugin, id, beforeTitle, movedBefore, series.start,
+            reason: 'the detached occurrence before the split must survive '
+                'untouched');
+
+        // Re-parented, not merely kept: deleting the new series takes the
+        // detached occurrence past the split with it, and leaves the one
+        // before the split on the old series.
+        await plugin.deleteEvent(eventId: newSeriesId);
+        expect(await eventsTitled(plugin, id, pastTitle, series.start), isEmpty,
+            reason: 'the detached occurrence past the split must belong to '
+                'the new series');
+        await expectDetachedOnce(
+            plugin, id, beforeTitle, movedBefore, series.start,
+            reason: 'the detached occurrence before the split must stay on '
+                'the old series');
+      },
+    );
   });
 }
