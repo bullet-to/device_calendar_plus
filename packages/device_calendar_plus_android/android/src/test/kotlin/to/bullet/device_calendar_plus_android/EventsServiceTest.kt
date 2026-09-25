@@ -29,13 +29,13 @@ internal class EventsServiceTest {
     // A NULL AVAILABILITY column falls through to the documented default.
     @Test
     fun availabilityToString_null_returnsBusy() {
-        assertEquals("busy", service.availabilityToString(null))
+        assertEquals("busy", availabilityToString(null))
     }
 
     @Test
     fun availabilityToString_mapsProviderConstants() {
-        assertEquals("busy", service.availabilityToString(0))
-        assertEquals("free", service.availabilityToString(1))
-        assertEquals("tentative", service.availabilityToString(2))
+        assertEquals("busy", availabilityToString(0))
+        assertEquals("free", availabilityToString(1))
+        assertEquals("tentative", availabilityToString(2))
     }
 }

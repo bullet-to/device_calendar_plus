@@ -955,8 +955,8 @@ void main() {
     /// its `move`, retitled `'<label> <tag>'` so it can be found, then splits
     /// the series at [3] with a thisAndFollowing update that shifts the start
     /// by [splitShift] and sets the rule [ruleFor] gives for the series, if
-    /// any. Returns the moved occurrences and their titles in [drags]' order,
-    /// and the new series' starts.
+    /// any. The series has [count] occurrences. Returns the moved occurrences
+    /// and their titles in [drags]' order, and the new series' starts.
     Future<
         ({
           SeededSeries series,
@@ -967,11 +967,13 @@ void main() {
         })> splitAfterDrags(
       List<(int index, Duration move, String label)> drags, {
       Patch<RecurrenceRule>? Function(SeededSeries series)? ruleFor,
+      int count = 10,
     }) async {
       final series = await seedDailySeries(
         plugin,
         calendarId,
-        minOccurrences: 10,
+        count: count,
+        minOccurrences: count,
       );
       final id = calendarId!;
       final tag = DateTime.now().microsecondsSinceEpoch;
@@ -1081,6 +1083,12 @@ void main() {
         expect(split.newStarts, isNot(contains(slot6)),
             reason: 'the new series must skip [6]\'s slot, which the moved '
                 'occurrence stands in for');
+        // It sits before the split, so the split's time shift must not
+        // move it.
+        await expectDetachedOnce(plugin, calendarId!, split.titles.single,
+            split.moved.single, split.series.start,
+            reason: 'the moved occurrence must survive once, with its own '
+                'title at its dragged time');
 
         await plugin.deleteEvent(eventId: split.newSeriesId);
         expect(
@@ -1132,35 +1140,61 @@ void main() {
       'past the split by the days the anchor moved',
       () async {
         // A weekly rule on the weekday two days after the anchor re-anchors
-        // the new series onto that day (#140), and iOS moves the detached
+        // the new series onto that day (#140), and iOS moves each detached
         // occurrence by the same two days, keeping its time of day. The
         // series is stored in UTC, so the weekday is read in UTC (#103).
+        // The rule generates [5], [12] and [19]: [10]'s slot moves onto
+        // [12], a day the new series generates, so the pairing shows as a
+        // skipped slot there; [6]'s moves onto [8], which it doesn't.
+        const twoDays = Duration(days: 2);
         final split = await splitAfterDrags(
-          [(6, const Duration(hours: 2), 'Detached past rule change')],
+          [
+            (6, const Duration(hours: 2), 'Detached past rule change'),
+            (10, const Duration(hours: 2), 'Detached onto new rule slot'),
+          ],
           ruleFor: (series) => Patch.set(WeeklyRecurrence(
             daysOfWeek: [
               weekdayOf(series.occurrences[5].startDate.toUtc()),
             ],
             end: const CountEnd(3),
           )),
+          count: 12,
         );
         final id = calendarId!;
-        final title = split.titles.single;
+        final series = split.series;
+
+        // Where [12] would be: the series is stored in UTC, so whole days
+        // are exact durations.
+        final slot12 =
+            series.occurrences[10].startDate.add(twoDays).add(splitShift);
         expect(
-          startsOf(await eventsTitled(plugin, id, title, split.series.start)),
-          [
-            split.moved.single.startDate
-                .add(const Duration(days: 2))
-                .millisecondsSinceEpoch,
-          ],
-          reason: 'the detached occurrence must move by the days the split '
-              'moved the anchor, as iOS moves it',
+          split.newStarts,
+          contains(series.occurrences[5].startDate
+              .add(splitShift)
+              .millisecondsSinceEpoch),
+          reason: 'the new series must start on the new rule\'s weekday',
+        );
+        expect(
+          split.newStarts,
+          isNot(contains(slot12.millisecondsSinceEpoch)),
+          reason: 'the new series must skip the slot [10]\'s detached '
+              'occurrence moved onto, not generate a duplicate there',
         );
 
+        for (final (i, title) in split.titles.indexed) {
+          expect(
+            startsOf(await eventsTitled(plugin, id, title, series.start)),
+            [split.moved[i].startDate.add(twoDays).millisecondsSinceEpoch],
+            reason: 'the detached occurrence must be listed once, moved by '
+                'the days the split moved the anchor, as iOS moves it',
+          );
+        }
+
         await plugin.deleteEvent(eventId: split.newSeriesId);
-        expect(await eventsTitled(plugin, id, title, split.series.start),
-            isEmpty,
-            reason: 'the detached occurrence must belong to the new series');
+        for (final title in split.titles) {
+          expect(await eventsTitled(plugin, id, title, series.start), isEmpty,
+              reason: 'the detached occurrence must belong to the new series');
+        }
       },
     );
 
