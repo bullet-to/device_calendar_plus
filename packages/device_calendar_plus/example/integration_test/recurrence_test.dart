@@ -198,7 +198,7 @@ Future<void> expectDetachedGone(
 /// Asserts a detached occurrence survived a `thisAndFollowing` split: still
 /// listed, and on Android its own Events row intact (see [expectDetachedGone]
 /// for why the row read is Android-only). [listed] is false where the
-/// listing half is unverified (#159); the row read still runs.
+/// listing half is gated off for the emulator (#159); the row read still runs.
 Future<void> expectDetachedKept(
   DeviceCalendar plugin,
   String calendarId,
@@ -1765,11 +1765,12 @@ void main() {
             series.occurrences[1].startDate,
           ],
         );
-        // The listing half is unverified on Android: the emulator's Calendar
-        // Provider drops the moved copy from the Instances cache once the
-        // master's rule ends before it, although the row is intact (the row
-        // read proves it). A physical device runs the same AOSP provider and
-        // has not been checked (#159), so Android asserts the row only.
+        // The listing half is skipped on Android for the emulator's sake: its
+        // Calendar Provider drops the moved copy from the Instances cache once
+        // the master's rule ends before it, although the row is intact (the
+        // row read proves it). Physical Android does list it — verified on a
+        // Galaxy A10 / API 30 with this assertion switched on (#159) — so the
+        // gate documents an emulator quirk, not a platform contract.
         await expectDetachedKept(
           plugin,
           id,
