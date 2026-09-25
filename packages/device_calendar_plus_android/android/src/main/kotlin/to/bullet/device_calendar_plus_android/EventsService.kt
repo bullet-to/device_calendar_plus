@@ -8,6 +8,9 @@ import java.util.Date
 
 private const val MINUTES_PER_DAY = 1440
 
+/** Logcat tag for the best-effort steps whose failures no caller hears of. */
+private const val LOG_TAG = "DeviceCalendarPlus"
+
 /**
  * Selects an event row by `_ID`, skipping DELETED=1 tombstones. A tombstone
  * is what a non-sync-adapter delete leaves on an event with a `_sync_id` — a
@@ -284,50 +287,74 @@ class EventsService(
     }
 
     /**
+     * One [CalendarContract.Reminders] row as stored: [minutes] before the
+     * event start ([CalendarContract.Reminders.MINUTES_DEFAULT] when the row
+     * names none) and its delivery [method].
+     */
+    private data class ReminderRow(val minutes: Int, val method: Int)
+
+    /**
+     * Every [CalendarContract.Reminders] row of event [eventId], whatever
+     * the method: the one reminder reader. A null METHOD reads as
+     * METHOD_DEFAULT and a null MINUTES as MINUTES_DEFAULT, the values the
+     * provider gives a row that omits them. Throws when the query does.
+     */
+    private fun queryReminderRows(eventId: Long): List<ReminderRow> {
+        val rows = mutableListOf<ReminderRow>()
+        context.contentResolver.query(
+            CalendarContract.Reminders.CONTENT_URI,
+            arrayOf(
+                CalendarContract.Reminders.MINUTES,
+                CalendarContract.Reminders.METHOD,
+            ),
+            "${CalendarContract.Reminders.EVENT_ID} = ?",
+            arrayOf(eventId.toString()),
+            null
+        )?.use { cursor ->
+            val minutesIdx = cursor.getColumnIndexOrThrow(CalendarContract.Reminders.MINUTES)
+            val methodIdx = cursor.getColumnIndexOrThrow(CalendarContract.Reminders.METHOD)
+            while (cursor.moveToNext()) {
+                rows += ReminderRow(
+                    minutes = if (cursor.isNull(minutesIdx)) {
+                        CalendarContract.Reminders.MINUTES_DEFAULT
+                    } else {
+                        cursor.getInt(minutesIdx)
+                    },
+                    method = if (cursor.isNull(methodIdx)) {
+                        CalendarContract.Reminders.METHOD_DEFAULT
+                    } else {
+                        cursor.getInt(methodIdx)
+                    }
+                )
+            }
+        }
+        return rows
+    }
+
+    /**
      * Reads the relative reminders of an event as whole minutes before start.
      *
      * Keeps only alert/default-method rows (the ones the plugin writes); email
      * and SMS reminders are out of scope and skipped. A row with MINUTES_DEFAULT
      * (-1) carries no fixed offset, so it is skipped too. Returns an empty list
-     * when the event has no qualifying reminders.
+     * when the event has no qualifying reminders, or when the query fails: a
+     * read that can't list an event's reminders still lists the event.
      */
     private fun queryReminderMinutes(eventId: Long): List<Int> {
-        val minutes = mutableListOf<Int>()
-        try {
-            context.contentResolver.query(
-                CalendarContract.Reminders.CONTENT_URI,
-                arrayOf(
-                    CalendarContract.Reminders.MINUTES,
-                    CalendarContract.Reminders.METHOD,
-                ),
-                "${CalendarContract.Reminders.EVENT_ID} = ?",
-                arrayOf(eventId.toString()),
-                null
-            )?.use { cursor ->
-                val minutesIdx = cursor.getColumnIndexOrThrow(CalendarContract.Reminders.MINUTES)
-                val methodIdx = cursor.getColumnIndexOrThrow(CalendarContract.Reminders.METHOD)
-                while (cursor.moveToNext()) {
-                    val method = if (cursor.isNull(methodIdx)) {
-                        CalendarContract.Reminders.METHOD_DEFAULT
-                    } else {
-                        cursor.getInt(methodIdx)
-                    }
-                    if (method != CalendarContract.Reminders.METHOD_ALERT &&
-                        method != CalendarContract.Reminders.METHOD_DEFAULT) {
-                        continue
-                    }
-                    if (cursor.isNull(minutesIdx)) continue
-                    val value = cursor.getInt(minutesIdx)
-                    // MINUTES_DEFAULT (-1) means "use the calendar's default" —
-                    // it has no concrete offset to report.
-                    if (value < 0) continue
-                    minutes.add(value)
-                }
-            }
+        val rows = try {
+            queryReminderRows(eventId)
         } catch (_: Exception) {
-            // Silently return what we have if the reminder query fails.
+            return emptyList()
         }
-        return minutes
+        return rows
+            .filter {
+                it.method == CalendarContract.Reminders.METHOD_ALERT ||
+                    it.method == CalendarContract.Reminders.METHOD_DEFAULT
+            }
+            // MINUTES_DEFAULT (-1) means "use the calendar's default" — it
+            // has no concrete offset to report.
+            .filter { it.minutes >= 0 }
+            .map { it.minutes }
     }
 
     private fun queryAttendees(eventId: Long): List<Map<String, Any?>> {
@@ -723,7 +750,7 @@ class EventsService(
                     // is the same whether or not the event recurs, so the
                     // RRULE/DURATION handling above is untouched.
                     if (reminders != null && reminders.isNotEmpty()) {
-                        insertReminderRows(eventId.toLong(), reminders)
+                        insertAlertReminders(eventId.toLong(), reminders)
                     }
                     return Result.success(eventId)
                 }
@@ -1318,27 +1345,16 @@ class EventsService(
             EventFieldPatch.RemindersPatch.Unchanged -> queryReminderMinutes(row.id.toLong())
         }
         if (effectiveReminders.isNotEmpty()) {
-            insertReminderRows(newEventId.toLong(), effectiveReminders)
+            insertAlertReminders(newEventId.toLong(), effectiveReminders)
             setHasAlarm(newEventId.toLong(), row.calendarId, true)
         }
 
         // Truncate the original series to end just before the anchor. UNTIL is
         // inclusive, so cutting it one second early keeps the anchor occurrence
         // off the old series — it belongs to the new one.
-        //
-        // DTSTART/DURATION are rewritten with their existing values to force
-        // Android's CalendarProvider to invalidate the Instances cache (it
-        // doesn't always when only RRULE changes — see
-        // deleteRecurringThisAndFollowing).
         val truncatedRrule = RruleString.withUntil(rrule, timestamp - 1000, row.allDay)
-        val truncateValues = android.content.ContentValues().apply {
-            put(CalendarContract.Events.RRULE, truncatedRrule)
-            put(CalendarContract.Events.DTSTART, row.dtstart)
-            if (row.duration != null) {
-                put(CalendarContract.Events.DURATION, row.duration)
-            }
-        }
-        val truncatedRows = updateEventRow(row.id, truncateValues)
+        val truncatedRows =
+            rewriteSeriesForReexpand(row.id, truncatedRrule, row.dtstart, row.duration)
         if (truncatedRows == 0) {
             // Roll back the new series so the calendar is left unchanged.
             context.contentResolver.delete(
@@ -1354,13 +1370,13 @@ class EventsService(
             )
         }
 
-        // Moved after the truncate, for the reason the delete path sweeps
+        // Carried after the truncate, for the reason the delete path sweeps
         // after it (see deleteRecurringThisAndFollowing): a failure here
         // leaves the exceptions on the old series rather than losing them.
+        // The split is committed by now, so the carry is best-effort and
+        // reports nothing (see reparentDetachedOccurrencesFrom).
         if (effectiveRrule != null) {
-            reparentDetachedOccurrencesFrom(
-                row, timestamp, newEventId, newStart - timestamp
-            ).getOrElse { return Result.failure(it) }
+            reparentDetachedOccurrencesFrom(row, timestamp, newEventId, newStart - timestamp)
         }
 
         return Result.success(newEventId)
@@ -1386,9 +1402,10 @@ class EventsService(
      * How a row carries over depends on the calendar:
      *
      * - Local: the row itself moves ([moveException]). Nothing but the
-     *   device reads it, and a move keeps every column. The new master is
-     *   keyed by [ensureLocalSeriesSyncId] first (#153): the provider pairs
-     *   an exception with its slot by ORIGINAL_SYNC_ID, not ORIGINAL_ID.
+     *   device reads it, and a move keeps every column and child row. The
+     *   new master is keyed by [ensureLocalSeriesSyncId] first (#153): the
+     *   provider pairs an exception with its slot by ORIGINAL_SYNC_ID, not
+     *   ORIGINAL_ID.
      * - Synced: the occurrence is copied to a fresh exception of the new
      *   master and the old row deleted ([copyException]). An uploaded
      *   exception's `_sync_id` is the server's name for "this occurrence of
@@ -1399,6 +1416,14 @@ class EventsService(
      *   Google's adapter on device). A fresh keyless row is new to the
      *   server, and the old row's tombstone tells it the old one is gone.
      *
+     * Best-effort, like the delete path's sweep: by the time it runs the new
+     * series is inserted and the old one truncated, so the split has
+     * happened and the caller is told so whatever happens here. Reporting a
+     * failure instead would invite a retry that splits the series again.
+     * Each occurrence carries on its own: one that fails stays on the old
+     * series, past its UNTIL, as it was before #158, and the rest still
+     * carry.
+     *
      * Only called when the new series recurs: one turned into a single
      * event has no slots for an exception to stand in.
      */
@@ -1407,7 +1432,26 @@ class EventsService(
         fromInstant: Long,
         newMasterId: String,
         slotShift: Long
-    ): Result<Unit> {
+    ) {
+        try {
+            carryDetachedOccurrences(master, fromInstant, newMasterId, slotShift)
+        } catch (e: Exception) {
+            android.util.Log.w(
+                LOG_TAG,
+                "Split of event ${master.id} committed, but its detached " +
+                    "occurrences could not be carried to $newMasterId",
+                e
+            )
+        }
+    }
+
+    /** The body of [reparentDetachedOccurrencesFrom], which owns its failure contract. */
+    private fun carryDetachedOccurrences(
+        master: EventRow,
+        fromInstant: Long,
+        newMasterId: String,
+        slotShift: Long
+    ) {
         val exceptions = mutableListOf<Pair<String, Long>>()
         context.contentResolver.query(
             CalendarContract.Events.CONTENT_URI,
@@ -1422,9 +1466,13 @@ class EventsService(
             arrayOf(master.id, fromInstant.toString()),
             null
         )?.use { cursor ->
+            val idIdx = cursor.getColumnIndexOrThrow(CalendarContract.Events._ID)
+            val slotIdx =
+                cursor.getColumnIndexOrThrow(CalendarContract.Events.ORIGINAL_INSTANCE_TIME)
+            val statusIdx = cursor.getColumnIndexOrThrow(CalendarContract.Events.STATUS)
             while (cursor.moveToNext()) {
-                val cancelled = !cursor.isNull(2) &&
-                    cursor.getInt(2) == CalendarContract.Events.STATUS_CANCELED
+                val cancelled = !cursor.isNull(statusIdx) &&
+                    cursor.getInt(statusIdx) == CalendarContract.Events.STATUS_CANCELED
                 // A deleted occurrence ([deleteEventInstance]'s cancelled
                 // row) is iOS's deleted date, which stays at its old time:
                 // it carries over only while the split leaves the slots
@@ -1432,40 +1480,36 @@ class EventsService(
                 // back. Left on the old master, past its UNTIL, it cancels
                 // nothing, as before #158.
                 if (cancelled && slotShift != 0L) continue
-                exceptions += cursor.getString(0) to cursor.getLong(1)
+                exceptions += cursor.getString(idIdx) to cursor.getLong(slotIdx)
             }
         }
-        if (exceptions.isEmpty()) return Result.success(Unit)
+        if (exceptions.isEmpty()) return
 
-        val newSeries = readRecurringRow(newMasterId).getOrElse { return Result.failure(it) }
-        if (master.account.isLocal) {
-            val newKey = ensureLocalSeriesSyncId(newSeries)
-                .getOrElse { return Result.failure(it) }
-            for ((exceptionId, slot) in exceptions) {
-                moveException(exceptionId, newMasterId, newKey, slot + slotShift)
-            }
-        } else {
-            for ((exceptionId, slot) in exceptions) {
-                copyException(exceptionId, newSeries, slot + slotShift, master.account)
-                    .getOrElse { return Result.failure(it) }
+        val newSeries = readRecurringRow(newMasterId).getOrThrow()
+        val isLocal = master.account.isLocal
+        val newKey = if (isLocal) ensureLocalSeriesSyncId(newSeries).getOrThrow() else null
+        for ((exceptionId, slot) in exceptions) {
+            try {
+                if (isLocal) {
+                    moveException(exceptionId, newMasterId, newKey, slot + slotShift)
+                } else {
+                    copyException(exceptionId, newSeries, slot + slotShift, master.account)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w(
+                    LOG_TAG,
+                    "Could not carry detached occurrence $exceptionId to $newMasterId",
+                    e
+                )
             }
         }
 
         // The new series was expanded when it was inserted, before it had
         // any exceptions, and moving them onto it does not re-expand it: it
-        // would still generate the slots they now stand in for. Rewriting
-        // its (unchanged) time columns and rule forces the provider to, as
-        // in the truncate above. (Harmless after a copy, whose exception
-        // insert expands on its own.)
+        // would still generate the slots they now stand in for. (Harmless
+        // after a copy, whose exception insert expands on its own.)
         val row = newSeries.row
-        updateEventRow(row.id, android.content.ContentValues().apply {
-            put(CalendarContract.Events.RRULE, newSeries.rrule)
-            put(CalendarContract.Events.DTSTART, row.dtstart)
-            if (row.duration != null) {
-                put(CalendarContract.Events.DURATION, row.duration)
-            }
-        })
-        return Result.success(Unit)
+        rewriteSeriesForReexpand(row.id, newSeries.rrule, row.dtstart, row.duration)
     }
 
     /**
@@ -1495,9 +1539,18 @@ class EventsService(
 
     /**
      * Writes exception row [exceptionId]'s occurrence afresh as the
-     * exception of [newSeries] at slot [newSlot], reminders included, then
-     * deletes the old row: the synced-calendar half of
-     * [reparentDetachedOccurrencesFrom].
+     * exception of [newSeries] at slot [newSlot], then deletes the old row:
+     * the synced-calendar half of [reparentDetachedOccurrencesFrom].
+     *
+     * What the copy keeps: every occurrence-level column the plugin reads or
+     * the user can set per occurrence ([carriedOccurrenceColumns], plus the
+     * time as DTSTART/DURATION), and the occurrence's own Reminders and
+     * Attendees rows, which replace whatever the provider seeds an exception
+     * with from its master. What it drops: ExtendedProperties rows, which
+     * only a sync adapter may write, and which the plugin neither reads nor
+     * writes; and the adapter's own columns (`_sync_id`, SYNC_DATA*,
+     * UID_2445), which are the server's name for the old row and are what
+     * the copy must not carry.
      *
      * The copy is a plain insert through [insertException] with no
      * `_sync_id`, so it is DIRTY and new to the server. The new master is
@@ -1507,102 +1560,177 @@ class EventsService(
      * [deleteUri] (plain on a synced account), so an uploaded row stays as
      * a tombstone for the adapter to send.
      *
-     * The copy goes in first, so a failure leaves the old row in place
-     * rather than neither.
+     * The copy goes in first, and is removed again if its child rows fail,
+     * so a failure leaves the old row in place rather than neither or both.
+     * Throws on failure; the caller skips the occurrence.
      */
     private fun copyException(
         exceptionId: String,
         newSeries: SeriesRow,
         newSlot: Long,
         account: CalendarAccount
-    ): Result<Unit> {
+    ) {
         // Gone since the listing: nothing left to carry.
-        val values = readExceptionFields(exceptionId) ?: return Result.success(Unit)
+        val values = readExceptionFields(exceptionId) ?: return
         values.put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, newSlot)
 
-        val copyId = insertException(newSeries, values).getOrElse { return Result.failure(it) }
-        // Whatever the provider seeded the exception with from its master,
-        // the occurrence's own reminders replace it.
-        deleteReminderRows(copyId.toLong())
-        insertReminderRows(copyId.toLong(), queryReminderRows(exceptionId))
+        val copyId = insertException(newSeries, values).getOrThrow().toLong()
+        try {
+            deleteReminderRows(copyId)
+            insertReminderRows(copyId, queryReminderRows(exceptionId.toLong()))
+            copyAttendeeRows(exceptionId.toLong(), copyId)
+        } catch (e: Exception) {
+            context.contentResolver.delete(
+                deleteUri(account),
+                "${CalendarContract.Events._ID} = ?",
+                arrayOf(copyId.toString())
+            )
+            throw e
+        }
 
         context.contentResolver.delete(
             deleteUri(account),
             "${CalendarContract.Events._ID} = ?",
             arrayOf(exceptionId)
         )
-        return Result.success(Unit)
     }
 
     /**
-     * The occurrence-level fields of exception row [exceptionId] as the
-     * values of a fresh exception insert, each one set (nulls included) so
-     * nothing is inherited from the new master; null when the row is gone.
+     * The occurrence-level Events columns [copyException] carries as they
+     * are stored, each one set (nulls included) so nothing is inherited from
+     * the new master. The time goes separately, as DTSTART/DURATION.
+     * Columns the provider derives (IS_ORGANIZER, SELF_ATTENDEE_STATUS,
+     * which follows the copied Attendees rows) and the adapter's own are
+     * left out.
+     */
+    private val carriedOccurrenceColumns = arrayOf(
+        CalendarContract.Events.TITLE,
+        CalendarContract.Events.DESCRIPTION,
+        CalendarContract.Events.EVENT_LOCATION,
+        CalendarContract.Events.CUSTOM_APP_URI,
+        CalendarContract.Events.CUSTOM_APP_PACKAGE,
+        CalendarContract.Events.ALL_DAY,
+        CalendarContract.Events.EVENT_TIMEZONE,
+        CalendarContract.Events.EVENT_END_TIMEZONE,
+        CalendarContract.Events.AVAILABILITY,
+        CalendarContract.Events.STATUS,
+        CalendarContract.Events.HAS_ALARM,
+        CalendarContract.Events.ACCESS_LEVEL,
+        CalendarContract.Events.EVENT_COLOR,
+        CalendarContract.Events.EVENT_COLOR_KEY,
+        CalendarContract.Events.ORGANIZER,
+        CalendarContract.Events.HAS_ATTENDEE_DATA,
+        CalendarContract.Events.GUESTS_CAN_MODIFY,
+        CalendarContract.Events.GUESTS_CAN_INVITE_OTHERS,
+        CalendarContract.Events.GUESTS_CAN_SEE_GUESTS
+    )
+
+    /**
+     * Exception row [exceptionId]'s [carriedOccurrenceColumns] and time as
+     * the values of a fresh exception insert; null when the row is gone.
      * The end goes as DURATION, the column the provider expects on an
-     * exception of a recurring parent (see [updateEventInstance]).
+     * exception of a recurring parent (see [updateEventInstance]). Throws
+     * when the row has neither DTEND nor a readable DURATION: an exception
+     * row always carries one, so there is no end to copy rather than one
+     * to invent.
      */
     private fun readExceptionFields(exceptionId: String): android.content.ContentValues? =
         context.contentResolver.query(
             CalendarContract.Events.CONTENT_URI,
-            arrayOf(
-                CalendarContract.Events.TITLE,
-                CalendarContract.Events.DESCRIPTION,
-                CalendarContract.Events.EVENT_LOCATION,
-                CalendarContract.Events.CUSTOM_APP_URI,
+            carriedOccurrenceColumns + arrayOf(
                 CalendarContract.Events.DTSTART,
                 CalendarContract.Events.DTEND,
-                CalendarContract.Events.DURATION,
-                CalendarContract.Events.ALL_DAY,
-                CalendarContract.Events.EVENT_TIMEZONE,
-                CalendarContract.Events.AVAILABILITY,
-                CalendarContract.Events.STATUS,
-                CalendarContract.Events.HAS_ALARM
+                CalendarContract.Events.DURATION
             ),
             "${CalendarContract.Events._ID} = ?",
             arrayOf(exceptionId),
             null
         )?.use { cursor ->
             if (!cursor.moveToFirst()) return@use null
-            fun str(i: Int): String? = if (cursor.isNull(i)) null else cursor.getString(i)
-            fun int(i: Int): Int? = if (cursor.isNull(i)) null else cursor.getInt(i)
-            val dtstart = cursor.getLong(4)
-            val dtend = if (cursor.isNull(5)) null else cursor.getLong(5)
-            val end = storedEndMillis(dtstart, dtend, str(6)) ?: (dtstart + 3_600_000L)
+            fun long(column: String): Long? {
+                val index = cursor.getColumnIndexOrThrow(column)
+                return if (cursor.isNull(index)) null else cursor.getLong(index)
+            }
+            fun str(column: String): String? {
+                val index = cursor.getColumnIndexOrThrow(column)
+                return if (cursor.isNull(index)) null else cursor.getString(index)
+            }
+            val dtstart = long(CalendarContract.Events.DTSTART)
+                ?: throw IllegalStateException("Exception $exceptionId has no DTSTART")
+            val end = storedEndMillis(
+                dtstart,
+                long(CalendarContract.Events.DTEND),
+                str(CalendarContract.Events.DURATION)
+            ) ?: throw IllegalStateException(
+                "Exception $exceptionId has neither DTEND nor a readable DURATION"
+            )
             android.content.ContentValues().apply {
-                put(CalendarContract.Events.TITLE, str(0))
-                put(CalendarContract.Events.DESCRIPTION, str(1))
-                put(CalendarContract.Events.EVENT_LOCATION, str(2))
-                put(CalendarContract.Events.CUSTOM_APP_URI, str(3))
+                cursor.copyColumnsInto(this, carriedOccurrenceColumns)
                 put(CalendarContract.Events.DTSTART, dtstart)
                 put(CalendarContract.Events.DURATION, "P${(end - dtstart) / 1000}S")
-                put(CalendarContract.Events.ALL_DAY, int(7) ?: 0)
-                put(CalendarContract.Events.EVENT_TIMEZONE, str(8))
-                put(CalendarContract.Events.AVAILABILITY, int(9))
-                put(CalendarContract.Events.STATUS, int(10))
-                put(CalendarContract.Events.HAS_ALARM, int(11) ?: 0)
             }
         }
 
     /**
-     * Every [CalendarContract.Reminders] row of event [eventId] as
-     * (minutes, method) pairs, whatever the method: unlike
-     * [queryReminderMinutes], which keeps only the alert reminders the
-     * plugin exposes, this is for a faithful copy of the rows.
+     * Replaces event [toEventId]'s [CalendarContract.Attendees] rows with
+     * copies of [fromEventId]'s, organizer row included: the provider seeds
+     * an exception with its master's guest list, and the occurrence's own
+     * (the one [queryAttendees] returns for it) must win.
      */
-    private fun queryReminderRows(eventId: String): List<Pair<Int, Int>> {
-        val rows = mutableListOf<Pair<Int, Int>>()
+    private fun copyAttendeeRows(fromEventId: Long, toEventId: Long) {
+        val columns = arrayOf(
+            CalendarContract.Attendees.ATTENDEE_NAME,
+            CalendarContract.Attendees.ATTENDEE_EMAIL,
+            CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
+            CalendarContract.Attendees.ATTENDEE_TYPE,
+            CalendarContract.Attendees.ATTENDEE_STATUS,
+            CalendarContract.Attendees.ATTENDEE_IDENTITY,
+            CalendarContract.Attendees.ATTENDEE_ID_NAMESPACE
+        )
+        val rows = mutableListOf<android.content.ContentValues>()
         context.contentResolver.query(
-            CalendarContract.Reminders.CONTENT_URI,
-            arrayOf(CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD),
-            "${CalendarContract.Reminders.EVENT_ID} = ?",
-            arrayOf(eventId),
+            CalendarContract.Attendees.CONTENT_URI,
+            columns,
+            "${CalendarContract.Attendees.EVENT_ID} = ?",
+            arrayOf(fromEventId.toString()),
             null
         )?.use { cursor ->
             while (cursor.moveToNext()) {
-                rows += cursor.getInt(0) to cursor.getInt(1)
+                rows += android.content.ContentValues().apply {
+                    cursor.copyColumnsInto(this, columns)
+                    put(CalendarContract.Attendees.EVENT_ID, toEventId)
+                }
             }
         }
-        return rows
+        context.contentResolver.delete(
+            CalendarContract.Attendees.CONTENT_URI,
+            "${CalendarContract.Attendees.EVENT_ID} = ?",
+            arrayOf(toEventId.toString())
+        )
+        for (row in rows) {
+            context.contentResolver.insert(CalendarContract.Attendees.CONTENT_URI, row)
+                ?: throw IllegalStateException("Failed to copy an attendee to event $toEventId")
+        }
+    }
+
+    /**
+     * Puts the current row's value of each of [columns] into [values], by
+     * name and with its stored type, nulls included.
+     */
+    private fun android.database.Cursor.copyColumnsInto(
+        values: android.content.ContentValues,
+        columns: Array<String>
+    ) {
+        for (column in columns) {
+            val index = getColumnIndexOrThrow(column)
+            when (getType(index)) {
+                android.database.Cursor.FIELD_TYPE_NULL -> values.putNull(column)
+                android.database.Cursor.FIELD_TYPE_INTEGER -> values.put(column, getLong(index))
+                android.database.Cursor.FIELD_TYPE_FLOAT -> values.put(column, getDouble(index))
+                android.database.Cursor.FIELD_TYPE_BLOB -> values.put(column, getBlob(index))
+                else -> values.put(column, getString(index))
+            }
+        }
     }
 
     // -- deleteRecurring (issue #43) --
@@ -1669,22 +1797,9 @@ class EventsService(
         // Truncate the series so the anchor occurrence and every later one
         // stop generating. UNTIL is inclusive, so cutting one second early
         // drops the anchor too — "this and following" removes the anchor.
-        //
-        // DTSTART/DURATION are rewritten with their existing values, because
-        // Android's CalendarProvider doesn't always invalidate the Instances
-        // cache when only RRULE changes — touching multiple time columns
-        // forces it to regenerate. Without this the master's RRULE is
-        // correctly updated on disk but listEvents keeps returning the old
-        // expansion.
         val truncatedRrule = RruleString.withUntil(rrule, timestamp - 1000, row.allDay)
-        val values = android.content.ContentValues().apply {
-            put(CalendarContract.Events.RRULE, truncatedRrule)
-            put(CalendarContract.Events.DTSTART, row.dtstart)
-            if (row.duration != null) {
-                put(CalendarContract.Events.DURATION, row.duration)
-            }
-        }
-        val updatedRows = updateEventRow(row.id, values)
+        val updatedRows =
+            rewriteSeriesForReexpand(row.id, truncatedRrule, row.dtstart, row.duration)
         if (updatedRows == 0) {
             return Result.failure(
                 CalendarException(
@@ -2042,24 +2157,53 @@ class EventsService(
      * Inserts one [CalendarContract.Reminders] row per minute value, each a
      * relative METHOD_ALERT reminder that many minutes before the event start.
      */
-    @JvmName("insertAlertReminderRows")
-    private fun insertReminderRows(eventId: Long, minutes: List<Int>) =
-        insertReminderRows(eventId, minutes.map { it to CalendarContract.Reminders.METHOD_ALERT })
+    private fun insertAlertReminders(eventId: Long, minutes: List<Int>) =
+        insertReminderRows(
+            eventId,
+            minutes.map { ReminderRow(it, CalendarContract.Reminders.METHOD_ALERT) }
+        )
 
     /**
-     * Inserts one [CalendarContract.Reminders] row per (minutes, method)
-     * pair: the one insert loop behind every reminder write.
+     * Inserts one [CalendarContract.Reminders] row per [ReminderRow]: the one
+     * insert loop behind every reminder write.
      */
-    private fun insertReminderRows(eventId: Long, reminders: List<Pair<Int, Int>>) {
-        for ((minutes, method) in reminders) {
+    private fun insertReminderRows(eventId: Long, reminders: List<ReminderRow>) {
+        for (reminder in reminders) {
             val values = android.content.ContentValues().apply {
                 put(CalendarContract.Reminders.EVENT_ID, eventId)
-                put(CalendarContract.Reminders.MINUTES, minutes)
-                put(CalendarContract.Reminders.METHOD, method)
+                put(CalendarContract.Reminders.MINUTES, reminder.minutes)
+                put(CalendarContract.Reminders.METHOD, reminder.method)
             }
             context.contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, values)
         }
     }
+
+    /**
+     * Writes series row [eventId]'s [rrule] together with its time columns
+     * ([dtstart], and [duration] when it has one), so the provider re-expands
+     * its Instances. Returns the rows updated.
+     *
+     * Android's CalendarProvider doesn't always invalidate the Instances
+     * cache when only RRULE changes, and not at all when a series gains
+     * exceptions by an update to their rows rather than an exception insert:
+     * the row on disk is right while listEvents keeps returning the old
+     * expansion. Touching the time columns too, even with their existing
+     * values, forces it to regenerate. Every series write that has to show
+     * in the next listing — a truncate, a re-parent — goes through here.
+     */
+    private fun rewriteSeriesForReexpand(
+        eventId: String,
+        rrule: String,
+        dtstart: Long,
+        duration: String?
+    ): Int =
+        updateEventRow(eventId, android.content.ContentValues().apply {
+            put(CalendarContract.Events.RRULE, rrule)
+            put(CalendarContract.Events.DTSTART, dtstart)
+            if (duration != null) {
+                put(CalendarContract.Events.DURATION, duration)
+            }
+        })
 
     /** Removes all reminder rows for [eventId]. */
     private fun deleteReminderRows(eventId: Long) {
@@ -2085,7 +2229,7 @@ class EventsService(
             is EventFieldPatch.RemindersPatch.Set -> {
                 deleteReminderRows(eventId)
                 if (patch.minutes.isNotEmpty()) {
-                    insertReminderRows(eventId, patch.minutes)
+                    insertAlertReminders(eventId, patch.minutes)
                 }
             }
         }

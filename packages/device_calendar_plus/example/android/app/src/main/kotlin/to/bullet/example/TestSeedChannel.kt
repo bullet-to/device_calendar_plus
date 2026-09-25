@@ -47,6 +47,14 @@ object TestSeedChannel {
                 "removeSyncedAccount" -> result.reply { context.removeSyncedAccount() }
                 "markUploaded" -> result.reply { contentResolver.markUploaded(eventId()) }
                 "readSyncState" -> result.reply { contentResolver.readSyncState(eventId()) }
+                "addAttendee" -> result.reply {
+                    contentResolver.addAttendee(
+                        eventId(),
+                        call.argument<String>("email")!!,
+                        call.argument<String>("name")!!
+                    )
+                }
+                "touchSeries" -> result.reply { contentResolver.touchSeries(eventId()) }
                 "exceptionIdOf" -> result.reply {
                     contentResolver.exceptionIdOf(eventId(), instanceStart())
                 }
@@ -210,6 +218,63 @@ object TestSeedChannel {
                 "dirty" to (cursor.getInt(1) == 1)
             )
         }
+
+    /**
+     * Adds a required guest [email] ([name]) to [eventId] as a plain insert
+     * on the Attendees table, the way another calendar app invites someone:
+     * the plugin reads attendees but has no API to write them. Returns the
+     * attendee row's ID.
+     */
+    private fun ContentResolver.addAttendee(eventId: Long, email: String, name: String): String? {
+        val values = ContentValues().apply {
+            put(CalendarContract.Attendees.EVENT_ID, eventId)
+            put(CalendarContract.Attendees.ATTENDEE_EMAIL, email)
+            put(CalendarContract.Attendees.ATTENDEE_NAME, name)
+            put(
+                CalendarContract.Attendees.ATTENDEE_TYPE,
+                CalendarContract.Attendees.TYPE_REQUIRED
+            )
+            put(
+                CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
+                CalendarContract.Attendees.RELATIONSHIP_ATTENDEE
+            )
+            put(
+                CalendarContract.Attendees.ATTENDEE_STATUS,
+                CalendarContract.Attendees.ATTENDEE_STATUS_INVITED
+            )
+        }
+        return insert(CalendarContract.Attendees.CONTENT_URI, values)?.lastPathSegment
+    }
+
+    /**
+     * Rewrites series [eventId]'s RRULE, DTSTART and DURATION with the
+     * values it already has, as the sync adapter for its account: the kind
+     * of write an adapter makes to a series it syncs, which the provider
+     * answers by re-expanding the series' Instances. On a real device the
+     * adapter's own writes bring that expansion (after an upload, say); a
+     * test has no adapter, so this stands in for them. Fails when the row is
+     * missing or not a series.
+     */
+    private fun ContentResolver.touchSeries(eventId: Long) {
+        val values = queryOne(
+            eventUri(eventId),
+            arrayOf(
+                CalendarContract.Events.RRULE,
+                CalendarContract.Events.DTSTART,
+                CalendarContract.Events.DURATION
+            )
+        ) { cursor ->
+            ContentValues().apply {
+                put(CalendarContract.Events.RRULE, checkNotNull(cursor.getString(0)) {
+                    "Event $eventId is not a series"
+                })
+                put(CalendarContract.Events.DTSTART, cursor.getLong(1))
+                cursor.getString(2)?.let { put(CalendarContract.Events.DURATION, it) }
+            }
+        } ?: throw IllegalStateException("No event row with ID $eventId")
+        val updated = update(eventUri(eventId).asSyncAdapter(accountOf(eventId)), values, null, null)
+        check(updated == 1) { "Expected to touch one series row, updated $updated" }
+    }
 
     /**
      * The event ID of the exception row written against master [masterId]

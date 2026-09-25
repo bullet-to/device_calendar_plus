@@ -1017,15 +1017,98 @@ void main() {
       },
     );
 
+    // The slot rule across an update split (#158), as for the delete path's
+    // "... by its original slot" tests: which series a detached occurrence
+    // ends up on is decided by the slot it replaced, not by where it was
+    // moved to. One dragged from past the split to before it goes to the new
+    // series, whose slot it keeps standing in for; one dragged from before
+    // the split to past it stays on the old series.
+    for (final (index, move, outcome, atSlot6, slot6Reason, afterNewDeleted)
+        in [
+      (
+        6,
+        const Duration(days: -5, hours: 2),
+        'carries an occurrence dragged from past the split to before it',
+        (int slot) => isNot(contains(slot)),
+        'the new series must skip [6]\'s slot, which the moved occurrence '
+            'stands in for',
+        (DeviceCalendar plugin, String id, String title, SeededSeries series,
+                Event moved) async =>
+            expect(await eventsTitled(plugin, id, title, series.start), isEmpty,
+                reason: 'the moved occurrence must belong to the new series, '
+                    'and go with it'),
+      ),
+      (
+        1,
+        const Duration(days: 5, hours: 2),
+        'leaves an occurrence dragged from before the split to past it',
+        (int slot) => contains(slot),
+        'the new series must still generate [6]\'s slot, which nothing '
+            'detached stands in for',
+        (DeviceCalendar plugin, String id, String title, SeededSeries series,
+                Event moved) =>
+            // The listing half is unverified on Android (#159), as in the
+            // delete path's "keeps a detached occurrence by its original
+            // slot": the row read still runs.
+            expectDetachedKept(plugin, id, title, series, moved,
+                listed: !Platform.isAndroid),
+      ),
+    ]) {
+      test('thisAndFollowing update $outcome by its original slot', () async {
+        final series = await seedDailySeries(
+          plugin,
+          calendarId,
+          minOccurrences: 10,
+        );
+        final id = calendarId!;
+        final tag = DateTime.now().microsecondsSinceEpoch;
+        final title = 'Dragged across update split $tag';
+        final moved =
+            await moveOccurrence(plugin, id, series, index, move, title);
+
+        const shift = Duration(hours: 1);
+        final newTitle = 'New series across drag $tag';
+        final anchor = series.occurrences[3];
+        final newSeriesId = await plugin.updateRecurring(
+          anchor.instanceId,
+          EventSpan.thisAndFollowing,
+          title: newTitle,
+          start: anchor.startDate.add(shift),
+        );
+
+        final newStarts = startsOf(
+          await eventsTitled(plugin, id, newTitle, series.start),
+        );
+        final slot6 =
+            series.occurrences[6].startDate.add(shift).millisecondsSinceEpoch;
+        expect(newStarts, atSlot6(slot6), reason: slot6Reason);
+
+        await plugin.deleteEvent(eventId: newSeriesId);
+        await afterNewDeleted(plugin, id, title, series, moved);
+      });
+    }
+
     // A single-occurrence delete past the split (#158). iOS keeps it
     // deleted in the new series while the split leaves the start where it
     // was; a split that moves the start brings it back, since iOS's deleted
     // date stays at the old time and no longer matches the moved slot. On
     // Android the delete is itself an exception row, a cancelled one, so the
     // detached-occurrence carry decides this and is built to match.
-    for (final (shift, outcome) in [
-      (Duration.zero, 'keeps it deleted'),
-      (const Duration(hours: 1), 'brings it back when the start moves'),
+    for (final (shift, outcome, atSlot6, slot6Reason) in [
+      (
+        Duration.zero,
+        'keeps it deleted',
+        (int slot) => isNot(contains(slot)),
+        'the new series must keep the occurrence deleted past the split '
+            'deleted',
+      ),
+      (
+        const Duration(hours: 1),
+        'brings it back when the start moves',
+        (int slot) => contains(slot),
+        'the new series must bring the deleted occurrence back at its '
+            'moved slot, as iOS does',
+      ),
     ]) {
       test(
         'thisAndFollowing update past a deleted occurrence $outcome',
@@ -1054,15 +1137,7 @@ void main() {
           );
           final slot6 =
               series.occurrences[6].startDate.add(shift).millisecondsSinceEpoch;
-          expect(
-            newStarts,
-            shift == Duration.zero ? isNot(contains(slot6)) : contains(slot6),
-            reason: shift == Duration.zero
-                ? 'the new series must keep the occurrence deleted past the '
-                    'split deleted'
-                : 'the new series must bring the deleted occurrence back at '
-                    'its moved slot, as iOS does',
-          );
+          expect(newStarts, atSlot6(slot6), reason: slot6Reason);
           expect(
             newStarts,
             containsAll([3, 4, 5, 7, 8].map((i) => series.occurrences[i]

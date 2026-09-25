@@ -214,9 +214,17 @@ void main() {
       final detachedTitle = 'Detached past update split #158 $tag';
       final exceptionId =
           await detachOccurrence(plugin, calendarId!, series, 5, detachedTitle);
+      // The occurrence's own edits, each of which the copy must keep: the
+      // plugin's writable fields, a color and a guest another app set.
       await plugin.updateEvent(
           eventId: exceptionId,
+          description: Patch.set('Detached description $tag'),
+          location: Patch.set('Detached location $tag'),
+          availability: EventAvailability.free,
           reminders: Patch.set([const Duration(minutes: 20)]));
+      await setEventColor(exceptionId, 0xFF00AA00);
+      await addAttendee(exceptionId,
+          email: 'guest-$tag@example.test', name: 'Detached guest');
       // Uploaded: its `_sync_id` is now the server's name for "occurrence 5
       // of the OLD series".
       await markUploaded(exceptionId);
@@ -249,19 +257,28 @@ void main() {
           reason: 'the copy must keep the occurrence\'s own time');
       expect(copy?.reminders, [const Duration(minutes: 20)],
           reason: 'the copy must keep the occurrence\'s own reminders');
+      expect(copy?.description, 'Detached description $tag',
+          reason: 'the copy must keep the occurrence\'s own description');
+      expect(copy?.location, 'Detached location $tag',
+          reason: 'the copy must keep the occurrence\'s own location');
+      expect(copy?.availability, EventAvailability.free,
+          reason: 'the copy must keep the occurrence\'s own availability');
+      expect(copy?.colorHex, '#00AA00',
+          reason: 'the copy must keep the occurrence\'s own color');
+      expect(copy?.attendees?.map((a) => a.emailAddress),
+          ['guest-$tag@example.test'],
+          reason: 'the copy must keep the occurrence\'s own guests');
 
       // The provider pairs an exception with its slot by the master's server
       // key, which the new series gets only once its adapter uploads it, so
       // until then the pairing is pending. The upload keys the master, the
       // provider's own trigger passes the key on to the exception, and the
-      // series' next expansion pairs them. (The adapter's own writes bring
-      // that expansion; here a no-change rewrite of the series stands in.)
+      // series' next expansion pairs them (see [touchSeries]).
       await markUploaded(newSeriesId);
       final newKey = (await readSyncIds(newSeriesId))!.syncId;
       expect((await readSyncIds(copyId))!.originalSyncId, newKey,
           reason: 'the copy must follow the new master\'s server key');
-      await plugin.updateRecurring(newSeriesId, EventSpan.allEvents,
-          start: series.occurrences[3].startDate.add(shift));
+      await touchSeries(newSeriesId);
 
       expect(
         startsOf(await eventsTitled(
@@ -313,11 +330,9 @@ void main() {
 
       // As for a detached occurrence: the upload keys the new master, the
       // provider passes the key on to the copy, and the next expansion
-      // pairs them (a no-change rewrite of the series stands in for the
-      // adapter's writes).
+      // pairs them.
       await markUploaded(newSeriesId);
-      await plugin.updateRecurring(newSeriesId, EventSpan.allEvents,
-          start: series.occurrences[3].startDate);
+      await touchSeries(newSeriesId);
 
       expect(
         startsOf(await eventsTitled(
