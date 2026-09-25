@@ -10,7 +10,9 @@
   `thisAndFollowing`, including the detached occurrences it sweeps) and
   `updateRecurring` now write as the app they are, so the adapter finds a
   `DELETED`/`DIRTY` row to upload; local calendars, which have no adapter,
-  keep the direct writes (#132, #161).
+  keep the direct deletes (#132, #161). One visible consequence: until the
+  adapter collects a deleted event's row, a repeat `deleteEvent` of the same
+  ID on a synced calendar succeeds instead of throwing `notFound`.
 - `deleteRecurring` with `thisAndFollowing` now removes a detached occurrence
   that falls on or after the split. Truncating the series' rule left an
   occurrence that had been edited on its own behind as an orphan row, which

@@ -43,8 +43,7 @@ object TestSeedChannel {
                 }
                 "readSyncIds" -> result.reply { contentResolver.readSyncIds(eventId()) }
                 "createSyncedCalendar" -> result.reply {
-                    accountManager.addAccountExplicitly(SYNCED_ACCOUNT, null, null)
-                    contentResolver.createSyncedCalendar(call.argument<String>("name")!!)
+                    context.createSyncedCalendar(call.argument<String>("name")!!)
                 }
                 "removeSyncedAccount" -> result.reply {
                     accountManager.removeAccountExplicitly(SYNCED_ACCOUNT)
@@ -68,9 +67,8 @@ object TestSeedChannel {
      * app may register it — which to the provider makes it "synced"
      * (anything but ACCOUNT_TYPE_LOCAL) while no sync adapter exists for it.
      */
-    private const val SYNCED_ACCOUNT_NAME = "synced@example.test"
-    private const val SYNCED_ACCOUNT_TYPE = "to.bullet.device_calendar_plus_example"
-    private val SYNCED_ACCOUNT = Account(SYNCED_ACCOUNT_NAME, SYNCED_ACCOUNT_TYPE)
+    private val SYNCED_ACCOUNT =
+        Account("synced@example.test", "to.bullet.device_calendar_plus_example")
 
     /**
      * EVENT_COLOR is sync-adapter-owned, so stamps [color] on [eventId] the
@@ -79,11 +77,10 @@ object TestSeedChannel {
      * Calendar) assigning a custom event color. Returns the rows updated.
      */
     private fun ContentResolver.setEventColor(eventId: Long, color: Int): Int {
-        val (accountName, accountType) = accountOf(eventId)
         val values = ContentValues().apply {
             put(CalendarContract.Events.EVENT_COLOR, color)
         }
-        return update(eventUri(eventId).asSyncAdapter(accountName, accountType), values, null, null)
+        return update(eventUri(eventId).asSyncAdapter(accountOf(eventId)), values, null, null)
     }
 
     /**
@@ -153,18 +150,17 @@ object TestSeedChannel {
      * adapter answers to. The emulator has no synced account, and a real
      * device's Google account must not receive test rows, so the tests stand
      * one up: the provider's sync-adapter branches (#132) turn on the account
-     * type alone. The caller registers the account first (idempotently),
-     * since the provider drops the calendars of any account the
-     * AccountManager does not know on every cold start. Returns the
-     * calendar's ID.
+     * type alone. Registers the account first (idempotently), since the
+     * provider drops the calendars of any account the AccountManager does
+     * not know on every cold start. Returns the calendar's ID.
      */
-    private fun ContentResolver.createSyncedCalendar(name: String): String? {
-        val uri = CalendarContract.Calendars.CONTENT_URI
-            .asSyncAdapter(SYNCED_ACCOUNT_NAME, SYNCED_ACCOUNT_TYPE)
+    private fun Context.createSyncedCalendar(name: String): String? {
+        AccountManager.get(this).addAccountExplicitly(SYNCED_ACCOUNT, null, null)
+        val uri = CalendarContract.Calendars.CONTENT_URI.asSyncAdapter(SYNCED_ACCOUNT)
         val values = ContentValues().apply {
-            put(CalendarContract.Calendars.ACCOUNT_NAME, SYNCED_ACCOUNT_NAME)
-            put(CalendarContract.Calendars.ACCOUNT_TYPE, SYNCED_ACCOUNT_TYPE)
-            put(CalendarContract.Calendars.OWNER_ACCOUNT, SYNCED_ACCOUNT_NAME)
+            put(CalendarContract.Calendars.ACCOUNT_NAME, SYNCED_ACCOUNT.name)
+            put(CalendarContract.Calendars.ACCOUNT_TYPE, SYNCED_ACCOUNT.type)
+            put(CalendarContract.Calendars.OWNER_ACCOUNT, SYNCED_ACCOUNT.name)
             put(CalendarContract.Calendars.NAME, name)
             put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, name)
             put(
@@ -175,7 +171,7 @@ object TestSeedChannel {
             put(CalendarContract.Calendars.SYNC_EVENTS, 1)
             put(CalendarContract.Calendars.VISIBLE, 1)
         }
-        return insert(uri, values)?.lastPathSegment
+        return contentResolver.insert(uri, values)?.lastPathSegment
     }
 
     /**
@@ -187,13 +183,11 @@ object TestSeedChannel {
      * Fails when the row is missing, so no test has to check a count.
      */
     private fun ContentResolver.markUploaded(eventId: Long) {
-        val (accountName, accountType) = accountOf(eventId)
         val values = ContentValues().apply {
             put(CalendarContract.Events._SYNC_ID, "seed:${java.util.UUID.randomUUID()}")
             put(CalendarContract.Events.DIRTY, 0)
         }
-        val updated =
-            update(eventUri(eventId).asSyncAdapter(accountName, accountType), values, null, null)
+        val updated = update(eventUri(eventId).asSyncAdapter(accountOf(eventId)), values, null, null)
         check(updated == 1) { "Expected to mark one event row uploaded, updated $updated" }
     }
 
@@ -230,12 +224,12 @@ object TestSeedChannel {
             arrayOf(masterId.toString(), instanceStart.toString())
         ) { cursor -> cursor.getLong(0).toString() }
 
-    /** The (ACCOUNT_NAME, ACCOUNT_TYPE) of [eventId]'s calendar, off the Events view. */
-    private fun ContentResolver.accountOf(eventId: Long): Pair<String, String> =
+    /** The account of [eventId]'s calendar (ACCOUNT_NAME, ACCOUNT_TYPE), off the Events view. */
+    private fun ContentResolver.accountOf(eventId: Long): Account =
         queryOne(
             eventUri(eventId),
             arrayOf(CalendarContract.Events.ACCOUNT_NAME, CalendarContract.Events.ACCOUNT_TYPE)
-        ) { cursor -> Pair(cursor.getString(0), cursor.getString(1)) }
+        ) { cursor -> Account(cursor.getString(0), cursor.getString(1)) }
             ?: throw IllegalStateException("No event row with ID $eventId")
 
     /** [map] of the first row [uri] yields for [selection], or null when there is none. */
@@ -256,16 +250,16 @@ object TestSeedChannel {
         ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
 
     /**
-     * This URI with sync-adapter context for the account: the write goes as
+     * This URI with sync-adapter context for [account]: the write goes as
      * that account's adapter, which may set the sync-owned columns and whose
      * changes the provider takes as the server's own (never marked for
      * upload).
      */
-    private fun Uri.asSyncAdapter(accountName: String, accountType: String): Uri =
+    private fun Uri.asSyncAdapter(account: Account): Uri =
         buildUpon()
             .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
-            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, accountName)
-            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, accountType)
+            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, account.name)
+            .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_TYPE, account.type)
             .build()
 
     /**

@@ -51,7 +51,9 @@ void main() {
       await removeSyncedAccount();
     });
 
-    test('deleteEvent leaves a tombstone for the adapter to upload', () async {
+    test(
+        'deleteEvent leaves a tombstone for the adapter to upload, and a '
+        'repeat delete succeeds until the adapter collects it', () async {
       final start = DateTime.now().add(const Duration(hours: 1));
       final eventId = await plugin.createEvent(
         calendarId: calendarId!,
@@ -72,6 +74,15 @@ void main() {
               'sync brings the event back');
       expect(state, (deleted: true, dirty: true),
           reason: 'the tombstone must be flagged for upload');
+
+      // The tombstone still matches the delete's selection, so a repeat
+      // delete is a no-change mutation, not NOT_FOUND (as it is on iOS and
+      // on a local calendar, where the row is gone). Documented on
+      // deleteEvent.
+      await plugin.deleteEvent(eventId: eventId);
+      expect(await readSyncState(eventId), (deleted: true, dirty: true),
+          reason: 'a repeat delete before the adapter collects the tombstone '
+              'must not throw, and must leave the tombstone for upload');
     });
 
     test('deleteEvent on one occurrence writes a dirty cancellation (#161)',
@@ -137,6 +148,7 @@ void main() {
         before: series.occurrences[3].startDate,
         keeps: [
           series.occurrences[0].startDate,
+          series.occurrences[1].startDate,
           series.occurrences[2].startDate,
         ],
       );
