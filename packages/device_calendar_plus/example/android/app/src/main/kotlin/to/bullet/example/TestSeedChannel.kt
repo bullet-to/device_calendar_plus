@@ -21,7 +21,6 @@ import io.flutter.plugin.common.MethodChannel
 object TestSeedChannel {
     fun register(flutterEngine: FlutterEngine, context: Context) {
         val contentResolver = context.contentResolver
-        val accountManager = AccountManager.get(context)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "to.bullet.device_calendar_plus_example/test"
@@ -45,13 +44,8 @@ object TestSeedChannel {
                 "createSyncedCalendar" -> result.reply {
                     context.createSyncedCalendar(call.argument<String>("name")!!)
                 }
-                "removeSyncedAccount" -> result.reply {
-                    accountManager.removeAccountExplicitly(SYNCED_ACCOUNT)
-                }
-                "markUploaded" -> result.reply {
-                    contentResolver.markUploaded(eventId())
-                    null // Unit is not a channel value; the check inside is the answer.
-                }
+                "removeSyncedAccount" -> result.reply { context.removeSyncedAccount() }
+                "markUploaded" -> result.reply { contentResolver.markUploaded(eventId()) }
                 "readSyncState" -> result.reply { contentResolver.readSyncState(eventId()) }
                 "exceptionIdOf" -> result.reply {
                     contentResolver.exceptionIdOf(eventId(), instanceStart())
@@ -142,6 +136,14 @@ object TestSeedChannel {
                 "originalSyncId" to cursor.getString(1)
             )
         }
+
+    /**
+     * Removes the account [createSyncedCalendar] registers, and with it,
+     * through the provider's own account cleanup, any calendar still under
+     * it. Returns whether there was one to remove.
+     */
+    private fun Context.removeSyncedAccount(): Boolean =
+        AccountManager.get(this).removeAccountExplicitly(SYNCED_ACCOUNT)
 
     /**
      * A calendar a sync adapter owns — any account type but
@@ -263,12 +265,13 @@ object TestSeedChannel {
             .build()
 
     /**
-     * Answers with [block]'s value, or a `TEST_SEED_FAILED` error carrying
-     * the exception's message: the one envelope every seed method shares.
+     * Answers with [block]'s value (null for [Unit], which is no channel
+     * value), or a `TEST_SEED_FAILED` error carrying the exception's
+     * message: the one envelope every seed method shares.
      */
     private inline fun MethodChannel.Result.reply(block: () -> Any?) {
         try {
-            success(block())
+            success(block().takeUnless { it == Unit })
         } catch (e: Exception) {
             error("TEST_SEED_FAILED", e.message, null)
         }

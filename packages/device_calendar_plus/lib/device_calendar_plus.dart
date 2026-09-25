@@ -550,10 +550,7 @@ class DeviceCalendar {
   /// Requires full access.
   ///
   /// Throws [DeviceCalendarException] ([DeviceCalendarError.notFound]) when
-  /// there is no such event. On Android, an event on a synced calendar is
-  /// deleted by marking its row for the account's sync adapter to upload and
-  /// remove; until the adapter does, a repeat `deleteEvent` of the same ID
-  /// still succeeds where iOS and a local calendar throw `notFound`.
+  /// there is no such event.
   Future<void> deleteEvent({required String eventId}) async {
     requireNonBlank(eventId, name: 'eventId', label: 'Event ID');
 

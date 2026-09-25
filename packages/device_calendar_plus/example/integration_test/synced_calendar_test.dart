@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'series_fixtures.dart';
+import 'test_helpers.dart';
 import 'test_seed.dart';
 
 /// The arrange step the synced-calendar tests share: a daily series with its
@@ -51,9 +52,8 @@ void main() {
       await removeSyncedAccount();
     });
 
-    test(
-        'deleteEvent leaves a tombstone for the adapter to upload, and a '
-        'repeat delete succeeds until the adapter collects it', () async {
+    test('deleteEvent leaves a tombstone for the adapter to upload',
+        () async {
       final start = DateTime.now().add(const Duration(hours: 1));
       final eventId = await plugin.createEvent(
         calendarId: calendarId!,
@@ -74,15 +74,26 @@ void main() {
               'sync brings the event back');
       expect(state, (deleted: true, dirty: true),
           reason: 'the tombstone must be flagged for upload');
+    });
 
-      // The tombstone still matches the delete's selection, so a repeat
-      // delete is a no-change mutation, not NOT_FOUND (as it is on iOS and
-      // on a local calendar, where the row is gone). Documented on
-      // deleteEvent.
+    test(
+        'a repeat deleteEvent reports notFound while the tombstone awaits '
+        'the adapter, as on iOS', () async {
+      final start = DateTime.now().add(const Duration(hours: 1));
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId!,
+        title: 'Synced repeat delete #132',
+        startDate: start,
+        endDate: start.add(const Duration(hours: 1)),
+      );
+      await markUploaded(eventId);
       await plugin.deleteEvent(eventId: eventId);
+
+      await expectLater(plugin.deleteEvent(eventId: eventId), throwsNotFound,
+          reason: 'the event is already deleted as far as the caller can '
+              'tell: getEvent reads it as gone, so deleteEvent must agree');
       expect(await readSyncState(eventId), (deleted: true, dirty: true),
-          reason: 'a repeat delete before the adapter collects the tombstone '
-              'must not throw, and must leave the tombstone for upload');
+          reason: 'the refused repeat must leave the tombstone for upload');
     });
 
     test('deleteEvent on one occurrence writes a dirty cancellation (#161)',

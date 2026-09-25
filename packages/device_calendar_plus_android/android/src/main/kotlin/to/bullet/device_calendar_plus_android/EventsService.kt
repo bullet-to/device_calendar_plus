@@ -802,15 +802,20 @@ class EventsService(
     private fun deleteEventMaster(eventId: String): Result<Unit> {
         // On a synced calendar this tombstones the rows (DELETED=1) for the
         // adapter to upload; on a local one it removes them — see deleteUri.
-        // Either way the plugin's own reads no longer see them. Until the
-        // adapter collects a synced tombstone, a repeat delete of the same
-        // ID still matches it and succeeds (documented on the Dart
-        // deleteEvent, pinned in synced_calendar_test). No DELETED=0 filter
-        // belongs in the selection: the local path relies on it catching
-        // tombstones to collect them.
+        // Either way the plugin's own reads no longer see them. A synced
+        // tombstone is left out of the selection: it is already deleted as
+        // far as the caller can tell, so a repeat delete reports NOT_FOUND,
+        // as on iOS and on a local calendar. A local tombstone stays in,
+        // since no adapter will collect it and removing it is the point.
+        val account = accountOfEventRow(eventId)
+        var selection = "(${CalendarContract.Events._ID} = ? OR " +
+            "${CalendarContract.Events.ORIGINAL_ID} = ?)"
+        if (account != null && !account.isLocal) {
+            selection += " AND ${CalendarContract.Events.DELETED} = 0"
+        }
         val deletedRows = context.contentResolver.delete(
-            buildDeleteUri(eventId),
-            "${CalendarContract.Events._ID} = ? OR ${CalendarContract.Events.ORIGINAL_ID} = ?",
+            account?.let(::deleteUri) ?: CalendarContract.Events.CONTENT_URI,
+            selection,
             arrayOf(eventId, eventId)
         )
 
@@ -917,13 +922,7 @@ class EventsService(
         // (or drops) the alarms. Unchanged leaves the column alone.
         applyRemindersHasAlarm(values, patch.reminders)
 
-        // Perform the update
-        val updatedRows = context.contentResolver.update(
-            CalendarContract.Events.CONTENT_URI,
-            values,
-            "${CalendarContract.Events._ID} = ?",
-            arrayOf(eventId)
-        )
+        val updatedRows = updateEventRow(eventId, values)
 
         if (updatedRows == 0) {
             return Result.failure(
@@ -1211,7 +1210,7 @@ class EventsService(
 
         applyRemindersHasAlarm(values, patch.reminders)
 
-        val updatedRows = updateEventRow(row, values)
+        val updatedRows = updateEventRow(row.id, values)
         if (updatedRows == 0) {
             return Result.failure(
                 CalendarException(
@@ -1339,7 +1338,7 @@ class EventsService(
                 put(CalendarContract.Events.DURATION, row.duration)
             }
         }
-        val truncatedRows = updateEventRow(row, truncateValues)
+        val truncatedRows = updateEventRow(row.id, truncateValues)
         if (truncatedRows == 0) {
             // Roll back the new series so the calendar is left unchanged.
             context.contentResolver.delete(
@@ -1437,7 +1436,7 @@ class EventsService(
                 put(CalendarContract.Events.DURATION, row.duration)
             }
         }
-        val updatedRows = updateEventRow(row, values)
+        val updatedRows = updateEventRow(row.id, values)
         if (updatedRows == 0) {
             return Result.failure(
                 CalendarException(
@@ -1578,8 +1577,9 @@ class EventsService(
 
     /**
      * A live master row from the Events view. [account] is the calendar's,
-     * which the view joins in: the sync-adapter URIs every write against
-     * the row needs are built from it, without a second query.
+     * which the view joins in: [deleteUri] and [ensureLocalSeriesSyncId]
+     * build their local-calendar sync-adapter URIs from it, without a second
+     * query.
      */
     private data class EventRow(
         val id: String,
@@ -1857,12 +1857,7 @@ class EventsService(
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.HAS_ALARM, if (hasAlarm) 1 else 0)
         }
-        context.contentResolver.update(
-            CalendarContract.Events.CONTENT_URI,
-            values,
-            "${CalendarContract.Events._ID} = ?",
-            arrayOf(eventId.toString())
-        )
+        updateEventRow(eventId.toString(), values)
     }
 
     private fun availabilityToInt(availability: String): Int {
@@ -2079,10 +2074,10 @@ class EventsService(
     }
 
     /**
-     * Updates [row] with [values] as a plain caller on every account, like
-     * [updateEventMaster] and [setHasAlarm]: on a synced calendar the
-     * provider marks the row DIRTY and the adapter uploads the change
-     * (#132).
+     * Updates event row [eventId] with [values]: the one update-by-ID in
+     * this service. A plain caller's write on every account, so on a synced
+     * calendar the provider marks the row DIRTY and the adapter uploads the
+     * change (#132). Returns the rows updated.
      *
      * The series writers send RRULE, DTSTART and DURATION this way. A
      * plain update keeps them all: the provider throws on the sync
@@ -2093,14 +2088,14 @@ class EventsService(
      * they had not taken.)
      */
     private fun updateEventRow(
-        row: EventRow,
+        eventId: String,
         values: android.content.ContentValues
     ): Int =
         context.contentResolver.update(
             CalendarContract.Events.CONTENT_URI,
             values,
             "${CalendarContract.Events._ID} = ?",
-            arrayOf(row.id)
+            arrayOf(eventId)
         )
 
     /** [base] (an Events URI) with sync-adapter context for [account]. */
@@ -2128,22 +2123,22 @@ class EventsService(
      * one before its first exception; some providers key every row), so
      * the delete goes as the stand-in adapter, which removes the row.
      *
-     * That key write and this are the only ones that borrow the adapter's
-     * context; every other write of the plugin's is the plain caller's on
-     * every account.
+     * That key write and these deletes are the only event writes in this
+     * service that borrow the adapter's context; every other event write is
+     * the plain caller's on every account.
      */
     private fun deleteUri(account: CalendarAccount): android.net.Uri =
         if (account.isLocal) syncAdapterUri(CalendarContract.Events.CONTENT_URI, account)
         else CalendarContract.Events.CONTENT_URI
 
     /**
-     * The URI [deleteEventMaster] deletes through: [deleteUri] for the
-     * event's account. Reads the account through a DELETED tombstone on
-     * purpose — collecting a local one is the point — and falls back to the
-     * plain URI when the row is gone altogether.
+     * The account of event row [eventId], for [deleteEventMaster] to build
+     * its delete from, or null when the row is gone altogether. Reads
+     * through a DELETED tombstone on purpose: a local one is still to be
+     * collected.
      */
-    private fun buildDeleteUri(eventId: String): android.net.Uri {
-        val account = context.contentResolver.query(
+    private fun accountOfEventRow(eventId: String): CalendarAccount? =
+        context.contentResolver.query(
             CalendarContract.Events.CONTENT_URI,
             arrayOf(
                 CalendarContract.Events.ACCOUNT_NAME,
@@ -2155,8 +2150,5 @@ class EventsService(
         )?.use { cursor ->
             if (!cursor.moveToFirst()) return@use null
             cursor.calendarAccount()
-        } ?: return CalendarContract.Events.CONTENT_URI
-
-        return deleteUri(account)
-    }
+        }
 }

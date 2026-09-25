@@ -2,6 +2,16 @@
 /// `all_tests.dart` does not import it.
 library;
 
+import 'package:device_calendar_plus/device_calendar_plus.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// Matches a [DeviceCalendarException] carrying [DeviceCalendarError.notFound].
+final throwsNotFound = throwsA(isA<DeviceCalendarException>().having(
+  (e) => e.errorCode,
+  'errorCode',
+  DeviceCalendarError.notFound,
+));
+
 /// Local midnight [daysFromNow] days from today. Built via the constructor
 /// rather than `DateTime.add`, so the result is a calendar day rather than
 /// 24 hours (which lands an hour off across a DST transition).
