@@ -39,11 +39,10 @@ class EventsService(
         val startMillis = startDate.time
         val endMillis = endDate.time
 
-        // All-day events are stored at UTC midnight boundaries, but the caller
-        // passes local-midnight millis. We widen the Instances query to cover
-        // UTC midnight boundaries too, then post-filter by date. (issue #20)
-        val queryStartUtcMidnight = localDateToUtcMidnight(startMillis)
-        val queryEndUtcMidnight = localDateToUtcMidnight(endMillis)
+        // Widen to the all-day UTC-midnight edges; see
+        // AllDayDates.windowEndUtcMidnight. (issue #20)
+        val queryStartUtcMidnight = AllDayDates.localDateToUtcMidnight(startMillis)
+        val queryEndUtcMidnight = AllDayDates.windowEndUtcMidnight(endMillis)
 
         val effectiveStart = minOf(startMillis, queryStartUtcMidnight)
         val effectiveEnd = maxOf(endMillis, queryEndUtcMidnight)
@@ -133,7 +132,7 @@ class EventsService(
         if (isAllDay) {
             // All-day BEGIN/END are UTC midnights. If end <= begin, it's a
             // single-day event stored without the +1 day convention.
-            val effectiveEnd = if (eventEnd <= eventBegin) eventBegin + 86_400_000L else eventEnd
+            val effectiveEnd = if (eventEnd <= eventBegin) eventBegin + AllDayDates.MILLIS_PER_DAY else eventEnd
             return effectiveEnd > startUtcMidnight && eventBegin < endUtcMidnight
         }
         // Timed events: half-open overlap. A zero-duration (instantaneous) event
@@ -225,8 +224,8 @@ class EventsService(
         val end: Long
         
         if (allDay) {
-            start = utcToLocalMidnight(rawStart)
-            end = utcToLocalMidnight(rawEnd)
+            start = AllDayDates.utcToLocalMidnight(rawStart)
+            end = AllDayDates.utcToLocalMidnight(rawEnd)
         } else {
             start = rawStart
             end = rawEnd
@@ -645,8 +644,8 @@ class EventsService(
             val endMillis: Long
             
             if (isAllDay) {
-                startMillis = localDateToUtcMidnight(startDate.time)
-                endMillis = localDateToUtcMidnight(endDate.time)
+                startMillis = AllDayDates.localDateToUtcMidnight(startDate.time)
+                endMillis = AllDayDates.localDateToUtcMidnight(endDate.time)
             } else {
                 startMillis = startDate.time
                 endMillis = endDate.time
@@ -886,8 +885,8 @@ class EventsService(
             val endMillis: Long?
 
             if (effectiveIsAllDay) {
-                startMillis = startDate?.let { localDateToUtcMidnight(it.time) }
-                endMillis = endDate?.let { localDateToUtcMidnight(it.time) }
+                startMillis = startDate?.let { AllDayDates.localDateToUtcMidnight(it.time) }
+                endMillis = endDate?.let { AllDayDates.localDateToUtcMidnight(it.time) }
             } else {
                 startMillis = startDate?.time
                 endMillis = endDate?.time
@@ -1980,23 +1979,14 @@ class EventsService(
         toMillis: Long,
         tz: java.util.TimeZone
     ): Int {
-        fun startOfDay(millis: Long): Long {
-            val c = java.util.Calendar.getInstance(tz)
-            c.timeInMillis = millis
-            c.set(java.util.Calendar.HOUR_OF_DAY, 0)
-            c.set(java.util.Calendar.MINUTE, 0)
-            c.set(java.util.Calendar.SECOND, 0)
-            c.set(java.util.Calendar.MILLISECOND, 0)
-            return c.timeInMillis
-        }
-        val diff = startOfDay(toMillis) - startOfDay(fromMillis)
-        return Math.round(diff.toDouble() / 86_400_000.0).toInt()
+        val diff = AllDayDates.localMidnight(toMillis, tz) - AllDayDates.localMidnight(fromMillis, tz)
+        return Math.round(diff.toDouble() / AllDayDates.MILLIS_PER_DAY).toInt()
     }
 
     /** Storage millis for a date: UTC midnight for all-day, the instant otherwise. */
     private fun toStorageMillis(date: java.util.Date, isAllDay: Boolean): Long {
         if (!isAllDay) return date.time
-        return localDateToUtcMidnight(date.time)
+        return AllDayDates.localDateToUtcMidnight(date.time)
     }
 
     /** Resolves an event's duration, falling back to one hour when unknown. */

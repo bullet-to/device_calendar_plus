@@ -44,6 +44,13 @@
 - Minimum supported SDK is now Flutter 3.44 / Dart 3.12, as the migration
   requires.
 
+### Fixed
+- `listEvents` returns an all-day event when the window is a sub-day slice of
+  its date (e.g. 10:00–11:00). The all-day date filter mapped both window
+  edges to the same UTC midnight, so the range collapsed to nothing; the end
+  edge now rounds up to the next UTC midnight when it isn't on a local
+  midnight. Matches iOS.
+
 ## 0.7.2 - 2026-09-21
 
 ### Fixed

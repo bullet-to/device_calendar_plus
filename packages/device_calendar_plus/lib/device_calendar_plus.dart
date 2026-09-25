@@ -360,7 +360,9 @@ class DeviceCalendar {
 
   /// Lists events overlapping the half-open range `[startDate, endDate)`, sorted
   /// by start date. An event starting exactly at [endDate] is excluded. Ranges
-  /// longer than 4 years are supported.
+  /// longer than 4 years are supported. An empty range (`endDate` equal to
+  /// `startDate`) returns no events; an [endDate] before [startDate] is an
+  /// [ArgumentError].
   ///
   /// [calendarIds] filters to specific calendars; null or empty means all.
   ///
@@ -372,6 +374,14 @@ class DeviceCalendar {
     DateTime endDate, {
     List<String>? calendarIds,
   }) async {
+    if (endDate.isBefore(startDate)) {
+      throw ArgumentError('End date must be after start date');
+    }
+    // `[t, t)` is empty by definition. Answer it here so both platforms agree:
+    // Android's all-day widening would otherwise return the date's all-day
+    // events but none of its timed ones for a zero-width window.
+    if (endDate.isAtSameMomentAs(startDate)) return const [];
+
     await _ensurePermission(CalendarAccessLevel.full);
     try {
       final List<Map<String, dynamic>> rawEvents =

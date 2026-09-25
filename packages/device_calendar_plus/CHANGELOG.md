@@ -33,6 +33,14 @@
   warning no longer prints on every `flutter build`. Minimum supported SDK is
   now Flutter 3.44 / Dart 3.12 (#133).
 
+### Fixed
+- Android: `listEvents` returns an all-day event when the window is a sub-day
+  slice of its date (e.g. 10:00–11:00), as iOS does. The all-day date filter
+  collapsed such a window to an empty range and dropped the event.
+- `listEvents` rejects an `endDate` before `startDate` with `ArgumentError`,
+  like the other date-range methods, and answers an empty range
+  (`endDate == startDate`) with no events on both platforms.
+
 ## 0.8.1 - 2026-09-21
 
 ### Fixed
