@@ -1444,7 +1444,43 @@ class EventsService(
                 )
             )
         }
+
+        // Swept after the truncate so a failure here degrades to the old
+        // orphan state rather than resurrecting edited occurrences: had the
+        // exceptions gone first and the truncate then failed, the provider
+        // would keep generating the original slots and the user's
+        // per-occurrence edits would be lost.
+        deleteDetachedOccurrencesFrom(row, timestamp)
         return Result.success(Unit)
+    }
+
+    /**
+     * Removes the detached occurrences of [master] whose original slot is
+     * at or after [fromInstant]: the second half of a `thisAndFollowing`
+     * delete.
+     *
+     * Truncating the master's rule only stops it generating occurrences. An
+     * occurrence that was edited on its own is a detached exception row
+     * (ORIGINAL_ID = master, ORIGINAL_INSTANCE_TIME = the instant it
+     * replaced), so one past the split would survive as an orphan: out of
+     * the Instances cache the truncate rebuilds, but still on disk, and back
+     * in listEvents once the provider next regenerates it. iOS's
+     * EKSpan.futureEvents removes those too, so Android matches it.
+     *
+     * The slot the exception replaced decides, not where it was moved to: an
+     * occurrence dragged from before the split to after it survives, and one
+     * dragged from after the split to before it goes.
+     *
+     * Deletes with sync-adapter context for the master's account so the rows
+     * are physically removed rather than flagged DELETED=1.
+     */
+    private fun deleteDetachedOccurrencesFrom(master: EventRow, fromInstant: Long) {
+        context.contentResolver.delete(
+            syncAdapterUri(CalendarContract.Events.CONTENT_URI, master.account),
+            "${CalendarContract.Events.ORIGINAL_ID} = ? AND " +
+                "${CalendarContract.Events.ORIGINAL_INSTANCE_TIME} >= ?",
+            arrayOf(master.id, fromInstant.toString())
+        )
     }
 
     /**
@@ -2072,6 +2108,17 @@ class EventsService(
             .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
             .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.name)
             .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.type)
+            .build()
+
+    /** [base] (an Events or exception URI) with sync-adapter context for [account]. */
+    private fun syncAdapterUri(
+        base: android.net.Uri,
+        account: Pair<String, String>
+    ): android.net.Uri =
+        base.buildUpon()
+            .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
+            .appendQueryParameter(CalendarContract.Events.ACCOUNT_NAME, account.first)
+            .appendQueryParameter(CalendarContract.Events.ACCOUNT_TYPE, account.second)
             .build()
 
     /**

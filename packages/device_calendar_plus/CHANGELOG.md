@@ -1,6 +1,9 @@
 ## Unreleased
 
 ### Fixed
+- Android: `deleteRecurring` with `thisAndFollowing` no longer leaves behind
+  an occurrence on or after the split that had been edited on its own,
+  matching iOS.
 - `updateCalendar` and `deleteCalendar` throw the documented `readOnly` for a
   calendar that can't be modified, on both platforms. iOS used to surface a
   refused delete as `operationFailed`; Android renamed or deleted any row it

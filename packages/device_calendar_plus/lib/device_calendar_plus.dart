@@ -823,7 +823,9 @@ class DeviceCalendar {
   ///   with a bare event ID).
   /// - [EventSpan.thisAndFollowing] — removes the occurrence and every later
   ///   one, truncating the series. Requires [instanceId] to carry an occurrence
-  ///   timestamp (a bare event ID throws [ArgumentError]).
+  ///   timestamp (a bare event ID throws [ArgumentError]). An occurrence that
+  ///   was edited on its own goes or stays by the slot it originally occupied
+  ///   in the series, not by where it was moved to.
   ///
   /// To delete one occurrence, pass its instance ID to [deleteEvent]. Requires
   /// full access.
