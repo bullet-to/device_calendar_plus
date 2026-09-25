@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The test-only account type TestAuthenticatorService answers for; see it for why. -->
+<account-authenticator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accountType="to.bullet.device_calendar_plus_example"
+    android:label="Device Calendar Plus Test"
+    android:icon="@mipmap/ic_launcher"
+    android:smallIcon="@mipmap/ic_launcher" />
