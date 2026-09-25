@@ -66,6 +66,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   /// callers keep their unchanged signature. Set to a sentinel before each
   /// captured call so "passed null" is distinguishable from "never called".
   Object? lastCreateEventReminders = 'unset';
+  ({String name, String? colorHex})? lastCreateCalendar;
   ({String calendarId, String? name, String? colorHex})? lastUpdateCalendar;
   ({String eventId, int? timestamp})? lastDeleteEvent;
 
@@ -186,6 +187,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     CreateCalendarPlatformOptions? platformOptions,
   ) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
+    lastCreateCalendar = (name: name, colorHex: colorHex);
     return 'mock-calendar-id';
   }
 
@@ -1051,6 +1053,79 @@ void main() {
       test('throws ArgumentError when calendarId is empty', () async {
         expect(
           () => DeviceCalendar.instance.updateCalendar('   ', name: 'x'),
+          throwsArgumentError,
+        );
+      });
+    });
+
+    // What createCalendar / updateCalendar accept for colorHex: #RRGGBB only
+    // (the # optional), because an alpha byte is stored by Android and
+    // dropped by iOS (#126). A malformed value used to reach the platform,
+    // where both sides silently stored black. What does reach it is the
+    // canonical '#RRGGBB', so the native side needs no trimming of its own.
+    // Driven through both entry points so the table also covers the guard's
+    // wiring on each, with each entry point's own mock record asserted.
+    group('colorHex', () {
+      final writers = <
+          String,
+          ({
+            Future<void> Function(String colorHex) write,
+            String? Function() forwarded,
+          })>{
+        'createCalendar': (
+          write: (hex) =>
+              DeviceCalendar.instance.createCalendar(name: 'x', colorHex: hex),
+          forwarded: () => mockPlatform.lastCreateCalendar?.colorHex,
+        ),
+        'updateCalendar': (
+          write: (hex) => DeviceCalendar.instance
+              .updateCalendar('calendar-123', colorHex: hex),
+          forwarded: () => mockPlatform.lastUpdateCalendar?.colorHex,
+        ),
+      };
+      bool reachedPlatform() =>
+          mockPlatform.lastCreateCalendar != null ||
+          mockPlatform.lastUpdateCalendar != null;
+
+      for (final MapEntry(key: entryPoint, value: writer) in writers.entries) {
+        group('via $entryPoint', () {
+          Future<void> rejects(String hex) async {
+            await expectLater(() => writer.write(hex), throwsArgumentError);
+            // Awaited above, so the platform call has had its chance.
+            expect(reachedPlatform(), isFalse);
+          }
+
+          test('accepts #RRGGBB', () async {
+            await writer.write('#FF5733');
+            expect(writer.forwarded(), '#FF5733');
+          });
+
+          test('accepts a bare RRGGBB and forwards it with the #', () async {
+            await writer.write('ff5733');
+            expect(writer.forwarded(), '#FF5733');
+          });
+
+          test('accepts surrounding whitespace and forwards it trimmed',
+              () async {
+            await writer.write(' #ff5733 ');
+            expect(writer.forwarded(), '#FF5733');
+          });
+
+          test('rejects #AARRGGBB', () => rejects('#80FF5733'));
+
+          test('rejects shorthand #RGB', () => rejects('#FFF'));
+
+          test('rejects a non-hex string', () => rejects('not-a-color'));
+        });
+      }
+    });
+
+    group('deleteCalendar', () {
+      // Regression (#126): the empty-id guard updateCalendar / deleteEvent
+      // have was missing here, so '' went to the platform as a real lookup.
+      test('throws ArgumentError when calendarId is empty', () async {
+        expect(
+          () => DeviceCalendar.instance.deleteCalendar('   '),
           throwsArgumentError,
         );
       });

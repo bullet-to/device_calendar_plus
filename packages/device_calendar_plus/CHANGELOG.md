@@ -1,6 +1,25 @@
 ## Unreleased
 
 ### Fixed
+- `updateCalendar` and `deleteCalendar` throw the documented `readOnly` for a
+  calendar that can't be modified, on both platforms. iOS used to surface a
+  refused delete as `operationFailed`; Android renamed or deleted any row it
+  was handed (#126).
+- Android `createCalendar` refuses a non-local `accountType` with `readOnly`,
+  as `listSources` already reports and iOS already does for non-creatable
+  sources, instead of leaving a phantom calendar the account's sync adapter
+  can wipe (#126).
+- `createCalendar` / `updateCalendar` throw `ArgumentError` for a `colorHex`
+  that isn't `#RRGGBB` (the `#` optional) instead of storing it silently as
+  black, and forward the canonical `#RRGGBB` to the platform (#126).
+- `deleteCalendar('')` throws `ArgumentError`, like the other mutations (#126).
+- Android `listCalendars` no longer crashes on a provider row with a NULL
+  display name (#126).
+
+### Docs
+- `CalendarSource.supportsCalendarCreation`, `CreateCalendarOptionsIos` and
+  `CreateCalendarOptionsAndroid` describe what the code actually does: iOS
+  creates under iCloud or local, Android under the local account type (#126).
 - Android: `getEvent` resolves all-day recurring instance IDs (it always
   returned null), returns a recurring master's real end date instead of a
   zero-length one, and `listEvents` orders all-day events by their local

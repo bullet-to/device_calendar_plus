@@ -4,8 +4,8 @@
 /// platform-specific options when creating calendars.
 ///
 /// Platform-specific implementations append the platform name:
-/// - Android: [CreateCalendarOptionsAndroid]
-/// - iOS: (not yet implemented)
+/// - Android: `CreateCalendarOptionsAndroid` (account name and type)
+/// - iOS: `CreateCalendarOptionsIos` (source identifier)
 ///
 /// Example:
 /// ```dart

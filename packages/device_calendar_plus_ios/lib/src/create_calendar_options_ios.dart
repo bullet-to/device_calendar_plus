@@ -6,7 +6,11 @@ import 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 /// created under. Pass the [CalendarSource.id] from [DeviceCalendar.listSources].
 ///
 /// If [platformOptions] is omitted from [DeviceCalendar.createCalendar], the
-/// default tiered fallback is used (default calendar's source → first CalDAV → local).
+/// calendar goes under iCloud when the device has it, otherwise the local
+/// source. Only those two accept new calendars from a third-party app; any
+/// other source (Google, Exchange, subscribed…) is refused with
+/// `DeviceCalendarError.readOnly`, matching what
+/// [CalendarSource.supportsCalendarCreation] reports for it.
 ///
 /// Example:
 /// ```dart

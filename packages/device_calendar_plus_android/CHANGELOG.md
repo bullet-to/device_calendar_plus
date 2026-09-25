@@ -1,6 +1,15 @@
 ## Unreleased
 
 ### Fixed
+- `updateCalendar` and `deleteCalendar` refuse a calendar whose access level
+  is below contributor — the same calendars `listCalendars` reports as
+  `readOnly` — with `READ_ONLY` before writing, instead of renaming or
+  deleting any row they were handed (#126).
+- `createCalendar` refuses a non-local `accountType` with `READ_ONLY`, as
+  `listSources` already reports, instead of sync-adapter-inserting a phantom
+  calendar into another account's namespace (#126).
+- `listCalendars` reads a NULL display name as empty instead of handing Dart
+  a null it casts (#126).
 - `getEvent` resolves the instance ID of an all-day recurring occurrence. The
   lookup went through the all-day date filter with a two-second window, which
   collapses to an empty date range in every timezone, so it always returned

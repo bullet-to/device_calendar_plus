@@ -372,6 +372,59 @@ void main() {
       }
     });
 
+    test('Error Handling - Update and Delete a Read-only Calendar', () async {
+      // Regression (#126): iOS mapped a refused delete to operationFailed and
+      // Android renamed/deleted any row it was handed, so the documented
+      // readOnly never surfaced. Needs a calendar the OS marks read-only
+      // (Birthdays, a subscribed .ics feed, a holiday calendar); a bare
+      // simulator or emulator may not have one.
+      final calendars = await plugin.listCalendars();
+      final readOnly = calendars.where((c) => c.readOnly).firstOrNull;
+      if (readOnly == null) {
+        markTestSkipped('No read-only calendar on this device');
+        return;
+      }
+      final throwsReadOnly = throwsA(
+        isA<DeviceCalendarException>().having(
+          (e) => e.errorCode,
+          'errorCode',
+          DeviceCalendarError.readOnly,
+        ),
+      );
+
+      await expectLater(
+        plugin.updateCalendar(readOnly.id, name: 'Renamed'),
+        throwsReadOnly,
+      );
+      await expectLater(plugin.deleteCalendar(readOnly.id), throwsReadOnly);
+
+      // Refused means untouched.
+      final after = (await plugin.listCalendars())
+          .firstWhere((c) => c.id == readOnly.id);
+      expect(after.name, readOnly.name);
+    });
+
+    test('Error Handling - Update and Delete an Unknown Calendar', () async {
+      // Regression (#126): Android now decides notFound from the access-level
+      // query that runs before the write, not from the zero-row write result;
+      // iOS from calendar(withIdentifier:). Both must agree through the real
+      // provider.
+      final unknownId = 'nonexistent-${DateTime.now().millisecondsSinceEpoch}';
+      final throwsNotFound = throwsA(
+        isA<DeviceCalendarException>().having(
+          (e) => e.errorCode,
+          'errorCode',
+          DeviceCalendarError.notFound,
+        ),
+      );
+
+      await expectLater(
+        plugin.updateCalendar(unknownId, name: 'Renamed'),
+        throwsNotFound,
+      );
+      await expectLater(plugin.deleteCalendar(unknownId), throwsNotFound);
+    });
+
     test('Color Format Variations', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
 

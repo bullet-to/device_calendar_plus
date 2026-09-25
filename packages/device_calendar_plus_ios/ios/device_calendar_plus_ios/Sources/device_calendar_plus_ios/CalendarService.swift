@@ -135,24 +135,15 @@ class CalendarService {
       return
     }
     
-    // Find the calendar by ID
-    guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.notFound,
-        message: "Calendar with ID \(calendarId) not found"
-      )))
+    let calendar: EKCalendar
+    switch writableCalendar(calendarId) {
+    case .failure(let error):
+      completion(.failure(error))
       return
+    case .success(let found):
+      calendar = found
     }
-    
-    // Check if calendar is modifiable
-    guard calendar.allowsContentModifications else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.readOnly,
-        message: "Calendar is read-only and cannot be modified"
-      )))
-      return
-    }
-    
+
     // Update name if provided
     if let name = name {
       calendar.title = name
@@ -185,15 +176,15 @@ class CalendarService {
       return
     }
     
-    // Find the calendar by ID
-    guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.notFound,
-        message: "Calendar with ID \(calendarId) not found"
-      )))
+    let calendar: EKCalendar
+    switch writableCalendar(calendarId) {
+    case .failure(let error):
+      completion(.failure(error))
       return
+    case .success(let found):
+      calendar = found
     }
-    
+
     // Delete the calendar
     do {
       try eventStore.removeCalendar(calendar, commit: true)
@@ -226,6 +217,60 @@ class CalendarService {
     }
 
     completion(.success(sources))
+  }
+
+  /// The calendar a rename, recolor or delete may act on: looked up by ID,
+  /// then refused if EventKit won't let the app touch it. The one place that
+  /// defines "a calendar we may mutate" on iOS, as `writeRefusal` is on
+  /// Android.
+  private func writableCalendar(_ calendarId: String) -> Result<EKCalendar, CalendarError> {
+    guard let calendar = eventStore.calendar(withIdentifier: calendarId) else {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.notFound,
+        message: "Calendar with ID \(calendarId) not found"
+      ))
+    }
+    if let refusal = readOnlyRefusal(calendar) {
+      return .failure(refusal)
+    }
+    return .success(calendar)
+  }
+
+  /// The readOnly refusal for a calendar the app can't rename, recolor or
+  /// delete, decided before EventKit is asked so the caller gets `readOnly`
+  /// rather than the opaque `operationFailed` a thrown save would become
+  /// (#126).
+  ///
+  /// Two EventKit flags feed it. `allowsContentModifications == false` is what
+  /// `listCalendars` reports as `readOnly`, so every calendar the list calls
+  /// read-only is refused. `isImmutable` is EventKit's own "cannot be edited
+  /// or deleted" flag; it says nothing about adding events, so a calendar can
+  /// be immutable yet listed as writable (an account's default calendar,
+  /// say). Those are refused too — deliberately, so don't "simplify" this to
+  /// `allowsContentModifications` alone. The refusal set is therefore a
+  /// superset of the list's `readOnly`; `doc/calendars.md` owns the wording.
+  ///
+  /// Pure so that immutable-yet-writable cell can be pinned in
+  /// `RunnerTests/CalendarServiceTests.swift`: Dart never sees `isImmutable`,
+  /// so no on-device test can pick such a calendar, and a test can't build an
+  /// `EKCalendar` with the flag set.
+  static func readOnlyRefusal(
+    isImmutable: Bool, allowsContentModifications: Bool, title: String
+  ) -> CalendarError? {
+    guard isImmutable || !allowsContentModifications else {
+      return nil
+    }
+    return CalendarError(
+      code: PlatformExceptionCodes.readOnly,
+      message: "Calendar '\(title)' is read-only and cannot be modified or deleted"
+    )
+  }
+
+  private func readOnlyRefusal(_ calendar: EKCalendar) -> CalendarError? {
+    return CalendarService.readOnlyRefusal(
+      isImmutable: calendar.isImmutable,
+      allowsContentModifications: calendar.allowsContentModifications,
+      title: calendar.title)
   }
 
   private func sourceTypeToCalendarSourceType(_ type: EKSourceType) -> String {
