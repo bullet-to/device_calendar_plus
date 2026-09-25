@@ -5,14 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'series_fixtures.dart';
+import 'test_helpers.dart';
 import 'test_seed.dart';
-
-/// Matches a [DeviceCalendarException] carrying [DeviceCalendarError.notFound].
-final throwsNotFound = throwsA(isA<DeviceCalendarException>().having(
-  (e) => e.errorCode,
-  'errorCode',
-  DeviceCalendarError.notFound,
-));
 
 /// The arrange step the tombstone tests share, Android-only (#153): a daily
 /// series keyed by editing one occurrence through the plugin, then deleted

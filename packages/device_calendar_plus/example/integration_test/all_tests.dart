@@ -6,6 +6,7 @@ import 'recurrence_read_test.dart' as recurrence_read;
 import 'recurrence_test.dart' as recurrence;
 import 'reminders_test.dart' as reminders;
 import 'sources_test.dart' as sources;
+import 'synced_calendar_test.dart' as synced_calendar;
 import 'tombstone_test.dart' as tombstone;
 
 void main() {
@@ -18,4 +19,5 @@ void main() {
   edge_cases.main();
   reminders.main();
   tombstone.main();
+  synced_calendar.main();
 }

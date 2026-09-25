@@ -1,6 +1,16 @@
 ## Unreleased
 
 ### Fixed
+- Deletes and recurring edits on a synced calendar (Google, Exchange, any
+  account but local) now reach the server. The plugin wrote them as the
+  calendar's own sync adapter, which the provider takes as the server's word:
+  the row was changed or removed locally, never marked for upload, and the
+  next sync brought the event back — one duplicate per delete-and-sync cycle.
+  `deleteEvent`, `deleteRecurring` (whole series, one occurrence, or
+  `thisAndFollowing`, including the detached occurrences it sweeps) and
+  `updateRecurring` now write as the app they are, so the adapter finds a
+  `DELETED`/`DIRTY` row to upload; local calendars, which have no adapter,
+  keep the direct deletes (#132, #161).
 - `deleteRecurring` with `thisAndFollowing` now removes a detached occurrence
   that falls on or after the split. Truncating the series' rule left an
   occurrence that had been edited on its own behind as an orphan row, which

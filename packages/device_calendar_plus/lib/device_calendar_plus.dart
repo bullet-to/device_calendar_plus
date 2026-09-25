@@ -548,6 +548,9 @@ class DeviceCalendar {
   ///
   /// To truncate a series from a split point forward, use [deleteRecurring].
   /// Requires full access.
+  ///
+  /// Throws [DeviceCalendarException] ([DeviceCalendarError.notFound]) when
+  /// there is no such event.
   Future<void> deleteEvent({required String eventId}) async {
     requireNonBlank(eventId, name: 'eventId', label: 'Event ID');
 

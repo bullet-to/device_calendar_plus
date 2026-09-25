@@ -137,31 +137,6 @@ Future<List<Event>> detachedAt(
       .toList();
 }
 
-/// Asserts a `thisAndFollowing` split at [before] left the master's earlier
-/// occurrences ([keeps], by start) and nothing of it on or after the split.
-/// Unlike [expectTruncatedMaster] this pins no count: what the master lists
-/// in a detached occurrence's place varies by platform, so only the slots
-/// that must survive are named.
-void expectMasterSplit(
-  List<Event> remaining, {
-  required DateTime before,
-  required Iterable<DateTime> keeps,
-}) {
-  final starts = remaining
-      .map((e) => e.startDate.millisecondsSinceEpoch)
-      .toSet();
-  expect(
-    starts,
-    containsAll(keeps.map((d) => d.millisecondsSinceEpoch)),
-    reason: 'the occurrences before the split must survive on the master',
-  );
-  expect(
-    remaining.every((e) => e.startDate.isBefore(before)),
-    isTrue,
-    reason: 'the original series must not extend past the split point',
-  );
-}
-
 /// Asserts a detached occurrence ([moved], as [moveOccurrence] returned it)
 /// went with a `thisAndFollowing` split: absent from the listing and, on
 /// Android, its own Events row gone too. There a detached occurrence is its

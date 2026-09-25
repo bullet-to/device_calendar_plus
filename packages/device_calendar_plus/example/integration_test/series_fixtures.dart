@@ -5,8 +5,7 @@ import 'test_helpers.dart';
 
 // The shared fixtures for tests that arrange a recurring series and read it
 // back: creating one, listing its occurrences, and the arrange steps and
-// assertions the per-occurrence tests share. Imported by recurrence_test.dart,
-// recurrence_read_test.dart and tombstone_test.dart.
+// assertions the per-occurrence tests share.
 
 /// The group's calendar, checked to exist: setUpAll must have created it.
 String requireCalendar(String? calendarId) {
@@ -173,6 +172,31 @@ Future<void> expectDetachedOnce(
         windowDays: windowDays)),
     [at.startDate.millisecondsSinceEpoch],
     reason: reason,
+  );
+}
+
+/// Asserts a `thisAndFollowing` split at [before] left the master's earlier
+/// occurrences ([keeps], by start) and nothing of it on or after the split.
+/// Pins no count on purpose: what the master lists in a detached
+/// occurrence's place varies by platform, so only the slots that must
+/// survive are named.
+void expectMasterSplit(
+  List<Event> remaining, {
+  required DateTime before,
+  required Iterable<DateTime> keeps,
+}) {
+  final starts = remaining
+      .map((e) => e.startDate.millisecondsSinceEpoch)
+      .toSet();
+  expect(
+    starts,
+    containsAll(keeps.map((d) => d.millisecondsSinceEpoch)),
+    reason: 'the occurrences before the split must survive on the master',
+  );
+  expect(
+    remaining.every((e) => e.startDate.isBefore(before)),
+    isTrue,
+    reason: 'the original series must not extend past the split point',
   );
 }
 

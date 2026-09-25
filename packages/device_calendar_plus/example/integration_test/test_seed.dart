@@ -40,6 +40,54 @@ Future<String> insertKeylessException({
       'title': title,
     }))!;
 
+/// What a sync adapter would find to upload for an event row: its `DELETED`
+/// and `DIRTY` flags.
+typedef SyncState = ({bool deleted, bool dirty});
+
+/// A calendar a sync adapter owns, stood up for a test: inserted as that
+/// adapter would, under an account of the example app's own type that no
+/// adapter answers to (the emulator has no synced account, and a real
+/// device's Google account must not receive test rows). Any account type but
+/// local is "synced" to the provider, which is all its sync-adapter branches
+/// turn on (#132). Registers the account first. Returns the calendar's ID;
+/// the plugin's own `deleteCalendar` removes it, and [removeSyncedAccount]
+/// the account.
+Future<String> createSyncedCalendar(String name) async =>
+    (await _channel.invokeMethod<String>('createSyncedCalendar', {'name': name}))!;
+
+/// Removes the account [createSyncedCalendar] registered, and through the
+/// provider's own account cleanup any calendar still under it. Returns
+/// whether there was one to remove.
+Future<bool> removeSyncedAccount() async =>
+    (await _channel.invokeMethod<bool>('removeSyncedAccount'))!;
+
+/// Puts [eventId] in the state a sync adapter leaves an event in once the
+/// server has it: a `_sync_id` and `DIRTY` cleared. From here a plain write
+/// is what the adapter uploads next, and a sync-adapter write is one the
+/// server never hears of (#132). Throws when there is no such row to mark.
+Future<void> markUploaded(String eventId) =>
+    _channel.invokeMethod<void>('markUploaded', {'eventId': eventId});
+
+/// Reads [eventId]'s `DELETED` and `DIRTY` flags straight from the Events
+/// table — which, unlike the plugin's reads, still lists a tombstone — or
+/// null when the row is gone altogether.
+Future<SyncState?> readSyncState(String eventId) async {
+  final row = await _channel.invokeMethod<Map<Object?, Object?>>(
+      'readSyncState', {'eventId': eventId});
+  if (row == null) return null;
+  return (deleted: row['deleted'] as bool, dirty: row['dirty'] as bool);
+}
+
+/// The event ID of the exception row written against master [eventId] for
+/// the occurrence at [instanceStart], or null when there is none. The plugin
+/// returns no ID for a cancelled occurrence, so its row is found by the slot
+/// it replaced.
+Future<String?> exceptionIdOf(String eventId, DateTime instanceStart) =>
+    _channel.invokeMethod<String>('exceptionIdOf', {
+      'eventId': eventId,
+      'instanceStart': instanceStart.millisecondsSinceEpoch,
+    });
+
 /// Reads [eventId]'s sync keys straight from the Events table, or null when
 /// the row is missing.
 Future<SyncIds?> readSyncIds(String eventId) async {
