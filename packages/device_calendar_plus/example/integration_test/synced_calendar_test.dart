@@ -125,18 +125,20 @@ void main() {
     // Instances cache until the adapter keys it — the whole series gone,
     // offline or with sync off (#163, the synced-calendar side of #153).
     // [detachedTitle] is the edited occurrence's title, or null for a delete.
+    // [slot] is the index of the occurrence the edit changes.
     const editedTitle = 'Edited before upload #163';
+    const slot = 4;
     for (final (label, edit, detachedTitle) in [
       (
         'updateEvent',
         (DeviceCalendar plugin, SeededSeries series) => plugin.updateEvent(
-            eventId: series.occurrences[4].instanceId, title: editedTitle),
+            eventId: series.occurrences[slot].instanceId, title: editedTitle),
         editedTitle,
       ),
       (
         'deleteEvent',
         (DeviceCalendar plugin, SeededSeries series) =>
-            plugin.deleteEvent(eventId: series.occurrences[4].instanceId),
+            plugin.deleteEvent(eventId: series.occurrences[slot].instanceId),
         null,
       ),
     ]) {
@@ -178,12 +180,12 @@ void main() {
         expect(
           startsOf(await occurrencesOf(
               plugin, calendarId!, series.eventId, series.start)),
-          startsExcept(series.occurrences, {4}),
+          startsExcept(series.occurrences, {slot}),
           reason: 'once uploaded, the series must skip the changed slot',
         );
         if (detachedTitle != null) {
           await expectDetachedOnce(plugin, calendarId!, detachedTitle,
-              series.occurrences[4], series.start,
+              series.occurrences[slot], series.start,
               reason: 'once uploaded, the edited occurrence must be listed '
                   'once, in its slot');
         }
