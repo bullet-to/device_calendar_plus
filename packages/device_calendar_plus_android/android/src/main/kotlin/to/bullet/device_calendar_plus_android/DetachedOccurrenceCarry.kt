@@ -122,8 +122,10 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
 
         // The new series was expanded when it was inserted, before it had
         // any exceptions, and moving them onto it does not re-expand it: it
-        // would still generate the slots they now stand in for. (Harmless
-        // after a copy, whose exception insert expands on its own.)
+        // would still generate the slots they now stand in for. (After a
+        // copy it is needed too: the new synced master is not keyed yet, so
+        // the copy's exception insert drops its occurrences from the
+        // Instances cache, as #163.)
         store.rewriteSeriesForReexpand(newSeries.row, newSeries.rrule)
     }
 
@@ -267,7 +269,9 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
      * The copy is a plain insert through CONTENT_EXCEPTION_URI with no
      * `_sync_id`, so it is DIRTY and new to the server. (It skips
      * EventsService.insertException's #153 keying, which a synced series
-     * never takes: its adapter owns the key.) The new master is usually
+     * never takes: its adapter owns the key. It also skips
+     * insertException's #163 re-expand, which [carryOrThrow] supplies once
+     * for the whole carry.) The new master is usually
      * not uploaded yet, which leaves the copy's ORIGINAL_SYNC_ID empty
      * until it is: the provider's `original_sync_update` trigger fills it
      * in when the adapter keys the master. The delete goes through
