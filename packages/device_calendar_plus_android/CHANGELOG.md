@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.0 - 2026-09-26
 
 ### Fixed
 - Event times are now written at whole seconds, as on iOS. A sub-second
@@ -64,8 +64,18 @@
   (`DELETED=1`, the fate of any event with a `_sync_id` deleted outside a
   sync adapter, which now includes a local series edited per occurrence).
   Such an event reads as not found instead of accepting edits against a row
-  that never shows in `listEvents`. A whole-series delete still collects the
-  tombstone, since it runs as a sync adapter.
+  that never shows in `listEvents`. On a local calendar a whole-series delete
+  still collects the tombstone.
+- `updateRecurring` with a new rule anchors the series on the first day that
+  rule generates, as iOS does. Changing a weekly series to another weekday
+  left its start on the old day, so the first occurrence was stranded there.
+  A rule that generates no occurrence at all is refused with
+  `INVALID_ARGUMENTS` and the series is left untouched (#140).
+- `listEvents` returns an all-day event when the window is a sub-day slice of
+  its date (e.g. 10:00–11:00). The all-day date filter mapped both window
+  edges to the same UTC midnight, so the range collapsed to nothing; the end
+  edge now rounds up to the next UTC midnight when it isn't on a local
+  midnight. Matches iOS.
 
 ### Changed
 - Migrated to Flutter's built-in Kotlin: the plugin no longer applies the
@@ -74,13 +84,6 @@
   plugins that apply KGP themselves (#133).
 - Minimum supported SDK is now Flutter 3.44 / Dart 3.12, as the migration
   requires.
-
-### Fixed
-- `listEvents` returns an all-day event when the window is a sub-day slice of
-  its date (e.g. 10:00–11:00). The all-day date filter mapped both window
-  edges to the same UTC midnight, so the range collapsed to nothing; the end
-  edge now rounds up to the next UTC midnight when it isn't on a local
-  midnight. Matches iOS.
 
 ## 0.7.2 - 2026-09-21
 
