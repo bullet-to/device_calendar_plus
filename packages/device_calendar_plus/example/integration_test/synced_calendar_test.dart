@@ -400,6 +400,15 @@ void main() {
           reason: 'the copy must be flagged for upload');
       expect((await plugin.getEvent(copyId))?.status, EventStatus.canceled,
           reason: 'the copy must still cancel its slot');
+      // Before the upload the copy is pending, not shown: the new series
+      // lists as it was, the deleted slot included.
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, newTitle, series.start)),
+        startsOf(series.occurrences.skip(3)),
+        reason: 'the new series must stay listed while its master awaits '
+            'its first upload (#163)',
+      );
 
       // As for a detached occurrence: the upload keys the new master, the
       // provider passes the key on to the copy, and the next expansion

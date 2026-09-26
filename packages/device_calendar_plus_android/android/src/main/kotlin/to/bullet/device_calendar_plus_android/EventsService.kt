@@ -1467,8 +1467,7 @@ class EventsService(
         series: SeriesRow,
         values: android.content.ContentValues
     ): Result<String> {
-        store.ensureLocalSeriesSyncId(series)
-            .getOrElse { return Result.failure(it) }
+        store.ensureLocalSeriesSyncId(series).getOrElse { return Result.failure(it) }
 
         val uri = CalendarContract.Events.CONTENT_EXCEPTION_URI
             .buildUpon()
@@ -1482,12 +1481,17 @@ class EventsService(
                     "Failed to write an exception for event ${series.row.id}"
                 )
             )
-        // The row count is not checked, unlike the truncate paths: the
-        // exception is already written, so failing here would misreport a
-        // write that happened, and a master that had vanished would have
+        // A zero row count is logged, not failed, unlike the truncate paths:
+        // the exception is already written, so failing here would misreport
+        // a write that happened, and a master that had vanished would have
         // failed the insert above.
-        if (series.row.awaitsAdapterKey) {
-            store.rewriteSeriesForReexpand(series.row, series.rrule)
+        if (series.row.awaitsAdapterKey &&
+            store.rewriteSeriesForReexpand(series.row, series.rrule) == 0
+        ) {
+            android.util.Log.w(
+                LOG_TAG,
+                "Could not re-expand unkeyed series ${series.row.id} after its exception insert (#163)"
+            )
         }
         return Result.success(exceptionId)
     }
