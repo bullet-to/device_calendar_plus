@@ -1467,7 +1467,7 @@ class EventsService(
         series: SeriesRow,
         values: android.content.ContentValues
     ): Result<String> {
-        store.ensureLocalSeriesSyncId(series).getOrElse { return Result.failure(it) }
+        val key = store.ensureLocalSeriesSyncId(series).getOrElse { return Result.failure(it) }
 
         val uri = CalendarContract.Events.CONTENT_EXCEPTION_URI
             .buildUpon()
@@ -1485,9 +1485,7 @@ class EventsService(
         // the exception is already written, so failing here would misreport
         // a write that happened, and a master that had vanished would have
         // failed the insert above.
-        if (series.row.awaitsAdapterKey &&
-            store.rewriteSeriesForReexpand(series.row, series.rrule) == 0
-        ) {
+        if (key == null && store.rewriteSeriesForReexpand(series.row, series.rrule) == 0) {
             android.util.Log.w(
                 LOG_TAG,
                 "Could not re-expand unkeyed series ${series.row.id} after its exception insert (#163)"

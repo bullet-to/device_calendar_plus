@@ -69,14 +69,7 @@ internal data class EventRow(
     val availability: String,
     val rrule: String?,
     val syncId: String?
-) {
-    /**
-     * A synced row its adapter has not uploaded yet: it has no `_sync_id`,
-     * and only the adapter may give it one. An exception written against
-     * such a master has no key to join, so the writer re-expands it (#163).
-     */
-    val awaitsAdapterKey: Boolean get() = syncId == null && !account.isLocal
-}
+)
 
 /**
  * A master [row] proven recurring: its [rrule] is the row's, non-null.
@@ -231,7 +224,10 @@ internal class SeriesRowStore(private val context: Context) {
     fun ensureLocalSeriesSyncId(series: SeriesRow): Result<String?> {
         val row = series.row
         if (row.syncId != null) return Result.success(row.syncId)
-        if (row.awaitsAdapterKey) return Result.success(null)
+        // A synced row its adapter has not uploaded yet: only the adapter
+        // may key it, so an exception written against it has no key to
+        // join, and the writer re-expands the master instead (#163).
+        if (!row.account.isLocal) return Result.success(null)
 
         val syncId = "device_calendar_plus:${java.util.UUID.randomUUID()}"
         val updated = resolver.update(

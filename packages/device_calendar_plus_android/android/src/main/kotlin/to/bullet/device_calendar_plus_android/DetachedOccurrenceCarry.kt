@@ -125,8 +125,14 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
         // would still generate the slots they now stand in for. (After a
         // copy it is needed too: the new synced master is not keyed yet, so
         // the copy's exception insert drops its occurrences from the
-        // Instances cache, as #163.)
-        store.rewriteSeriesForReexpand(newSeries.row, newSeries.rrule)
+        // Instances cache, as #163.) A zero row count is logged, not
+        // thrown: the exceptions are already carried.
+        if (store.rewriteSeriesForReexpand(newSeries.row, newSeries.rrule) == 0) {
+            android.util.Log.w(
+                LOG_TAG,
+                "Could not re-expand series $newMasterId after carrying its exceptions (#163)"
+            )
+        }
     }
 
     /**
