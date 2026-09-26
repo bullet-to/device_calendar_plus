@@ -114,18 +114,19 @@ internal fun resolveSeriesTimes(
     isAllDay: Boolean
 ): Result<Pair<Long, Long>> {
     val tz = seriesTimeZone(timeZoneId, isAllDay)
-    // Whole seconds, like every event time written (#165): a series
-    // stored with millis by an older version, or by another app, is
-    // shifted from its own DTSTART and would otherwise keep them.
-    val shiftedStart = wholeSeconds(
-        if (newStartMillis != null) {
-            SplitShift.of(referenceMillis, newStartMillis, tz, isAllDay).slot(baseMillis)
-        } else {
-            baseMillis
-        }
-    )
+    // A slot copies the new start's time of day, already whole seconds.
+    // With no new start the stored start is kept as is, even with millis
+    // from an older version or another app: rewriting it would orphan
+    // detached occurrences keyed at those millis (#165).
+    val shiftedStart = if (newStartMillis != null) {
+        SplitShift.of(referenceMillis, newStartMillis, tz, isAllDay).slot(baseMillis)
+    } else {
+        baseMillis
+    }
     val newStart = if (rrule != null) {
-        RecurrenceAnchor.firstMatch(rrule, shiftedStart, tz)
+        // A rule re-anchor moves the series anyway, so it drops any stored
+        // millis too, like every event time the plugin writes (#165).
+        RecurrenceAnchor.firstMatch(rrule, shiftedStart, tz)?.let(::wholeSeconds)
             ?: return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.INVALID_ARGUMENTS,
@@ -144,23 +145,3 @@ internal fun resolveSeriesTimes(
     }
     return Result.success(Pair(newStart, newDurationMs))
 }
-
-/**
- * Whether an allEvents edit rewrites the series' time columns: an explicit
- * start or duration, or a [newStart] from [resolveSeriesTimes] that moved
- * the anchor. A `start` equal to the current anchor is still a rewrite: the
- * DTSTART/DURATION (and RRULE) re-put is what makes the provider re-expand
- * the series.
- *
- * [storedStart] is compared at whole seconds, so the flooring alone never
- * counts as a move: a metadata-only edit of a series stored with millis
- * leaves its times alone, so its detached occurrences' original instance
- * times keep matching and a synced calendar uploads no time change (#165).
- */
-internal fun rewritesSeriesTimes(
-    storedStart: Long,
-    newStart: Long,
-    newStartMillis: Long?,
-    durationMinutes: Int?
-): Boolean =
-    newStartMillis != null || durationMinutes != null || newStart != wholeSeconds(storedStart)

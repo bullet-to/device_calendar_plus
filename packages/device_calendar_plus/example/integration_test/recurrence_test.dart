@@ -212,6 +212,32 @@ Future<void> expectDetachedKept(
   }
 }
 
+/// Asserts the three-occurrence series [eventId] reads back at whole seconds
+/// (#165): its master from [wholeSecond] to an hour on, its first occurrence
+/// at [wholeSecond], and every occurrence listed from [windowStart] on a
+/// whole second.
+Future<void> expectWholeSecondSeries(
+  DeviceCalendar plugin,
+  String calendarId,
+  String eventId,
+  DateTime windowStart,
+  int wholeSecond,
+) async {
+  final master = await plugin.getEvent(eventId);
+  final occurrences = await occurrencesOf(
+      plugin, calendarId, eventId, windowStart,
+      windowDays: 30);
+  expect(occurrences, hasLength(3));
+  expect(master!.startDate.millisecondsSinceEpoch, wholeSecond,
+      reason: 'the series start must be stored at whole seconds');
+  expect(master.endDate.millisecondsSinceEpoch, wholeSecond + 3600000,
+      reason: 'the series end must be stored at whole seconds');
+  expect(occurrences.first.startDate.millisecondsSinceEpoch, wholeSecond,
+      reason: 'the first occurrence must start where its master does');
+  expect(startsOf(occurrences).every((ms) => ms % 1000 == 0), isTrue,
+      reason: 'every occurrence must start at a whole second');
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -554,20 +580,45 @@ void main() {
       final series = await createWeeklySeries(plugin, calendar,
           count: 3, start: start);
 
-      final master = await plugin.getEvent(series.eventId);
-      final occurrences =
-          await occurrencesOf(plugin, calendar, series.eventId, start,
-              windowDays: 30);
+      await expectWholeSecondSeries(plugin, calendar, series.eventId, start,
+          start.millisecondsSinceEpoch ~/ 1000 * 1000);
+    });
+
+    test(
+        'an occurrence moved to a sub-second start reads back at whole '
+        'seconds (#165)', () async {
+      // The per-occurrence write path: Android writes the edit as its own
+      // detached row, which must be floored like the master's times.
+      final calendar = requireCalendar(calendarId);
+      final start = DateTime.fromMillisecondsSinceEpoch(
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600) * 1000,
+      );
+      final series = await createWeeklySeries(plugin, calendar,
+          count: 3, start: start);
+      final occurrences = await occurrencesOf(
+          plugin, calendar, series.eventId, start,
+          windowDays: 30);
       expect(occurrences, hasLength(3));
-      final wholeSecond = start.millisecondsSinceEpoch ~/ 1000 * 1000;
-      expect(master!.startDate.millisecondsSinceEpoch, wholeSecond,
-          reason: 'the series start must be stored at whole seconds');
-      expect(master.endDate.millisecondsSinceEpoch, wholeSecond + 3600000,
-          reason: 'the series end must be stored at whole seconds');
-      expect(occurrences.first.startDate.millisecondsSinceEpoch, wholeSecond,
-          reason: 'the first occurrence must start where its master does');
-      expect(startsOf(occurrences).every((ms) => ms % 1000 == 0), isTrue,
-          reason: 'every occurrence must start at a whole second');
+
+      const title = 'Moved Precision #165';
+      final wholeSecond =
+          occurrences[1].startDate.millisecondsSinceEpoch + 2 * 3600000;
+      await plugin.updateEvent(
+        eventId: occurrences[1].instanceId,
+        title: title,
+        startDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 671),
+        endDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 3600671),
+      );
+
+      final moved =
+          await eventsTitled(plugin, calendar, title, start, windowDays: 30);
+      expect(moved, hasLength(1),
+          reason: 'the moved occurrence must appear once');
+      expect(moved.single.startDate.millisecondsSinceEpoch, wholeSecond,
+          reason: 'the moved occurrence must start at a whole second');
+      expect(moved.single.endDate.millisecondsSinceEpoch,
+          wholeSecond + 3600000,
+          reason: 'the moved occurrence must end at a whole second');
     });
   });
 
@@ -654,19 +705,8 @@ void main() {
         start: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 671),
       );
 
-      final master = await plugin.getEvent(series.eventId);
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, series.eventId, start,
-          windowDays: 30);
-      expect(occurrences, hasLength(3));
-      expect(master!.startDate.millisecondsSinceEpoch, wholeSecond,
-          reason: 'the series start must be stored at whole seconds');
-      expect(master.endDate.millisecondsSinceEpoch, wholeSecond + 3600000,
-          reason: 'the series end must be stored at whole seconds');
-      expect(occurrences.first.startDate.millisecondsSinceEpoch, wholeSecond,
-          reason: 'the first occurrence must start where its master does');
-      expect(startsOf(occurrences).every((ms) => ms % 1000 == 0), isTrue,
-          reason: 'every occurrence must start at a whole second');
+      await expectWholeSecondSeries(
+          plugin, calendarId!, series.eventId, start, wholeSecond);
     });
 
     // Known failure on Android emulator: the emulator's Calendar Provider

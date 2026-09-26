@@ -1150,9 +1150,11 @@ class EventsService(
             newStartMillis, durationMinutes, recurrenceRule, row.timeZone,
             effectiveIsAllDay
         ).getOrElse { return Result.failure(it) }
-        val rewriteTimeColumns = rewritesSeriesTimes(
-            row.dtstart, newStart, newStartMillis, durationMinutes
-        )
+        // A `start` equal to the current anchor is still a rewrite: the
+        // DTSTART/DURATION (and RRULE, below) re-put is what makes the
+        // provider re-expand the series.
+        val rewriteTimeColumns = newStartMillis != null || durationMinutes != null ||
+            newStart != row.dtstart
         if (rewriteTimeColumns || wasRecurring != willBeRecurring) {
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
