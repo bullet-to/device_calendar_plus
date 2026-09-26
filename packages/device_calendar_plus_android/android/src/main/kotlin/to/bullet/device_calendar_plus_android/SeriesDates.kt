@@ -74,7 +74,10 @@ internal class SplitShift private constructor(
          * the series' time zone [tz]. All-day series shift by whole days
          * with the time of day left at midnight; timed ones carry the full
          * wall-clock time of day (down to millis) from [toAnchor], matching
-         * iOS's shiftStart so the platforms agree.
+         * iOS's shiftStart so the platforms agree. Callers pass whole-second
+         * anchors (floored at the plugin seam or by [resolveSeriesTimes],
+         * #165), so the millisecond carried is 0 in practice; it is still
+         * set so [slot] clears the millis of the start it moves.
          */
         fun of(fromAnchor: Long, toAnchor: Long, tz: TimeZone, isAllDay: Boolean): SplitShift {
             val target = Calendar.getInstance(tz).apply { timeInMillis = toAnchor }
@@ -88,4 +91,62 @@ internal class SplitShift private constructor(
             )
         }
     }
+}
+
+/**
+ * Resolves the start and duration for a series-level edit; iOS's
+ * counterpart is `resolveSeriesStart`.
+ *
+ * When [newStartMillis] is given the start is shifted by the wall-clock
+ * delta from [referenceMillis] to [newStartMillis] (see [SplitShift]). A
+ * new [rrule] then moves it onto the first day the rule generates, keeping
+ * its wall-clock time — the anchor a series switched to a new rule must
+ * have, or the provider emits the old day as an extra occurrence (#140).
+ * A rule that generates nothing within five years of the anchor fails
+ * with INVALID_ARGUMENTS rather than leaving that orphan behind. The
+ * duration is overridden when [durationMinutes] is given.
+ */
+internal fun resolveSeriesTimes(
+    baseMillis: Long,
+    referenceMillis: Long,
+    existingDurationMillis: Long,
+    newStartMillis: Long?,
+    durationMinutes: Int?,
+    rrule: String?,
+    timeZoneId: String?,
+    isAllDay: Boolean
+): Result<Pair<Long, Long>> {
+    val tz = seriesTimeZone(timeZoneId, isAllDay)
+    // A slot copies the new start's time of day, already whole seconds.
+    // With no new start the stored start is kept as is, even with millis
+    // from an older version or another app: rewriting it would orphan
+    // detached occurrences keyed at those millis (#165).
+    val shiftedStart = if (newStartMillis != null) {
+        SplitShift.of(referenceMillis, newStartMillis, tz, isAllDay).slot(baseMillis)
+    } else {
+        baseMillis
+    }
+    val newStart = if (rrule != null) {
+        // A rule re-anchor moves the series anyway, so it drops any stored
+        // millis too, like every event time the plugin writes (#165).
+        RecurrenceAnchor.firstMatch(rrule, shiftedStart, tz)?.let(::wholeSeconds)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "recurrenceRule generates no occurrences within five years of the anchor"
+                )
+            )
+    } else {
+        shiftedStart
+    }
+    val newDurationMs = if (durationMinutes != null) {
+        durationMinutes.toLong() * 60_000L
+    } else {
+        // Always floored, so the written duration is whole seconds (the
+        // recurring path writes DURATION in seconds anyway). The end written
+        // from it is whole only when the start is: a millis start nothing
+        // moves is kept, so its end keeps those millis too (#165).
+        wholeSeconds(existingDurationMillis)
+    }
+    return Result.success(Pair(newStart, newDurationMs))
 }

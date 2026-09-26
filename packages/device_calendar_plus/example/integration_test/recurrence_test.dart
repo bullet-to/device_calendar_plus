@@ -212,6 +212,33 @@ Future<void> expectDetachedKept(
   }
 }
 
+/// Asserts the three-occurrence series [eventId] reads back at whole seconds
+/// (#165): its master from [wholeSecond] to an hour on, its first occurrence
+/// at [wholeSecond], and every occurrence listed from [windowStart] on a
+/// whole second.
+Future<void> expectWholeSecondSeries(
+  DeviceCalendar plugin,
+  String calendarId,
+  String eventId,
+  DateTime windowStart,
+  int wholeSecond,
+) async {
+  final master = await plugin.getEvent(eventId);
+  final occurrences = await occurrencesOf(
+      plugin, calendarId, eventId, windowStart,
+      windowDays: 30);
+  expect(occurrences, hasLength(3));
+  expect(master, isNotNull, reason: 'the series master must read back');
+  expect(master!.startDate.millisecondsSinceEpoch, wholeSecond,
+      reason: 'the series start must be stored at whole seconds');
+  expect(master.endDate.millisecondsSinceEpoch, wholeSecond + 3600000,
+      reason: 'the series end must be stored at whole seconds');
+  expect(occurrences.first.startDate.millisecondsSinceEpoch, wholeSecond,
+      reason: 'the first occurrence must start where its master does');
+  expect(startsOf(occurrences).every((ms) => ms % 1000 == 0), isTrue,
+      reason: 'every occurrence must start at a whole second');
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -537,6 +564,26 @@ void main() {
       expect(rrule, contains('MO'));
       expect(rrule, contains('COUNT=5'));
     });
+
+    // -- Time precision --
+
+    test(
+        'a series created at a sub-second start reads back at whole seconds, '
+        'its master and its occurrences alike (#165)', () async {
+      // iOS stores whole seconds. Android's provider keeps whatever millis
+      // DTSTART is given, and on some versions (API 30, Samsung) expands a
+      // series' occurrences at whole seconds anyway, so the master and its
+      // own occurrences disagreed by the dropped millis.
+      final calendar = requireCalendar(calendarId);
+      final start = DateTime.fromMillisecondsSinceEpoch(
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600) * 1000 + 671,
+      );
+      final series = await createWeeklySeries(plugin, calendar,
+          count: 3, start: start);
+
+      await expectWholeSecondSeries(plugin, calendar, series.eventId, start,
+          start.millisecondsSinceEpoch ~/ 1000 * 1000);
+    });
   });
 
   group('Recurrence Update Tests', () {
@@ -599,6 +646,68 @@ void main() {
       expect(updated, isNotNull);
       expect(updated!.isRecurring, isFalse);
       expect(updated.recurrenceRule, isNull);
+    });
+
+    test(
+        'allEvents re-anchored at a sub-second start reads back at whole '
+        'seconds, its master and its occurrences alike (#165)', () async {
+      // The #165 path: Android's anchor shift carried the new start's millis
+      // into the rewritten DTSTART.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      // 10:00 UTC tomorrow: the series is in UTC, so the two-hour move below
+      // stays on the same day and keeps the weekday the rule pins.
+      final tomorrow = DateTime.now().toUtc().add(const Duration(days: 1));
+      final start =
+          DateTime.utc(tomorrow.year, tomorrow.month, tomorrow.day, 10).toLocal();
+      final series = await createWeeklySeries(plugin, calendarId!,
+          count: 3, start: start);
+
+      final wholeSecond = start.millisecondsSinceEpoch + 2 * 3600000;
+      await plugin.updateRecurring(
+        series.eventId,
+        EventSpan.allEvents,
+        start: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 671),
+      );
+
+      await expectWholeSecondSeries(
+          plugin, calendarId!, series.eventId, start, wholeSecond);
+    });
+
+    test(
+        'an occurrence moved to a sub-second start reads back at whole '
+        'seconds (#165)', () async {
+      // The per-occurrence write path: Android writes the edit as its own
+      // detached row, which must be floored like the master's times.
+      final calendar = requireCalendar(calendarId);
+      final start = DateTime.fromMillisecondsSinceEpoch(
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600) * 1000,
+      );
+      final series = await createWeeklySeries(plugin, calendar,
+          count: 3, start: start);
+      final occurrences = await occurrencesOf(
+          plugin, calendar, series.eventId, start,
+          windowDays: 30);
+      expect(occurrences, hasLength(3));
+
+      const title = 'Moved Precision #165';
+      final wholeSecond =
+          occurrences[1].startDate.millisecondsSinceEpoch + 2 * 3600000;
+      await plugin.updateEvent(
+        eventId: occurrences[1].instanceId,
+        title: title,
+        startDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 671),
+        endDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 3600671),
+      );
+
+      final moved =
+          await eventsTitled(plugin, calendar, title, start, windowDays: 30);
+      expect(moved, hasLength(1),
+          reason: 'the moved occurrence must appear once');
+      expect(moved.single.startDate.millisecondsSinceEpoch, wholeSecond,
+          reason: 'the moved occurrence must start at a whole second');
+      expect(moved.single.endDate.millisecondsSinceEpoch,
+          wholeSecond + 3600000,
+          reason: 'the moved occurrence must end at a whole second');
     });
 
     // Known failure on Android emulator: the emulator's Calendar Provider

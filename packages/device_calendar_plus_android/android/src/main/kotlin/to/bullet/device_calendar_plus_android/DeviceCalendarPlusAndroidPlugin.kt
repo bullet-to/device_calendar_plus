@@ -362,8 +362,8 @@ class DeviceCalendarPlusAndroidPlugin :
         // Parse arguments
         val calendarId = call.argument<String>("calendarId")
         val title = call.argument<String>("title")
-        val startDateMillis = call.argument<Long>("startDate")
-        val endDateMillis = call.argument<Long>("endDate")
+        val startDateMillis = call.writtenInstant("startDate")
+        val endDateMillis = call.writtenInstant("endDate")
         val isAllDay = call.argument<Boolean>("isAllDay")
         val description = call.argument<String>("description")
         val location = call.argument<String>("location")
@@ -388,7 +388,7 @@ class DeviceCalendarPlusAndroidPlugin :
         
         val startDate = java.util.Date(startDateMillis)
         val endDate = java.util.Date(endDateMillis)
-        
+
         runOffMainThread(result) {
             service.createEvent(
                 calendarId,
@@ -444,8 +444,8 @@ class DeviceCalendarPlusAndroidPlugin :
         
         // Parse optional arguments (all can be null)
         val timestamp = call.argument<Long>("timestamp")
-        val startDate = call.argument<Long>("startDate")?.let { java.util.Date(it) }
-        val endDate = call.argument<Long>("endDate")?.let { java.util.Date(it) }
+        val startDate = call.writtenInstant("startDate")?.let { java.util.Date(it) }
+        val endDate = call.writtenInstant("endDate")?.let { java.util.Date(it) }
 
         val patch = EventFieldPatch.fromCall(call)
 
@@ -479,7 +479,7 @@ class DeviceCalendarPlusAndroidPlugin :
 
         // Parse optional arguments (all can be null)
         val timestamp = call.argument<Long>("timestamp")
-        val newStartMillis = call.argument<Long>("newStartMillis")
+        val newStartMillis = call.writtenInstant("newStartMillis")
         val durationMinutes = call.argument<Int>("durationMinutes")
         val recurrenceRule = call.argument<String>("recurrenceRule")
 
@@ -590,3 +590,15 @@ class DeviceCalendarPlusAndroidPlugin :
         createEventModalResult = null
     }
 }
+
+/**
+ * A caller-supplied event time that will be written, floored to a whole
+ * second. Caller-supplied times are floored here. The only other place is
+ * [resolveSeriesTimes], which floors a stored start when a rule re-anchor
+ * rewrites it, and keeps a stored duration at whole seconds. iOS EventKit
+ * stores whole seconds, and flooring on the way in means everything
+ * downstream (the stored columns, and the SplitShift and day-move checks an
+ * updateRecurring start drives) sees the value that is stored (#165).
+ */
+private fun MethodCall.writtenInstant(key: String): Long? =
+    argument<Long>(key)?.let(::wholeSeconds)

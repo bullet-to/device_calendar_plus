@@ -1,6 +1,13 @@
 ## Unreleased
 
 ### Fixed
+- Event times are now written at whole seconds, as on iOS. A sub-second
+  start was stored with its milliseconds, and some providers (Samsung,
+  Android 11) expand a series' occurrences at whole seconds, so
+  `getEvent` on the series and its listed occurrences disagreed by up to a
+  second. `createEvent`, `updateEvent` and `updateRecurring` now floor start
+  and end to the second, and a series re-anchored by `updateRecurring` drops
+  any milliseconds it was stored with (#165).
 - `updateRecurring` with `thisAndFollowing` now carries an occurrence that
   was edited on its own, and falls on or after the split, into the new
   series, as iOS does. It keeps its own title, time, reminders and other

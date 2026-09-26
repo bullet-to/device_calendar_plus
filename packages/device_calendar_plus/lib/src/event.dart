@@ -37,12 +37,21 @@ class Event {
   /// Start date and time of the event.
   ///
   /// For all-day events, treat this as a floating date (timezone-independent).
+  ///
+  /// Times written by this plugin are floored to the whole second on both
+  /// platforms, so a sub-second start or end reads back without its
+  /// milliseconds. An event written elsewhere may read back with sub-second
+  /// precision on Android, and keeps its sub-second start when an edit
+  /// doesn't move it.
   final DateTime startDate;
 
   /// End date and time of the event.
   ///
   /// For all-day events, treat this as a floating date (timezone-independent).
   /// Uses half-open interval [start, end). (i.e. the event is up to, but not including, the end date.)
+  ///
+  /// Floored to the whole second when this plugin writes it; see [startDate]
+  /// for precision.
   final DateTime endDate;
 
   /// Whether this is an all-day event.

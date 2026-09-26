@@ -633,19 +633,9 @@ class EventsService(
         }
 
         try {
-            // For all-day events, Android interprets timestamps as UTC to determine the calendar date
-            // We need to convert local date components to UTC midnight to preserve the calendar date
-            val startMillis: Long
-            val endMillis: Long
-            
-            if (isAllDay) {
-                startMillis = AllDayDates.localDateToUtcMidnight(startDate.time)
-                endMillis = AllDayDates.localDateToUtcMidnight(endDate.time)
-            } else {
-                startMillis = startDate.time
-                endMillis = endDate.time
-            }
-            
+            val startMillis = storageMillis(startDate.time, isAllDay)
+            val endMillis = storageMillis(endDate.time, isAllDay)
+
             val values = android.content.ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, resolvedCalendarId.toLong())
                 put(CalendarContract.Events.TITLE, title)
@@ -886,16 +876,8 @@ class EventsService(
         // If event is/becomes all-day, need to normalize to UTC midnight
         val effectiveIsAllDay = patch.isAllDay ?: row.allDay
         if (startDate != null || endDate != null) {
-            val startMillis: Long?
-            val endMillis: Long?
-
-            if (effectiveIsAllDay) {
-                startMillis = startDate?.let { AllDayDates.localDateToUtcMidnight(it.time) }
-                endMillis = endDate?.let { AllDayDates.localDateToUtcMidnight(it.time) }
-            } else {
-                startMillis = startDate?.time
-                endMillis = endDate?.time
-            }
+            val startMillis = startDate?.let { storageMillis(it.time, effectiveIsAllDay) }
+            val endMillis = endDate?.let { storageMillis(it.time, effectiveIsAllDay) }
 
             if (startMillis != null) {
                 values.put(CalendarContract.Events.DTSTART, startMillis)
@@ -992,14 +974,14 @@ class EventsService(
 
         val effectiveIsAllDay = patch.isAllDay ?: series.row.allDay
         val newStart = if (startDate != null) {
-            toStorageMillis(startDate, effectiveIsAllDay)
+            storageMillis(startDate.time, effectiveIsAllDay)
         } else {
             timestamp
         }
         // Without an explicit endDate the occurrence's own end stays put —
         // matching iOS, where setting startDate leaves endDate untouched.
         val newEnd = if (endDate != null) {
-            toStorageMillis(endDate, effectiveIsAllDay)
+            storageMillis(endDate.time, effectiveIsAllDay)
         } else {
             timestamp + eventDurationMillis(series.row)
         }
@@ -1639,54 +1621,6 @@ class EventsService(
     }
 
     /**
-     * Resolves the start and duration for a series-level edit; iOS's
-     * counterpart is `resolveSeriesStart`.
-     *
-     * When [newStartMillis] is given the start is shifted by the wall-clock
-     * delta from [referenceMillis] to [newStartMillis] (see [SplitShift]). A
-     * new [rrule] then moves it onto the first day the rule generates, keeping
-     * its wall-clock time — the anchor a series switched to a new rule must
-     * have, or the provider emits the old day as an extra occurrence (#140).
-     * A rule that generates nothing within five years of the anchor fails
-     * with INVALID_ARGUMENTS rather than leaving that orphan behind. The
-     * duration is overridden when [durationMinutes] is given.
-     */
-    private fun resolveSeriesTimes(
-        baseMillis: Long,
-        referenceMillis: Long,
-        existingDurationMillis: Long,
-        newStartMillis: Long?,
-        durationMinutes: Int?,
-        rrule: String?,
-        timeZoneId: String?,
-        isAllDay: Boolean
-    ): Result<Pair<Long, Long>> {
-        val tz = seriesTimeZone(timeZoneId, isAllDay)
-        val shiftedStart = if (newStartMillis != null) {
-            SplitShift.of(referenceMillis, newStartMillis, tz, isAllDay).slot(baseMillis)
-        } else {
-            baseMillis
-        }
-        val newStart = if (rrule != null) {
-            RecurrenceAnchor.firstMatch(rrule, shiftedStart, tz)
-                ?: return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.INVALID_ARGUMENTS,
-                        "recurrenceRule generates no occurrences within five years of the anchor"
-                    )
-                )
-        } else {
-            shiftedStart
-        }
-        val newDurationMs = if (durationMinutes != null) {
-            durationMinutes.toLong() * 60_000L
-        } else {
-            existingDurationMillis
-        }
-        return Result.success(Pair(newStart, newDurationMs))
-    }
-
-    /**
      * Whether moving the anchor from [referenceMillis] to [targetMillis] would
      * change the day-spec that [rrule] pins explicitly: the weekday for a
      * BYDAY rule, the day-of-month for a BYMONTHDAY rule, or the month for a
@@ -1715,12 +1649,6 @@ class EventsService(
         if (hasByMonthDay && changed(java.util.Calendar.DAY_OF_MONTH)) return true
         if (hasByMonth && changed(java.util.Calendar.MONTH)) return true
         return false
-    }
-
-    /** Storage millis for a date: UTC midnight for all-day, the instant otherwise. */
-    private fun toStorageMillis(date: java.util.Date, isAllDay: Boolean): Long {
-        if (!isAllDay) return date.time
-        return AllDayDates.localDateToUtcMidnight(date.time)
     }
 
     /** Resolves an event's duration, falling back to one hour when unknown. */
