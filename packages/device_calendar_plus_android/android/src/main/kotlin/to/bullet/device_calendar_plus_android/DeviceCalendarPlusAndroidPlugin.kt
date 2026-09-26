@@ -386,9 +386,10 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        val startDate = java.util.Date(startDateMillis)
-        val endDate = java.util.Date(endDateMillis)
-        
+        // Event times are written at whole seconds, as on iOS (#165).
+        val startDate = java.util.Date(wholeSeconds(startDateMillis))
+        val endDate = java.util.Date(wholeSeconds(endDateMillis))
+
         runOffMainThread(result) {
             service.createEvent(
                 calendarId,
@@ -444,8 +445,9 @@ class DeviceCalendarPlusAndroidPlugin :
         
         // Parse optional arguments (all can be null)
         val timestamp = call.argument<Long>("timestamp")
-        val startDate = call.argument<Long>("startDate")?.let { java.util.Date(it) }
-        val endDate = call.argument<Long>("endDate")?.let { java.util.Date(it) }
+        // Event times are written at whole seconds, as on iOS (#165).
+        val startDate = call.argument<Long>("startDate")?.let { java.util.Date(wholeSeconds(it)) }
+        val endDate = call.argument<Long>("endDate")?.let { java.util.Date(wholeSeconds(it)) }
 
         val patch = EventFieldPatch.fromCall(call)
 
@@ -479,7 +481,7 @@ class DeviceCalendarPlusAndroidPlugin :
 
         // Parse optional arguments (all can be null)
         val timestamp = call.argument<Long>("timestamp")
-        val newStartMillis = call.argument<Long>("newStartMillis")
+        val newStartMillis = call.argument<Long>("newStartMillis")?.let(::wholeSeconds)
         val durationMinutes = call.argument<Int>("durationMinutes")
         val recurrenceRule = call.argument<String>("recurrenceRule")
 

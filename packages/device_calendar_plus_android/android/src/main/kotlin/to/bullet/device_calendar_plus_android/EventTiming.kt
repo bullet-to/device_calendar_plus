@@ -6,6 +6,15 @@ package to.bullet.device_calendar_plus_android
 // or android.* access, so a plain JVM unit test can drive them directly. The
 // all-day date conversions live in AllDayDates.
 
+/**
+ * [millis] floored to a whole second. Event times are written at second
+ * precision, as iOS EventKit stores them: the provider keeps whatever millis
+ * DTSTART is given, but some versions (API 30, Samsung) expand a series'
+ * occurrences at whole seconds, so a sub-second master would disagree with
+ * its own occurrences (#165).
+ */
+internal fun wholeSeconds(millis: Long): Long = Math.floorDiv(millis, 1000L) * 1000L
+
 /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */
 internal fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =
     dtend ?: duration?.let(::parseDurationMillis)?.let { dtstart + it }

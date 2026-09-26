@@ -37,6 +37,10 @@ class Event {
   /// Start date and time of the event.
   ///
   /// For all-day events, treat this as a floating date (timezone-independent).
+  ///
+  /// Event times are stored at whole seconds on both platforms: a sub-second
+  /// start or end passed to a write is floored to the second, so it reads back
+  /// without its milliseconds.
   final DateTime startDate;
 
   /// End date and time of the event.

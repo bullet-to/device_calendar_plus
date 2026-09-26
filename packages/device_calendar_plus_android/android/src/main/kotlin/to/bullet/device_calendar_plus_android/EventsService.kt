@@ -1667,8 +1667,11 @@ class EventsService(
         } else {
             baseMillis
         }
+        // Whole seconds, like every event time written (#165): a series
+        // stored with millis by an older version, or by another app, is
+        // shifted from its own DTSTART and would otherwise keep them.
         val newStart = if (rrule != null) {
-            RecurrenceAnchor.firstMatch(rrule, shiftedStart, tz)
+            RecurrenceAnchor.firstMatch(rrule, wholeSeconds(shiftedStart), tz)
                 ?: return Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.INVALID_ARGUMENTS,
@@ -1676,7 +1679,7 @@ class EventsService(
                     )
                 )
         } else {
-            shiftedStart
+            wholeSeconds(shiftedStart)
         }
         val newDurationMs = if (durationMinutes != null) {
             durationMinutes.toLong() * 60_000L

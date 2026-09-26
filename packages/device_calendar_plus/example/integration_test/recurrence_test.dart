@@ -537,6 +537,36 @@ void main() {
       expect(rrule, contains('MO'));
       expect(rrule, contains('COUNT=5'));
     });
+
+    // -- Time precision --
+
+    test(
+        'a series created at a sub-second start reads back at whole seconds, '
+        'its master and its occurrences alike (#165)', () async {
+      // iOS stores whole seconds. Android's provider keeps whatever millis
+      // DTSTART is given, and on some versions (API 30, Samsung) expands a
+      // series' occurrences at whole seconds anyway, so the master and its
+      // own occurrences disagreed by the dropped millis.
+      final calendar = requireCalendar(calendarId);
+      final start = DateTime.fromMillisecondsSinceEpoch(
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600) * 1000 + 671,
+      );
+      final series = await createWeeklySeries(plugin, calendar,
+          count: 3, start: start);
+
+      final master = await plugin.getEvent(series.eventId);
+      final occurrences =
+          await occurrencesOf(plugin, calendar, series.eventId, start,
+              windowDays: 30);
+      expect(occurrences, hasLength(3));
+      final wholeSecond = start.millisecondsSinceEpoch ~/ 1000 * 1000;
+      expect(master!.startDate.millisecondsSinceEpoch, wholeSecond,
+          reason: 'the series start must be stored at whole seconds');
+      expect(master.endDate.millisecondsSinceEpoch, wholeSecond + 3600000,
+          reason: 'the series end must be stored at whole seconds');
+      expect(occurrences.first.startDate.millisecondsSinceEpoch, wholeSecond,
+          reason: 'the first occurrence must start where its master does');
+    });
   });
 
   group('Recurrence Update Tests', () {
