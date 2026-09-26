@@ -50,10 +50,22 @@ internal class SeriesTimesTest {
     }
 
     // A stored DTEND whose millis differ from DTSTART's gives a sub-second
-    // duration; the end written from it must still land on a whole second.
+    // duration. The duration is written as whole seconds; the end is whole
+    // when the start is.
     @Test
     fun resolveSeriesTimes_storedDurationWithMillis_floorsDuration() {
-        val (_, duration) = resolve(stored = ny(10, 1, 9), duration = 3_600_671L)
+        val (start, duration) = resolve(stored = ny(10, 1, 9), duration = 3_600_671L)
         assertEquals(3_600_000L, duration)
+        assertEquals(ny(10, 1, 10), start + duration)
+    }
+
+    // A millis start nothing moves is kept, so the end written from it
+    // (start + floored duration) keeps those millis on purpose.
+    @Test
+    fun resolveSeriesTimes_storedStartAndDurationWithMillis_endKeepsStartMillis() {
+        val stored = ny(10, 1, 9) + 671
+        val (start, duration) = resolve(stored = stored, duration = 3_600_671L)
+        assertEquals(stored, start)
+        assertEquals(ny(10, 1, 10) + 671, start + duration)
     }
 }

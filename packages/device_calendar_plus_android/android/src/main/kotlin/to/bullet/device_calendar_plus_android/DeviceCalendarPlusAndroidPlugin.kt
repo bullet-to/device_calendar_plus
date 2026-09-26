@@ -593,10 +593,12 @@ class DeviceCalendarPlusAndroidPlugin :
 
 /**
  * A caller-supplied event time that will be written, floored to a whole
- * second. The one place written times are normalized: iOS EventKit stores
- * whole seconds, and flooring on the way in means everything downstream (the
- * stored columns, and the SplitShift and day-move checks an updateRecurring
- * start drives) sees the value that is stored (#165).
+ * second. Caller-supplied times are floored here. The only other place is
+ * [resolveSeriesTimes], which floors a stored start when a rule re-anchor
+ * rewrites it, and keeps a stored duration at whole seconds. iOS EventKit
+ * stores whole seconds, and flooring on the way in means everything
+ * downstream (the stored columns, and the SplitShift and day-move checks an
+ * updateRecurring start drives) sees the value that is stored (#165).
  */
 private fun MethodCall.writtenInstant(key: String): Long? =
     argument<Long>(key)?.let(::wholeSeconds)

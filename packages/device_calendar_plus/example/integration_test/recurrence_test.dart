@@ -228,6 +228,7 @@ Future<void> expectWholeSecondSeries(
       plugin, calendarId, eventId, windowStart,
       windowDays: 30);
   expect(occurrences, hasLength(3));
+  expect(master, isNotNull, reason: 'the series master must read back');
   expect(master!.startDate.millisecondsSinceEpoch, wholeSecond,
       reason: 'the series start must be stored at whole seconds');
   expect(master.endDate.millisecondsSinceEpoch, wholeSecond + 3600000,

@@ -74,7 +74,10 @@ internal class SplitShift private constructor(
          * the series' time zone [tz]. All-day series shift by whole days
          * with the time of day left at midnight; timed ones carry the full
          * wall-clock time of day (down to millis) from [toAnchor], matching
-         * iOS's shiftStart so the platforms agree.
+         * iOS's shiftStart so the platforms agree. Callers pass whole-second
+         * anchors (floored at the plugin seam or by [resolveSeriesTimes],
+         * #165), so the millisecond carried is 0 in practice; it is still
+         * set so [slot] clears the millis of the start it moves.
          */
         fun of(fromAnchor: Long, toAnchor: Long, tz: TimeZone, isAllDay: Boolean): SplitShift {
             val target = Calendar.getInstance(tz).apply { timeInMillis = toAnchor }
@@ -139,8 +142,10 @@ internal fun resolveSeriesTimes(
     val newDurationMs = if (durationMinutes != null) {
         durationMinutes.toLong() * 60_000L
     } else {
-        // Floored too: a stored DTEND whose millis differ from DTSTART's
-        // would otherwise put the end written from it off the second.
+        // Always floored, so the written duration is whole seconds (the
+        // recurring path writes DURATION in seconds anyway). The end written
+        // from it is whole only when the start is: a millis start nothing
+        // moves is kept, so its end keeps those millis too (#165).
         wholeSeconds(existingDurationMillis)
     }
     return Result.success(Pair(newStart, newDurationMs))

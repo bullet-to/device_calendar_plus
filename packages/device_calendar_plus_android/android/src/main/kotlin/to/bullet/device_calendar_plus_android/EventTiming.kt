@@ -19,8 +19,11 @@ internal fun wholeSeconds(millis: Long): Long = Math.floorDiv(millis, 1000L) * 1
 /**
  * The DTSTART/DTEND value written for a caller's [millis]: UTC midnight of
  * its local date for an all-day event (the provider reads an all-day time as
- * a UTC date), else the instant itself. Callers' times arrive already at
- * [wholeSeconds], floored at the plugin argument seam.
+ * a UTC date), else the instant itself. Times arrive already at
+ * [wholeSeconds]: a caller's are floored at the plugin argument seam
+ * (`writtenInstant`), and [resolveSeriesTimes] floors a re-anchored stored
+ * start and the stored duration. A stored start nothing moves keeps its
+ * millis (#165).
  */
 internal fun storageMillis(millis: Long, isAllDay: Boolean): Long =
     if (isAllDay) AllDayDates.localDateToUtcMidnight(millis) else millis

@@ -41,7 +41,8 @@ class Event {
   /// Times written by this plugin are floored to the whole second on both
   /// platforms, so a sub-second start or end reads back without its
   /// milliseconds. An event written elsewhere may read back with sub-second
-  /// precision on Android.
+  /// precision on Android, and keeps its sub-second start when an edit
+  /// doesn't move it.
   final DateTime startDate;
 
   /// End date and time of the event.
