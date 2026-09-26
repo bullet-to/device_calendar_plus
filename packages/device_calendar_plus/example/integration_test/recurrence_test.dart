@@ -1521,6 +1521,15 @@ void main() {
       // `original_sync_id` — and no test can trigger that.
       final series =
           await seedDailySeries(plugin, calendarId, minOccurrences: 7);
+      // Some providers (Samsung's, #166) stamp a `_sync_id` on every insert,
+      // local calendars included, so a master is never keyless there and
+      // #153's state can't arise. The #153 behaviour tests above still run
+      // on those devices; only this upgrade path is AOSP-specific.
+      if ((await readSyncIds(series.eventId))?.syncId != null) {
+        markTestSkipped('provider pre-keys local events; #153\'s keyless '
+            'state is unreachable here (#166)');
+        return;
+      }
       final occurrences = series.occurrences;
       final keyless = occurrences[3];
       final rekeying = occurrences[6];
