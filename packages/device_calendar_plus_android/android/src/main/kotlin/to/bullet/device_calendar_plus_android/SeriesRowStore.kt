@@ -224,6 +224,9 @@ internal class SeriesRowStore(private val context: Context) {
     fun ensureLocalSeriesSyncId(series: SeriesRow): Result<String?> {
         val row = series.row
         if (row.syncId != null) return Result.success(row.syncId)
+        // A synced row its adapter has not uploaded yet: only the adapter
+        // may key it, so an exception written against it has no key to
+        // join, and the writer re-expands the master instead (#163).
         if (!row.account.isLocal) return Result.success(null)
 
         val syncId = "device_calendar_plus:${java.util.UUID.randomUUID()}"
@@ -257,7 +260,7 @@ internal class SeriesRowStore(private val context: Context) {
      * the row on disk is right while listEvents keeps returning the old
      * expansion. Touching the time columns too, even with their existing
      * values, forces it to regenerate. Every series write that has to show
-     * in the next listing — a truncate, a re-parent — goes through here.
+     * in the next listing goes through here.
      */
     fun rewriteSeriesForReexpand(row: EventRow, rrule: String): Int =
         updateEventRow(row.id, ContentValues().apply {
