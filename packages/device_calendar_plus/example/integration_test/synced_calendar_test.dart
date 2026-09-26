@@ -119,6 +119,66 @@ void main() {
               'brings the occurrence back');
     });
 
+    // A series the adapter has not uploaded yet has no `_sync_id`, and on a
+    // synced calendar the plugin must not invent one. An exception inserted
+    // against such a keyless master drops the master's occurrences from the
+    // Instances cache until the adapter keys it — the whole series gone,
+    // offline or with sync off (#163, the synced-calendar side of #153).
+    // [detachedTitle] is the edited occurrence's title, or null for a delete.
+    const editedTitle = 'Edited before upload #163';
+    for (final (label, edit, detachedTitle) in [
+      (
+        'updateEvent',
+        (DeviceCalendar plugin, SeededSeries series) => plugin.updateEvent(
+            eventId: series.occurrences[4].instanceId, title: editedTitle),
+        editedTitle,
+      ),
+      (
+        'deleteEvent',
+        (DeviceCalendar plugin, SeededSeries series) =>
+            plugin.deleteEvent(eventId: series.occurrences[4].instanceId),
+        null,
+      ),
+    ]) {
+      test(
+          '$label on one occurrence of a not-yet-uploaded series keeps the '
+          'series listed, and the change shows once it is uploaded (#163)',
+          () async {
+        final series = await seedDailySeries(plugin, calendarId);
+        expect((await readSyncIds(series.eventId))?.syncId, isNull,
+            reason: 'the arrange must leave the master unkeyed, as before '
+                'the adapter\'s first upload');
+
+        await edit(plugin, series);
+
+        expect(
+          startsOf(await occurrencesOf(
+              plugin, calendarId!, series.eventId, series.start)),
+          containsAll(startsExcept(series.occurrences, {4})),
+          reason: 'every other occurrence must stay listed while the master '
+              'awaits its first upload',
+        );
+
+        // The upload keys the master, the provider passes the key on to the
+        // exception, and the series' next expansion pairs them.
+        await markUploaded(series.eventId);
+        await touchSeries(series.eventId);
+
+        expect(
+          startsOf(await occurrencesOf(
+              plugin, calendarId!, series.eventId, series.start)),
+          startsExcept(series.occurrences, {4}),
+          reason: 'once uploaded, the series must skip the changed slot',
+        );
+        if (detachedTitle != null) {
+          await expectDetachedOnce(plugin, calendarId!, detachedTitle,
+              series.occurrences[4], series.start,
+              reason: 'once uploaded, the edited occurrence must be listed '
+                  'once, in its slot');
+        }
+      });
+    }
+
     test('updateRecurring(allEvents) marks the series dirty for upload',
         () async {
       final series = await seedUploadedSeries(plugin, calendarId);
