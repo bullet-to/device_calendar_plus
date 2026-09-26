@@ -1484,7 +1484,11 @@ class EventsService(
             )
         // Against a keyless master the insert has just dropped every one of
         // its occurrences from the Instances cache (as #153 on a local
-        // calendar); the adapter owns the key, so re-expand instead.
+        // calendar); the adapter owns the key, so re-expand instead. The row
+        // count is not checked, unlike the truncate paths: the exception is
+        // already written, so failing here would misreport a write that
+        // happened, and a master that had vanished would have failed the
+        // insert above.
         if (seriesKey == null) {
             store.rewriteSeriesForReexpand(series.row, series.rrule)
         }

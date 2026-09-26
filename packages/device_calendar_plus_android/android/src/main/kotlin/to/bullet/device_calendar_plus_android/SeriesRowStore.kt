@@ -257,7 +257,9 @@ internal class SeriesRowStore(private val context: Context) {
      * the row on disk is right while listEvents keeps returning the old
      * expansion. Touching the time columns too, even with their existing
      * values, forces it to regenerate. Every series write that has to show
-     * in the next listing — a truncate, a re-parent — goes through here.
+     * in the next listing — a truncate, a re-parent, or an exception insert
+     * against a synced series its adapter has not keyed yet (#163) — goes
+     * through here.
      */
     fun rewriteSeriesForReexpand(row: EventRow, rrule: String): Int =
         updateEventRow(row.id, ContentValues().apply {

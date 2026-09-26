@@ -151,13 +151,24 @@ void main() {
 
         await edit(plugin, series);
 
+        // Until the upload the change is pending, not shown: the series
+        // lists as it was, the changed slot included, and an edited
+        // occurrence has no listing of its own yet.
         expect(
           startsOf(await occurrencesOf(
               plugin, calendarId!, series.eventId, series.start)),
-          containsAll(startsExcept(series.occurrences, {4})),
-          reason: 'every other occurrence must stay listed while the master '
-              'awaits its first upload',
+          startsOf(series.occurrences),
+          reason: 'the series must list as it was while the master awaits '
+              'its first upload',
         );
+        if (detachedTitle != null) {
+          expect(
+              await eventsTitled(
+                  plugin, calendarId!, detachedTitle, series.start),
+              isEmpty,
+              reason: 'the edited occurrence must not be listed a second '
+                  'time before the upload');
+        }
 
         // The upload keys the master, the provider passes the key on to the
         // exception, and the series' next expansion pairs them.
