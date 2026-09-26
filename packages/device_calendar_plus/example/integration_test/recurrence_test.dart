@@ -584,43 +584,6 @@ void main() {
       await expectWholeSecondSeries(plugin, calendar, series.eventId, start,
           start.millisecondsSinceEpoch ~/ 1000 * 1000);
     });
-
-    test(
-        'an occurrence moved to a sub-second start reads back at whole '
-        'seconds (#165)', () async {
-      // The per-occurrence write path: Android writes the edit as its own
-      // detached row, which must be floored like the master's times.
-      final calendar = requireCalendar(calendarId);
-      final start = DateTime.fromMillisecondsSinceEpoch(
-        (DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600) * 1000,
-      );
-      final series = await createWeeklySeries(plugin, calendar,
-          count: 3, start: start);
-      final occurrences = await occurrencesOf(
-          plugin, calendar, series.eventId, start,
-          windowDays: 30);
-      expect(occurrences, hasLength(3));
-
-      const title = 'Moved Precision #165';
-      final wholeSecond =
-          occurrences[1].startDate.millisecondsSinceEpoch + 2 * 3600000;
-      await plugin.updateEvent(
-        eventId: occurrences[1].instanceId,
-        title: title,
-        startDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 671),
-        endDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 3600671),
-      );
-
-      final moved =
-          await eventsTitled(plugin, calendar, title, start, windowDays: 30);
-      expect(moved, hasLength(1),
-          reason: 'the moved occurrence must appear once');
-      expect(moved.single.startDate.millisecondsSinceEpoch, wholeSecond,
-          reason: 'the moved occurrence must start at a whole second');
-      expect(moved.single.endDate.millisecondsSinceEpoch,
-          wholeSecond + 3600000,
-          reason: 'the moved occurrence must end at a whole second');
-    });
   });
 
   group('Recurrence Update Tests', () {
@@ -708,6 +671,43 @@ void main() {
 
       await expectWholeSecondSeries(
           plugin, calendarId!, series.eventId, start, wholeSecond);
+    });
+
+    test(
+        'an occurrence moved to a sub-second start reads back at whole '
+        'seconds (#165)', () async {
+      // The per-occurrence write path: Android writes the edit as its own
+      // detached row, which must be floored like the master's times.
+      final calendar = requireCalendar(calendarId);
+      final start = DateTime.fromMillisecondsSinceEpoch(
+        (DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600) * 1000,
+      );
+      final series = await createWeeklySeries(plugin, calendar,
+          count: 3, start: start);
+      final occurrences = await occurrencesOf(
+          plugin, calendar, series.eventId, start,
+          windowDays: 30);
+      expect(occurrences, hasLength(3));
+
+      const title = 'Moved Precision #165';
+      final wholeSecond =
+          occurrences[1].startDate.millisecondsSinceEpoch + 2 * 3600000;
+      await plugin.updateEvent(
+        eventId: occurrences[1].instanceId,
+        title: title,
+        startDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 671),
+        endDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 3600671),
+      );
+
+      final moved =
+          await eventsTitled(plugin, calendar, title, start, windowDays: 30);
+      expect(moved, hasLength(1),
+          reason: 'the moved occurrence must appear once');
+      expect(moved.single.startDate.millisecondsSinceEpoch, wholeSecond,
+          reason: 'the moved occurrence must start at a whole second');
+      expect(moved.single.endDate.millisecondsSinceEpoch,
+          wholeSecond + 3600000,
+          reason: 'the moved occurrence must end at a whole second');
     });
 
     // Known failure on Android emulator: the emulator's Calendar Provider
