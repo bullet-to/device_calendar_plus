@@ -1,6 +1,11 @@
-## Unreleased
+## 0.8.0 - 2026-09-26
 
 ### Fixed
+- `updateRecurring` with a new rule anchors the series on the first day that
+  rule generates. Changing a weekly series to another weekday left its start
+  on the old day, so the first occurrence was stranded there. A rule that
+  generates no occurrence at all is refused with `INVALID_ARGUMENTS` and the
+  series is left untouched (#140).
 - `deleteCalendar` refuses a calendar EventKit marks immutable or read-only
   with `READ_ONLY` before asking the store, instead of surfacing the refused
   remove as `OPERATION_FAILED`. `updateCalendar` now checks `isImmutable`

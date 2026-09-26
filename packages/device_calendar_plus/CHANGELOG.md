@@ -1,9 +1,51 @@
-## Unreleased
+## 0.9.0 - 2026-09-26
+
+### Changed
+- Minimum supported SDK is now Flutter 3.44 / Dart 3.12. Android migrated to
+  Flutter's built-in Kotlin, so the KGP deprecation warning no longer prints
+  on every `flutter build` (#133).
+- Event times are stored at whole seconds on both platforms. iOS always did
+  this; Android now floors the times it writes, so a start passed with
+  milliseconds reads back without them (#165).
 
 ### Fixed
-- Android: `deleteRecurring` with `thisAndFollowing` no longer leaves behind
-  an occurrence on or after the split that had been edited on its own,
-  matching iOS.
+
+**Recurring events**
+- `updateRecurring` with a new rule anchors the series on the first day that
+  rule generates, on both platforms. Changing a weekly series to another
+  weekday left its start on the old day, so the first occurrence was stranded
+  there. A rule that generates no occurrence at all is refused with
+  `invalidArguments` and the series is left untouched (#140).
+- Android: `updateEvent` or `deleteEvent` on a single occurrence of a
+  recurring event in a local calendar no longer makes the other occurrences
+  disappear, the earlier ones for good (#153).
+- Android: `deleteRecurring` with `thisAndFollowing` also removes an
+  occurrence on or after the split that had been edited on its own, matching
+  iOS (#157).
+- Android: `updateRecurring` with `thisAndFollowing` carries an occurrence on
+  or after the split that had been edited on its own into the new series,
+  with its edits, as iOS does. It used to stay on the old series, listed next
+  to a duplicate, and on a synced calendar the edit was lost (#158).
+- Android: `getEvent` resolves all-day recurring instance IDs (it always
+  returned null) and returns a recurring master's real end date instead of a
+  zero-length one (#122).
+
+**Synced calendars**
+- Android: deletes and recurring edits on a synced calendar (Google,
+  Exchange) now reach the server. The plugin wrote them as the calendar's
+  own sync adapter, so they were never uploaded and the next sync brought a
+  deleted event back, one duplicate per cycle. Per-occurrence cancellations
+  upload too (#132, #161).
+
+**Listing events**
+- Android: `listEvents` returns an all-day event when the window is a sub-day
+  slice of its date (e.g. 10:00–11:00), and orders all-day events by their
+  local midnight among timed events in non-UTC zones, as iOS does (#122).
+- `listEvents` rejects an `endDate` before `startDate` with `ArgumentError`,
+  like the other date-range methods, and answers an empty range
+  (`endDate == startDate`) with no events on both platforms (#162).
+
+**Calendars**
 - `updateCalendar` and `deleteCalendar` throw the documented `readOnly` for a
   calendar that can't be modified, on both platforms. iOS used to surface a
   refused delete as `operationFailed`; Android renamed or deleted any row it
@@ -23,26 +65,6 @@
 - `CalendarSource.supportsCalendarCreation`, `CreateCalendarOptionsIos` and
   `CreateCalendarOptionsAndroid` describe what the code actually does: iOS
   creates under iCloud or local, Android under the local account type (#126).
-- Android: `getEvent` resolves all-day recurring instance IDs (it always
-  returned null), returns a recurring master's real end date instead of a
-  zero-length one, and `listEvents` orders all-day events by their local
-  midnight among timed events in non-UTC zones, as iOS does (#122).
-- Android: `updateEvent` or `deleteEvent` on a single occurrence of a
-  recurring event in a local calendar no longer makes the other occurrences
-  disappear — the earlier ones for good (#153).
-
-### Changed
-- Android: migrated to Flutter's built-in Kotlin, so the KGP deprecation
-  warning no longer prints on every `flutter build`. Minimum supported SDK is
-  now Flutter 3.44 / Dart 3.12 (#133).
-
-### Fixed
-- Android: `listEvents` returns an all-day event when the window is a sub-day
-  slice of its date (e.g. 10:00–11:00), as iOS does. The all-day date filter
-  collapsed such a window to an empty range and dropped the event.
-- `listEvents` rejects an `endDate` before `startDate` with `ArgumentError`,
-  like the other date-range methods, and answers an empty range
-  (`endDate == startDate`) with no events on both platforms.
 
 ## 0.8.1 - 2026-09-21
 
