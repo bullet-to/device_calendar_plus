@@ -1005,6 +1005,36 @@ void main() {
       expect(event.location, 'Updated location');
     });
 
+    test('Update Event with sub-second times floors them to the second (#165)',
+        () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Update Precision Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Update Precision Test',
+        startDate: DateTime.now().add(Duration(hours: 1)),
+        endDate: DateTime.now().add(Duration(hours: 2)),
+      );
+
+      final wholeSecond = (timestamp ~/ 1000 + 3 * 3600) * 1000;
+      await plugin.updateEvent(
+        eventId: eventId,
+        startDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 671),
+        endDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 3600671),
+      );
+
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.startDate.millisecondsSinceEpoch, wholeSecond,
+          reason: 'the start must be stored at whole seconds');
+      expect(event.endDate.millisecondsSinceEpoch, wholeSecond + 3600000,
+          reason: 'the end must be stored at whole seconds');
+    });
+
     test('Change Timed Event to All-Day', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(

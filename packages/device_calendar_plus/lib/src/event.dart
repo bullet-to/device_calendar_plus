@@ -47,6 +47,8 @@ class Event {
   ///
   /// For all-day events, treat this as a floating date (timezone-independent).
   /// Uses half-open interval [start, end). (i.e. the event is up to, but not including, the end date.)
+  ///
+  /// Stored at whole seconds; see [startDate] for precision.
   final DateTime endDate;
 
   /// Whether this is an all-day event.

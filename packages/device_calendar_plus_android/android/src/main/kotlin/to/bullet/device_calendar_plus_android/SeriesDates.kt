@@ -89,3 +89,56 @@ internal class SplitShift private constructor(
         }
     }
 }
+
+/**
+ * Resolves the start and duration for a series-level edit; iOS's
+ * counterpart is `resolveSeriesStart`.
+ *
+ * When [newStartMillis] is given the start is shifted by the wall-clock
+ * delta from [referenceMillis] to [newStartMillis] (see [SplitShift]). A
+ * new [rrule] then moves it onto the first day the rule generates, keeping
+ * its wall-clock time — the anchor a series switched to a new rule must
+ * have, or the provider emits the old day as an extra occurrence (#140).
+ * A rule that generates nothing within five years of the anchor fails
+ * with INVALID_ARGUMENTS rather than leaving that orphan behind. The
+ * duration is overridden when [durationMinutes] is given.
+ */
+internal fun resolveSeriesTimes(
+    baseMillis: Long,
+    referenceMillis: Long,
+    existingDurationMillis: Long,
+    newStartMillis: Long?,
+    durationMinutes: Int?,
+    rrule: String?,
+    timeZoneId: String?,
+    isAllDay: Boolean
+): Result<Pair<Long, Long>> {
+    val tz = seriesTimeZone(timeZoneId, isAllDay)
+    val shiftedStart = if (newStartMillis != null) {
+        SplitShift.of(referenceMillis, newStartMillis, tz, isAllDay).slot(baseMillis)
+    } else {
+        baseMillis
+    }
+    // Whole seconds, like every event time written (#165): a series
+    // stored with millis by an older version, or by another app, is
+    // shifted from its own DTSTART and would otherwise keep them.
+    val newStart = if (rrule != null) {
+        RecurrenceAnchor.firstMatch(rrule, wholeSeconds(shiftedStart), tz)
+            ?: return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.INVALID_ARGUMENTS,
+                    "recurrenceRule generates no occurrences within five years of the anchor"
+                )
+            )
+    } else {
+        wholeSeconds(shiftedStart)
+    }
+    val newDurationMs = if (durationMinutes != null) {
+        durationMinutes.toLong() * 60_000L
+    } else {
+        // Floored too: a stored DTEND whose millis differ from DTSTART's
+        // would otherwise put the end written from it off the second.
+        wholeSeconds(existingDurationMillis)
+    }
+    return Result.success(Pair(newStart, newDurationMs))
+}

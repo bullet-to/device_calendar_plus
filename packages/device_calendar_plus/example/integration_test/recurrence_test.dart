@@ -631,6 +631,40 @@ void main() {
       expect(updated.recurrenceRule, isNull);
     });
 
+    test(
+        'allEvents re-anchored at a sub-second start reads back at whole '
+        'seconds, its master and its occurrences alike (#165)', () async {
+      // The #165 path: Android's anchor shift carried the new start's millis
+      // into the rewritten DTSTART.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      // 10:00 UTC tomorrow: the series is in UTC, so the two-hour move below
+      // stays on the same day and keeps the weekday the rule pins.
+      final tomorrow = DateTime.now().toUtc().add(const Duration(days: 1));
+      final start =
+          DateTime.utc(tomorrow.year, tomorrow.month, tomorrow.day, 10).toLocal();
+      final series = await createWeeklySeries(plugin, calendarId!,
+          count: 3, start: start);
+
+      final wholeSecond = start.millisecondsSinceEpoch + 2 * 3600000;
+      await plugin.updateRecurring(
+        series.eventId,
+        EventSpan.allEvents,
+        start: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 671),
+      );
+
+      final master = await plugin.getEvent(series.eventId);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, start,
+          windowDays: 30);
+      expect(occurrences, hasLength(3));
+      expect(master!.startDate.millisecondsSinceEpoch, wholeSecond,
+          reason: 'the series start must be stored at whole seconds');
+      expect(master.endDate.millisecondsSinceEpoch, wholeSecond + 3600000,
+          reason: 'the series end must be stored at whole seconds');
+      expect(occurrences.first.startDate.millisecondsSinceEpoch, wholeSecond,
+          reason: 'the first occurrence must start where its master does');
+    });
+
     // Known failure on Android emulator: the emulator's Calendar Provider
     // doesn't propagate the title change to the anchor occurrence after a
     // thisAndFollowing split. Passes on real Android devices.
