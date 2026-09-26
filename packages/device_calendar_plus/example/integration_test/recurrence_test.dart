@@ -566,6 +566,8 @@ void main() {
           reason: 'the series end must be stored at whole seconds');
       expect(occurrences.first.startDate.millisecondsSinceEpoch, wholeSecond,
           reason: 'the first occurrence must start where its master does');
+      expect(startsOf(occurrences).every((ms) => ms % 1000 == 0), isTrue,
+          reason: 'every occurrence must start at a whole second');
     });
   });
 
@@ -663,6 +665,8 @@ void main() {
           reason: 'the series end must be stored at whole seconds');
       expect(occurrences.first.startDate.millisecondsSinceEpoch, wholeSecond,
           reason: 'the first occurrence must start where its master does');
+      expect(startsOf(occurrences).every((ms) => ms % 1000 == 0), isTrue,
+          reason: 'every occurrence must start at a whole second');
     });
 
     // Known failure on Android emulator: the emulator's Calendar Provider

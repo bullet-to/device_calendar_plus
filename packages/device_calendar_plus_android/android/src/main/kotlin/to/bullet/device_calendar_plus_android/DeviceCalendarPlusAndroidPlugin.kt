@@ -386,9 +386,8 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
         
-        // Event times are written at whole seconds, as on iOS (#165).
-        val startDate = java.util.Date(wholeSeconds(startDateMillis))
-        val endDate = java.util.Date(wholeSeconds(endDateMillis))
+        val startDate = java.util.Date(startDateMillis)
+        val endDate = java.util.Date(endDateMillis)
 
         runOffMainThread(result) {
             service.createEvent(
@@ -445,9 +444,8 @@ class DeviceCalendarPlusAndroidPlugin :
         
         // Parse optional arguments (all can be null)
         val timestamp = call.argument<Long>("timestamp")
-        // Event times are written at whole seconds, as on iOS (#165).
-        val startDate = call.argument<Long>("startDate")?.let { java.util.Date(wholeSeconds(it)) }
-        val endDate = call.argument<Long>("endDate")?.let { java.util.Date(wholeSeconds(it)) }
+        val startDate = call.argument<Long>("startDate")?.let { java.util.Date(it) }
+        val endDate = call.argument<Long>("endDate")?.let { java.util.Date(it) }
 
         val patch = EventFieldPatch.fromCall(call)
 
@@ -481,6 +479,9 @@ class DeviceCalendarPlusAndroidPlugin :
 
         // Parse optional arguments (all can be null)
         val timestamp = call.argument<Long>("timestamp")
+        // Floored here rather than at the write: the start also drives the
+        // SplitShift and the day-move check, which must see what is stored
+        // (#165).
         val newStartMillis = call.argument<Long>("newStartMillis")?.let(::wholeSeconds)
         val durationMinutes = call.argument<Int>("durationMinutes")
         val recurrenceRule = call.argument<String>("recurrenceRule")

@@ -15,6 +15,14 @@ package to.bullet.device_calendar_plus_android
  */
 internal fun wholeSeconds(millis: Long): Long = Math.floorDiv(millis, 1000L) * 1000L
 
+/**
+ * The DTSTART/DTEND value written for a caller's [millis]: UTC midnight of
+ * its local date for an all-day event (the provider reads an all-day time as
+ * a UTC date), else the instant at [wholeSeconds] (#165).
+ */
+internal fun storageMillis(millis: Long, isAllDay: Boolean): Long =
+    if (isAllDay) AllDayDates.localDateToUtcMidnight(millis) else wholeSeconds(millis)
+
 /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */
 internal fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =
     dtend ?: duration?.let(::parseDurationMillis)?.let { dtstart + it }

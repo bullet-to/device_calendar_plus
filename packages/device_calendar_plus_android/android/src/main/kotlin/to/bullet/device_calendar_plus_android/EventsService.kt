@@ -633,19 +633,9 @@ class EventsService(
         }
 
         try {
-            // For all-day events, Android interprets timestamps as UTC to determine the calendar date
-            // We need to convert local date components to UTC midnight to preserve the calendar date
-            val startMillis: Long
-            val endMillis: Long
-            
-            if (isAllDay) {
-                startMillis = AllDayDates.localDateToUtcMidnight(startDate.time)
-                endMillis = AllDayDates.localDateToUtcMidnight(endDate.time)
-            } else {
-                startMillis = startDate.time
-                endMillis = endDate.time
-            }
-            
+            val startMillis = storageMillis(startDate.time, isAllDay)
+            val endMillis = storageMillis(endDate.time, isAllDay)
+
             val values = android.content.ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, resolvedCalendarId.toLong())
                 put(CalendarContract.Events.TITLE, title)
@@ -886,16 +876,8 @@ class EventsService(
         // If event is/becomes all-day, need to normalize to UTC midnight
         val effectiveIsAllDay = patch.isAllDay ?: row.allDay
         if (startDate != null || endDate != null) {
-            val startMillis: Long?
-            val endMillis: Long?
-
-            if (effectiveIsAllDay) {
-                startMillis = startDate?.let { AllDayDates.localDateToUtcMidnight(it.time) }
-                endMillis = endDate?.let { AllDayDates.localDateToUtcMidnight(it.time) }
-            } else {
-                startMillis = startDate?.time
-                endMillis = endDate?.time
-            }
+            val startMillis = startDate?.let { storageMillis(it.time, effectiveIsAllDay) }
+            val endMillis = endDate?.let { storageMillis(it.time, effectiveIsAllDay) }
 
             if (startMillis != null) {
                 values.put(CalendarContract.Events.DTSTART, startMillis)
@@ -992,14 +974,14 @@ class EventsService(
 
         val effectiveIsAllDay = patch.isAllDay ?: series.row.allDay
         val newStart = if (startDate != null) {
-            toStorageMillis(startDate, effectiveIsAllDay)
+            storageMillis(startDate.time, effectiveIsAllDay)
         } else {
             timestamp
         }
         // Without an explicit endDate the occurrence's own end stays put —
         // matching iOS, where setting startDate leaves endDate untouched.
         val newEnd = if (endDate != null) {
-            toStorageMillis(endDate, effectiveIsAllDay)
+            storageMillis(endDate.time, effectiveIsAllDay)
         } else {
             timestamp + eventDurationMillis(series.row)
         }
@@ -1168,11 +1150,9 @@ class EventsService(
             newStartMillis, durationMinutes, recurrenceRule, row.timeZone,
             effectiveIsAllDay
         ).getOrElse { return Result.failure(it) }
-        // A `start` equal to the current anchor is still a rewrite: the
-        // DTSTART/DURATION (and RRULE, below) re-put is what makes the
-        // provider re-expand the series.
-        val rewriteTimeColumns = newStartMillis != null || durationMinutes != null ||
-            newStart != row.dtstart
+        val rewriteTimeColumns = rewritesSeriesTimes(
+            row.dtstart, newStart, newStartMillis, durationMinutes
+        )
         if (rewriteTimeColumns || wasRecurring != willBeRecurring) {
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
@@ -1667,12 +1647,6 @@ class EventsService(
         if (hasByMonthDay && changed(java.util.Calendar.DAY_OF_MONTH)) return true
         if (hasByMonth && changed(java.util.Calendar.MONTH)) return true
         return false
-    }
-
-    /** Storage millis for a date: UTC midnight for all-day, the instant otherwise. */
-    private fun toStorageMillis(date: java.util.Date, isAllDay: Boolean): Long {
-        if (!isAllDay) return date.time
-        return AllDayDates.localDateToUtcMidnight(date.time)
     }
 
     /** Resolves an event's duration, falling back to one hour when unknown. */
