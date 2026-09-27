@@ -1641,10 +1641,9 @@ class EventsService(
     }
 
     /**
-     * The failure for a recurrence [rule] iOS can't store (see
-     * [RruleString.hasSupportedFrequency]), or null when [rule] is null or
-     * supported. Shared by the write paths that accept a rule, like iOS's
-     * `requireRecurrenceRule`.
+     * The INVALID_ARGUMENTS failure for a recurrence [rule] iOS can't store
+     * (see [RruleString.hasSupportedFrequency]), or null when [rule] is null
+     * or supported.
      */
     private fun unsupportedRuleFailure(rule: String?): CalendarException? =
         rule?.takeUnless(RruleString::hasSupportedFrequency)?.let {

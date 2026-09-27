@@ -1053,6 +1053,36 @@ void main() {
       }
     }
 
+    // The rule check sits where iOS parses the rule — after the event lookup —
+    // so a missing event with a bad rule is notFound on both platforms, not
+    // invalidArguments on one of them.
+    for (final span in EventSpan.values) {
+      test(
+          'updateRecurring on a missing event with an unsupported rule is '
+          'notFound for $span', () async {
+        expect(calendarId, isNotNull,
+            reason: 'setUpAll must create a calendar');
+        final series = await createWeeklySeries(plugin, calendarId!, count: 4);
+        await plugin.deleteEvent(eventId: series.eventId);
+
+        await expectLater(
+          DeviceCalendarPlusPlatform.instance.updateRecurring(
+            series.eventId,
+            span == EventSpan.allEvents
+                ? null
+                : series.start.millisecondsSinceEpoch,
+            span.name,
+            recurrenceRule: Patch.set('FREQ=HOURLY;COUNT=3'),
+          ),
+          throwsA(isA<PlatformException>().having(
+            (e) => e.code,
+            'code',
+            PlatformExceptionCodes.notFound,
+          )),
+        );
+      });
+    }
+
     test(
         'thisAndFollowing with Patch.clear turns the anchor into a standalone '
         'non-recurring event and drops future occurrences (#93)', () async {
