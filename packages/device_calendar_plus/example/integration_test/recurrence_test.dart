@@ -242,6 +242,10 @@ Future<void> expectWholeSecondSeries(
       reason: 'every occurrence must start at a whole second');
 }
 
+/// Matches a [PlatformException] carrying [code].
+Matcher throwsPlatformCode(String code) =>
+    throwsA(isA<PlatformException>().having((e) => e.code, 'code', code));
+
 /// Creates a four-count weekly series, runs [act] against it — on the series
 /// for [EventSpan.allEvents], on its third occurrence otherwise — and expects
 /// it to throw [throws]. The refusal must leave the series' occurrences as
@@ -1043,11 +1047,7 @@ void main() {
                 recurrenceRule: Patch.set(rrule),
               );
             },
-            throwsA(isA<PlatformException>().having(
-              (e) => e.code,
-              'code',
-              PlatformExceptionCodes.invalidArguments,
-            )),
+            throwsPlatformCode(PlatformExceptionCodes.invalidArguments),
           );
         });
       }
@@ -1074,11 +1074,7 @@ void main() {
             span.name,
             recurrenceRule: Patch.set('FREQ=HOURLY;COUNT=3'),
           ),
-          throwsA(isA<PlatformException>().having(
-            (e) => e.code,
-            'code',
-            PlatformExceptionCodes.notFound,
-          )),
+          throwsPlatformCode(PlatformExceptionCodes.notFound),
         );
       });
     }
