@@ -111,33 +111,41 @@ final class AccessRecord {
 /// recorded grant is reported whenever it outranks the live status — the OS
 /// confirmed that tier, so a lower live status is stale rather than
 /// authoritative.
+///
+/// The same window hides an ungranted answer (#137): the handler has said
+/// `false`, but the live status still reads `.notDetermined` for a moment
+/// before it settles on `.writeOnly` ("Add Events Only") or `.denied`. So an
+/// ungranted request waits, briefly, for the status to settle before calling
+/// back, and the caller's very next read sees the OS's own answer.
 final class RecordingAuthorization: CalendarAuthorization {
   /// Runs its argument a moment later. Injected so tests drive the wait for a
   /// lagging status without a real clock.
   typealias Deferral = (@escaping () -> Void) -> Void
 
+  /// The bounded wait for an ungranted answer's status to leave
+  /// `.notDetermined`: `settleChecks` re-reads, `settleInterval` apart, is
+  /// about a second in production.
+  private static let settleInterval: TimeInterval = 0.05
+  private static let settleChecks = 20
+
   /// The production wait between re-reads of a lagging status.
-  static let shortDelay: Deferral = { work in
-    DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05, execute: work)
+  static let settleDelay: Deferral = { work in
+    DispatchQueue.global(qos: .userInitiated).asyncAfter(
+      deadline: .now() + RecordingAuthorization.settleInterval, execute: work)
   }
 
   private let wrapped: CalendarAuthorization
   private let record: AccessRecord
   private let deferral: Deferral
-  private let settleChecks: Int
 
-  /// `settleChecks` bounds the wait for an ungranted answer's status to leave
-  /// `.notDetermined`: 20 checks of `shortDelay` is about a second.
   init(
     wrapping wrapped: CalendarAuthorization,
     record: AccessRecord,
-    deferral: @escaping Deferral = RecordingAuthorization.shortDelay,
-    settleChecks: Int = 20
+    deferral: @escaping Deferral = RecordingAuthorization.settleDelay
   ) {
     self.wrapped = wrapped
     self.record = record
     self.deferral = deferral
-    self.settleChecks = settleChecks
   }
 
   var supportsWriteOnly: Bool { wrapped.supportsWriteOnly }
@@ -178,7 +186,7 @@ final class RecordingAuthorization: CalendarAuthorization {
         self.record.record(granted: tier)
         completion(result)
       case .success(false):
-        self.awaitSettledStatus(checksLeft: self.settleChecks) { completion(result) }
+        self.awaitSettledStatus(checksLeft: Self.settleChecks) { completion(result) }
       case .failure:
         completion(result)
       }

@@ -118,9 +118,10 @@ final class PermissionServiceTests: XCTestCase {
     PermissionService(
       authorization: RecordingAuthorization(
         wrapping: authorization, record: record,
-        // The next main-runloop turn rather than a real delay: a stub's
-        // `settlesTo` lands first, and a status that never settles runs out
-        // its checks without the test waiting on a clock.
+        // Each check is the next main-runloop turn rather than a real delay,
+        // so a stub's `settlesTo` (queued right behind the first check) is
+        // seen by the second, and a status that never settles runs out its
+        // checks without the test waiting on a clock.
         deferral: { DispatchQueue.main.async(execute: $0) }),
       usageDescriptions: { usageDescriptions[$0] })
   }
@@ -324,19 +325,28 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertTrue(service.hasPermission(for: .write))
   }
 
-  /// #137: the "Add Events Only" answer inside the stale window. The handler
-  /// says `false` while the live status still says `.notDetermined`, and only
-  /// catches up to `.writeOnly` a moment later. Reporting the not-yet-settled
-  /// status sent Dart `.notDetermined` and failed a `createEvent` fired straight
-  /// after the prompt, so the request must wait for the OS's own answer.
-  func testAFullAskAnsweredAddEventsOnlyReportsWriteOnlyOnceTheStatusSettles() throws {
-    let (service, authorization) = makeService()
-    authorization.grants = false
-    authorization.settlesTo = .writeOnly
+  /// #137: an ungranted answer inside the stale window. The handler says
+  /// `false` while the live status still says `.notDetermined`, and only
+  /// catches up a moment later — to `.writeOnly` for "Add Events Only", to
+  /// `.denied` for "Don't Allow". Reporting the not-yet-settled status sent
+  /// Dart `.notDetermined` and failed a `createEvent` fired straight after the
+  /// prompt, so the request must wait for the OS's own answer. One row per
+  /// settled status; a status that never settles is
+  /// `testAFullAskAnsweredAddEventsOnlyIsNotRecordedAsADenial`.
+  func testAnUngrantedFullAskReportsTheStatusItSettlesOn() throws {
+    let rows: [(settlesTo: Access, write: Bool, full: Bool)] = [
+      (.writeOnly, true, false),
+      (.denied, false, false),
+    ]
+    for row in rows {
+      let (service, authorization) = makeService()
+      authorization.grants = false
+      authorization.settlesTo = row.settlesTo
 
-    XCTAssertEqual(try requestPermissions(service), .writeOnly)
-    XCTAssertTrue(service.hasPermission(for: .write))
-    XCTAssertFalse(service.hasPermission(for: .full))
+      XCTAssertEqual(try requestPermissions(service), row.settlesTo, "\(row.settlesTo)")
+      XCTAssertEqual(service.hasPermission(for: .write), row.write, "\(row.settlesTo)")
+      XCTAssertEqual(service.hasPermission(for: .full), row.full, "\(row.settlesTo)")
+    }
   }
 
   /// The other half of that path: a full upgrade that was not granted must
