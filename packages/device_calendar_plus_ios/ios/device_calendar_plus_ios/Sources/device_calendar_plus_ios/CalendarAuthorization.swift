@@ -17,9 +17,6 @@ protocol CalendarAuthorization {
   /// granting write-only — so it is never on its own evidence of a refusal. A
   /// request that never reached the user is `.failure`, kept distinct because it
   /// is the one branch nothing downstream can see.
-  ///
-  /// Once `completion` runs, `status` reports the tier the OS settled on — or
-  /// `.notDetermined` if it has not settled, or the request errored.
   func request(_ tier: CalendarPermissionType, completion: @escaping (Result<Bool, Error>) -> Void)
 }
 
@@ -107,16 +104,27 @@ final class AccessRecord {
   }
 }
 
-/// Patches EventKit's stale-status window (#134) behind the seam, so nothing
-/// above has to know the window exists. `.denied` and `.restricted` are
-/// terminal and reported as-is, so a Settings revocation is honoured
-/// immediately and is never masked by an earlier grant. Below that, the
-/// recorded grant is reported whenever it outranks the live status — the OS
-/// confirmed that tier, so a lower live status is stale rather than
-/// authoritative.
+/// Patches EventKit's stale-status window behind the seam, in both
+/// directions, so nothing above has to know the window exists:
 ///
-/// An ungranted request also waits, bounded, for the status to leave
-/// `.notDetermined` — see `request(_:completion:)`.
+/// - **After a grant** (#134) it *records* the tier the OS confirmed, and
+///   reports that record whenever it outranks the lagging live status.
+/// - **After an ungranted answer** (#137) it *waits*, bounded (about a second
+///   in production), for the live status to leave `.notDetermined` before
+///   calling back — so every refused or "Add Events Only" prompt now completes
+///   only once the OS has settled, or the wait runs out.
+///
+/// Together these are the guarantee `PermissionService` leans on: once
+/// `request(_:completion:)` calls back, `status` reports the tier the OS
+/// settled on — or `.notDetermined` if the request errored, or the status
+/// never left it within the wait. The raw `EventKitAuthorization` makes no such
+/// promise; that lag is the bug.
+///
+/// `.denied` and `.restricted` are terminal and reported as-is, so a Settings
+/// revocation is honoured immediately and is never masked by an earlier
+/// grant. Below that, the recorded grant wins whenever it outranks the live
+/// status — the OS confirmed that tier, so a lower live status is stale rather
+/// than authoritative.
 final class RecordingAuthorization: CalendarAuthorization {
   /// Runs its argument a moment later. Injected so tests drive the wait for a
   /// lagging status without a real clock.

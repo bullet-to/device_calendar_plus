@@ -111,15 +111,15 @@ final class PermissionServiceTests: XCTestCase {
   private func makeService(
     _ authorization: StubAuthorization,
     usageDescriptions: [String: String] = PermissionServiceTests.allUsageDescriptions,
-    record: AccessRecord = AccessRecord()
+    record: AccessRecord = AccessRecord(),
+    // Each check is the next main-runloop turn rather than a real delay, so a
+    // stub's `settlesTo` is seen by the first deferred check, and a status that
+    // never settles runs out its checks without a clock.
+    deferral: @escaping RecordingAuthorization.Deferral = { DispatchQueue.main.async(execute: $0) }
   ) -> PermissionService {
     PermissionService(
       authorization: RecordingAuthorization(
-        wrapping: authorization, record: record,
-        // Each check is the next main-runloop turn rather than a real delay,
-        // so a stub's `settlesTo` is seen by the first deferred check, and a
-        // status that never settles runs out its checks without a clock.
-        deferral: { DispatchQueue.main.async(execute: $0) }),
+        wrapping: authorization, record: record, deferral: deferral),
       usageDescriptions: { usageDescriptions[$0] })
   }
 
@@ -347,6 +347,28 @@ final class PermissionServiceTests: XCTestCase {
       XCTAssertEqual(service.hasPermission(for: .write), row.write, "\(row.settlesTo)")
       XCTAssertEqual(service.hasPermission(for: .full), row.full, "\(row.settlesTo)")
     }
+  }
+
+  /// EventKit's lag can outlast the first re-check, so the wait keeps
+  /// re-reading rather than giving up after one: here the status only settles
+  /// on the third deferred check.
+  func testAnUngrantedFullAskReportsAStatusThatSettlesAfterSeveralChecks() throws {
+    let authorization = StubAuthorization()
+    authorization.grants = false
+    var checks = 0
+    let service = makeService(
+      authorization,
+      deferral: { work in
+        DispatchQueue.main.async {
+          checks += 1
+          if checks == 3 { authorization.status = .writeOnly }
+          work()
+        }
+      })
+
+    XCTAssertEqual(try requestPermissions(service), .writeOnly)
+    XCTAssertTrue(service.hasPermission(for: .write))
+    XCTAssertFalse(service.hasPermission(for: .full))
   }
 
   /// The other half of that path: a full upgrade that was not granted must
