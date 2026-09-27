@@ -6,6 +6,11 @@
   when the series hasn't synced yet. Until the calendar's first sync of the
   series, it lists as it was, and the per-occurrence change shows once the
   calendar syncs (#163, the synced-calendar side of #153).
+- `createEvent` and `updateRecurring` refuse a recurrence rule whose `FREQ`
+  isn't `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY` (or that is malformed) with
+  `INVALID_ARGUMENTS` before writing, matching iOS. `FREQ=HOURLY` used to be
+  stored as an hourly series, and malformed input failed as
+  `OPERATION_FAILED` (#125).
 
 ## 0.8.0 - 2026-09-26
 

@@ -1,3 +1,11 @@
+## Unreleased
+
+### Fixed
+- `createEvent` refuses a recurrence rule it can't parse (a `FREQ` other than
+  `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, or malformed input) with
+  `INVALID_ARGUMENTS` and writes nothing, as `updateRecurring` already does.
+  It used to drop the rule and save a one-off event (#125).
+
 ## 0.8.0 - 2026-09-26
 
 ### Fixed
