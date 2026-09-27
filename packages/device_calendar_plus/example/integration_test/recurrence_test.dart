@@ -2379,8 +2379,8 @@ void main() {
     });
 
     test(
-        'all-day start a day earlier on an explicit-BYDAY rule without a '
-        'rule throws', () async {
+        'all-day start a day earlier on an explicit-BYDAY series throws '
+        'without a new recurrenceRule', () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createAllDayPinnedWeekly('All-day Day Earlier');
       final first = series.occurrences.first;
@@ -2395,6 +2395,12 @@ void main() {
         ),
         throwsInvalidArguments(),
       );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 30);
+      expect(startsOf(after), startsOf(series.occurrences),
+          reason: 'a refused day move must leave the series as it was');
     });
 
     test('all-day start a day later moves every occurrence a calendar day',
@@ -2424,6 +2430,40 @@ void main() {
         reason: 'each all-day occurrence must move to the next calendar day',
       );
       expect(after.every((e) => e.isAllDay), isTrue);
+    });
+
+    test(
+        'all-day thisAndFollowing start a day later moves the new series a '
+        'calendar day', () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createAllDayDailySeries(plugin, calendarId!,
+          count: 6);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(before.length, 6);
+      final split = before[2];
+
+      final newSeriesId = await plugin.updateRecurring(
+        split.instanceId,
+        EventSpan.thisAndFollowing,
+        start: nextLocalMidnight(split.startDate),
+      );
+
+      expect(
+        startsOf(await occurrencesOf(
+            plugin, calendarId!, newSeriesId, series.start)),
+        startsOf(before.sublist(2))
+            .map((ms) => nextLocalMidnight(
+                    DateTime.fromMillisecondsSinceEpoch(ms))
+                .millisecondsSinceEpoch)
+            .toList(),
+        reason: 'the split occurrence and every later one must move to the '
+            'next calendar day',
+      );
+      expectTruncatedMaster(
+        await occurrencesOf(plugin, calendarId!, series.eventId, series.start),
+        before: split.startDate,
+      );
     });
   });
 

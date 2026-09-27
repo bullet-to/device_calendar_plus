@@ -26,7 +26,7 @@ internal class SeriesTimesTest {
         baseMillis = stored,
         referenceMillis = stored,
         existingDurationMillis = duration,
-        newStartMillis = null,
+        targetStart = null,
         durationMinutes = durationMinutes,
         rrule = rrule,
         timeZoneId = "America/New_York",

@@ -1,5 +1,6 @@
 package to.bullet.device_calendar_plus_android
 
+import java.util.TimeZone
 
 // How event times are stored and derived: second precision, the all-day
 // UTC-midnight dispatch (the conversions themselves live in AllDayDates), and
@@ -23,10 +24,15 @@ internal fun wholeSeconds(millis: Long): Long = Math.floorDiv(millis, 1000L) * 1
  * [wholeSeconds]: a caller's are floored at the plugin argument seam
  * (`writtenInstant`), and [resolveSeriesTimes] floors a re-anchored stored
  * start and the stored duration. A stored start nothing moves keeps its
- * millis (#165).
+ * millis (#165). [zone] is the device zone [millis] was meant in; tests
+ * pass it, production uses the default.
  */
-internal fun storageMillis(millis: Long, isAllDay: Boolean): Long =
-    if (isAllDay) AllDayDates.localDateToUtcMidnight(millis) else millis
+internal fun storageMillis(
+    millis: Long,
+    isAllDay: Boolean,
+    zone: TimeZone = TimeZone.getDefault()
+): Long =
+    if (isAllDay) AllDayDates.localDateToUtcMidnight(millis, zone) else millis
 
 /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */
 internal fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =
