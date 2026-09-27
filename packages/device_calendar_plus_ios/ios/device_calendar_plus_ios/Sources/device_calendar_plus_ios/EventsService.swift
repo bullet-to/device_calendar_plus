@@ -896,17 +896,12 @@ class EventsService {
     }
   }
 
-  /// Resolves the one thing `updateEvent` / `deleteEvent` act on: the
-  /// occurrence at `timestamp` when given, otherwise the event itself. Fails
-  /// with `notFound` when there is no such event, then enforces the one-thing
-  /// rule — a `timestamp` is given exactly when the event is recurring. A
-  /// timestamp on a one-off is refused, and so is a bare ID of a recurring
-  /// series: a series-wide change goes through `operation.replacement` with
-  /// `EventSpan.allEvents` (#175).
-  private func resolveOneThing(
+  /// Looks up the event an operation acts on: the occurrence at `timestamp`
+  /// when given, otherwise the event (or series master) itself. Fails with
+  /// `notFound` when there is no such event.
+  private func resolveTarget(
     eventId: String,
-    timestamp: Int64?,
-    operation: OneThingOperation
+    timestamp: Int64?
   ) -> Result<EKEvent, CalendarError> {
     let targetEvent: EKEvent?
     if let timestamp = timestamp {
@@ -920,6 +915,28 @@ class EventsService {
         code: PlatformExceptionCodes.notFound,
         message: "Event not found with event ID: \(eventId)"
       ))
+    }
+    return .success(event)
+  }
+
+  /// Resolves the one thing `updateEvent` / `deleteEvent` act on: the
+  /// occurrence at `timestamp` when given, otherwise the event itself. Fails
+  /// with `notFound` when there is no such event, then enforces the one-thing
+  /// rule — a `timestamp` is given exactly when the event is recurring. A
+  /// timestamp on a one-off is refused, and so is a bare ID of a recurring
+  /// series: a series-wide change goes through `operation.replacement` with
+  /// `EventSpan.allEvents` (#175).
+  private func resolveOneThing(
+    eventId: String,
+    timestamp: Int64?,
+    operation: OneThingOperation
+  ) -> Result<EKEvent, CalendarError> {
+    let event: EKEvent
+    switch resolveTarget(eventId: eventId, timestamp: timestamp) {
+    case .failure(let error):
+      return .failure(error)
+    case .success(let found):
+      event = found
     }
 
     if timestamp != nil && !event.hasRecurrenceRules {
@@ -1332,26 +1349,22 @@ class EventsService {
     // Resolve the event to act on. "allEvents" works from the master (the
     // whole series); "thisAndFollowing" works from the specific occurrence
     // at `timestamp`.
-    let targetEvent: EKEvent?
-    if span == "thisAndFollowing" {
-      guard let timestamp = timestamp else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "\(span) requires an occurrence timestamp"
-        )))
-        return
-      }
-      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
-    } else {
-      targetEvent = eventStore.event(withIdentifier: eventId)
-    }
-
-    guard let foundEvent = targetEvent else {
+    let isThisAndFollowing = span == "thisAndFollowing"
+    if isThisAndFollowing && timestamp == nil {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.notFound,
-        message: "Event not found with event ID: \(eventId)"
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "\(span) requires an occurrence timestamp"
       )))
       return
+    }
+
+    let foundEvent: EKEvent
+    switch resolveTarget(eventId: eventId, timestamp: isThisAndFollowing ? timestamp : nil) {
+    case .failure(let error):
+      completion(.failure(error))
+      return
+    case .success(let event):
+      foundEvent = event
     }
 
     // All-day events have no time-of-day and only whole-day durations. The
@@ -1475,26 +1488,22 @@ class EventsService {
     // Resolve the event to act on. "allEvents" works from the master (the
     // whole series); "thisAndFollowing" works from the specific occurrence
     // at `timestamp`.
-    let targetEvent: EKEvent?
-    if span == "thisAndFollowing" {
-      guard let timestamp = timestamp else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "\(span) requires an occurrence timestamp"
-        )))
-        return
-      }
-      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
-    } else {
-      targetEvent = eventStore.event(withIdentifier: eventId)
-    }
-
-    guard let foundEvent = targetEvent else {
+    let isThisAndFollowing = span == "thisAndFollowing"
+    if isThisAndFollowing && timestamp == nil {
       completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.notFound,
-        message: "Event not found with event ID: \(eventId)"
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "\(span) requires an occurrence timestamp"
       )))
       return
+    }
+
+    let foundEvent: EKEvent
+    switch resolveTarget(eventId: eventId, timestamp: isThisAndFollowing ? timestamp : nil) {
+    case .failure(let error):
+      completion(.failure(error))
+      return
+    case .success(let event):
+      foundEvent = event
     }
 
     // Both spans remove with .futureEvents: from the master that removes the

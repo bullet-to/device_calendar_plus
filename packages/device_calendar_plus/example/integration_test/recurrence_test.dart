@@ -1830,7 +1830,10 @@ void main() {
           startDate: series.start.add(const Duration(days: 2)),
           endDate: series.start.add(const Duration(days: 2, hours: 1)),
         ),
-        throwsInvalidArguments,
+        throwsA(isA<DeviceCalendarException>()
+            .having((e) => e.errorCode, 'errorCode',
+                DeviceCalendarError.invalidArguments)
+            .having((e) => e.message, 'message', contains('updateRecurring'))),
       );
 
       final after = await occurrencesOf(
@@ -2429,7 +2432,10 @@ void main() {
 
       await expectLater(
         plugin.deleteEvent(instanceId: series.eventId),
-        throwsInvalidArguments,
+        throwsA(isA<DeviceCalendarException>()
+            .having((e) => e.errorCode, 'errorCode',
+                DeviceCalendarError.invalidArguments)
+            .having((e) => e.message, 'message', contains('deleteRecurring'))),
       );
 
       final after = await occurrencesOf(

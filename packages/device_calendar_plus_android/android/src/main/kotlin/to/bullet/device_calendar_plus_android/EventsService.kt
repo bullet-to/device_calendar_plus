@@ -802,6 +802,10 @@ class EventsService(
      * master is gone but its exceptions are not. A consequence worth keeping:
      * exceptions orphaned by a master that is already gone still match, so
      * deleting that ID cleans them up and reports success, not NOT_FOUND.
+     *
+     * The null account, the local-tombstone case and the orphaned-exception
+     * case arise only from [deleteRecurring]'s `allEvents` span:
+     * [deleteOneOff] reaches this only with a live one-off row.
      */
     private fun deleteEventWithExceptions(
         eventId: String,
