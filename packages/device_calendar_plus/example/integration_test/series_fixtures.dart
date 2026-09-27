@@ -73,6 +73,34 @@ Future<({String eventId, DateTime start})> createAllDayDailySeries(
   return (eventId: eventId, start: start);
 }
 
+/// Creates an all-day weekly series titled [title], pinned (BYDAY) to its own
+/// weekday, with [count] occurrences, starting in two days (so a day-earlier
+/// move is still in the future). All-day, so the weekday is read in local
+/// time, the frame the start is given in (#144).
+Future<SeededSeries> createAllDayWeeklySeriesOnOwnWeekday(
+  DeviceCalendar plugin,
+  String calendarId, {
+  required String title,
+  int count = 4,
+}) async {
+  final start = localMidnight(2);
+  final eventId = await plugin.createEvent(
+    calendarId: calendarId,
+    title: title,
+    startDate: start,
+    endDate: nextLocalMidnight(start),
+    isAllDay: true,
+    recurrenceRule: WeeklyRecurrence(
+      daysOfWeek: [weekdayOf(start)],
+      end: CountEnd(count),
+    ),
+  );
+  final occurrences =
+      await occurrencesOf(plugin, calendarId, eventId, start, windowDays: 30);
+  expect(occurrences, isNotEmpty);
+  return (eventId: eventId, start: start, occurrences: occurrences);
+}
+
 /// Creates a weekly recurring event titled [title], starting at [start] (one
 /// hour from now by default, stored in UTC) and ending per [end] (`count`
 /// weekly occurrences by default). The recurring weekday is the start's
@@ -152,6 +180,13 @@ Future<List<Event>> eventsTitled(
 /// occurrence.
 List<int> startsOf(Iterable<Event> events) =>
     events.map((e) => e.startDate.millisecondsSinceEpoch).toList();
+
+/// The start instants of [events], each moved to the next local midnight:
+/// what an all-day listing reads after its series moves a calendar day later.
+List<int> startsOneDayLater(Iterable<Event> events) => events
+    .map((e) =>
+        nextLocalMidnight(e.startDate.toLocal()).millisecondsSinceEpoch)
+    .toList();
 
 /// The start instants of [events] except those at [indexes]: an earlier
 /// listing with some occurrences detached, in whatever order the indexes are

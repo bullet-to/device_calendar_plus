@@ -2330,34 +2330,13 @@ void main() {
     // the anchor shift must read both as the same calendar day on either
     // side of UTC — the harness runs these at Los Angeles, UTC and Sydney.
 
-    /// An all-day weekly series pinned to its own weekday, starting in two
-    /// days (so a day-earlier move is still in the future).
-    Future<({String eventId, DateTime start, List<Event> occurrences})>
-        createAllDayPinnedWeekly(String title) async {
-      final start = localMidnight(2);
-      final eventId = await plugin.createEvent(
-        calendarId: calendarId!,
-        title: title,
-        startDate: start,
-        endDate: nextLocalMidnight(start),
-        isAllDay: true,
-        recurrenceRule: WeeklyRecurrence(
-          daysOfWeek: [weekdayOf(start)],
-          end: const CountEnd(4),
-        ),
-      );
-      final occurrences = await occurrencesOf(
-          plugin, calendarId!, eventId, start,
-          windowDays: 30);
-      expect(occurrences, isNotEmpty);
-      return (eventId: eventId, start: start, occurrences: occurrences);
-    }
-
     test(
         'all-day start on the same day of an explicit-BYDAY rule is allowed',
         () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createAllDayPinnedWeekly('All-day Same Day');
+      final series = await createAllDayWeeklySeriesOnOwnWeekday(
+          plugin, calendarId!,
+          title: 'All-day Same Day');
       final first = series.occurrences.first;
 
       // Re-passing the occurrence's own day moves nothing, so the rule's
@@ -2382,7 +2361,9 @@ void main() {
         'all-day start a day earlier on an explicit-BYDAY series throws '
         'without a new recurrenceRule', () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createAllDayPinnedWeekly('All-day Day Earlier');
+      final series = await createAllDayWeeklySeriesOnOwnWeekday(
+          plugin, calendarId!,
+          title: 'All-day Day Earlier');
       final first = series.occurrences.first;
       final dayBefore = DateTime(first.startDate.year, first.startDate.month,
           first.startDate.day - 1);
@@ -2422,11 +2403,7 @@ void main() {
           plugin, calendarId!, series.eventId, series.start);
       expect(
         startsOf(after),
-        startsOf(before)
-            .map((ms) => nextLocalMidnight(
-                    DateTime.fromMillisecondsSinceEpoch(ms))
-                .millisecondsSinceEpoch)
-            .toList(),
+        startsOneDayLater(before),
         reason: 'each all-day occurrence must move to the next calendar day',
       );
       expect(after.every((e) => e.isAllDay), isTrue);
@@ -2452,11 +2429,7 @@ void main() {
       expect(
         startsOf(await occurrencesOf(
             plugin, calendarId!, newSeriesId, series.start)),
-        startsOf(before.sublist(2))
-            .map((ms) => nextLocalMidnight(
-                    DateTime.fromMillisecondsSinceEpoch(ms))
-                .millisecondsSinceEpoch)
-            .toList(),
+        startsOneDayLater(before.sublist(2)),
         reason: 'the split occurrence and every later one must move to the '
             'next calendar day',
       );

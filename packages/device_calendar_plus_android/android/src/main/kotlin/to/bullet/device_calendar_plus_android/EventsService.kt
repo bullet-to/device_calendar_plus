@@ -997,8 +997,13 @@ class EventsService(
             val changingRule = recurrenceRule != null ||
                 "recurrenceRule" in patch.clearedFields
             val targetStart = resolveTargetStart(
-                newStartMillis, row.rrule, row.allDay, row.timeZone,
-                timestamp ?: row.dtstart, effectiveIsAllDay, changingRule
+                newStartMillis = newStartMillis,
+                rowRrule = row.rrule,
+                rowAllDay = row.allDay,
+                rowTimeZone = row.timeZone,
+                referenceMillis = timestamp ?: row.dtstart,
+                effectiveIsAllDay = effectiveIsAllDay,
+                changingRule = changingRule
             ).getOrElse { return Result.failure(it) }
 
             when (span) {
