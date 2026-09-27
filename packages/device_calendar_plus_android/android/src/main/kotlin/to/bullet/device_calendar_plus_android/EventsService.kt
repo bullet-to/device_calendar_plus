@@ -635,14 +635,7 @@ class EventsService(
         // Refuse a rule iOS can't store before writing anything, rather than
         // handing it to the provider: that would keep FREQ=HOURLY as an hourly
         // series, and fail malformed input only as a generic insert error.
-        if (recurrenceRule != null && !RruleString.hasSupportedFrequency(recurrenceRule)) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "Invalid recurrence rule: $recurrenceRule"
-                )
-            )
-        }
+        unsupportedRuleFailure(recurrenceRule)?.let { return Result.failure(it) }
 
         try {
             val startMillis = storageMillis(startDate.time, isAllDay)
