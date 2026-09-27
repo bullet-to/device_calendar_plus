@@ -470,6 +470,8 @@ class EventsService(
      */
     fun findEventForModal(eventId: String, timestamp: Long?): Result<Long> {
         val found = getEvent(eventId, timestamp).getOrElse { return Result.failure(it) }
+        // getEvent matches on the numeric row ID, so a found event always has
+        // one; the rowId check is defensive, and only there to unwrap it.
         val rowId = eventId.toLongOrNull()
         if (found == null || rowId == null) {
             return Result.failure(

@@ -369,39 +369,50 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let timestamp = args["timestamp"] as? Int64
     let edit = args["edit"] as? Bool ?? false
 
-    guard pendingModal.begin(result) else { return }
-
-    eventsService.findEventForModal(eventId: eventId, timestamp: timestamp) { serviceResult in
-      DispatchQueue.main.async {
-        switch serviceResult {
-        case .success(let event):
-          self.presentModal(edit ? self.eventEditor(for: event) : self.eventViewerSheet(for: event))
-        case .failure(let error):
-          self.pendingModal.fail(code: error.code, message: error.message)
-        }
-      }
-    }
+    presentAfterLookup(
+      result,
+      lookup: { self.eventsService.findEventForModal(eventId: eventId, timestamp: timestamp, completion: $0) },
+      build: { event in edit ? self.eventEditor(for: event) : self.eventViewerSheet(for: event) }
+    )
   }
 
   private func handleShowCreateEventModal(call: FlutterMethodCall, result: @escaping FlutterResult) {
     let args = call.arguments as? [String: Any] ?? [:]
 
+    presentAfterLookup(
+      result,
+      lookup: {
+        self.eventsService.createEventForModal(
+          title: args["title"] as? String,
+          startDate: args["startDate"] as? Int64,
+          endDate: args["endDate"] as? Int64,
+          description: args["description"] as? String,
+          location: args["location"] as? String,
+          isAllDay: args["isAllDay"] as? Bool,
+          recurrenceRule: args["recurrenceRule"] as? String,
+          availability: args["availability"] as? String,
+          completion: $0
+        )
+      },
+      build: { event in self.eventEditor(for: event) } // nil = blank editor
+    )
+  }
+
+  /// Claims the modal slot for `result`, runs `lookup`, then on the main
+  /// thread presents what `build` makes of its value — or fails the claim
+  /// with the lookup's error. Every path replies exactly once (#123).
+  private func presentAfterLookup<T>(
+    _ result: @escaping FlutterResult,
+    lookup: (@escaping (Result<T, CalendarError>) -> Void) -> Void,
+    build: @escaping (T) -> UIViewController
+  ) {
     guard pendingModal.begin(result) else { return }
 
-    eventsService.createEventForModal(
-      title: args["title"] as? String,
-      startDate: args["startDate"] as? Int64,
-      endDate: args["endDate"] as? Int64,
-      description: args["description"] as? String,
-      location: args["location"] as? String,
-      isAllDay: args["isAllDay"] as? Bool,
-      recurrenceRule: args["recurrenceRule"] as? String,
-      availability: args["availability"] as? String
-    ) { serviceResult in
+    lookup { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
-        case .success(let event):
-          self.presentModal(self.eventEditor(for: event)) // nil = blank editor
+        case .success(let value):
+          self.presentModal(build(value))
         case .failure(let error):
           self.pendingModal.fail(code: error.code, message: error.message)
         }

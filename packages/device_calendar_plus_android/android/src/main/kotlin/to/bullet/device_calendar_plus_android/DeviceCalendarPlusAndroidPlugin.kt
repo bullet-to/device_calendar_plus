@@ -12,11 +12,21 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry
+import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-/** DeviceCalendarPlusAndroidPlugin */
-class DeviceCalendarPlusAndroidPlugin :
+/**
+ * DeviceCalendarPlusAndroidPlugin
+ *
+ * [newProviderExecutor] and [postToMain] are the threads provider work runs
+ * on and replies from; JVM unit tests swap them for ones they drive, since
+ * there's no Looper there.
+ */
+class DeviceCalendarPlusAndroidPlugin internal constructor(
+    private val newProviderExecutor: () -> Executor,
+    private val postToMain: (() -> Unit) -> Unit,
+) :
     FlutterPlugin,
     MethodCallHandler,
     ActivityAware,
@@ -31,15 +41,24 @@ class DeviceCalendarPlusAndroidPlugin :
     private var eventsService: EventsService? = null
     /** The reply for the native modal that's showing, if any. */
     internal val pendingModal = PendingModal()
-    private var providerExecutor: ExecutorService? = null
+    private var providerExecutor: Executor? = null
 
-    // Lazy so constructing the plugin doesn't touch the Looper — JVM unit
-    // tests can instantiate the class without an Android runtime.
-    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    constructor() : this(
+        newProviderExecutor = {
+            Executors.newSingleThreadExecutor { runnable ->
+                Thread(runnable, "DeviceCalendarPlusProvider").apply { isDaemon = true }
+            }
+        },
+        postToMain = { block -> mainHandler.post(block) },
+    )
 
     companion object {
         internal const val SHOW_EVENT_REQUEST_CODE = 1001
         internal const val CREATE_EVENT_REQUEST_CODE = 1002
+
+        // Lazy so constructing the plugin doesn't touch the Looper — JVM unit
+        // tests can instantiate the class without an Android runtime.
+        private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -51,33 +70,37 @@ class DeviceCalendarPlusAndroidPlugin :
         calendarService = CalendarService(context)
         eventsService = EventsService(context, calendarService!!)
         permissionService = PermissionService(context)
-        providerExecutor = Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "DeviceCalendarPlusProvider").apply { isDaemon = true }
-        }
+        providerExecutor = newProviderExecutor()
     }
 
     /**
-     * Runs a Calendar Provider operation off the main thread and replies on
-     * it. ContentResolver calls are blocking binder IPC and method-channel
-     * handlers run on the main thread, so query-heavy calls (listEvents fans
-     * out one attendees query per event) can ANR there (#73). A single
-     * worker keeps operations in call order, as they were when inline.
+     * Runs a Calendar Provider [operation] off the main thread, then hands
+     * its outcome to [then] back on the main thread. ContentResolver calls
+     * are blocking binder IPC and method-channel handlers run on the main
+     * thread, so query-heavy calls (listEvents fans out one attendees query
+     * per event) can ANR there (#73). A single worker keeps operations in
+     * call order, as they were when inline. A throw becomes a failure.
      */
-    private fun <T> runOffMainThread(result: Result, operation: () -> kotlin.Result<T>) {
+    private fun <T> onProvider(operation: () -> kotlin.Result<T>, then: (kotlin.Result<T>) -> Unit) {
         providerExecutor!!.execute {
-            val serviceResult = try {
+            val outcome = try {
                 operation()
             } catch (error: Throwable) {
                 kotlin.Result.failure(error)
             }
-            mainHandler.post {
-                serviceResult.fold(
-                    // The channel codec can't encode Unit; void operations
-                    // reply with null, as the inline handlers did.
-                    onSuccess = { value -> result.success(value.takeIf { it != Unit }) },
-                    onFailure = { error -> result.error(error.channelCode, error.message, null) }
-                )
-            }
+            postToMain { then(outcome) }
+        }
+    }
+
+    /** [onProvider], replying to [result] with the outcome. */
+    private fun <T> runOffMainThread(result: Result, operation: () -> kotlin.Result<T>) {
+        onProvider(operation) { outcome ->
+            outcome.fold(
+                // The channel codec can't encode Unit; void operations
+                // reply with null, as the inline handlers did.
+                onSuccess = { value -> result.success(value.takeIf { it != Unit }) },
+                onFailure = { error -> result.error(error.channelCode, error.message, null) }
+            )
         }
     }
 
@@ -357,30 +380,23 @@ class DeviceCalendarPlusAndroidPlugin :
         launch: (Activity, Int, T) -> kotlin.Result<Unit>,
     ) {
         claimModal(requestCode, result) ?: return
-        providerExecutor!!.execute {
-            val found = try {
-                lookup()
-            } catch (error: Throwable) {
-                kotlin.Result.failure(error)
-            }
-            mainHandler.post {
-                // The claim can be resolved while the lookup runs (the
-                // activity went away); then there's nothing left to launch.
-                if (!pendingModal.holds(result)) return@post
-                found.fold(
-                    onSuccess = { value ->
-                        // The activity can be gone here and not the claim:
-                        // mid config change, between detach and reattach.
-                        // That fails rather than waiting for the recreated
-                        // activity — still exactly one reply.
-                        val currentActivity = activity ?: return@fold pendingModal.fail(
-                            CalendarException(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available")
-                        )
-                        launch(currentActivity, requestCode, value).onFailure(pendingModal::fail)
-                    },
-                    onFailure = pendingModal::fail,
-                )
-            }
+        onProvider(lookup) { found ->
+            // The claim can be resolved while the lookup runs (the activity
+            // went away); then there's nothing left to launch.
+            if (!pendingModal.holds(result)) return@onProvider
+            found.fold(
+                onSuccess = { value ->
+                    // The activity can be gone here and not the claim: mid
+                    // config change, between detach and reattach. That fails
+                    // rather than waiting for the recreated activity — still
+                    // exactly one reply.
+                    val currentActivity = activity ?: return@fold pendingModal.fail(
+                        CalendarException(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available")
+                    )
+                    launch(currentActivity, requestCode, value).onFailure(pendingModal::fail)
+                },
+                onFailure = pendingModal::fail,
+            )
         }
     }
 
@@ -586,7 +602,7 @@ class DeviceCalendarPlusAndroidPlugin :
         channel.setMethodCallHandler(null)
         // Let in-flight provider work finish; the worker is a daemon thread,
         // so it can't keep the process alive.
-        providerExecutor?.shutdown()
+        (providerExecutor as? ExecutorService)?.shutdown()
         providerExecutor = null
         appContext = null
         calendarService = null
