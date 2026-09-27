@@ -2333,9 +2333,8 @@ void main() {
     test(
         'all-day start on the same day of an explicit-BYDAY rule is allowed',
         () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createAllDayWeeklySeriesOnOwnWeekday(
-          plugin, calendarId!,
+          plugin, calendarId,
           title: 'All-day Same Day');
       final first = series.occurrences.first;
 
@@ -2360,9 +2359,8 @@ void main() {
     test(
         'all-day start a day earlier on an explicit-BYDAY series throws '
         'without a new recurrenceRule', () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createAllDayWeeklySeriesOnOwnWeekday(
-          plugin, calendarId!,
+          plugin, calendarId,
           title: 'All-day Day Earlier');
       final first = series.occurrences.first;
       final dayBefore = DateTime(first.startDate.year, first.startDate.month,
@@ -2386,12 +2384,9 @@ void main() {
 
     test('all-day start a day later moves every occurrence a calendar day',
         () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createAllDayDailySeries(plugin, calendarId!,
-          count: 4);
-      final before = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(before.length, 4);
+      final series = await seedDailySeries(plugin, calendarId,
+          create: createAllDayDailySeries, count: 4, minOccurrences: 4);
+      final before = series.occurrences;
 
       await plugin.updateRecurring(
         before.first.instanceId,
@@ -2412,12 +2407,9 @@ void main() {
     test(
         'all-day thisAndFollowing start a day later moves the new series a '
         'calendar day', () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final series = await createAllDayDailySeries(plugin, calendarId!,
-          count: 6);
-      final before = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(before.length, 6);
+      final series = await seedDailySeries(plugin, calendarId,
+          create: createAllDayDailySeries, count: 6, minOccurrences: 6);
+      final before = series.occurrences;
       final split = before[2];
 
       final newSeriesId = await plugin.updateRecurring(
@@ -2436,6 +2428,49 @@ void main() {
       expectTruncatedMaster(
         await occurrencesOf(plugin, calendarId!, series.eventId, series.start),
         before: split.startDate,
+      );
+    });
+
+    test(
+        'toggling a timed explicit-BYDAY series all-day with a same-day start '
+        'keeps every occurrence on its calendar day', () async {
+      final id = requireCalendar(calendarId);
+      // Local noon is the same date in UTC for any offset within ±11 hours,
+      // so the weekday the UTC-stored series pins is the local one too.
+      final today = localMidnight(2);
+      final start = DateTime(today.year, today.month, today.day, 12);
+      final series = await createWeeklySeries(plugin, id,
+          title: 'Timed To All-day',
+          count: 4,
+          daysOfWeek: [weekdayOf(start)],
+          start: start);
+      final before = await occurrencesOf(
+          plugin, id, series.eventId, series.start,
+          windowDays: 30);
+      expect(before.length, 4);
+      final first = before.first.startDate.toLocal();
+
+      // The all-day start is the local midnight of the occurrence's own day:
+      // on Android it becomes UTC midnight, so the day-move check and the
+      // anchor shift must read it as the same day as the timed start.
+      await plugin.updateRecurring(
+        before.first.instanceId,
+        EventSpan.allEvents,
+        isAllDay: true,
+        start: DateTime(first.year, first.month, first.day),
+        duration: const Duration(days: 1),
+      );
+
+      final after = await occurrencesOf(
+          plugin, id, series.eventId, series.start,
+          windowDays: 30);
+      expect(after.every((e) => e.isAllDay), isTrue,
+          reason: 'every occurrence must be all-day');
+      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
+      expect(
+        after.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        before.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        reason: 'each occurrence must stay on its original calendar day',
       );
     });
   });

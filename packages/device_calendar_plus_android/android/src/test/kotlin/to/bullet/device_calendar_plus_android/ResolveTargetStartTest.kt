@@ -3,6 +3,7 @@ package to.bullet.device_calendar_plus_android
 import java.util.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 /**
  * updateRecurring's `start` pre-flight, [resolveTargetStart], on devices
@@ -21,23 +22,41 @@ internal class ResolveTargetStartTest {
     private fun stored(day: Int) = instantAt(utc, 2026, 6, day)
 
     /**
+     * Resolves [newStart] against the stored [reference] start of a
+     * [rrule] series on a device in [zone]. [rowAllDay] is the row's frame
+     * before the edit, [effectiveIsAllDay] after it.
+     */
+    private fun resolve(
+        newStart: Long,
+        reference: Long,
+        rowAllDay: Boolean = true,
+        effectiveIsAllDay: Boolean = true,
+        rrule: String = "FREQ=WEEKLY;BYDAY=SA",
+        zone: TimeZone = la,
+        changingRule: Boolean = false
+    ) = resolveTargetStart(
+        newStartMillis = newStart,
+        rowRrule = rrule,
+        rowAllDay = rowAllDay,
+        rowTimeZone = zone.id,
+        referenceMillis = reference,
+        effectiveIsAllDay = effectiveIsAllDay,
+        changingRule = changingRule,
+        deviceZone = zone
+    )
+
+    /**
      * Moves an all-day [rrule] series stored on June [storedDay] to the
      * local midnight of June [newDay], from a device in [zone].
      */
     private fun moveAllDay(rrule: String, storedDay: Int, newDay: Int, zone: TimeZone) =
-        resolveTargetStart(
-            newStartMillis = instantAt(zone, 2026, 6, newDay),
-            rowRrule = rrule,
-            rowAllDay = true,
-            rowTimeZone = zone.id,
-            referenceMillis = stored(storedDay),
-            effectiveIsAllDay = true,
-            changingRule = false,
-            deviceZone = zone
-        )
+        resolve(instantAt(zone, 2026, 6, newDay), stored(storedDay), rrule = rrule, zone = zone)
 
     private fun Result<Long?>.failureCode() =
-        (exceptionOrNull() as CalendarException).code
+        assertIs<CalendarException>(
+            exceptionOrNull(),
+            "expected a refusal, got ${getOrNull()}"
+        ).code
 
     // West of UTC the stored UTC midnight is the previous local evening:
     // read in the device zone it looked like a Friday, so keeping the
@@ -91,31 +110,13 @@ internal class ResolveTargetStartTest {
     @Test
     fun resolveTargetStart_allDayToTimedSameDay_returnsTimedStart() {
         val newStart = instantAt(la, 2026, 6, 6, 9)
-        val result = resolveTargetStart(
-            newStartMillis = newStart,
-            rowRrule = "FREQ=WEEKLY;BYDAY=SA",
-            rowAllDay = true,
-            rowTimeZone = la.id,
-            referenceMillis = stored(6),
-            effectiveIsAllDay = false,
-            changingRule = false,
-            deviceZone = la
-        )
+        val result = resolve(newStart, stored(6), effectiveIsAllDay = false)
         assertEquals(newStart, result.getOrThrow())
     }
 
     @Test
     fun resolveTargetStart_allDayToTimedDayEarlier_refused() {
-        val result = resolveTargetStart(
-            newStartMillis = instantAt(la, 2026, 6, 5, 9),
-            rowRrule = "FREQ=WEEKLY;BYDAY=SA",
-            rowAllDay = true,
-            rowTimeZone = la.id,
-            referenceMillis = stored(6),
-            effectiveIsAllDay = false,
-            changingRule = false,
-            deviceZone = la
-        )
+        val result = resolve(instantAt(la, 2026, 6, 5, 9), stored(6), effectiveIsAllDay = false)
         assertEquals(PlatformExceptionCodes.INVALID_ARGUMENTS, result.failureCode())
     }
 
@@ -124,16 +125,25 @@ internal class ResolveTargetStartTest {
     // move.
     @Test
     fun resolveTargetStart_timedToAllDaySameDay_returnsStoredMidnight() {
-        val result = resolveTargetStart(
-            newStartMillis = instantAt(la, 2026, 6, 6),
-            rowRrule = "FREQ=WEEKLY;BYDAY=SA",
-            rowAllDay = false,
-            rowTimeZone = la.id,
-            referenceMillis = instantAt(la, 2026, 6, 6, 20),
-            effectiveIsAllDay = true,
-            changingRule = false,
-            deviceZone = la
+        val result = resolve(
+            instantAt(la, 2026, 6, 6),
+            instantAt(la, 2026, 6, 6, 20),
+            rowAllDay = false
         )
         assertEquals(stored(6), result.getOrThrow())
+    }
+
+    // A new rule lifts the day-move check, but the start still reaches the
+    // #140 re-anchor in the stored frame: east of UTC the raw local midnight
+    // is the previous UTC day.
+    @Test
+    fun resolveTargetStart_allDayDayMoveWithNewRule_returnsStoredMidnight() {
+        val result = resolve(
+            instantAt(sydney, 2026, 6, 7),
+            stored(6),
+            zone = sydney,
+            changingRule = true
+        )
+        assertEquals(stored(7), result.getOrThrow())
     }
 }

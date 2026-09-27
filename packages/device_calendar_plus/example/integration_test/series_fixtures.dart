@@ -76,13 +76,15 @@ Future<({String eventId, DateTime start})> createAllDayDailySeries(
 /// Creates an all-day weekly series titled [title], pinned (BYDAY) to its own
 /// weekday, with [count] occurrences, starting in two days (so a day-earlier
 /// move is still in the future). All-day, so the weekday is read in local
-/// time, the frame the start is given in (#144).
+/// time, the frame the start is given in (#144). Checks the group's
+/// calendar exists first.
 Future<SeededSeries> createAllDayWeeklySeriesOnOwnWeekday(
   DeviceCalendar plugin,
-  String calendarId, {
+  String? groupCalendarId, {
   required String title,
   int count = 4,
 }) async {
+  final calendarId = requireCalendar(groupCalendarId);
   final start = localMidnight(2);
   final eventId = await plugin.createEvent(
     calendarId: calendarId,
