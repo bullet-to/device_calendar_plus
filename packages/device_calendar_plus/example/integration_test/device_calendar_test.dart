@@ -1274,6 +1274,41 @@ void main() {
       skip: 'Requires manual verification. System modal UI cannot be easily '
           'automated with integration_test package.',
     );
+
+    test('Show Event Modal - an unknown event fails notFound', () async {
+      // Regression (#123): Android fired ACTION_VIEW without looking the event
+      // up, so it opened the calendar app on nothing and reported success (or
+      // UNKNOWN_ERROR for a non-numeric ID). iOS looks it up and fails
+      // notFound; both now do. No modal opens, so this runs unattended.
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Modal NotFound Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final now = DateTime.now();
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Deleted before showing',
+        startDate: DateTime(now.year, now.month, now.day, 11, 0),
+        endDate: DateTime(now.year, now.month, now.day, 12, 0),
+      );
+      await plugin.deleteEvent(instanceId: eventId);
+
+      final throwsNotFound = throwsA(
+        isA<DeviceCalendarException>().having(
+          (e) => e.errorCode,
+          'errorCode',
+          DeviceCalendarError.notFound,
+        ),
+      );
+      await expectLater(plugin.showEventModal(eventId), throwsNotFound);
+      await expectLater(
+        plugin.showEventModal('not-an-event-$timestamp'),
+        throwsNotFound,
+      );
+    });
+
     test(
       'Show Create Event Modal',
       () async {

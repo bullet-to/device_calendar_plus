@@ -3,16 +3,20 @@ import UIKit
 import EventKit
 import EventKitUI
 
-public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDelegate, EKEventEditViewDelegate {
+public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDelegate, EKEventEditViewDelegate,
+  UIAdaptivePresentationControllerDelegate
+{
   private let eventStore = EKEventStore()
-  private lazy var permissionService = PermissionService(
-    authorization: RecordingAuthorization(
-      wrapping: EventKitAuthorization(eventStore: eventStore),
-      record: .shared))
+  /// The OS authorization seam. Tests replace it before the first call so a
+  /// permission gate answers from a fixture, not the simulator's own grant.
+  lazy var calendarAuthorization: CalendarAuthorization = RecordingAuthorization(
+    wrapping: EventKitAuthorization(eventStore: eventStore),
+    record: .shared)
+  private lazy var permissionService = PermissionService(authorization: calendarAuthorization)
   private lazy var calendarService = CalendarService(eventStore: eventStore, permissionService: permissionService)
   private lazy var eventsService = EventsService(eventStore: eventStore, permissionService: permissionService)
-  private var eventModalResult: FlutterResult?
-  private var createEventModalResult: FlutterResult?
+  /// The reply for the native modal that's showing, if any.
+  let pendingModal = PendingModal()
 
   /// Serial queue for EventKit data operations. EventKit calls block the
   /// calling thread (listEvents fans out across the store, create/update/delete
@@ -365,48 +369,24 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let timestamp = args["timestamp"] as? Int64
     let edit = args["edit"] as? Bool ?? false
 
-    eventsService.showEvent(eventId: eventId, timestamp: timestamp, edit: edit) { serviceResult in
+    guard pendingModal.begin(result) else { return }
+
+    eventsService.findEventForModal(eventId: eventId, timestamp: timestamp) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
-        case .success(let viewController):
-          if let viewController = viewController {
-            guard let rootViewController = self.getRootViewController() else {
-              fatalError("Failed to get root view controller - plugin lifecycle error")
-            }
-
-            // Set the appropriate delegate based on view controller type
-            if let editVC = viewController as? EKEventEditViewController {
-              editVC.editViewDelegate = self
-            } else if let viewVC = viewController as? EKEventViewController {
-              viewVC.delegate = self
-            }
-
-            self.eventModalResult = result
-
-            // EKEventEditViewController is itself a UINavigationController subclass,
-            // so present it directly. EKEventViewController needs wrapping in a
-            // navigation controller for its action buttons and dismissal to work.
-            let presentedViewController: UIViewController
-            if let navigationController = viewController as? UINavigationController {
-              presentedViewController = navigationController
-            } else {
-              presentedViewController = UINavigationController(rootViewController: viewController)
-            }
-            presentedViewController.modalPresentationStyle = .pageSheet
-
-            rootViewController.present(presentedViewController, animated: true, completion: nil)
-          } else {
-            result(nil)
-          }
+        case .success(let event):
+          self.presentModal(edit ? self.eventEditor(for: event) : self.eventViewerSheet(for: event))
         case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
+          self.pendingModal.fail(code: error.code, message: error.message)
         }
       }
     }
   }
-  
+
   private func handleShowCreateEventModal(call: FlutterMethodCall, result: @escaping FlutterResult) {
     let args = call.arguments as? [String: Any] ?? [:]
+
+    guard pendingModal.begin(result) else { return }
 
     eventsService.createEventForModal(
       title: args["title"] as? String,
@@ -421,23 +401,74 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       DispatchQueue.main.async {
         switch serviceResult {
         case .success(let event):
-          guard let rootViewController = self.getRootViewController() else {
-            fatalError("Failed to get root view controller - plugin lifecycle error")
-          }
-
-          let editViewController = EKEventEditViewController()
-          editViewController.eventStore = self.eventStore
-          editViewController.event = event // nil = blank editor
-          editViewController.editViewDelegate = self
-
-          self.createEventModalResult = result
-          rootViewController.present(editViewController, animated: true, completion: nil)
-
+          self.presentModal(self.eventEditor(for: event)) // nil = blank editor
         case .failure(let error):
-          result(FlutterError(code: error.code, message: error.message, details: nil))
+          self.pendingModal.fail(code: error.code, message: error.message)
         }
       }
     }
+  }
+
+  /// The editor page sheet for `event`, or a blank editor for nil, with this
+  /// plugin as its edit delegate.
+  ///
+  /// EKEventEditViewController is itself a UINavigationController, so it's
+  /// presented directly and handles its own pull-down through its delegate —
+  /// it keeps its own presentation delegate.
+  func eventEditor(for event: EKEvent?) -> EKEventEditViewController {
+    let editor = EKEventEditViewController()
+    editor.eventStore = eventStore
+    editor.event = event
+    editor.editViewDelegate = self
+    editor.modalPresentationStyle = .pageSheet
+    return editor
+  }
+
+  /// The viewer page sheet for `event`, with this plugin as its delegate.
+  ///
+  /// EKEventViewController needs wrapping in a navigation controller for its
+  /// action buttons and dismissal to work, and swiping its sheet down doesn't
+  /// reach eventViewController(_:didCompleteWith:) — so this sheet takes the
+  /// presentation delegate too, to hear the dismissal itself (#123).
+  func eventViewerSheet(for event: EKEvent) -> UINavigationController {
+    let viewer = EKEventViewController()
+    viewer.event = event
+    // Keep the Edit button: Android's ACTION_VIEW screen also lets the user
+    // edit from the view, so allowing it here preserves cross-platform parity.
+    viewer.allowsEditing = true
+    viewer.allowsCalendarPreview = true
+    viewer.delegate = self
+    let navigationController = UINavigationController(rootViewController: viewer)
+    // Set the style before touching `presentationController`, which builds
+    // the controller for the style current at that moment.
+    navigationController.modalPresentationStyle = .pageSheet
+    navigationController.presentationController?.delegate = self
+    return navigationController
+  }
+
+  /// Presents the pending modal's controller from the top of the key window's
+  /// presentation stack. With no window to present from, the call fails
+  /// OPERATION_FAILED, as Android does with no Activity (#123).
+  private func presentModal(_ viewController: UIViewController) {
+    guard let root = rootViewController() else {
+      pendingModal.fail(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "No view controller to present the modal from")
+      return
+    }
+    Self.topPresenter(from: root).present(viewController, animated: true, completion: nil)
+  }
+
+  /// The controller to present from: the top of `root`'s presentation stack.
+  /// `present` from a controller that's already presenting something (say the
+  /// host app's own sheet) silently does nothing, which would leave the reply
+  /// pending forever. A controller on its way out doesn't count.
+  static func topPresenter(from root: UIViewController) -> UIViewController {
+    var presenter = root
+    while let presented = presenter.presentedViewController, !presented.isBeingDismissed {
+      presenter = presented
+    }
+    return presenter
   }
 
   private func handleCreateEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -654,34 +685,37 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   }
 
   // MARK: - EKEventViewControllerDelegate
-  
+
   public func eventViewController(_ controller: EKEventViewController, didCompleteWith action: EKEventViewAction) {
-    // Dismiss the modal
+    // Dismiss the modal, then reply
     controller.navigationController?.dismiss(animated: true) {
-      // Call the stored result callback after modal is dismissed
-      self.eventModalResult?(nil)
-      self.eventModalResult = nil
+      self.pendingModal.complete()
     }
   }
-  
+
   // MARK: - EKEventEditViewDelegate
 
   public func eventEditViewController(_ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction) {
+    // One modal at a time, so this is the pending one: create or edit.
     controller.dismiss(animated: true) {
-      // Resolve whichever result callback is active (create modal or edit modal)
-      if self.createEventModalResult != nil {
-        self.createEventModalResult?(nil)
-        self.createEventModalResult = nil
-      } else {
-        self.eventModalResult?(nil)
-        self.eventModalResult = nil
-      }
+      self.pendingModal.complete()
     }
   }
 
+  // MARK: - UIAdaptivePresentationControllerDelegate
+
+  /// The view modal was swiped down (only its sheet has this delegate).
+  public func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+    pendingModal.complete()
+  }
+
   // MARK: - Helper Methods
-  
-  private func getRootViewController() -> UIViewController? {
+
+  /// The key window's root controller, the base modals present from. A seam
+  /// so tests can drive the no-window case.
+  var rootViewController: () -> UIViewController? = DeviceCalendarPlusIosPlugin.keyWindowRootViewController
+
+  private static func keyWindowRootViewController() -> UIViewController? {
     // Get the key window
     if #available(iOS 13.0, *) {
       // Use window scene for iOS 13+

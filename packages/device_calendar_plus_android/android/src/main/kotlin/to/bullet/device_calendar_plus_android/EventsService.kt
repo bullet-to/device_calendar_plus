@@ -461,6 +461,28 @@ class EventsService(
     }
 
     /**
+     * The row ID [showEvent] opens for [eventId] (or, with [timestamp], the
+     * occurrence). Looked up first because firing the intent blind would open
+     * the calendar app on nothing and report success (#123): a missing event
+     * fails NOT_FOUND, as on iOS. [getEvent] gates on permission, so a denied
+     * caller hears that before anything about the ID. Provider IPC — call it
+     * off the main thread.
+     */
+    fun findEventForModal(eventId: String, timestamp: Long?): Result<Long> {
+        val found = getEvent(eventId, timestamp).getOrElse { return Result.failure(it) }
+        val rowId = eventId.toLongOrNull()
+        if (found == null || rowId == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event not found with event ID: $eventId"
+                )
+            )
+        }
+        return Result.success(rowId)
+    }
+
+    /**
      * Shows a calendar event using the system calendar app.
      *
      * Fires [Intent.ACTION_VIEW] (details, with an edit button) or, when [edit]
@@ -472,26 +494,18 @@ class EventsService(
      * there is no intent that reliably launches it straight into edit mode on an
      * existing event. `ACTION_VIEW` (the [edit] == false path) binds to the
      * event everywhere, so a dependable edit flow is view-then-tap-edit.
+     *
+     * [rowId] comes from [findEventForModal], which runs first so a missing
+     * event fails NOT_FOUND, as on iOS.
      */
-    fun showEvent(activityContext: Activity, eventId: String, timestamp: Long?, edit: Boolean, requestCode: Int): Result<Unit> {
+    fun showEvent(activityContext: Activity, rowId: Long, timestamp: Long?, edit: Boolean, requestCode: Int): Result<Unit> {
         return try {
-            // Validate permissions
-            if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
-                context.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.PERMISSION_DENIED,
-                        "Calendar permission denied. Call requestPermissions() first."
-                    )
-                )
-            }
-
             val intent = Intent(if (edit) Intent.ACTION_EDIT else Intent.ACTION_VIEW)
-            
+
             // Build event URI
             val eventUri = android.content.ContentUris.withAppendedId(
                 CalendarContract.Events.CONTENT_URI,
-                eventId.toLong()
+                rowId
             )
             intent.data = eventUri
             

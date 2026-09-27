@@ -4,6 +4,12 @@ The plugin can hand off to the OS's own calendar screens for viewing, editing,
 and creating events. Each call completes when the modal is dismissed and does
 not report back what the user changed — edits are saved directly by the OS.
 
+One modal shows at a time. Calling either method while a modal is still up
+throws `DeviceCalendarException(operationFailed)` straight away and leaves the
+open one alone, so guard your button against double taps or catch it. The same
+error comes back when there's nothing to present from (no Android Activity, no
+iOS window).
+
 ## View or edit an existing event
 
 ```dart
@@ -49,4 +55,6 @@ fallback when the user has denied access: a silent `createEvent` when granted,
 the pre-filled native form otherwise. On iOS 16 and below the editor runs
 in-process and requires full access.
 
-`showEventModal` requires full access.
+`showEventModal` requires full access, and throws
+`DeviceCalendarException(notFound)` for an event that doesn't exist (a deleted
+one, say) without opening anything.

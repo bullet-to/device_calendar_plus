@@ -11,6 +11,13 @@
 - `updateRecurring` forwards a `reminders` patch (#175).
 
 ### Fixed
+- Modal plumbing (#123): a second `showEventModal`/`showCreateEventModal`
+  while one is showing fails `OPERATION_FAILED` instead of orphaning the
+  first reply; a pending modal survives a configuration change (rotation)
+  and resolves when the activity goes away for good; no Activity replies
+  `OPERATION_FAILED` rather than an unconverted `error`; and
+  `showEventModal` looks the event up first and fails `NOT_FOUND` for one
+  that doesn't exist, matching iOS.
 - `updateEvent` or `deleteEvent` on a single occurrence of a recurring event
   on a synced calendar (Google, Exchange) no longer hides the whole series
   when the series hasn't synced yet. Until the calendar's first sync of the

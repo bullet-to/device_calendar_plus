@@ -402,3 +402,10 @@ data class CalendarException(
     override val message: String
 ) : Exception(message)
 
+/**
+ * The channel error code to reply with for [this]: a CalendarException's own
+ * code, anything else UNKNOWN_ERROR.
+ */
+internal val Throwable.channelCode: String
+    get() = if (this is CalendarException) code else PlatformExceptionCodes.UNKNOWN_ERROR
+
