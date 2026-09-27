@@ -136,6 +136,24 @@ try {
 }
 ```
 
+## Upgrading to 0.10.0
+
+`updateEvent` and `deleteEvent` now act on one thing (a one-off event, or one occurrence) and take `instanceId` instead of `eventId`. Pass `event.instanceId`; for a one-off event that's the same as `event.eventId`, so nothing else changes. Series-wide edits go through `updateRecurring` / `deleteRecurring`:
+
+```dart
+// Before
+await plugin.updateEvent(eventId: event.instanceId, title: 'Moved');
+await plugin.updateEvent(eventId: series.eventId, title: 'Renamed');
+await plugin.deleteEvent(eventId: series.eventId);
+
+// After
+await plugin.updateEvent(instanceId: event.instanceId, title: 'Moved');
+await plugin.updateRecurring(series.eventId, EventSpan.allEvents, title: 'Renamed');
+await plugin.deleteRecurring(series.eventId, EventSpan.allEvents);
+```
+
+Passing a recurring series' bare ID to `updateEvent` or `deleteEvent` throws `DeviceCalendarException` with `invalidArguments` and writes nothing.
+
 ## More docs
 
 - [Permissions](doc/permissions.md) - request, check, write-only, automatic

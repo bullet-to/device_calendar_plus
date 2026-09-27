@@ -32,11 +32,13 @@ typedef SeededSeries = ({
 });
 
 /// Creates a daily recurring event starting one hour from now (UTC), with
-/// `count` total occurrences. Returns the event ID and the start time.
+/// `count` total occurrences and any [reminders]. Returns the event ID and
+/// the start time.
 Future<({String eventId, DateTime start})> createDailySeries(
   DeviceCalendar plugin,
   String calendarId, {
   int count = 10,
+  List<Duration>? reminders,
 }) async {
   final start = DateTime.now().add(const Duration(hours: 1));
   final eventId = await plugin.createEvent(
@@ -46,6 +48,7 @@ Future<({String eventId, DateTime start})> createDailySeries(
     endDate: start.add(const Duration(hours: 1)),
     recurrenceRule: DailyRecurrence(end: CountEnd(count)),
     timeZone: 'UTC',
+    reminders: reminders,
   );
   return (eventId: eventId, start: start);
 }
@@ -240,7 +243,7 @@ Future<String> detachOccurrence(
   String title,
 ) async {
   await plugin.updateEvent(
-    eventId: series.occurrences[index].instanceId,
+    instanceId: series.occurrences[index].instanceId,
     title: title,
   );
   final detached = await eventsTitled(plugin, calendarId, title, series.start);

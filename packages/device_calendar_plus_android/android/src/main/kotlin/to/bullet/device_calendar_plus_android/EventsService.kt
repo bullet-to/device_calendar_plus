@@ -743,10 +743,11 @@ class EventsService(
     }
     
     /**
-     * Deletes an event. With a [timestamp], removes only the occurrence at
+     * Deletes one thing. With a [timestamp], removes only the occurrence at
      * that instant from its recurring series, as a cancelled exception;
-     * without one, deletes the event itself (the whole series when
-     * recurring).
+     * without one, deletes a one-off event. A bare ID of a recurring series
+     * is refused with INVALID_ARGUMENTS and nothing is deleted — whole-series
+     * deletes go through [deleteRecurring] (#175).
      */
     fun deleteEvent(eventId: String, timestamp: Long? = null): Result<Unit> {
         fullAccessFailure(context)?.let { return Result.failure(it) }
@@ -755,7 +756,7 @@ class EventsService(
             if (timestamp != null) {
                 deleteEventInstance(eventId, timestamp)
             } else {
-                deleteEventMaster(eventId)
+                deleteOneOff(eventId)
             }
         } catch (e: SecurityException) {
             Result.failure(
@@ -775,9 +776,22 @@ class EventsService(
     }
 
     /**
-     * The bare-event-ID path of [deleteEvent]: deletes the event row itself —
-     * the whole series when recurring — and any detached occurrences keyed
-     * to it by `original_id`.
+     * The bare-event-ID path of [deleteEvent]: deletes a one-off event.
+     * NOT_FOUND when the event is missing or a DELETED tombstone, and a
+     * recurring series is refused before any delete — both checked against
+     * the live row, as [updateOneOff] does.
+     */
+    private fun deleteOneOff(eventId: String): Result<Unit> {
+        val row = store.readEventRow(eventId).getOrElse { return Result.failure(it) }
+            .asOneOff(OneThingOperation.DELETE).getOrElse { return Result.failure(it) }
+        return deleteEventWithExceptions(eventId, row.account)
+    }
+
+    /**
+     * Deletes event row [eventId] and any detached occurrences keyed to it by
+     * `original_id`, through [account]'s delete URI (null when the row is gone
+     * altogether) — the shared primitive behind [deleteOneOff] and
+     * [deleteRecurring]'s `allEvents` span, where it removes the whole series.
      *
      * The exceptions have to be named here because the provider cascades a
      * series delete only to a master with no `_sync_id`, and both a synced
@@ -788,8 +802,15 @@ class EventsService(
      * master is gone but its exceptions are not. A consequence worth keeping:
      * exceptions orphaned by a master that is already gone still match, so
      * deleting that ID cleans them up and reports success, not NOT_FOUND.
+     *
+     * The null account, the local-tombstone case and the orphaned-exception
+     * case arise only from [deleteRecurring]'s `allEvents` span:
+     * [deleteOneOff] reaches this only with a live one-off row.
      */
-    private fun deleteEventMaster(eventId: String): Result<Unit> {
+    private fun deleteEventWithExceptions(
+        eventId: String,
+        account: CalendarAccount?
+    ): Result<Unit> {
         // On a synced calendar this tombstones the rows (DELETED=1) for the
         // adapter to upload; on a local one it removes them — see
         // SeriesRowStore.deleteUri.
@@ -798,7 +819,6 @@ class EventsService(
         // far as the caller can tell, so a repeat delete reports NOT_FOUND,
         // as on iOS and on a local calendar. A local tombstone stays in,
         // since no adapter will collect it and removing it is the point.
-        val account = accountOfEventRow(eventId)
         var selection = "(${CalendarContract.Events._ID} = ? OR " +
             "${CalendarContract.Events.ORIGINAL_ID} = ?)"
         if (account != null && !account.isLocal) {
@@ -823,9 +843,11 @@ class EventsService(
     }
     
     /**
-     * Updates an event. With a [timestamp], detaches the occurrence at that
+     * Updates one thing. With a [timestamp], detaches the occurrence at that
      * instant from its recurring series and applies the changes to it alone;
-     * without one, updates the event itself (the whole series when recurring).
+     * without one, updates a one-off event. A bare ID of a recurring series
+     * is refused with INVALID_ARGUMENTS and nothing is written — series edits
+     * go through [updateRecurring] (#175).
      */
     fun updateEvent(
         eventId: String,
@@ -840,7 +862,7 @@ class EventsService(
             if (timestamp != null) {
                 updateEventInstance(eventId, timestamp, startDate, endDate, patch)
             } else {
-                updateEventMaster(eventId, startDate, endDate, patch)
+                updateOneOff(eventId, startDate, endDate, patch)
             }
         } catch (e: SecurityException) {
             Result.failure(
@@ -860,10 +882,10 @@ class EventsService(
     }
 
     /**
-     * The bare-event-ID path of [updateEvent]: updates the event row itself —
-     * the whole series when recurring.
+     * The bare-event-ID path of [updateEvent]: updates a one-off event's row.
+     * A recurring series is refused before any write.
      */
-    private fun updateEventMaster(
+    private fun updateOneOff(
         eventId: String,
         startDate: java.util.Date?,
         endDate: java.util.Date?,
@@ -872,6 +894,7 @@ class EventsService(
         // The existing row decides all-day date normalization when the call
         // doesn't change the flag.
         val row = store.readEventRow(eventId).getOrElse { return Result.failure(it) }
+            .asOneOff(OneThingOperation.UPDATE).getOrElse { return Result.failure(it) }
 
         // Build ContentValues with only provided fields
         val values = android.content.ContentValues()
@@ -1370,7 +1393,7 @@ class EventsService(
 
         return try {
             when (span) {
-                "allEvents" -> deleteEvent(eventId)
+                "allEvents" -> deleteEventWithExceptions(eventId, accountOfEventRow(eventId))
                 "thisAndFollowing" -> deleteRecurringThisAndFollowing(eventId, timestamp)
                 else -> Result.failure(
                     CalendarException(
@@ -1715,8 +1738,8 @@ class EventsService(
     }
 
     /**
-     * The account of event row [eventId], for [deleteEventMaster] to build
-     * its delete from, or null when the row is gone altogether. Reads
+     * The account of event row [eventId], for [deleteRecurring]'s `allEvents`
+     * span to build its delete from, or null when the row is gone altogether. Reads
      * through a DELETED tombstone on purpose: a local one is still to be
      * collected.
      */

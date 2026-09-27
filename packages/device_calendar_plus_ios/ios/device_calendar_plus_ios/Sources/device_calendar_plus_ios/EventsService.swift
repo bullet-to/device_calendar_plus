@@ -875,9 +875,115 @@ class EventsService {
     return parts.joined(separator: ";")
   }
   
-  /// Deletes an event. With a `timestamp`, removes only the occurrence at
-  /// that instant from its recurring series; without one, deletes the event
-  /// itself (the whole series when recurring).
+  /// The single-target operations — `updateEvent` and `deleteEvent` — and the
+  /// series-wide call each one points at when handed a bare series ID.
+  private enum OneThingOperation {
+    case update
+    case delete
+
+    var replacement: String {
+      switch self {
+      case .update: return "updateRecurring"
+      case .delete: return "deleteRecurring"
+      }
+    }
+
+    var verb: String {
+      switch self {
+      case .update: return "change"
+      case .delete: return "delete"
+      }
+    }
+  }
+
+  /// Looks up the event an operation acts on: the occurrence at `timestamp`
+  /// when given, otherwise the event (or series master) itself. Fails with
+  /// `notFound` when there is no such event.
+  private func resolveTarget(
+    eventId: String,
+    timestamp: Int64?
+  ) -> Result<EKEvent, CalendarError> {
+    let targetEvent: EKEvent?
+    if let timestamp = timestamp {
+      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
+    } else {
+      targetEvent = eventStore.event(withIdentifier: eventId)
+    }
+
+    guard let event = targetEvent else {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.notFound,
+        message: "Event not found with event ID: \(eventId)"
+      ))
+    }
+    return .success(event)
+  }
+
+  /// Resolves the one thing `updateEvent` / `deleteEvent` act on: the
+  /// occurrence at `timestamp` when given, otherwise the event itself. Fails
+  /// with `notFound` when there is no such event, then enforces the one-thing
+  /// rule — a `timestamp` is given exactly when the event is recurring. A
+  /// timestamp on a one-off is refused, and so is a bare ID of a recurring
+  /// series: a series-wide change goes through `operation.replacement` with
+  /// `EventSpan.allEvents` (#175).
+  private func resolveOneThing(
+    eventId: String,
+    timestamp: Int64?,
+    operation: OneThingOperation
+  ) -> Result<EKEvent, CalendarError> {
+    let event: EKEvent
+    switch resolveTarget(eventId: eventId, timestamp: timestamp) {
+    case .failure(let error):
+      return .failure(error)
+    case .success(let found):
+      event = found
+    }
+
+    if timestamp != nil && !event.hasRecurrenceRules {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Event \(eventId) is not recurring; pass a bare event ID instead"
+      ))
+    }
+
+    if timestamp == nil && event.hasRecurrenceRules {
+      let verb = operation.verb
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Event \(eventId) is a recurring series. To \(verb) the whole "
+          + "series use \(operation.replacement)(id, EventSpan.allEvents); to \(verb) one "
+          + "occurrence pass its instanceId."
+      ))
+    }
+
+    return .success(event)
+  }
+
+  /// Resolves the event `updateRecurring` / `deleteRecurring` act on for
+  /// `span`. "allEvents" works from the master (the whole series);
+  /// "thisAndFollowing" works from the specific occurrence at `timestamp`,
+  /// and fails with `invalidArguments` when no timestamp is given. Fails with
+  /// `notFound` when there is no such event.
+  private func resolveSeriesTarget(
+    eventId: String,
+    timestamp: Int64?,
+    span: String
+  ) -> Result<EKEvent, CalendarError> {
+    let isThisAndFollowing = span == "thisAndFollowing"
+    if isThisAndFollowing && timestamp == nil {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "\(span) requires an occurrence timestamp"
+      ))
+    }
+    return resolveTarget(eventId: eventId, timestamp: isThisAndFollowing ? timestamp : nil)
+  }
+
+  /// Deletes one thing. With a `timestamp`, removes only the occurrence at
+  /// that instant from its recurring series; without one, deletes a one-off
+  /// event. A bare ID of a recurring series is refused with
+  /// `invalidArguments` and nothing is deleted — whole-series deletes go
+  /// through `deleteRecurring` (#175).
   func deleteEvent(
     eventId: String,
     timestamp: Int64?,
@@ -892,38 +998,19 @@ class EventsService {
       return
     }
 
-    // Resolve the event to act on: the occurrence at `timestamp` when given,
-    // otherwise the event (master) itself.
-    let targetEvent: EKEvent?
-    if let timestamp = timestamp {
-      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
-    } else {
-      targetEvent = eventStore.event(withIdentifier: eventId)
-    }
-
-    guard let foundEvent = targetEvent else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.notFound,
-        message: "Event not found with event ID: \(eventId)"
-      )))
+    let foundEvent: EKEvent
+    switch resolveOneThing(eventId: eventId, timestamp: timestamp, operation: .delete) {
+    case .failure(let error):
+      completion(.failure(error))
       return
+    case .success(let event):
+      foundEvent = event
     }
 
-    if timestamp != nil && !foundEvent.hasRecurrenceRules {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
-        message: "Event \(eventId) is not recurring; pass a bare event ID instead"
-      )))
-      return
-    }
-
-    // An occurrence delete removes .thisEvent only. A bare event ID removes
-    // the whole series (.futureEvents from the master; on a non-recurring
-    // event that behaves like .thisEvent).
-    let span: EKSpan = (timestamp != nil) ? .thisEvent : .futureEvents
-
+    // One thing only: an occurrence or a one-off (a bare series ID was
+    // refused above), so .thisEvent can never reach the rest of a series.
     do {
-      try eventStore.remove(foundEvent, span: span)
+      try eventStore.remove(foundEvent, span: .thisEvent)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
@@ -933,9 +1020,11 @@ class EventsService {
     }
   }
 
-  /// Updates an event. With a `timestamp`, detaches the occurrence at that
+  /// Updates one thing. With a `timestamp`, detaches the occurrence at that
   /// instant from its recurring series and applies the changes to it alone;
-  /// without one, updates the event itself (the whole series when recurring).
+  /// without one, updates a one-off event. A bare ID of a recurring series is
+  /// refused with `invalidArguments` and nothing is written — series edits go
+  /// through `updateRecurring` (#175).
   func updateEvent(
     eventId: String,
     timestamp: Int64?,
@@ -953,29 +1042,13 @@ class EventsService {
       return
     }
 
-    // Resolve the event to act on: the occurrence at `timestamp` when given,
-    // otherwise the event (master) itself.
-    let targetEvent: EKEvent?
-    if let timestamp = timestamp {
-      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
-    } else {
-      targetEvent = eventStore.event(withIdentifier: eventId)
-    }
-
-    guard let foundEvent = targetEvent else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.notFound,
-        message: "Event not found with event ID: \(eventId)"
-      )))
+    let foundEvent: EKEvent
+    switch resolveOneThing(eventId: eventId, timestamp: timestamp, operation: .update) {
+    case .failure(let error):
+      completion(.failure(error))
       return
-    }
-
-    if timestamp != nil && !foundEvent.hasRecurrenceRules {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
-        message: "Event \(eventId) is not recurring; pass a bare event ID instead"
-      )))
-      return
+    case .success(let event):
+      foundEvent = event
     }
 
     // An occurrence edit leaves an omitted date at the occurrence's own
@@ -1000,14 +1073,10 @@ class EventsService {
     if let endDate = endDate { foundEvent.endDate = endDate }
     patch.applyTimeZone(to: foundEvent)
 
-    // An occurrence edit saves .thisEvent, detaching it as an exception. A
-    // bare event ID follows the whole series (.futureEvents from the master;
-    // on a non-recurring event that behaves like .thisEvent).
-    let span: EKSpan = (timestamp != nil) ? .thisEvent : .futureEvents
-
-    // Save updated event
+    // One thing only: an occurrence edit detaches it as an exception, and a
+    // one-off saves as itself (a bare series ID was refused above).
     do {
-      try eventStore.save(foundEvent, span: span, commit: true)
+      try eventStore.save(foundEvent, span: .thisEvent, commit: true)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
@@ -1244,6 +1313,17 @@ class EventsService {
     standalone.url = occurrence.url
     standalone.timeZone = occurrence.timeZone
     standalone.availability = occurrence.availability
+    // The occurrence already carries any reminders patch, so the standalone
+    // takes its alarms — as Android's new series takes the patched (or
+    // inherited) reminder rows. An EKAlarm belongs to one event, so build
+    // fresh ones: handing over `copy()`s of an inherited alarm strips it from
+    // the series the split leaves behind. Only the time trigger is copied: a
+    // location (geofence) alarm set by another app becomes a plain time alarm
+    // here — deliberate, since the plugin neither reads nor writes those.
+    standalone.alarms = occurrence.alarms?.map { alarm in
+      alarm.absoluteDate.map { EKAlarm(absoluteDate: $0) }
+        ?? EKAlarm(relativeOffset: alarm.relativeOffset)
+    }
 
     // Two-phase save: stage the truncation uncommitted, then commit both with
     // the standalone. On failure `reset()` discards both so the calendar is
@@ -1286,29 +1366,13 @@ class EventsService {
       return
     }
 
-    // Resolve the event to act on. "allEvents" works from the master (the
-    // whole series); "thisAndFollowing" works from the specific occurrence
-    // at `timestamp`.
-    let targetEvent: EKEvent?
-    if span == "thisAndFollowing" {
-      guard let timestamp = timestamp else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "\(span) requires an occurrence timestamp"
-        )))
-        return
-      }
-      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
-    } else {
-      targetEvent = eventStore.event(withIdentifier: eventId)
-    }
-
-    guard let foundEvent = targetEvent else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.notFound,
-        message: "Event not found with event ID: \(eventId)"
-      )))
+    let foundEvent: EKEvent
+    switch resolveSeriesTarget(eventId: eventId, timestamp: timestamp, span: span) {
+    case .failure(let error):
+      completion(.failure(error))
       return
+    case .success(let event):
+      foundEvent = event
     }
 
     // All-day events have no time-of-day and only whole-day durations. The
@@ -1429,29 +1493,13 @@ class EventsService {
       return
     }
 
-    // Resolve the event to act on. "allEvents" works from the master (the
-    // whole series); "thisAndFollowing" works from the specific occurrence
-    // at `timestamp`.
-    let targetEvent: EKEvent?
-    if span == "thisAndFollowing" {
-      guard let timestamp = timestamp else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "\(span) requires an occurrence timestamp"
-        )))
-        return
-      }
-      targetEvent = findOccurrence(eventId: eventId, timestamp: timestamp)
-    } else {
-      targetEvent = eventStore.event(withIdentifier: eventId)
-    }
-
-    guard let foundEvent = targetEvent else {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.notFound,
-        message: "Event not found with event ID: \(eventId)"
-      )))
+    let foundEvent: EKEvent
+    switch resolveSeriesTarget(eventId: eventId, timestamp: timestamp, span: span) {
+    case .failure(let error):
+      completion(.failure(error))
       return
+    case .success(let event):
+      foundEvent = event
     }
 
     // Both spans remove with .futureEvents: from the master that removes the

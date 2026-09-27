@@ -63,7 +63,7 @@ void main() {
       );
       await markUploaded(eventId);
 
-      await plugin.deleteEvent(eventId: eventId);
+      await plugin.deleteEvent(instanceId: eventId);
 
       expect(await plugin.getEvent(eventId), isNull,
           reason: 'the deleted event must read as gone');
@@ -87,9 +87,9 @@ void main() {
         endDate: start.add(const Duration(hours: 1)),
       );
       await markUploaded(eventId);
-      await plugin.deleteEvent(eventId: eventId);
+      await plugin.deleteEvent(instanceId: eventId);
 
-      await expectLater(plugin.deleteEvent(eventId: eventId), throwsNotFound,
+      await expectLater(plugin.deleteEvent(instanceId: eventId), throwsNotFound,
           reason: 'the event is already deleted as far as the caller can '
               'tell: getEvent reads it as gone, so deleteEvent must agree');
       expect(await readSyncState(eventId), (deleted: true, dirty: true),
@@ -101,7 +101,7 @@ void main() {
       final series = await seedUploadedSeries(plugin, calendarId);
       final occurrence = series.occurrences[3];
 
-      await plugin.deleteEvent(eventId: occurrence.instanceId);
+      await plugin.deleteEvent(instanceId: occurrence.instanceId);
 
       expect(
         startsOf(await occurrencesOf(
@@ -132,7 +132,7 @@ void main() {
       (
         'updateEvent',
         (DeviceCalendar plugin, SeededSeries series) => plugin.updateEvent(
-            eventId: series.occurrences[editedSlot].instanceId,
+            instanceId: series.occurrences[editedSlot].instanceId,
             title: editedTitle),
         editedTitle,
       ),
@@ -140,7 +140,7 @@ void main() {
         'deleteEvent',
         (DeviceCalendar plugin, SeededSeries series) =>
             plugin.deleteEvent(
-                eventId: series.occurrences[editedSlot].instanceId),
+                instanceId: series.occurrences[editedSlot].instanceId),
         null,
       ),
     ]) {
@@ -292,7 +292,7 @@ void main() {
       // The occurrence's own edits, each of which the copy must keep: the
       // plugin's writable fields, a color and a guest another app set.
       await plugin.updateEvent(
-          eventId: exceptionId,
+          instanceId: exceptionId,
           description: Patch.set('Detached description $tag'),
           location: Patch.set('Detached location $tag'),
           availability: EventAvailability.free,
@@ -378,7 +378,7 @@ void main() {
       final series = await seedUploadedSeries(plugin, calendarId);
       final tag = DateTime.now().millisecondsSinceEpoch;
       final slot = series.occurrences[5].startDate;
-      await plugin.deleteEvent(eventId: series.occurrences[5].instanceId);
+      await plugin.deleteEvent(instanceId: series.occurrences[5].instanceId);
       final cancellationId = await exceptionIdOf(series.eventId, slot);
       expect(cancellationId, isNotNull,
           reason: 'the delete must be a cancelled exception row of the series');

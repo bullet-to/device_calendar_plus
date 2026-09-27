@@ -76,26 +76,28 @@ For the calendar's own color, see [calendars.md](calendars.md).
 
 ## Update
 
-Pass an event ID to update the event (the whole series when recurring), or an
-instance ID to detach and edit one occurrence.
+`updateEvent` and `deleteEvent` act on one thing: a one-off event, or one
+occurrence of a recurring series. Pass `event.instanceId`. For a one-off event
+it equals `event.eventId`; for an occurrence it names just that occurrence,
+which detaches as an exception and is edited alone.
 
 ```dart
-await plugin.updateEvent(eventId: event.eventId, title: 'New title');
+await plugin.updateEvent(instanceId: event.instanceId, title: 'New title');
 
 // description, location, and url take a Patch:
 // omit = leave unchanged, Patch.set(v) = change, Patch.clear() = remove.
 await plugin.updateEvent(
-  eventId: event.eventId,
+  instanceId: event.instanceId,
   location: Patch.set('Room B'),
   description: Patch.clear(),
 );
 
 // Switch between timed and all-day.
-await plugin.updateEvent(eventId: event.eventId, isAllDay: true);
+await plugin.updateEvent(instanceId: event.instanceId, isAllDay: true);
 
 // Edit only this occurrence of a recurring event (it detaches as an exception).
 await plugin.updateEvent(
-  eventId: event.instanceId,
+  instanceId: event.instanceId,
   startDate: DateTime(2024, 3, 21, 15, 0),
   endDate: DateTime(2024, 3, 21, 16, 0),
 );
@@ -104,17 +106,23 @@ await plugin.updateEvent(
 Switching `isAllDay` reinterprets the times: timed → all-day strips the start
 and end to midnight; all-day → timed starts them at midnight. Setting `timeZone`
 reinterprets the wall-clock time rather than preserving the instant. Passing no
-fields is a no-op. To edit a recurring **series**, use `updateRecurring`
-([recurring-events.md](recurring-events.md)).
+fields is a no-op.
+
+To edit a recurring **series**, use `updateRecurring`
+([recurring-events.md](recurring-events.md)). A bare series ID
+(`event.eventId` of a recurring event) is refused by `updateEvent` and
+`deleteEvent` with `DeviceCalendarError.invalidArguments`, and nothing is
+written. That stops an easy mistake: moving a series' start through
+`updateEvent` would drop every earlier occurrence without an error.
 
 ## Delete
 
 ```dart
-// The event (the whole series, if recurring).
-await plugin.deleteEvent(eventId: event.eventId);
+// A one-off event, or only this occurrence of a recurring one.
+await plugin.deleteEvent(instanceId: event.instanceId);
 
-// Only this occurrence.
-await plugin.deleteEvent(eventId: event.instanceId);
+// The whole series.
+await plugin.deleteRecurring(event.eventId, EventSpan.allEvents);
 ```
 
 Reading, updating, and deleting require full access; creating works with

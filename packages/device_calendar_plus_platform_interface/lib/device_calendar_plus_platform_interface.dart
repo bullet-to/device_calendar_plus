@@ -202,8 +202,9 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// [timestamp] selects a single occurrence of a recurring series (epoch
   /// milliseconds). When given, the platform removes only that occurrence,
-  /// as a cancelled exception. When `null`, the delete targets the event
-  /// itself — the whole series for a recurring event.
+  /// as a cancelled exception. When `null`, the delete targets a one-off
+  /// event; a recurring series is refused with `INVALID_ARGUMENTS` and left
+  /// untouched (whole-series deletes go through [deleteRecurring]).
   ///
   /// Requires calendar write permissions.
   Future<void> deleteEvent(String eventId, {int? timestamp});
@@ -215,7 +216,9 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// [timestamp] selects a single occurrence of a recurring series (epoch
   /// milliseconds). When given, the platform detaches that occurrence as an
   /// exception and applies the changes to it alone. When `null`, the update
-  /// targets the event itself — the whole series for a recurring event.
+  /// targets a one-off event; a recurring series is refused with
+  /// `INVALID_ARGUMENTS` and left untouched (series edits go through
+  /// [updateRecurring]).
   ///
   /// All field parameters are optional - only provided fields will be updated:
   /// - [title] - new event title
@@ -275,6 +278,9 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// [description], [location] and [url] take a [Patch] of the field value.
   /// [recurrenceRule] takes a [Patch] of the RRULE string: [Patch.set]
   /// changes the rule, [Patch.clear] removes it (the event stops recurring).
+  /// [reminders] takes a `Patch<List<int>>` of whole minutes before start, as
+  /// in [updateEvent]: [Patch.set] replaces the scope's reminders,
+  /// [Patch.clear] removes them.
   ///
   /// Returns the event ID for the affected scope — the same ID for
   /// `allEvents`, the new series' ID for `thisAndFollowing`.
@@ -292,6 +298,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? timeZone,
     String? availability,
     Patch<String>? recurrenceRule,
+    Patch<List<int>>? reminders,
   });
 
   /// Deletes a recurring event's series, choosing which occurrences are

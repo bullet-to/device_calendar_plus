@@ -61,9 +61,30 @@ start may differ across platforms.
 
 `listEvents` expands a series into one `Event` per occurrence. Each shares the
 same `eventId` but has a distinct `instanceId` (format `eventId@timestamp`) that
-pins the occurrence. Pass `instanceId` to act on a single occurrence; pass the
-bare `eventId` to act on the whole series. The instance ID is unstable — it
-changes if the occurrence moves — so re-fetch after edits.
+pins the occurrence. The instance ID is unstable — it changes if the
+occurrence moves — so re-fetch after edits.
+
+One rule decides which method to call:
+
+- **One occurrence** — `updateEvent` / `deleteEvent` with its `instanceId`.
+- **The series** (or this-and-following) — `updateRecurring` /
+  `deleteRecurring` with an `EventSpan`.
+
+`updateEvent` and `deleteEvent` refuse a bare series ID (`event.eventId` of a
+recurring event) with `DeviceCalendarError.invalidArguments` and write
+nothing, so a series-wide change can't happen by accident.
+
+```dart
+// Move just this occurrence.
+await plugin.updateEvent(
+  instanceId: event.instanceId,
+  startDate: DateTime(2024, 3, 21, 15, 0),
+  endDate: DateTime(2024, 3, 21, 16, 0),
+);
+
+// Delete the whole series.
+await plugin.deleteRecurring(event.eventId, EventSpan.allEvents);
+```
 
 ## Editing a series
 
@@ -101,6 +122,13 @@ await plugin.updateRecurring(
   event.instanceId,
   EventSpan.allEvents,
   recurrenceRule: Patch.clear(), // becomes a single non-recurring event
+);
+
+// Set (or clear) the reminders on every occurrence.
+await plugin.updateRecurring(
+  event.instanceId,
+  EventSpan.allEvents,
+  reminders: Patch.set([Duration(minutes: 15)]),
 );
 
 // Split: this occurrence and later ones move; returns the new series' ID.

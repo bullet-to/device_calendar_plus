@@ -30,7 +30,7 @@ Future<bool> calendarSupportsAvailability(
     availability: EventAvailability.busy,
   );
   final probe = await plugin.getEvent(probeId);
-  await plugin.deleteEvent(eventId: probeId);
+  await plugin.deleteEvent(instanceId: probeId);
   return probe?.availability == EventAvailability.busy;
 }
 
@@ -513,7 +513,7 @@ void main() {
         // The platform resolved a concrete calendar for us.
         expect(fetched.calendarId, isNotEmpty);
       } finally {
-        await plugin.deleteEvent(eventId: eventId);
+        await plugin.deleteEvent(instanceId: eventId);
       }
     });
 
@@ -791,7 +791,7 @@ void main() {
       expect(eventsBefore, isNotEmpty);
 
       // Delete the event
-      await plugin.deleteEvent(eventId: eventId);
+      await plugin.deleteEvent(instanceId: eventId);
 
       // Verify event no longer exists
       final eventsAfter = await plugin.listEvents(
@@ -889,7 +889,7 @@ void main() {
 
       // 3. Update to 'free'
       await plugin.updateEvent(
-        eventId: eventId,
+        instanceId: eventId,
         availability: EventAvailability.free,
       );
 
@@ -899,7 +899,7 @@ void main() {
 
       // 5. Update to 'tentative'
       await plugin.updateEvent(
-        eventId: eventId,
+        instanceId: eventId,
         availability: EventAvailability.tentative,
       );
 
@@ -926,7 +926,7 @@ void main() {
 
       // Update title
       await plugin.updateEvent(
-        eventId: eventId,
+        instanceId: eventId,
         title: 'Updated Title',
       );
 
@@ -959,7 +959,7 @@ void main() {
       final newEnd = DateTime.now().add(Duration(days: 1, hours: 4));
 
       await plugin.updateEvent(
-        eventId: eventId,
+        instanceId: eventId,
         startDate: newStart,
         endDate: newEnd,
       );
@@ -967,8 +967,11 @@ void main() {
       // Verify update
       final event = await plugin.getEvent(eventId);
       expect(event, isNotNull);
+      expect(event!.instanceId, eventId,
+          reason: "a one-off's instanceId is its eventId, so updateEvent "
+              'takes either (#175)');
       // Allow small time differences (within 1 minute)
-      expect(event!.startDate.difference(newStart).abs(),
+      expect(event.startDate.difference(newStart).abs(),
           lessThan(Duration(minutes: 1)));
       expect(event.endDate.difference(newEnd).abs(),
           lessThan(Duration(minutes: 1)));
@@ -993,7 +996,7 @@ void main() {
 
       // Update multiple fields
       await plugin.updateEvent(
-        eventId: eventId,
+        instanceId: eventId,
         description: Patch.set('Updated description'),
         location: Patch.set('Updated location'),
       );
@@ -1022,7 +1025,7 @@ void main() {
 
       final wholeSecond = (timestamp ~/ 1000 + 3 * 3600) * 1000;
       await plugin.updateEvent(
-        eventId: eventId,
+        instanceId: eventId,
         startDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 671),
         endDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 3600671),
       );
@@ -1055,7 +1058,7 @@ void main() {
 
       // Update to all-day
       await plugin.updateEvent(
-        eventId: eventId,
+        instanceId: eventId,
         isAllDay: true,
       );
 
@@ -1092,7 +1095,7 @@ void main() {
       final newEnd = DateTime(today.year, today.month, today.day, 11, 0);
 
       await plugin.updateEvent(
-        eventId: eventId,
+        instanceId: eventId,
         isAllDay: false,
         startDate: newStart,
         endDate: newEnd,
@@ -1129,7 +1132,7 @@ void main() {
       // Update to Los Angeles timezone
       // Note: This reinterprets the local time, not preserving the instant
       await plugin.updateEvent(
-        eventId: eventId,
+        instanceId: eventId,
         timeZone: 'America/Los_Angeles',
       );
 
@@ -1155,7 +1158,7 @@ void main() {
 
       // Updating with no fields must succeed quietly and leave the event
       // unchanged (a save with no edits is a legitimate no-op).
-      await plugin.updateEvent(eventId: eventId);
+      await plugin.updateEvent(instanceId: eventId);
 
       final event = await plugin.getEvent(eventId);
       expect(event, isNotNull);
@@ -1188,7 +1191,7 @@ void main() {
       expect(event!.url, isNull);
 
       final url = 'https://example.com/event/$timestamp';
-      await plugin.updateEvent(eventId: eventId, url: Patch.set(url));
+      await plugin.updateEvent(instanceId: eventId, url: Patch.set(url));
 
       event = await plugin.getEvent(eventId);
       expect(event, isNotNull);
@@ -1220,7 +1223,7 @@ void main() {
 
       // Set description, clear location, leave url untouched.
       await plugin.updateEvent(
-        eventId: eventId,
+        instanceId: eventId,
         description: Patch.set('New description'),
         location: Patch.clear(),
       );

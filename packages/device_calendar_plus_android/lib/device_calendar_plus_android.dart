@@ -235,6 +235,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     String? timeZone,
     String? availability,
     Patch<String>? recurrenceRule,
+    Patch<List<int>>? reminders,
   }) async {
     final args = <String, dynamic>{
       'eventId': eventId,
@@ -252,6 +253,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
       'location': location,
       'url': url,
       'recurrenceRule': recurrenceRule,
+      'reminders': reminders,
     });
     final result =
         await methodChannel.invokeMethod<String>('updateRecurring', args);

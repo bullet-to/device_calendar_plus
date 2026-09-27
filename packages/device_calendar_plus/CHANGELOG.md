@@ -1,3 +1,29 @@
+## Unreleased (0.10.0)
+
+### Changed
+- **Breaking:** `updateEvent` and `deleteEvent` act on one thing — a one-off
+  event or a single occurrence — and take `instanceId` instead of `eventId`.
+  A bare ID of a recurring series is refused with
+  `DeviceCalendarException(invalidArguments)` and nothing is written. Moving a
+  series' start through `updateEvent` used to shift the whole series and drop
+  every earlier occurrence without an error; series-wide changes now go
+  through `updateRecurring` / `deleteRecurring` (#175).
+
+  Migrating:
+  - `updateEvent(eventId: event.instanceId, …)` →
+    `updateEvent(instanceId: event.instanceId, …)`. Same for `deleteEvent`.
+    For a one-off event `instanceId` equals `eventId`, so nothing else
+    changes.
+  - `updateEvent(eventId: seriesId, …)` on a recurring event →
+    `updateRecurring(seriesId, EventSpan.allEvents, …)`. `startDate` /
+    `endDate` map to `start` / `duration`; the other fields are the same.
+  - `deleteEvent(eventId: seriesId)` on a recurring event →
+    `deleteRecurring(seriesId, EventSpan.allEvents)`.
+
+### Added
+- `updateRecurring` takes `reminders` (a `Patch<List<Duration>>`), to set or
+  clear reminders across a series, as `updateEvent` does for one event (#175).
+
 ## 0.9.0 - 2026-09-26
 
 ### Changed

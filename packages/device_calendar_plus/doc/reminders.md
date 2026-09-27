@@ -27,12 +27,23 @@ set, `Patch.clear` removes all reminders:
 
 ```dart
 await plugin.updateEvent(
-  eventId: event.eventId,
+  instanceId: event.instanceId,
   reminders: Patch.set([Duration(minutes: 30)]),
 );
 
 await plugin.updateEvent(
-  eventId: event.eventId,
+  instanceId: event.instanceId,
   reminders: Patch.clear(),
+);
+```
+
+For a recurring series, `updateRecurring` takes the same patch and applies it
+across the scope:
+
+```dart
+await plugin.updateRecurring(
+  event.eventId,
+  EventSpan.allEvents,
+  reminders: Patch.set([Duration(minutes: 30)]),
 );
 ```
