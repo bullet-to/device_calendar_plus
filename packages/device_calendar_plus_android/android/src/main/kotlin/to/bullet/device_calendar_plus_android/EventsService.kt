@@ -472,26 +472,42 @@ class EventsService(
      * there is no intent that reliably launches it straight into edit mode on an
      * existing event. `ACTION_VIEW` (the [edit] == false path) binds to the
      * event everywhere, so a dependable edit flow is view-then-tap-edit.
+     *
+     * The event (or, with [timestamp], the occurrence) is looked up first and
+     * a missing one fails NOT_FOUND, as on iOS — firing the intent blind would
+     * open the calendar app on nothing and report success (#123).
      */
     fun showEvent(activityContext: Activity, eventId: String, timestamp: Long?, edit: Boolean, requestCode: Int): Result<Unit> {
-        return try {
-            // Validate permissions
-            if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
-                context.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.PERMISSION_DENIED,
-                        "Calendar permission denied. Call requestPermissions() first."
-                    )
+        // Permission first, as on iOS: a denied caller hears that before
+        // anything about the ID.
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+            context.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.PERMISSION_DENIED,
+                    "Calendar permission denied. Call requestPermissions() first."
                 )
-            }
+            )
+        }
 
+        val notFound = Result.failure<Unit>(
+            CalendarException(
+                PlatformExceptionCodes.NOT_FOUND,
+                "Event not found with event ID: $eventId"
+            )
+        )
+        val rowId = eventId.toLongOrNull() ?: return notFound
+        val lookup = getEvent(eventId, timestamp)
+        lookup.exceptionOrNull()?.let { return Result.failure(it) }
+        if (lookup.getOrNull() == null) return notFound
+
+        return try {
             val intent = Intent(if (edit) Intent.ACTION_EDIT else Intent.ACTION_VIEW)
-            
+
             // Build event URI
             val eventUri = android.content.ContentUris.withAppendedId(
                 CalendarContract.Events.CONTENT_URI,
-                eventId.toLong()
+                rowId
             )
             intent.data = eventUri
             

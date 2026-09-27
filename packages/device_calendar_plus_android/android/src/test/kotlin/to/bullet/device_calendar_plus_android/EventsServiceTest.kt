@@ -1,9 +1,11 @@
 package to.bullet.device_calendar_plus_android
 
+import android.app.Activity
 import android.content.Context
 import org.mockito.Mockito
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 internal class EventsServiceTest {
     private val service = EventsService(
@@ -37,5 +39,18 @@ internal class EventsServiceTest {
         assertEquals("busy", availabilityToString(0))
         assertEquals("free", availabilityToString(1))
         assertEquals("tentative", availabilityToString(2))
+    }
+
+    // Regression (#123): a non-numeric ID fired ACTION_VIEW blind — it failed
+    // UNKNOWN_ERROR from toLong(), where iOS looks the event up and fails
+    // notFound.
+    @Test
+    fun showEvent_nonNumericId_failsNotFound() {
+        val result = service.showEvent(
+            Mockito.mock(Activity::class.java), "not-an-id", null, false, 1001
+        )
+
+        val error = assertIs<CalendarException>(result.exceptionOrNull())
+        assertEquals(PlatformExceptionCodes.NOT_FOUND, error.code)
     }
 }
