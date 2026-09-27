@@ -96,6 +96,35 @@ internal fun EventRow.asSeries(): Result<SeriesRow> {
 }
 
 /**
+ * The single-target operations — `updateEvent` and `deleteEvent` — and the
+ * series-wide call each one points at when handed a bare series ID.
+ */
+internal enum class OneThingOperation(val replacement: String, val verb: String) {
+    UPDATE("updateRecurring", "change"),
+    DELETE("deleteRecurring", "delete")
+}
+
+/**
+ * This master row as a one-off, the mirror of [asSeries]: INVALID_ARGUMENTS
+ * when it is a recurring series addressed by its bare ID. [operation] acts on
+ * one thing — a one-off event or one occurrence — so a series-wide change has
+ * to go through its [OneThingOperation.replacement] with
+ * `EventSpan.allEvents` (#175).
+ */
+internal fun EventRow.asOneOff(operation: OneThingOperation): Result<EventRow> {
+    if (rrule == null) return Result.success(this)
+    val verb = operation.verb
+    return Result.failure(
+        CalendarException(
+            PlatformExceptionCodes.INVALID_ARGUMENTS,
+            "Event $id is a recurring series. To $verb the whole series " +
+                "use ${operation.replacement}(id, EventSpan.allEvents); to $verb one " +
+                "occurrence pass its instanceId."
+        )
+    )
+}
+
+/**
  * The Events-table reads and writes behind every series edit: reading a
  * master row, keying a local series, rewriting a series so the provider
  * re-expands it, the update-by-ID, and the URIs and selections its deletes

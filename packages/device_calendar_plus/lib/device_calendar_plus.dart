@@ -614,7 +614,6 @@ class DeviceCalendar {
     EventAvailability? availability,
     Patch<List<Duration>>? reminders,
   }) async {
-    // Validate instanceId
     requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
 
     // No changed fields is a valid no-op (e.g. the user pressed Save without

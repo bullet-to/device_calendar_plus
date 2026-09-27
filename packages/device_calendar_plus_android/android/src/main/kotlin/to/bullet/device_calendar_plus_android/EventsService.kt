@@ -783,14 +783,14 @@ class EventsService(
      */
     private fun deleteOneOff(eventId: String): Result<Unit> {
         val row = store.readEventRow(eventId).getOrElse { return Result.failure(it) }
-        seriesByBareIdFailure(row, "deleteRecurring", "delete")
-            ?.let { return Result.failure(it) }
-        return deleteEventWithExceptions(eventId)
+            .asOneOff(OneThingOperation.DELETE).getOrElse { return Result.failure(it) }
+        return deleteEventWithExceptions(eventId, row.account)
     }
 
     /**
      * Deletes event row [eventId] and any detached occurrences keyed to it by
-     * `original_id` — the shared primitive behind [deleteOneOff] and
+     * `original_id`, through [account]'s delete URI (null when the row is gone
+     * altogether) — the shared primitive behind [deleteOneOff] and
      * [deleteRecurring]'s `allEvents` span, where it removes the whole series.
      *
      * The exceptions have to be named here because the provider cascades a
@@ -803,7 +803,10 @@ class EventsService(
      * exceptions orphaned by a master that is already gone still match, so
      * deleting that ID cleans them up and reports success, not NOT_FOUND.
      */
-    private fun deleteEventWithExceptions(eventId: String): Result<Unit> {
+    private fun deleteEventWithExceptions(
+        eventId: String,
+        account: CalendarAccount?
+    ): Result<Unit> {
         // On a synced calendar this tombstones the rows (DELETED=1) for the
         // adapter to upload; on a local one it removes them — see
         // SeriesRowStore.deleteUri.
@@ -812,7 +815,6 @@ class EventsService(
         // far as the caller can tell, so a repeat delete reports NOT_FOUND,
         // as on iOS and on a local calendar. A local tombstone stays in,
         // since no adapter will collect it and removing it is the point.
-        val account = accountOfEventRow(eventId)
         var selection = "(${CalendarContract.Events._ID} = ? OR " +
             "${CalendarContract.Events.ORIGINAL_ID} = ?)"
         if (account != null && !account.isLocal) {
@@ -836,26 +838,6 @@ class EventsService(
         return Result.success(Unit)
     }
     
-    /**
-     * INVALID_ARGUMENTS when [row] is a recurring series addressed by its bare
-     * ID: [updateEvent] and [deleteEvent] act on one thing — a one-off event
-     * or one occurrence — so a series-wide change has to go through
-     * [replacement] with `EventSpan.allEvents` (#175). Null for a one-off.
-     */
-    private fun seriesByBareIdFailure(
-        row: EventRow,
-        replacement: String,
-        verb: String
-    ): CalendarException? {
-        if (row.rrule == null) return null
-        return CalendarException(
-            PlatformExceptionCodes.INVALID_ARGUMENTS,
-            "Event ${row.id} is a recurring series. To $verb the whole series " +
-                "use $replacement(id, EventSpan.allEvents); to $verb one " +
-                "occurrence pass its instanceId."
-        )
-    }
-
     /**
      * Updates one thing. With a [timestamp], detaches the occurrence at that
      * instant from its recurring series and applies the changes to it alone;
@@ -908,8 +890,7 @@ class EventsService(
         // The existing row decides all-day date normalization when the call
         // doesn't change the flag.
         val row = store.readEventRow(eventId).getOrElse { return Result.failure(it) }
-        seriesByBareIdFailure(row, "updateRecurring", "change")
-            ?.let { return Result.failure(it) }
+            .asOneOff(OneThingOperation.UPDATE).getOrElse { return Result.failure(it) }
 
         // Build ContentValues with only provided fields
         val values = android.content.ContentValues()
@@ -1408,7 +1389,7 @@ class EventsService(
 
         return try {
             when (span) {
-                "allEvents" -> deleteEventWithExceptions(eventId)
+                "allEvents" -> deleteEventWithExceptions(eventId, accountOfEventRow(eventId))
                 "thisAndFollowing" -> deleteRecurringThisAndFollowing(eventId, timestamp)
                 else -> Result.failure(
                     CalendarException(
@@ -1753,8 +1734,8 @@ class EventsService(
     }
 
     /**
-     * The account of event row [eventId], for [deleteEventWithExceptions] to build
-     * its delete from, or null when the row is gone altogether. Reads
+     * The account of event row [eventId], for [deleteRecurring]'s `allEvents`
+     * span to build its delete from, or null when the row is gone altogether. Reads
      * through a DELETED tombstone on purpose: a local one is still to be
      * collected.
      */
