@@ -9,6 +9,12 @@
   event it leaves, as Android does (#175).
 
 ### Fixed
+- Modal plumbing (#123): a second `showEventModal`/`showCreateEventModal`
+  while one is showing fails `OPERATION_FAILED` instead of orphaning the
+  first reply; swiping the view modal down resolves it; a modal is presented
+  from the top of the presentation stack, so an app sheet that's already up
+  no longer swallows it; and a missing root view controller fails
+  `OPERATION_FAILED` instead of crashing with `fatalError`.
 - `createEvent` refuses a recurrence rule it can't parse (a `FREQ` other than
   `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, or malformed input) with
   `INVALID_ARGUMENTS` and writes nothing, as `updateRecurring` already does.
