@@ -98,9 +98,8 @@ sealed class RecurrenceRule {
   /// Stored raw RRULE string when parsed from a platform event.
   final String? _rawRrule;
 
-  const RecurrenceRule({this.interval = 1, this.end, String? rawRrule})
-      : _rawRrule = rawRrule,
-        assert(interval >= 1, 'Interval must be at least 1');
+  const RecurrenceRule({this.interval = 1, this.end, this._rawRrule})
+      : assert(interval >= 1, 'Interval must be at least 1');
 
   /// The raw RRULE string — use it for RRULE properties beyond the typed model.
   ///
