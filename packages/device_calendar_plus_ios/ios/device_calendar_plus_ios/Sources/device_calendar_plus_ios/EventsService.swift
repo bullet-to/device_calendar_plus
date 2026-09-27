@@ -531,8 +531,18 @@ class EventsService {
       event.availability = .busy
     }
     
-    // Set recurrence rule if provided
-    if let rruleString = recurrenceRule, let rule = parseRecurrenceRule(rruleString) {
+    // Set recurrence rule if provided. A rule EventKit can't express (a FREQ
+    // outside DAILY/WEEKLY/MONTHLY/YEARLY, or malformed input) is refused
+    // before the save, as updateRecurring does — never dropped into a
+    // one-off event (#125).
+    if let rruleString = recurrenceRule {
+      guard let rule = parseRecurrenceRule(rruleString) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "Invalid recurrence rule: \(rruleString)"
+        )))
+        return
+      }
       event.recurrenceRules = [rule]
     }
 

@@ -1,6 +1,9 @@
 import 'dart:io' show Platform;
 
 import 'package:device_calendar_plus/device_calendar_plus.dart';
+import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
+    show DeviceCalendarPlusPlatform;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -564,6 +567,53 @@ void main() {
       expect(rrule, contains('MO'));
       expect(rrule, contains('COUNT=5'));
     });
+
+    // -- Unsupported rules (#125) --
+
+    for (final rrule in ['FREQ=HOURLY;COUNT=3', 'NOT-A-RULE']) {
+      test(
+          'createEvent refuses a rule outside DAILY/WEEKLY/MONTHLY/YEARLY '
+          '("$rrule") and writes nothing (#125)', () async {
+        // The typed RecurrenceRule only ever emits the four supported
+        // frequencies, so this drives the platform layer directly with the
+        // raw string. iOS used to drop a rule it couldn't parse and save a
+        // one-off event; Android handed it to the provider (which stores
+        // FREQ=HOURLY as an hourly series).
+        final calendar = requireCalendar(calendarId);
+        final title =
+            'Unsupported rule ${DateTime.now().microsecondsSinceEpoch}';
+        final start = DateTime.now().add(const Duration(hours: 1));
+
+        await expectLater(
+          DeviceCalendarPlusPlatform.instance.createEvent(
+            calendar,
+            title,
+            start,
+            start.add(const Duration(minutes: 30)),
+            false,
+            null,
+            null,
+            null,
+            'UTC',
+            'busy',
+            rrule,
+            null,
+          ),
+          throwsA(isA<PlatformException>().having(
+            (e) => e.code,
+            'code',
+            PlatformExceptionCodes.invalidArguments,
+          )),
+        );
+        expect(
+          await eventsTitled(plugin, calendar, title,
+              start.subtract(const Duration(days: 1)),
+              windowDays: 3),
+          isEmpty,
+          reason: 'a refused rule must leave no event behind',
+        );
+      });
+    }
 
     // -- Time precision --
 
