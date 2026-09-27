@@ -15,7 +15,7 @@ import 'test_seed.dart';
 /// upload — a DELETED=1 tombstone or a fresh DIRTY=1.
 Future<SeededSeries> seedUploadedSeries(
     DeviceCalendar plugin, String? calendarId) async {
-  final series = await seedDailySeries(plugin, calendarId);
+  final series = await seedSeries(plugin, calendarId);
   await markUploaded(series.eventId);
   return series;
 }
@@ -148,7 +148,7 @@ void main() {
           '$label on one occurrence of a not-yet-uploaded series keeps the '
           'series listed, and the change shows once it is uploaded (#163)',
           () async {
-        final series = await seedDailySeries(plugin, calendarId);
+        final series = await seedSeries(plugin, calendarId);
         expect((await readSyncIds(series.eventId))?.syncId, isNull,
             reason: 'the arrange must leave the master unkeyed, as before '
                 'the adapter\'s first upload');

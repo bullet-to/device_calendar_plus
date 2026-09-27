@@ -99,8 +99,19 @@ internal class SplitShift private constructor(
  *
  * When [targetStart] is given the start is shifted by the wall-clock
  * delta from [referenceMillis] to [targetStart] (see [SplitShift]).
- * [targetStart] is already in the stored frame ([resolveTargetStart]). A
- * new [rrule] then moves it onto the first day the rule generates, keeping
+ * [targetStart] is already in the frame after the edit
+ * ([resolveTargetStart]), while [baseMillis] and [referenceMillis] are in
+ * the row's stored frame. Unlike the day-move check, which reads each in its
+ * own zone, this reads all three in the one post-edit zone. That differs
+ * from the stored zone only when the same edit toggles all-day, and it is
+ * still safe then: base and reference are the same instant or occurrences
+ * of the same series at the same wall-clock time, so the wrong zone moves
+ * both onto the same wrong day (unless a DST change between them carries
+ * just one across the other zone's midnight), the error cancels out of the
+ * day delta, and
+ * [SplitShift.slot] then resets the time of day for the new frame. Keep
+ * that invariant, or pass the stored zone in, when changing either input.
+ * A new [rrule] then moves it onto the first day the rule generates, keeping
  * its wall-clock time — the anchor a series switched to a new rule must
  * have, or the provider emits the old day as an extra occurrence (#140).
  * A rule that generates nothing within five years of the anchor fails

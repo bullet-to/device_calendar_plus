@@ -14,8 +14,8 @@ String requireCalendar(String? calendarId) {
 }
 
 /// A series factory: creates a recurring event of [count] occurrences in the
-/// calendar and returns its event ID and start. [createDailySeries] and
-/// [createAllDayDailySeries] are the two on offer.
+/// calendar and returns its event ID and start: [createDailySeries],
+/// [createAllDayDailySeries], or a closure over [createWeeklySeries].
 typedef SeriesFactory = Future<({String eventId, DateTime start})> Function(
   DeviceCalendar plugin,
   String calendarId, {
@@ -73,41 +73,12 @@ Future<({String eventId, DateTime start})> createAllDayDailySeries(
   return (eventId: eventId, start: start);
 }
 
-/// Creates an all-day weekly series titled [title], pinned (BYDAY) to its own
-/// weekday, with [count] occurrences, starting in two days (so a day-earlier
-/// move is still in the future). All-day, so the weekday is read in local
-/// time, the frame the start is given in (#144). Checks the group's
-/// calendar exists first.
-Future<SeededSeries> createAllDayWeeklySeriesOnOwnWeekday(
-  DeviceCalendar plugin,
-  String? groupCalendarId, {
-  required String title,
-  int count = 4,
-}) async {
-  final calendarId = requireCalendar(groupCalendarId);
-  final start = localMidnight(2);
-  final eventId = await plugin.createEvent(
-    calendarId: calendarId,
-    title: title,
-    startDate: start,
-    endDate: nextLocalMidnight(start),
-    isAllDay: true,
-    recurrenceRule: WeeklyRecurrence(
-      daysOfWeek: [weekdayOf(start)],
-      end: CountEnd(count),
-    ),
-  );
-  final occurrences =
-      await occurrencesOf(plugin, calendarId, eventId, start, windowDays: 30);
-  expect(occurrences, isNotEmpty);
-  return (eventId: eventId, start: start, occurrences: occurrences);
-}
-
-/// Creates a weekly recurring event titled [title], starting at [start] (one
-/// hour from now by default, stored in UTC) and ending per [end] (`count`
-/// weekly occurrences by default). The recurring weekday is the start's
-/// weekday unless [daysOfWeek] is given. Returns the event ID and the start
-/// time.
+/// Creates a weekly recurring event titled [title], starting at [start] and
+/// ending per [end] (`count` weekly occurrences by default). The recurring
+/// weekday is the start's weekday unless [daysOfWeek] is given. Timed by
+/// default: an hour long, starting one hour from now, stored in UTC. With
+/// [isAllDay] it spans its day instead, and [start] defaults to tomorrow's
+/// local midnight. Returns the event ID and the start time.
 Future<({String eventId, DateTime start})> createWeeklySeries(
   DeviceCalendar plugin,
   String calendarId, {
@@ -116,16 +87,22 @@ Future<({String eventId, DateTime start})> createWeeklySeries(
   RecurrenceEnd? end,
   List<DayOfWeek>? daysOfWeek,
   DateTime? start,
+  bool isAllDay = false,
 }) async {
-  start ??= DateTime.now().add(const Duration(hours: 1));
+  start ??= isAllDay
+      ? localMidnight(1)
+      : DateTime.now().add(const Duration(hours: 1));
   final eventId = await plugin.createEvent(
     calendarId: calendarId,
     title: title,
     startDate: start,
-    endDate: start.add(const Duration(hours: 1)),
+    endDate: isAllDay
+        ? nextLocalMidnight(start)
+        : start.add(const Duration(hours: 1)),
+    isAllDay: isAllDay,
     recurrenceRule:
         WeeklyRecurrence(daysOfWeek: daysOfWeek, end: end ?? CountEnd(count)),
-    timeZone: 'UTC',
+    timeZone: isAllDay ? null : 'UTC',
   );
   return (eventId: eventId, start: start);
 }
@@ -240,21 +217,23 @@ void expectMasterSplit(
   );
 }
 
-/// The arrange step the per-occurrence tests share: a daily series of
-/// [count] made by [create] (timed, by default) with its occurrences listed,
-/// at least [minOccurrences] of them. Checks the group's calendar exists
-/// first.
-Future<SeededSeries> seedDailySeries(
+/// The arrange step the per-occurrence tests share: a series of [count] made
+/// by [create] (a timed daily one, by default) with its occurrences listed
+/// over [windowDays], at least [minOccurrences] of them. Checks the group's
+/// calendar exists first.
+Future<SeededSeries> seedSeries(
   DeviceCalendar plugin,
   String? calendarId, {
   SeriesFactory create = createDailySeries,
   int count = 10,
   int minOccurrences = 6,
+  int windowDays = 14,
 }) async {
   final id = requireCalendar(calendarId);
   final series = await create(plugin, id, count: count);
-  final occurrences =
-      await occurrencesOf(plugin, id, series.eventId, series.start);
+  final occurrences = await occurrencesOf(
+      plugin, id, series.eventId, series.start,
+      windowDays: windowDays);
   expect(
     occurrences.length,
     greaterThanOrEqualTo(minOccurrences),

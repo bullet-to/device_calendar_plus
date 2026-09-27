@@ -33,6 +33,35 @@ Future<({String eventId, DateTime start, DayOfWeek newDay})>
   );
 }
 
+/// The all-day twin of [createWeeklySeriesOnOwnWeekday], for the #144 tests:
+/// a weekly series titled [title], pinned (BYDAY) to its own weekday, with
+/// [count] occurrences, seeded with its occurrences listed. It starts in two
+/// days, so a day-earlier move is still in the future. All-day, so the
+/// weekday is read in local time, the frame the start is given in. Checks
+/// the group's calendar exists first.
+Future<SeededSeries> createAllDayWeeklySeriesOnOwnWeekday(
+  DeviceCalendar plugin,
+  String? calendarId, {
+  required String title,
+  int count = 4,
+}) {
+  final start = localMidnight(2);
+  return seedSeries(
+    plugin,
+    calendarId,
+    count: count,
+    minOccurrences: 1,
+    windowDays: 30,
+    create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+        plugin, calendarId,
+        title: title,
+        count: count,
+        daysOfWeek: [weekdayOf(start)],
+        start: start,
+        isAllDay: true),
+  );
+}
+
 /// Asserts [occurrences] is the series a rule switch to weekday [on] leaves
 /// (#140): exactly [count] of them, every one on [on], the first at
 /// [firstAt] (the day after the old anchor), and none at [orphanAt] — the
@@ -810,7 +839,7 @@ void main() {
     // thisAndFollowing split. Passes on real Android devices.
     test('thisAndFollowing splits so the anchor occurrence carries the change',
         () async {
-      final series = await seedDailySeries(plugin, calendarId);
+      final series = await seedSeries(plugin, calendarId);
       final occurrences = series.occurrences;
       final splitPoint = occurrences[4];
       final splitMillis = splitPoint.startDate.millisecondsSinceEpoch;
@@ -852,7 +881,7 @@ void main() {
 
     test('thisAndFollowing can change the rule from the split point onward',
         () async {
-      final series = await seedDailySeries(plugin, calendarId);
+      final series = await seedSeries(plugin, calendarId);
       final occurrences = series.occurrences;
       final splitPoint = occurrences[4];
       final splitMillis = splitPoint.startDate.millisecondsSinceEpoch;
@@ -1132,7 +1161,7 @@ void main() {
       // occurrence, make that occurrence a standalone non-recurring event,
       // and remove every later occurrence. Past occurrences stay in the
       // original series.
-      final series = await seedDailySeries(plugin, calendarId);
+      final series = await seedSeries(plugin, calendarId);
       final occurrences = series.occurrences;
       final splitPoint = occurrences[4];
       final splitMillis = splitPoint.startDate.millisecondsSinceEpoch;
@@ -1204,7 +1233,7 @@ void main() {
       Patch<RecurrenceRule>? Function(SeededSeries series)? ruleFor,
       int count = 10,
     }) async {
-      final series = await seedDailySeries(
+      final series = await seedSeries(
         plugin,
         calendarId,
         count: count,
@@ -1551,7 +1580,7 @@ void main() {
       test(
         'thisAndFollowing update past a deleted occurrence $outcome',
         () async {
-          final series = await seedDailySeries(
+          final series = await seedSeries(
             plugin,
             calendarId,
             minOccurrences: 10,
@@ -1592,7 +1621,7 @@ void main() {
 
     test('updateEvent with an instance ID edits only the one occurrence',
         () async {
-      final series = await seedDailySeries(plugin, calendarId);
+      final series = await seedSeries(plugin, calendarId);
       final occurrences = series.occurrences;
       final target = occurrences[4];
 
@@ -1637,7 +1666,7 @@ void main() {
       // With no endDate, the occurrence's own end stays put — so a startDate
       // beyond it would invert the range. Both platforms must refuse with
       // invalidArguments rather than save an inverted event.
-      final series = await seedDailySeries(plugin, calendarId);
+      final series = await seedSeries(plugin, calendarId);
       final occurrences = series.occurrences;
       final target = occurrences[4];
 
@@ -1706,7 +1735,7 @@ void main() {
       // The steady state after a first per-occurrence edit: the series
       // already carries its key and one exception, and the next exception
       // must join that family rather than disturb it.
-      final series = await seedDailySeries(plugin, calendarId);
+      final series = await seedSeries(plugin, calendarId);
       final occurrences = series.occurrences;
       final first = occurrences[2];
       final second = occurrences[5];
@@ -1753,7 +1782,7 @@ void main() {
       // a reboot), which matches exceptions to their series by
       // `original_sync_id` — and no test can trigger that.
       final series =
-          await seedDailySeries(plugin, calendarId, minOccurrences: 7);
+          await seedSeries(plugin, calendarId, minOccurrences: 7);
       // Some providers (Samsung's, #166) stamp a `_sync_id` on every insert,
       // local calendars included, so a master is never keyless there and
       // #153's state can't arise. The #153 behaviour tests above still run
@@ -2384,7 +2413,7 @@ void main() {
 
     test('all-day start a day later moves every occurrence a calendar day',
         () async {
-      final series = await seedDailySeries(plugin, calendarId,
+      final series = await seedSeries(plugin, calendarId,
           create: createAllDayDailySeries, count: 4, minOccurrences: 4);
       final before = series.occurrences;
 
@@ -2407,7 +2436,7 @@ void main() {
     test(
         'all-day thisAndFollowing start a day later moves the new series a '
         'calendar day', () async {
-      final series = await seedDailySeries(plugin, calendarId,
+      final series = await seedSeries(plugin, calendarId,
           create: createAllDayDailySeries, count: 6, minOccurrences: 6);
       final before = series.occurrences;
       final split = before[2];
@@ -2471,7 +2500,7 @@ void main() {
 
     test('thisAndFollowing removes the anchor and every later occurrence',
         () async {
-      final series = await seedDailySeries(plugin, calendarId);
+      final series = await seedSeries(plugin, calendarId);
       final occurrences = series.occurrences;
       final anchor = occurrences[4];
       final anchorMillis = anchor.startDate.millisecondsSinceEpoch;
@@ -2497,7 +2526,7 @@ void main() {
 
     test('deleteEvent with an instance ID removes only the one occurrence',
         () async {
-      final series = await seedDailySeries(plugin, calendarId);
+      final series = await seedSeries(plugin, calendarId);
       final occurrences = series.occurrences;
 
       await plugin.deleteEvent(instanceId: occurrences[4].instanceId);
@@ -2544,7 +2573,7 @@ void main() {
       // exception row. Deleting the series must take it along — on a local
       // Android calendar the provider stops cascading once the series has
       // the `_sync_id` the #153 fix gives it, so the plugin cascades itself.
-      final series = await seedDailySeries(plugin, calendarId);
+      final series = await seedSeries(plugin, calendarId);
 
       Future<List<Event>> detached() =>
           eventsTitled(plugin, calendarId!, 'Detached #153', series.start);
@@ -2566,7 +2595,7 @@ void main() {
         // of the master's expansion. Truncating the master's rule alone would
         // leave it behind as an orphan; iOS's EKSpan.futureEvents removes it,
         // so Android must too.
-        final series = await seedDailySeries(
+        final series = await seedSeries(
           plugin,
           calendarId,
           minOccurrences: 8,
@@ -2628,7 +2657,7 @@ void main() {
         // iOS's EKSpan.futureEvents goes by the occurrence date, and Android's
         // ORIGINAL_INSTANCE_TIME bound is built to match. So an occurrence
         // dragged from before the split to after it survives the split.
-        final series = await seedDailySeries(
+        final series = await seedSeries(
           plugin,
           calendarId,
           minOccurrences: 8,
@@ -2692,7 +2721,7 @@ void main() {
         // The other half of the slot rule: an occurrence dragged from after
         // the split to before it goes with "this and following", because the
         // slot it replaced is past the split.
-        final series = await seedDailySeries(
+        final series = await seedSeries(
           plugin,
           calendarId,
           minOccurrences: 8,
@@ -2749,7 +2778,7 @@ void main() {
         // that has been detached with notFound, so the boundary cannot be
         // reached through the public API there (a split-path divergence for
         // #124, not this PR's).
-        final series = await seedDailySeries(
+        final series = await seedSeries(
           plugin,
           calendarId,
           minOccurrences: 8,

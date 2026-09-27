@@ -56,7 +56,7 @@ void main() {
     test(
       'getEvent resolves an all-day recurring occurrence by instance ID',
       () async {
-        final series = await seedDailySeries(
+        final series = await seedSeries(
           plugin,
           calendarId,
           create: createAllDayDailySeries,
@@ -76,7 +76,7 @@ void main() {
     test(
       'getEvent resolves a timed recurring occurrence by instance ID',
       () async {
-        final series = await seedDailySeries(
+        final series = await seedSeries(
           plugin,
           calendarId,
           count: 4,
@@ -93,7 +93,7 @@ void main() {
     // a caller ends up holding such an ID.
     test('getEvent returns null for a deleted occurrence\'s instance ID',
         () async {
-      final series = await seedDailySeries(plugin, calendarId);
+      final series = await seedSeries(plugin, calendarId);
       final stale = series.occurrences[4].instanceId;
 
       await plugin.deleteEvent(instanceId: stale);
