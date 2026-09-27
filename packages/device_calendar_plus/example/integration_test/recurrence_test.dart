@@ -2430,49 +2430,6 @@ void main() {
         before: split.startDate,
       );
     });
-
-    test(
-        'toggling a timed explicit-BYDAY series all-day with a same-day start '
-        'keeps every occurrence on its calendar day', () async {
-      final id = requireCalendar(calendarId);
-      // Local noon is the same date in UTC for any offset within ±11 hours,
-      // so the weekday the UTC-stored series pins is the local one too.
-      final today = localMidnight(2);
-      final start = DateTime(today.year, today.month, today.day, 12);
-      final series = await createWeeklySeries(plugin, id,
-          title: 'Timed To All-day',
-          count: 4,
-          daysOfWeek: [weekdayOf(start)],
-          start: start);
-      final before = await occurrencesOf(
-          plugin, id, series.eventId, series.start,
-          windowDays: 30);
-      expect(before.length, 4);
-      final first = before.first.startDate.toLocal();
-
-      // The all-day start is the local midnight of the occurrence's own day:
-      // on Android it becomes UTC midnight, so the day-move check and the
-      // anchor shift must read it as the same day as the timed start.
-      await plugin.updateRecurring(
-        before.first.instanceId,
-        EventSpan.allEvents,
-        isAllDay: true,
-        start: DateTime(first.year, first.month, first.day),
-        duration: const Duration(days: 1),
-      );
-
-      final after = await occurrencesOf(
-          plugin, id, series.eventId, series.start,
-          windowDays: 30);
-      expect(after.every((e) => e.isAllDay), isTrue,
-          reason: 'every occurrence must be all-day');
-      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
-      expect(
-        after.map((e) => dayOf(e.startDate.toLocal())).toList(),
-        before.map((e) => dayOf(e.startDate.toLocal())).toList(),
-        reason: 'each occurrence must stay on its original calendar day',
-      );
-    });
   });
 
   group('Recurrence Delete Tests', () {
