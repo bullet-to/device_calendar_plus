@@ -12,11 +12,21 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry
+import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-/** DeviceCalendarPlusAndroidPlugin */
-class DeviceCalendarPlusAndroidPlugin :
+/**
+ * DeviceCalendarPlusAndroidPlugin
+ *
+ * [newProviderExecutor] and [postToMain] are the threads provider work runs
+ * on and replies from; JVM unit tests swap them for ones they drive, since
+ * there's no Looper there.
+ */
+class DeviceCalendarPlusAndroidPlugin internal constructor(
+    private val newProviderExecutor: () -> Executor,
+    private val postToMain: (() -> Unit) -> Unit,
+) :
     FlutterPlugin,
     MethodCallHandler,
     ActivityAware,
@@ -31,15 +41,32 @@ class DeviceCalendarPlusAndroidPlugin :
     private var eventsService: EventsService? = null
     /** The reply for the native modal that's showing, if any. */
     internal val pendingModal = PendingModal()
-    private var providerExecutor: ExecutorService? = null
+    private var providerExecutor: Executor? = null
 
-    // Lazy so constructing the plugin doesn't touch the Looper — JVM unit
-    // tests can instantiate the class without an Android runtime.
-    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    /**
+     * showEventModal's lookup. A seam so JVM tests can drive what the lookup
+     * finds — the real one is provider IPC they have no provider for.
+     */
+    internal var modalEventLookup: EventsService.(String, Long?) -> kotlin.Result<Long> =
+        EventsService::findEventForModal
+
+    constructor() : this(
+        newProviderExecutor = {
+            Executors.newSingleThreadExecutor { runnable ->
+                Thread(runnable, "DeviceCalendarPlusProvider").apply { isDaemon = true }
+            }
+        },
+        postToMain = { block -> mainHandler.post(block) },
+    )
 
     companion object {
         internal const val SHOW_EVENT_REQUEST_CODE = 1001
         internal const val CREATE_EVENT_REQUEST_CODE = 1002
+        private const val ACTIVITY_NOT_AVAILABLE = "Activity not available"
+
+        // Lazy so constructing the plugin doesn't touch the Looper — JVM unit
+        // tests can instantiate the class without an Android runtime.
+        private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -51,33 +78,37 @@ class DeviceCalendarPlusAndroidPlugin :
         calendarService = CalendarService(context)
         eventsService = EventsService(context, calendarService!!)
         permissionService = PermissionService(context)
-        providerExecutor = Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "DeviceCalendarPlusProvider").apply { isDaemon = true }
-        }
+        providerExecutor = newProviderExecutor()
     }
 
     /**
-     * Runs a Calendar Provider operation off the main thread and replies on
-     * it. ContentResolver calls are blocking binder IPC and method-channel
-     * handlers run on the main thread, so query-heavy calls (listEvents fans
-     * out one attendees query per event) can ANR there (#73). A single
-     * worker keeps operations in call order, as they were when inline.
+     * Runs a Calendar Provider [operation] off the main thread, then hands
+     * its outcome to [then] back on the main thread. ContentResolver calls
+     * are blocking binder IPC and method-channel handlers run on the main
+     * thread, so query-heavy calls (listEvents fans out one attendees query
+     * per event) can ANR there (#73). A single worker keeps operations in
+     * call order, as they were when inline. A throw becomes a failure.
      */
-    private fun <T> runOffMainThread(result: Result, operation: () -> kotlin.Result<T>) {
+    private fun <T> onProvider(operation: () -> kotlin.Result<T>, then: (kotlin.Result<T>) -> Unit) {
         providerExecutor!!.execute {
-            val serviceResult = try {
+            val outcome = try {
                 operation()
             } catch (error: Throwable) {
                 kotlin.Result.failure(error)
             }
-            mainHandler.post {
-                serviceResult.fold(
-                    // The channel codec can't encode Unit; void operations
-                    // reply with null, as the inline handlers did.
-                    onSuccess = { value -> result.success(value.takeIf { it != Unit }) },
-                    onFailure = { error -> result.error(error.channelCode, error.message, null) }
-                )
-            }
+            postToMain { then(outcome) }
+        }
+    }
+
+    /** [onProvider], replying to [result] with the outcome. */
+    private fun <T> runOffMainThread(result: Result, operation: () -> kotlin.Result<T>) {
+        onProvider(operation) { outcome ->
+            outcome.fold(
+                // The channel codec can't encode Unit; void operations
+                // reply with null, as the inline handlers did.
+                onSuccess = { value -> result.success(value.takeIf { it != Unit }) },
+                onFailure = { error -> result.error(error.channelCode, error.message, null) }
+            )
         }
     }
 
@@ -145,7 +176,7 @@ class DeviceCalendarPlusAndroidPlugin :
             // the same code — callers shouldn't handle two errors for one state.
             result.error(
                 PlatformExceptionCodes.OPERATION_FAILED,
-                "Activity not available",
+                ACTIVITY_NOT_AVAILABLE,
                 null
             )
             return
@@ -301,20 +332,18 @@ class DeviceCalendarPlusAndroidPlugin :
         launchModalAfterLookup(
             SHOW_EVENT_REQUEST_CODE,
             result,
-            lookup = { service.findEventForModal(eventId, timestamp) },
+            lookup = { service.modalEventLookup(eventId, timestamp) },
         ) { currentActivity, requestCode, rowId ->
-            service.showEvent(currentActivity, rowId, timestamp, edit, requestCode)
+            EventModalIntents.showEvent(currentActivity, rowId, timestamp, edit, requestCode)
         }
     }
 
     private fun handleShowCreateEventModal(call: MethodCall, result: Result) {
-        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
-
         val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
 
         // No lookup: ACTION_INSERT needs nothing from the provider.
         launchModalNow(CREATE_EVENT_REQUEST_CODE, result) { currentActivity, requestCode ->
-            service.showCreateEvent(
+            EventModalIntents.showCreateEvent(
                 activityContext = currentActivity,
                 title = args["title"] as? String,
                 startDate = args["startDate"] as? Long,
@@ -340,8 +369,8 @@ class DeviceCalendarPlusAndroidPlugin :
         result: Result,
         launch: (Activity, Int) -> kotlin.Result<Unit>,
     ) {
-        val currentActivity = claimModal(requestCode, result) ?: return
-        launch(currentActivity, requestCode).onFailure(pendingModal::fail)
+        if (!claimModal(requestCode, result)) return
+        launchClaimed { currentActivity -> launch(currentActivity, requestCode) }
     }
 
     /**
@@ -356,46 +385,47 @@ class DeviceCalendarPlusAndroidPlugin :
         lookup: () -> kotlin.Result<T>,
         launch: (Activity, Int, T) -> kotlin.Result<Unit>,
     ) {
-        claimModal(requestCode, result) ?: return
-        providerExecutor!!.execute {
-            val found = try {
-                lookup()
-            } catch (error: Throwable) {
-                kotlin.Result.failure(error)
-            }
-            mainHandler.post {
-                // The claim can be resolved while the lookup runs (the
-                // activity went away); then there's nothing left to launch.
-                if (!pendingModal.holds(result)) return@post
-                found.fold(
-                    onSuccess = { value ->
-                        // The activity can be gone here and not the claim:
-                        // mid config change, between detach and reattach.
-                        // That fails rather than waiting for the recreated
-                        // activity — still exactly one reply.
-                        val currentActivity = activity ?: return@fold pendingModal.fail(
-                            CalendarException(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available")
-                        )
-                        launch(currentActivity, requestCode, value).onFailure(pendingModal::fail)
-                    },
-                    onFailure = pendingModal::fail,
-                )
-            }
+        if (!claimModal(requestCode, result)) return
+        onProvider(lookup) { found ->
+            // The claim can be resolved while the lookup runs (the activity
+            // went away); then there's nothing left to launch.
+            if (!pendingModal.holds(result)) return@onProvider
+            found.fold(
+                // The activity can be gone here and not the claim: mid config
+                // change, between detach and reattach. launchClaimed fails
+                // that rather than waiting for the recreated activity — still
+                // exactly one reply.
+                onSuccess = { value ->
+                    launchClaimed { currentActivity -> launch(currentActivity, requestCode, value) }
+                },
+                onFailure = pendingModal::fail,
+            )
         }
     }
 
     /**
-     * Claims the modal slot for [requestCode], returning the activity to
-     * launch from. With no activity, replies OPERATION_FAILED — the code
-     * openAppSettings and requestPermissions use for the same state — and
-     * returns null, as it does when the slot is taken.
+     * Claims the modal slot for [requestCode]. With no activity, replies
+     * OPERATION_FAILED — the code openAppSettings and requestPermissions use
+     * for the same state — and returns false, as it does when the slot is
+     * taken.
      */
-    private fun claimModal(requestCode: Int, result: Result): Activity? {
-        val currentActivity = activity ?: run {
-            result.error(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available", null)
-            return null
+    private fun claimModal(requestCode: Int, result: Result): Boolean {
+        if (activity == null) {
+            result.error(PlatformExceptionCodes.OPERATION_FAILED, ACTIVITY_NOT_AVAILABLE, null)
+            return false
         }
-        return currentActivity.takeIf { pendingModal.begin(requestCode, result) }
+        return pendingModal.begin(requestCode, result)
+    }
+
+    /**
+     * Runs the claimed modal's [launch] from the current activity, failing
+     * the claim when there's no activity or the launch fails.
+     */
+    private fun launchClaimed(launch: (Activity) -> kotlin.Result<Unit>) {
+        val currentActivity = activity ?: return pendingModal.fail(
+            CalendarException(PlatformExceptionCodes.OPERATION_FAILED, ACTIVITY_NOT_AVAILABLE)
+        )
+        launch(currentActivity).onFailure(pendingModal::fail)
     }
 
     private fun handleCreateEvent(call: MethodCall, result: Result) {
@@ -586,7 +616,7 @@ class DeviceCalendarPlusAndroidPlugin :
         channel.setMethodCallHandler(null)
         // Let in-flight provider work finish; the worker is a daemon thread,
         // so it can't keep the process alive.
-        providerExecutor?.shutdown()
+        (providerExecutor as? ExecutorService)?.shutdown()
         providerExecutor = null
         appContext = null
         calendarService = null

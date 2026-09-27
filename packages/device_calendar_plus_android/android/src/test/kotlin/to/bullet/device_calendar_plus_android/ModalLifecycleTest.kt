@@ -10,6 +10,8 @@ import io.flutter.plugin.common.MethodChannel
 import org.mockito.Mockito
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /** A channel reply that records what it was sent. */
 private class RecordingResult : MethodChannel.Result {
@@ -35,7 +37,17 @@ internal class ModalLifecycleTest {
     private val showCode = DeviceCalendarPlusAndroidPlugin.SHOW_EVENT_REQUEST_CODE
     private val createCode = DeviceCalendarPlusAndroidPlugin.CREATE_EVENT_REQUEST_CODE
 
-    private val plugin = DeviceCalendarPlusAndroidPlugin().apply {
+    /** Provider work the test runs by hand, to act while a lookup is in flight. */
+    private val providerQueue = ArrayDeque<Runnable>()
+
+    private fun runProviderWork() {
+        while (providerQueue.isNotEmpty()) providerQueue.removeFirst().run()
+    }
+
+    private val plugin = DeviceCalendarPlusAndroidPlugin(
+        newProviderExecutor = { java.util.concurrent.Executor(providerQueue::addLast) },
+        postToMain = { block -> block() },
+    ).apply {
         val engine = Mockito.mock(FlutterPlugin.FlutterPluginBinding::class.java)
         Mockito.`when`(engine.binaryMessenger).thenReturn(Mockito.mock(BinaryMessenger::class.java))
         Mockito.`when`(engine.applicationContext).thenReturn(Mockito.mock(Context::class.java))
@@ -86,7 +98,7 @@ internal class ModalLifecycleTest {
         assertEquals(operationFailed, call("showCreateEventModal").replies)
         assertEquals(emptyList(), first.replies)
 
-        plugin.onActivityResult(showCode, Activity.RESULT_OK, null)
+        assertTrue(plugin.onActivityResult(showCode, Activity.RESULT_OK, null))
         assertEquals(listOf("success(null)"), first.replies)
     }
 
@@ -100,19 +112,19 @@ internal class ModalLifecycleTest {
     // Rotation recreates the activity, and the modal's result is delivered to
     // the new one — so the reply has to survive the config-change detach.
     @Test
-    fun aConfigChange_carriesThePendingReplyToTheRecreatedActivity() {
+    fun onDetachedFromActivityForConfigChanges_carriesThePendingReplyToTheRecreatedActivity() {
         val first = showingModal(showCode)
 
         plugin.onDetachedFromActivityForConfigChanges()
         plugin.onReattachedToActivityForConfigChanges(activityBinding())
-        plugin.onActivityResult(showCode, Activity.RESULT_CANCELED, null)
+        assertTrue(plugin.onActivityResult(showCode, Activity.RESULT_CANCELED, null))
 
         assertEquals(listOf("success(null)"), first.replies)
     }
 
     // No activity will ever deliver the result, so resolve rather than hang.
     @Test
-    fun activityDetached_resolvesThePendingReply() {
+    fun onDetachedFromActivity_resolvesThePendingReply() {
         val first = showingModal(createCode)
 
         plugin.onDetachedFromActivity()
@@ -124,8 +136,55 @@ internal class ModalLifecycleTest {
     fun onActivityResult_forTheOtherModal_leavesThePendingReply() {
         val first = showingModal(showCode)
 
-        plugin.onActivityResult(createCode, Activity.RESULT_OK, null)
+        // Not ours to consume: it's left for other listeners.
+        assertFalse(plugin.onActivityResult(createCode, Activity.RESULT_OK, null))
 
         assertEquals(emptyList(), first.replies)
+    }
+
+    // The detach resolves the claimed reply while the event lookup is still
+    // on the provider thread. The lookup's outcome must not reply again, nor
+    // touch a modal that claimed the freed slot in the meantime.
+    @Test
+    fun showEventModal_activityDetachedDuringLookup_repliesOnce() {
+        plugin.onAttachedToActivity(activityBinding())
+        val result = call("showEventModal", mapOf("eventId" to "1"))
+
+        plugin.onDetachedFromActivity()
+        val next = showingModal(createCode)
+        runProviderWork()
+
+        assertEquals(listOf("success(null)"), result.replies)
+        assertEquals(emptyList(), next.replies)
+    }
+
+    // A config change detaches the activity but keeps the claim. If the
+    // lookup lands in that window there's nothing to launch from, so the
+    // call fails once rather than waiting on the recreated activity.
+    @Test
+    fun showEventModal_configChangeDuringLookup_failsOnceWithOperationFailed() {
+        plugin.modalEventLookup = { _, _ -> Result.success(1L) }
+        plugin.onAttachedToActivity(activityBinding())
+        val result = call("showEventModal", mapOf("eventId" to "1"))
+
+        plugin.onDetachedFromActivityForConfigChanges()
+        runProviderWork()
+
+        assertEquals(operationFailed, result.replies)
+    }
+
+    @Test
+    fun showEventModal_lookupFailsNotFound_repliesItAndFreesTheSlot() {
+        plugin.modalEventLookup = { _, _ ->
+            Result.failure(CalendarException(PlatformExceptionCodes.NOT_FOUND, "Event not found"))
+        }
+        plugin.onAttachedToActivity(activityBinding())
+        val result = call("showEventModal", mapOf("eventId" to "1"))
+        runProviderWork()
+
+        assertEquals(listOf("error(${PlatformExceptionCodes.NOT_FOUND})"), result.replies)
+        val next = RecordingResult()
+        assertTrue(plugin.pendingModal.begin(createCode, next))
+        assertEquals(emptyList(), next.replies)
     }
 }

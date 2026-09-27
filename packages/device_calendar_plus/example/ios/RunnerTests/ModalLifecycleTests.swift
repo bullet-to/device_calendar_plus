@@ -58,19 +58,24 @@ final class ModalLifecycleTests: XCTestCase {
     wait(for: [firstReplied], timeout: 5)
     XCTAssertEqual(first, [PlatformExceptionCodes.permissionDenied])
 
-    // So the next call is accepted: it isn't refused on the spot, and it
-    // resolves through its own lookup rather than as a busy slot.
-    var third: [String] = []
-    let thirdReplied = expectation(description: "third call replies")
+    assertNextModalCallIsAccepted()
+  }
+
+  /// The slot is free: the next modal call isn't refused on the spot, and it
+  /// resolves through its own lookup (denied access) rather than as a busy
+  /// slot.
+  private func assertNextModalCallIsAccepted(file: StaticString = #filePath, line: UInt = #line) {
+    var next: [String] = []
+    let nextReplied = expectation(description: "next call replies")
     plugin.handle(
       FlutterMethodCall(methodName: "showEventModal", arguments: ["eventId": "no-such-event"])
     ) { reply in
-      third.append(self.describe(reply))
-      thirdReplied.fulfill()
+      next.append(self.describe(reply))
+      nextReplied.fulfill()
     }
-    XCTAssertEqual(third, [])
-    wait(for: [thirdReplied], timeout: 5)
-    XCTAssertEqual(third, [PlatformExceptionCodes.permissionDenied])
+    XCTAssertEqual(next, [], "refused on the spot", file: file, line: line)
+    wait(for: [nextReplied], timeout: 5)
+    XCTAssertEqual(next, [PlatformExceptionCodes.permissionDenied], file: file, line: line)
   }
 
   // MARK: - swipe-down
@@ -124,37 +129,58 @@ final class ModalLifecycleTests: XCTestCase {
     wait(for: [replied], timeout: 5)
     XCTAssertEqual(replies, [PlatformExceptionCodes.operationFailed])
 
-    // The slot is free: the next call resolves through its own lookup, not
-    // as a busy slot.
-    var next: [String] = []
-    let nextReplied = expectation(description: "next call replies")
-    plugin.handle(
-      FlutterMethodCall(methodName: "showEventModal", arguments: ["eventId": "no-such-event"])
-    ) { reply in
-      next.append(self.describe(reply))
-      nextReplied.fulfill()
+    assertNextModalCallIsAccepted()
+  }
+
+  /// UIKit refuses to present from a controller that isn't in a window, and
+  /// only logs it — so no dismissal would ever reply. The refusal itself
+  /// fails the call and frees the slot.
+  func testARefusedPresentationFailsOperationFailed() throws {
+    guard #available(iOS 17.0, *) else { throw XCTSkip("Needs the ungated iOS 17 editor") }
+    let offScreen = UIViewController()
+    plugin.rootViewController = { offScreen }
+
+    var replies: [String] = []
+    let replied = expectation(description: "create call replies")
+    plugin.handle(FlutterMethodCall(methodName: "showCreateEventModal", arguments: nil)) {
+      replies.append(self.describe($0))
+      replied.fulfill()
     }
-    wait(for: [nextReplied], timeout: 5)
-    XCTAssertEqual(next, [PlatformExceptionCodes.permissionDenied])
+    wait(for: [replied], timeout: 5)
+    XCTAssertEqual(replies, [PlatformExceptionCodes.operationFailed])
+    XCTAssertNil(offScreen.presentedViewController)
+
+    assertNextModalCallIsAccepted()
   }
 
   /// `present` from a controller that's already presenting silently does
-  /// nothing, so the modal has to go on top of the stack.
-  func testModalsPresentFromTheTopOfThePresentationStack() {
+  /// nothing, so the modal has to go on top of the stack: over the host
+  /// app's own sheet, not swallowed under it.
+  func testTheModalPresentsOverTheHostAppsOwnSheet() throws {
+    guard #available(iOS 17.0, *) else { throw XCTSkip("Needs the ungated iOS 17 editor") }
     let root = UIViewController()
     let window = UIWindow(frame: UIScreen.main.bounds)
     window.rootViewController = root
     window.makeKeyAndVisible()
     defer { window.isHidden = true }
-
-    XCTAssertTrue(DeviceCalendarPlusIosPlugin.topPresenter(from: root) === root)
+    plugin.rootViewController = { root }
 
     let hostSheet = UIViewController()
     let presented = expectation(description: "host sheet presented")
     root.present(hostSheet, animated: false) { presented.fulfill() }
     wait(for: [presented], timeout: 5)
 
-    XCTAssertTrue(DeviceCalendarPlusIosPlugin.topPresenter(from: root) === hostSheet)
+    var replies: [String] = []
+    plugin.handle(FlutterMethodCall(methodName: "showCreateEventModal", arguments: nil)) {
+      replies.append(self.describe($0))
+    }
+    let editorUp = expectation(
+      for: NSPredicate { _, _ in hostSheet.presentedViewController is EKEventEditViewController },
+      evaluatedWith: nil)
+    wait(for: [editorUp], timeout: 5)
+
+    // Still showing, so nothing has replied — in particular not a failure.
+    XCTAssertEqual(replies, [])
     root.dismiss(animated: false)
   }
 }

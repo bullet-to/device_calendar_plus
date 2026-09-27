@@ -39,6 +39,11 @@ final class PendingModal {
     take()?(FlutterError(code: code, message: message, details: nil))
   }
 
+  /// The modal's lookup failed: reply with `error` and free the slot.
+  func fail(_ error: CalendarError) {
+    fail(code: error.code, message: error.message)
+  }
+
   private func take() -> FlutterResult? {
     let pending = result
     result = nil
