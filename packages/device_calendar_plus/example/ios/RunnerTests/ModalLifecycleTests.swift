@@ -1,3 +1,4 @@
+import EventKitUI
 import Flutter
 import UIKit
 import XCTest
@@ -40,7 +41,21 @@ final class ModalLifecycleTests: XCTestCase {
     wait(for: [firstReplied], timeout: 5)
     XCTAssertEqual(first.count, 1)
     XCTAssertNotEqual(first.first, "success")
-    XCTAssertTrue(plugin.pendingModal.begin { _ in })
+
+    // So the next call is accepted: it isn't refused on the spot, and it
+    // resolves through its own lookup rather than as a busy slot.
+    var third: [String] = []
+    let thirdReplied = expectation(description: "third call replies")
+    plugin.handle(
+      FlutterMethodCall(methodName: "showEventModal", arguments: ["eventId": "no-such-event"])
+    ) { reply in
+      third.append(self.describe(reply))
+      thirdReplied.fulfill()
+    }
+    XCTAssertEqual(third, [])
+    wait(for: [thirdReplied], timeout: 5)
+    XCTAssertEqual(third.count, 1)
+    XCTAssertNotEqual(third.first, PlatformExceptionCodes.operationFailed)
   }
 
   // MARK: - swipe-down
@@ -56,5 +71,77 @@ final class ModalLifecycleTests: XCTestCase {
     plugin.presentationControllerDidDismiss(sheet)
 
     XCTAssertEqual(replies, ["success"])
+  }
+
+  /// The view sheet used to have no presentation delegate, so the swipe-down
+  /// above never reached the plugin.
+  func testTheViewSheetReportsItsDismissalToThePlugin() {
+    let container = plugin.modalContainer(for: EKEventViewController())
+
+    XCTAssertTrue(container is UINavigationController)
+    XCTAssertTrue(container?.presentationController?.delegate === plugin)
+  }
+
+  /// The editor handles its own pull-down through its edit delegate, so it
+  /// keeps its own presentation delegate.
+  func testTheEditorSheetKeepsItsOwnPresentationDelegate() {
+    let editor = EKEventEditViewController()
+    let container = plugin.modalContainer(for: editor)
+
+    XCTAssertTrue(container === editor)
+    XCTAssertFalse(container?.presentationController?.delegate === plugin)
+  }
+
+  // MARK: - presenting
+
+  /// With no window to present from this used to crash (fatalError); it now
+  /// fails like Android's no-Activity case and frees the slot.
+  func testWithNoRootViewControllerTheModalFailsOperationFailed() throws {
+    // Below iOS 17 the blank editor is gated on calendar access first.
+    guard #available(iOS 17.0, *) else { throw XCTSkip("Needs the ungated iOS 17 editor") }
+    plugin.rootViewController = { nil }
+
+    var replies: [String] = []
+    let replied = expectation(description: "create call replies")
+    plugin.handle(FlutterMethodCall(methodName: "showCreateEventModal", arguments: nil)) {
+      replies.append(self.describe($0))
+      replied.fulfill()
+    }
+    wait(for: [replied], timeout: 5)
+    XCTAssertEqual(replies, [PlatformExceptionCodes.operationFailed])
+
+    // The slot is free: the next call resolves through its own lookup, not
+    // as a busy slot.
+    var next: [String] = []
+    let nextReplied = expectation(description: "next call replies")
+    plugin.handle(
+      FlutterMethodCall(methodName: "showEventModal", arguments: ["eventId": "no-such-event"])
+    ) { reply in
+      next.append(self.describe(reply))
+      nextReplied.fulfill()
+    }
+    wait(for: [nextReplied], timeout: 5)
+    XCTAssertEqual(next.count, 1)
+    XCTAssertNotEqual(next.first, PlatformExceptionCodes.operationFailed)
+  }
+
+  /// `present` from a controller that's already presenting silently does
+  /// nothing, so the modal has to go on top of the stack.
+  func testModalsPresentFromTheTopOfThePresentationStack() {
+    let root = UIViewController()
+    let window = UIWindow(frame: UIScreen.main.bounds)
+    window.rootViewController = root
+    window.makeKeyAndVisible()
+    defer { window.isHidden = true }
+
+    XCTAssertTrue(DeviceCalendarPlusIosPlugin.topPresenter(from: root) === root)
+
+    let hostSheet = UIViewController()
+    let presented = expectation(description: "host sheet presented")
+    root.present(hostSheet, animated: false) { presented.fulfill() }
+    wait(for: [presented], timeout: 5)
+
+    XCTAssertTrue(DeviceCalendarPlusIosPlugin.topPresenter(from: root) === hostSheet)
+    root.dismiss(animated: false)
   }
 }

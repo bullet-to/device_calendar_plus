@@ -373,39 +373,13 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       DispatchQueue.main.async {
         switch serviceResult {
         case .success(let viewController):
-          guard let viewController = viewController else {
-            self.pendingModal.complete()
+          guard let container = self.modalContainer(for: viewController) else {
+            self.pendingModal.fail(
+              code: PlatformExceptionCodes.unknownError,
+              message: "Unexpected event view controller")
             return
           }
-
-          // Set the appropriate delegate based on view controller type
-          if let editVC = viewController as? EKEventEditViewController {
-            editVC.editViewDelegate = self
-          } else if let viewVC = viewController as? EKEventViewController {
-            viewVC.delegate = self
-          }
-
-          // EKEventEditViewController is itself a UINavigationController subclass,
-          // so present it directly. EKEventViewController needs wrapping in a
-          // navigation controller for its action buttons and dismissal to work.
-          let presentedViewController: UIViewController
-          if let navigationController = viewController as? UINavigationController {
-            presentedViewController = navigationController
-          } else {
-            presentedViewController = UINavigationController(rootViewController: viewController)
-          }
-          // Set the style before touching `presentationController`, which
-          // builds the controller for the style current at that moment.
-          presentedViewController.modalPresentationStyle = .pageSheet
-          if !(viewController is EKEventEditViewController) {
-            // Swiping the view sheet down doesn't reach
-            // eventViewController(_:didCompleteWith:), so listen for the
-            // dismissal itself (#123). The editor handles its own pull-down
-            // through its delegate, so it keeps its presentation delegate.
-            presentedViewController.presentationController?.delegate = self
-          }
-
-          self.presentModal(presentedViewController)
+          self.presentModal(container)
         case .failure(let error):
           self.pendingModal.fail(code: error.code, message: error.message)
         }
@@ -445,22 +419,57 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
 
+  /// The page sheet to present for showEvent's controller, with this plugin
+  /// wired as its delegate. Nil for a controller it doesn't know.
+  ///
+  /// EKEventEditViewController is itself a UINavigationController, so it's
+  /// presented directly and handles its own pull-down through its delegate.
+  /// EKEventViewController needs wrapping in a navigation controller for its
+  /// action buttons and dismissal to work, and swiping its sheet down doesn't
+  /// reach eventViewController(_:didCompleteWith:) — so only that sheet takes
+  /// the presentation delegate, to hear the dismissal itself (#123).
+  func modalContainer(for viewController: UIViewController) -> UIViewController? {
+    switch viewController {
+    case let editor as EKEventEditViewController:
+      editor.editViewDelegate = self
+      editor.modalPresentationStyle = .pageSheet
+      return editor
+    case let viewer as EKEventViewController:
+      viewer.delegate = self
+      let navigationController = UINavigationController(rootViewController: viewer)
+      // Set the style before touching `presentationController`, which builds
+      // the controller for the style current at that moment.
+      navigationController.modalPresentationStyle = .pageSheet
+      navigationController.presentationController?.delegate = self
+      return navigationController
+    default:
+      return nil
+    }
+  }
+
   /// Presents the pending modal's controller from the top of the key window's
-  /// presentation stack: `present` from a controller that's already presenting
-  /// something (say the host app's own sheet) silently does nothing, which
-  /// would leave the reply pending forever. With no window to present from,
-  /// the call fails OPERATION_FAILED, as Android does with no Activity (#123).
+  /// presentation stack. With no window to present from, the call fails
+  /// OPERATION_FAILED, as Android does with no Activity (#123).
   private func presentModal(_ viewController: UIViewController) {
-    guard var presenter = getRootViewController() else {
+    guard let root = rootViewController() else {
       pendingModal.fail(
         code: PlatformExceptionCodes.operationFailed,
         message: "No view controller to present the modal from")
       return
     }
+    Self.topPresenter(from: root).present(viewController, animated: true, completion: nil)
+  }
+
+  /// The controller to present from: the top of `root`'s presentation stack.
+  /// `present` from a controller that's already presenting something (say the
+  /// host app's own sheet) silently does nothing, which would leave the reply
+  /// pending forever. A controller on its way out doesn't count.
+  static func topPresenter(from root: UIViewController) -> UIViewController {
+    var presenter = root
     while let presented = presenter.presentedViewController, !presented.isBeingDismissed {
       presenter = presented
     }
-    presenter.present(viewController, animated: true, completion: nil)
+    return presenter
   }
 
   private func handleCreateEvent(call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -702,8 +711,12 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   }
 
   // MARK: - Helper Methods
-  
-  private func getRootViewController() -> UIViewController? {
+
+  /// The key window's root controller, the base modals present from. A seam
+  /// so tests can drive the no-window case.
+  var rootViewController: () -> UIViewController? = DeviceCalendarPlusIosPlugin.keyWindowRootViewController
+
+  private static func keyWindowRootViewController() -> UIViewController? {
     // Get the key window
     if #available(iOS 13.0, *) {
       // Use window scene for iOS 13+

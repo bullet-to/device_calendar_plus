@@ -29,7 +29,7 @@ final class PendingModal {
     return true
   }
 
-  /// The modal closed (or never needed to open): reply and free the slot.
+  /// The modal closed: reply and free the slot.
   func complete() {
     take()?(nil)
   }

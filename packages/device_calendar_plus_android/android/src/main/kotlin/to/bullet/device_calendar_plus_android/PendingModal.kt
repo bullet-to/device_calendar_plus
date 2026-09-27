@@ -47,10 +47,17 @@ internal class PendingModal {
         return true
     }
 
-    /** The launch failed: reply with the error and free the slot. */
-    fun fail(code: String, message: String?) {
-        take()?.error(code, message, null)
+    /** The launch failed: reply with [error] and free the slot. */
+    fun fail(error: Throwable) {
+        take()?.error(error.channelCode, error.message, null)
     }
+
+    /**
+     * Whether the slot still holds [result]'s claim — false once it was
+     * resolved (say the activity went away) while its launch was being
+     * prepared.
+     */
+    fun holds(result: Result): Boolean = this.result === result
 
     /**
      * The activity is gone for good (not a config change — that recreates

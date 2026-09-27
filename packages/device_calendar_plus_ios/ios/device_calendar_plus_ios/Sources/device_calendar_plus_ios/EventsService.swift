@@ -345,7 +345,7 @@ class EventsService {
     eventId: String,
     timestamp: Int64?,
     edit: Bool = false,
-    completion: @escaping (Result<UIViewController?, CalendarError>) -> Void
+    completion: @escaping (Result<UIViewController, CalendarError>) -> Void
   ) {
     // Check permission
     guard permissionService.hasPermission(for: .full) else {

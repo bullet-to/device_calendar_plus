@@ -75,13 +75,7 @@ class DeviceCalendarPlusAndroidPlugin :
                     // The channel codec can't encode Unit; void operations
                     // reply with null, as the inline handlers did.
                     onSuccess = { value -> result.success(value.takeIf { it != Unit }) },
-                    onFailure = { error ->
-                        if (error is CalendarException) {
-                            result.error(error.code, error.message, null)
-                        } else {
-                            result.error(PlatformExceptionCodes.UNKNOWN_ERROR, error.message, null)
-                        }
-                    }
+                    onFailure = { error -> result.error(error.channelCode, error.message, null) }
                 )
             }
         }
@@ -304,12 +298,13 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
 
-        val currentActivity = modalActivity(result) ?: return
-        if (!pendingModal.begin(SHOW_EVENT_REQUEST_CODE, result)) return
-
-        service.showEvent(currentActivity, eventId, timestamp, edit, SHOW_EVENT_REQUEST_CODE)
-            .onFailure(::failModalLaunch)
-        // On success the reply is sent from onActivityResult.
+        launchModal(
+            SHOW_EVENT_REQUEST_CODE,
+            result,
+            lookup = { service.findEventForModal(eventId, timestamp) },
+        ) { currentActivity, requestCode, rowId ->
+            service.showEvent(currentActivity, rowId, timestamp, edit, requestCode)
+        }
     }
 
     private fun handleShowCreateEventModal(call: MethodCall, result: Result) {
@@ -317,43 +312,88 @@ class DeviceCalendarPlusAndroidPlugin :
 
         val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
 
-        val currentActivity = modalActivity(result) ?: return
-        if (!pendingModal.begin(CREATE_EVENT_REQUEST_CODE, result)) return
-
-        service.showCreateEvent(
-            activityContext = currentActivity,
-            title = args["title"] as? String,
-            startDate = args["startDate"] as? Long,
-            endDate = args["endDate"] as? Long,
-            description = args["description"] as? String,
-            location = args["location"] as? String,
-            isAllDay = args["isAllDay"] as? Boolean,
-            recurrenceRule = args["recurrenceRule"] as? String,
-            availability = args["availability"] as? String,
-            requestCode = CREATE_EVENT_REQUEST_CODE,
-        ).onFailure(::failModalLaunch)
-        // On success the reply is sent from onActivityResult.
+        // No lookup: ACTION_INSERT needs nothing from the provider.
+        launchModal(CREATE_EVENT_REQUEST_CODE, result) { currentActivity, requestCode ->
+            service.showCreateEvent(
+                activityContext = currentActivity,
+                title = args["title"] as? String,
+                startDate = args["startDate"] as? Long,
+                endDate = args["endDate"] as? Long,
+                description = args["description"] as? String,
+                location = args["location"] as? String,
+                isAllDay = args["isAllDay"] as? Boolean,
+                recurrenceRule = args["recurrenceRule"] as? String,
+                availability = args["availability"] as? String,
+                requestCode = requestCode,
+            )
+        }
     }
 
     /**
-     * The activity to launch a modal from, or null after replying
-     * OPERATION_FAILED — the same code openAppSettings and requestPermissions
-     * use for the same state, so it converts to a DeviceCalendarException.
+     * Launches a modal with [launch] from the current activity, replying to
+     * [result] when it closes (from onActivityResult). Every failure — no
+     * activity, a modal already showing, the launch — replies once.
      */
-    private fun modalActivity(result: Result): Activity? {
-        val currentActivity = activity
-        if (currentActivity == null) {
-            result.error(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available", null)
-        }
-        return currentActivity
+    private fun launchModal(
+        requestCode: Int,
+        result: Result,
+        launch: (Activity, Int) -> kotlin.Result<Unit>,
+    ) {
+        if (!claimModal(requestCode, result)) return
+        startClaimedModal(requestCode, launch)
     }
 
-    private fun failModalLaunch(error: Throwable) {
-        if (error is CalendarException) {
-            pendingModal.fail(error.code, error.message)
-        } else {
-            pendingModal.fail(PlatformExceptionCodes.UNKNOWN_ERROR, error.message)
+    /**
+     * [launchModal] behind a [lookup] whose value [launch] needs. The lookup
+     * is provider IPC, so it runs on the provider executor like every other
+     * query (#73). The slot is claimed first, so two calls in one turn can't
+     * both get through — as on iOS, which also looks up after claiming.
+     */
+    private fun <T> launchModal(
+        requestCode: Int,
+        result: Result,
+        lookup: () -> kotlin.Result<T>,
+        launch: (Activity, Int, T) -> kotlin.Result<Unit>,
+    ) {
+        if (!claimModal(requestCode, result)) return
+        providerExecutor!!.execute {
+            val found = try {
+                lookup()
+            } catch (error: Throwable) {
+                kotlin.Result.failure(error)
+            }
+            mainHandler.post {
+                // The claim can be resolved while the lookup runs (the
+                // activity went away); then there's nothing left to launch.
+                if (!pendingModal.holds(result)) return@post
+                found.fold(
+                    onSuccess = { value ->
+                        startClaimedModal(requestCode) { activity, code -> launch(activity, code, value) }
+                    },
+                    onFailure = pendingModal::fail,
+                )
+            }
         }
+    }
+
+    /**
+     * Claims the modal slot for [requestCode]. With no activity, replies
+     * OPERATION_FAILED — the code openAppSettings and requestPermissions use
+     * for the same state — and returns false.
+     */
+    private fun claimModal(requestCode: Int, result: Result): Boolean {
+        if (activity == null) {
+            result.error(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available", null)
+            return false
+        }
+        return pendingModal.begin(requestCode, result)
+    }
+
+    private fun startClaimedModal(requestCode: Int, launch: (Activity, Int) -> kotlin.Result<Unit>) {
+        val currentActivity = activity ?: return pendingModal.fail(
+            CalendarException(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available")
+        )
+        launch(currentActivity, requestCode).onFailure(pendingModal::fail)
     }
 
     private fun handleCreateEvent(call: MethodCall, result: Result) {
@@ -535,11 +575,9 @@ class DeviceCalendarPlusAndroidPlugin :
     }
     
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?): Boolean {
-        if (requestCode != SHOW_EVENT_REQUEST_CODE && requestCode != CREATE_EVENT_REQUEST_CODE) {
-            return false
-        }
-        pendingModal.complete(requestCode)
-        return true
+        // Only a result for the modal we're waiting on is ours; anything else
+        // (including a stray 1001/1002) is left for other listeners.
+        return pendingModal.complete(requestCode)
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {

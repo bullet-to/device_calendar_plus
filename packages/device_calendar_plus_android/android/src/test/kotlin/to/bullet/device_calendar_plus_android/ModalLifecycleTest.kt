@@ -48,7 +48,12 @@ internal class ModalLifecycleTest {
         return binding
     }
 
-    /** A modal the plugin is already waiting on, as if its launch succeeded. */
+    /**
+     * A modal the plugin is already waiting on, as if its launch succeeded.
+     * Seeded through pendingModal because a real launch builds an
+     * android.content.Intent, which plain JVM tests don't have — don't swap
+     * this for an Intent mock. The assertions go through the public paths.
+     */
     private fun showingModal(requestCode: Int): RecordingResult {
         plugin.onAttachedToActivity(activityBinding())
         val result = RecordingResult()

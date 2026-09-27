@@ -461,6 +461,28 @@ class EventsService(
     }
 
     /**
+     * The row ID [showEvent] opens for [eventId] (or, with [timestamp], the
+     * occurrence). Looked up first because firing the intent blind would open
+     * the calendar app on nothing and report success (#123): a missing event
+     * fails NOT_FOUND, as on iOS. [getEvent] gates on permission, so a denied
+     * caller hears that before anything about the ID. Provider IPC — call it
+     * off the main thread.
+     */
+    fun findEventForModal(eventId: String, timestamp: Long?): Result<Long> {
+        val found = getEvent(eventId, timestamp).getOrElse { return Result.failure(it) }
+        val rowId = eventId.toLongOrNull()
+        if (found == null || rowId == null) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event not found with event ID: $eventId"
+                )
+            )
+        }
+        return Result.success(rowId)
+    }
+
+    /**
      * Shows a calendar event using the system calendar app.
      *
      * Fires [Intent.ACTION_VIEW] (details, with an edit button) or, when [edit]
@@ -473,34 +495,10 @@ class EventsService(
      * existing event. `ACTION_VIEW` (the [edit] == false path) binds to the
      * event everywhere, so a dependable edit flow is view-then-tap-edit.
      *
-     * The event (or, with [timestamp], the occurrence) is looked up first and
-     * a missing one fails NOT_FOUND, as on iOS — firing the intent blind would
-     * open the calendar app on nothing and report success (#123).
+     * [rowId] comes from [findEventForModal], which runs first so a missing
+     * event fails NOT_FOUND, as on iOS.
      */
-    fun showEvent(activityContext: Activity, eventId: String, timestamp: Long?, edit: Boolean, requestCode: Int): Result<Unit> {
-        // Permission first, as on iOS: a denied caller hears that before
-        // anything about the ID.
-        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
-            context.checkSelfPermission(android.Manifest.permission.READ_CALENDAR)) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.PERMISSION_DENIED,
-                    "Calendar permission denied. Call requestPermissions() first."
-                )
-            )
-        }
-
-        val notFound = Result.failure<Unit>(
-            CalendarException(
-                PlatformExceptionCodes.NOT_FOUND,
-                "Event not found with event ID: $eventId"
-            )
-        )
-        val rowId = eventId.toLongOrNull() ?: return notFound
-        val lookup = getEvent(eventId, timestamp)
-        lookup.exceptionOrNull()?.let { return Result.failure(it) }
-        if (lookup.getOrNull() == null) return notFound
-
+    fun showEvent(activityContext: Activity, rowId: Long, timestamp: Long?, edit: Boolean, requestCode: Int): Result<Unit> {
         return try {
             val intent = Intent(if (edit) Intent.ACTION_EDIT else Intent.ACTION_VIEW)
 
