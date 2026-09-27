@@ -2324,6 +2324,107 @@ void main() {
                 '(DST-safe day count, not a flat 24h add)');
       }
     });
+
+    // #144: an all-day `start` is the local midnight of the day it means,
+    // while Android stores all-day as UTC midnight. The day-move check and
+    // the anchor shift must read both as the same calendar day on either
+    // side of UTC — the harness runs these at Los Angeles, UTC and Sydney.
+
+    /// An all-day weekly series pinned to its own weekday, starting in two
+    /// days (so a day-earlier move is still in the future).
+    Future<({String eventId, DateTime start, List<Event> occurrences})>
+        createAllDayPinnedWeekly(String title) async {
+      final start = localMidnight(2);
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId!,
+        title: title,
+        startDate: start,
+        endDate: nextLocalMidnight(start),
+        isAllDay: true,
+        recurrenceRule: WeeklyRecurrence(
+          daysOfWeek: [weekdayOf(start)],
+          end: const CountEnd(4),
+        ),
+      );
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, eventId, start,
+          windowDays: 30);
+      expect(occurrences, isNotEmpty);
+      return (eventId: eventId, start: start, occurrences: occurrences);
+    }
+
+    test(
+        'all-day start on the same day of an explicit-BYDAY rule is allowed',
+        () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createAllDayPinnedWeekly('All-day Same Day');
+      final first = series.occurrences.first;
+
+      // Re-passing the occurrence's own day moves nothing, so the rule's
+      // pinned weekday can't conflict.
+      await plugin.updateRecurring(
+        first.instanceId,
+        EventSpan.allEvents,
+        start: first.startDate,
+        title: 'All-day Same Day (renamed)',
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 30);
+      expect(startsOf(after), startsOf(series.occurrences),
+          reason: 'a same-day start must leave every occurrence in place');
+      expect(after.every((e) => e.title == 'All-day Same Day (renamed)'),
+          isTrue);
+    });
+
+    test(
+        'all-day start a day earlier on an explicit-BYDAY rule without a '
+        'rule throws', () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createAllDayPinnedWeekly('All-day Day Earlier');
+      final first = series.occurrences.first;
+      final dayBefore = DateTime(first.startDate.year, first.startDate.month,
+          first.startDate.day - 1);
+
+      await expectLater(
+        plugin.updateRecurring(
+          first.instanceId,
+          EventSpan.allEvents,
+          start: dayBefore,
+        ),
+        throwsInvalidArguments(),
+      );
+    });
+
+    test('all-day start a day later moves every occurrence a calendar day',
+        () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createAllDayDailySeries(plugin, calendarId!,
+          count: 4);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(before.length, 4);
+
+      await plugin.updateRecurring(
+        before.first.instanceId,
+        EventSpan.allEvents,
+        start: nextLocalMidnight(before.first.startDate),
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(
+        startsOf(after),
+        startsOf(before)
+            .map((ms) => nextLocalMidnight(
+                    DateTime.fromMillisecondsSinceEpoch(ms))
+                .millisecondsSinceEpoch)
+            .toList(),
+        reason: 'each all-day occurrence must move to the next calendar day',
+      );
+      expect(after.every((e) => e.isAllDay), isTrue);
+    });
   });
 
   group('Recurrence Delete Tests', () {

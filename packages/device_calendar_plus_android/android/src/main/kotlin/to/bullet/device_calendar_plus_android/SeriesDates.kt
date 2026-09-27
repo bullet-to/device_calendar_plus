@@ -98,7 +98,9 @@ internal class SplitShift private constructor(
  * counterpart is `resolveSeriesStart`.
  *
  * When [newStartMillis] is given the start is shifted by the wall-clock
- * delta from [referenceMillis] to [newStartMillis] (see [SplitShift]). A
+ * delta from [referenceMillis] to [newStartMillis] (see [SplitShift]),
+ * which is in the series' stored frame: for an all-day series, the UTC
+ * midnight [storageMillis] makes of the caller's local start (#144). A
  * new [rrule] then moves it onto the first day the rule generates, keeping
  * its wall-clock time — the anchor a series switched to a new rule must
  * have, or the provider emits the old day as an extra occurrence (#140).
@@ -149,4 +151,39 @@ internal fun resolveSeriesTimes(
         wholeSeconds(existingDurationMillis)
     }
     return Result.success(Pair(newStart, newDurationMs))
+}
+
+/**
+ * Whether moving the anchor from [referenceMillis] to [targetMillis] would
+ * change the day-spec that [rrule] pins explicitly: the weekday for a
+ * BYDAY rule, the day-of-month for a BYMONTHDAY rule, or the month for a
+ * BYMONTH rule. When it would, an anchor shift alone can't say what the new
+ * pattern should be (see updateRecurring docs), so the caller must supply a
+ * new rule. Rules with no explicit anchor return false — they follow the
+ * anchor freely. iOS's counterpart is `dayMoveConflictsWithRule`.
+ *
+ * Each instant is read in the zone that frames its own calendar day (see
+ * [seriesTimeZone]): an all-day one is stored as UTC midnight, so it is read
+ * in UTC. Reading a UTC-midnight date in the device zone puts it on the day
+ * before west of UTC (#144).
+ */
+internal fun dayMoveConflictsWithRule(
+    rrule: String,
+    referenceMillis: Long,
+    referenceZone: TimeZone,
+    targetMillis: Long,
+    targetZone: TimeZone
+): Boolean {
+    val parts = RruleString.params(rrule)
+    val hasByDay = "BYDAY" in parts
+    val hasByMonthDay = "BYMONTHDAY" in parts
+    val hasByMonth = "BYMONTH" in parts
+    if (!hasByDay && !hasByMonthDay && !hasByMonth) return false
+    val ref = Calendar.getInstance(referenceZone).apply { timeInMillis = referenceMillis }
+    val tgt = Calendar.getInstance(targetZone).apply { timeInMillis = targetMillis }
+    fun changed(field: Int) = ref.get(field) != tgt.get(field)
+    if (hasByDay && changed(Calendar.DAY_OF_WEEK)) return true
+    if (hasByMonthDay && changed(Calendar.DAY_OF_MONTH)) return true
+    if (hasByMonth && changed(Calendar.MONTH)) return true
+    return false
 }

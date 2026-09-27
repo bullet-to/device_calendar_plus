@@ -991,15 +991,26 @@ class EventsService(
             // provider: that would keep FREQ=HOURLY as an hourly series.
             unsupportedRuleFailure(recurrenceRule)?.let { return Result.failure(it) }
 
+            // The caller's `start` is a local instant (a Dart DateTime); an
+            // all-day series is stored as UTC midnight, so bring it into that
+            // frame once, here, as updateEvent does with storageMillis. The
+            // day-move check and the anchor shift then compare like with like
+            // on either side of UTC (#144).
+            val targetStart = newStartMillis?.let { storageMillis(it, effectiveIsAllDay) }
+
             // A `start` that moves the day of a series whose rule pins that day
             // explicitly is ambiguous (see updateRecurring docs) — refuse it
             // unless the caller also supplies the new rule. Implicit rules (no
             // BYDAY/BYMONTHDAY) just follow the anchor, so they pass through.
             val changingRule = recurrenceRule != null ||
                 "recurrenceRule" in patch.clearedFields
-            if (newStartMillis != null && !changingRule && row.rrule != null &&
+            if (targetStart != null && !changingRule && row.rrule != null &&
                 dayMoveConflictsWithRule(
-                    row.rrule, timestamp ?: row.dtstart, newStartMillis, row.timeZone
+                    row.rrule,
+                    timestamp ?: row.dtstart,
+                    seriesTimeZone(row.timeZone, row.allDay),
+                    targetStart,
+                    seriesTimeZone(row.timeZone, effectiveIsAllDay)
                 )
             ) {
                 return Result.failure(
@@ -1014,11 +1025,11 @@ class EventsService(
 
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    row, timestamp, newStartMillis,
+                    row, timestamp, targetStart,
                     durationMinutes, recurrenceRule, patch
                 )
                 else -> updateRecurringAllEvents(
-                    row, timestamp, newStartMillis,
+                    row, timestamp, targetStart,
                     durationMinutes, recurrenceRule, patch
                 )
             }
@@ -1573,37 +1584,6 @@ class EventsService(
                 "Invalid recurrence rule: $it"
             )
         }
-
-    /**
-     * Whether moving the anchor from [referenceMillis] to [targetMillis] would
-     * change the day-spec that [rrule] pins explicitly: the weekday for a
-     * BYDAY rule, the day-of-month for a BYMONTHDAY rule, or the month for a
-     * BYMONTH rule. When it would, an anchor shift alone can't say what the new
-     * pattern should be (see updateRecurring docs), so the caller must supply a
-     * new rule. Rules with no explicit anchor return false — they follow the
-     * anchor freely. iOS's counterpart is `dayMoveConflictsWithRule`.
-     */
-    private fun dayMoveConflictsWithRule(
-        rrule: String,
-        referenceMillis: Long,
-        targetMillis: Long,
-        timeZoneId: String?
-    ): Boolean {
-        val parts = RruleString.params(rrule)
-        val hasByDay = "BYDAY" in parts
-        val hasByMonthDay = "BYMONTHDAY" in parts
-        val hasByMonth = "BYMONTH" in parts
-        if (!hasByDay && !hasByMonthDay && !hasByMonth) return false
-        val tz = if (timeZoneId != null) java.util.TimeZone.getTimeZone(timeZoneId)
-                 else java.util.TimeZone.getDefault()
-        val ref = java.util.Calendar.getInstance(tz).apply { timeInMillis = referenceMillis }
-        val tgt = java.util.Calendar.getInstance(tz).apply { timeInMillis = targetMillis }
-        fun changed(field: Int) = ref.get(field) != tgt.get(field)
-        if (hasByDay && changed(java.util.Calendar.DAY_OF_WEEK)) return true
-        if (hasByMonthDay && changed(java.util.Calendar.DAY_OF_MONTH)) return true
-        if (hasByMonth && changed(java.util.Calendar.MONTH)) return true
-        return false
-    }
 
     /** Resolves an event's duration, falling back to one hour when unknown. */
     private fun eventDurationMillis(row: EventRow): Long =
