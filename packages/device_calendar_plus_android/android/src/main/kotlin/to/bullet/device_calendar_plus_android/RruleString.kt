@@ -15,6 +15,9 @@ import java.util.TimeZone
 internal object RruleString {
     private const val PREFIX = "RRULE:"
 
+    /** The frequencies iOS EventKit can express, and so the plugin's contract. */
+    private val SUPPORTED_FREQUENCIES = setOf("DAILY", "WEEKLY", "MONTHLY", "YEARLY")
+
     /** [rrule] without its `RRULE:` prefix, if it has one. */
     fun body(rrule: String): String =
         if (rrule.startsWith(PREFIX)) rrule.substring(PREFIX.length) else rrule
@@ -47,6 +50,14 @@ internal object RruleString {
         parts(rrule).mapNotNull { part ->
             part.value?.takeIf { part.key.isNotEmpty() }?.let { part.key to it }
         }.toMap()
+
+    /**
+     * Whether [rrule] names a FREQ the plugin supports: one iOS EventKit can
+     * store. Anything else (FREQ=HOURLY, no FREQ, malformed input) is refused
+     * before a write, as iOS refuses it (#125).
+     */
+    fun hasSupportedFrequency(rrule: String): Boolean =
+        params(rrule)["FREQ"] in SUPPORTED_FREQUENCIES
 
     /** The rule's COUNT, or null when it has none. */
     fun count(rrule: String): Int? = params(rrule)["COUNT"]?.toIntOrNull()

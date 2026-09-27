@@ -1,6 +1,9 @@
 import 'dart:io' show Platform;
 
 import 'package:device_calendar_plus/device_calendar_plus.dart';
+import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
+    show DeviceCalendarPlusPlatform;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -997,6 +1000,64 @@ void main() {
         expect(calendarAfter.length, calendarBefore.length,
             reason: 'a refused $span rule must not create a new series');
       });
+    }
+
+    // The typed RecurrenceRule only emits DAILY/WEEKLY/MONTHLY/YEARLY, so
+    // these drive the platform layer with the raw string. iOS has always
+    // refused a rule EventKit can't express; Android used to hand it to the
+    // provider, which kept FREQ=HOURLY as an hourly series.
+    for (final span in EventSpan.values) {
+      for (final rrule in ['FREQ=HOURLY;COUNT=3', 'NOT-A-RULE']) {
+        test(
+            'updateRecurring refuses a rule outside DAILY/WEEKLY/MONTHLY/YEARLY '
+            '("$rrule") for $span and leaves the series untouched', () async {
+          expect(calendarId, isNotNull,
+              reason: 'setUpAll must create a calendar');
+          final series =
+              await createWeeklySeries(plugin, calendarId!, count: 4);
+          final before = await occurrencesOf(
+              plugin, calendarId!, series.eventId, series.start,
+              windowDays: 45);
+          expect(before.length, greaterThanOrEqualTo(3),
+              reason: 'the weekly series should have expanded into '
+                  'occurrences');
+          final windowEnd = series.start.add(const Duration(days: 45));
+          final calendarBefore = await plugin.listEvents(
+              series.start.subtract(const Duration(days: 1)), windowEnd,
+              calendarIds: [calendarId!]);
+          final target = InstanceIdParser.parse(span == EventSpan.allEvents
+              ? series.eventId
+              : before[2].instanceId);
+
+          await expectLater(
+            DeviceCalendarPlusPlatform.instance.updateRecurring(
+              target.eventId,
+              target.timestamp,
+              span.name,
+              recurrenceRule: Patch.set(rrule),
+            ),
+            throwsA(isA<PlatformException>().having(
+              (e) => e.code,
+              'code',
+              PlatformExceptionCodes.invalidArguments,
+            )),
+          );
+
+          final after = await occurrencesOf(
+              plugin, calendarId!, series.eventId, series.start,
+              windowDays: 45);
+          expect(
+            after.map((e) => e.startDate).toList(),
+            before.map((e) => e.startDate).toList(),
+            reason: 'a refused $span rule must leave the series as it was',
+          );
+          final calendarAfter = await plugin.listEvents(
+              series.start.subtract(const Duration(days: 1)), windowEnd,
+              calendarIds: [calendarId!]);
+          expect(calendarAfter.length, calendarBefore.length,
+              reason: 'a refused $span rule must not create a new series');
+        });
+      }
     }
 
     test(

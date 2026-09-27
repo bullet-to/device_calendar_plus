@@ -1049,6 +1049,18 @@ class EventsService(
                 )
             }
 
+            // Refuse a rule iOS can't store before reading or writing
+            // anything, as iOS's updateRecurring does, rather than handing it
+            // to the provider: that would keep FREQ=HOURLY as an hourly series.
+            if (recurrenceRule != null && !RruleString.hasSupportedFrequency(recurrenceRule)) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "Invalid recurrence rule: $recurrenceRule"
+                    )
+                )
+            }
+
             val row = store.readEventRow(eventId).getOrElse { return Result.failure(it) }
 
             // All-day events have no time-of-day and only whole-day durations.

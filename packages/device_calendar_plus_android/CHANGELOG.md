@@ -1,6 +1,10 @@
 ## Unreleased
 
 ### Fixed
+- `updateRecurring` refuses a recurrence rule whose `FREQ` isn't
+  `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY` (or that is malformed) with
+  `INVALID_ARGUMENTS` before writing, matching iOS. `FREQ=HOURLY` used to be
+  stored on the series as an hourly rule.
 - `updateEvent` or `deleteEvent` on a single occurrence of a recurring event
   on a synced calendar (Google, Exchange) no longer hides the whole series
   when the series hasn't synced yet. Until the calendar's first sync of the

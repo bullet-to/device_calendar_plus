@@ -40,6 +40,10 @@ dependencies:
   cupertino_icons: ^1.0.8
 
 dev_dependencies:
+  # The integration tests drive the platform layer directly for inputs the
+  # typed API can't produce (e.g. a raw RRULE outside the supported subset).
+  device_calendar_plus_platform_interface:
+    path: ../../device_calendar_plus_platform_interface
   flutter_test:
     sdk: flutter
   integration_test:
