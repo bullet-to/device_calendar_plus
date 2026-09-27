@@ -119,6 +119,81 @@ void main() {
               'brings the occurrence back');
     });
 
+    // A series the adapter has not uploaded yet has no `_sync_id`, and on a
+    // synced calendar the plugin must not invent one. An exception inserted
+    // against such a keyless master drops the master's occurrences from the
+    // Instances cache until the adapter keys it — the whole series gone,
+    // offline or with sync off (#163, the synced-calendar side of #153).
+    // [detachedTitle] is the edited occurrence's title, or null for a delete.
+    // [editedSlot] is the index of the occurrence the edit changes.
+    const editedTitle = 'Edited before upload #163';
+    const editedSlot = 4;
+    for (final (label, edit, detachedTitle) in [
+      (
+        'updateEvent',
+        (DeviceCalendar plugin, SeededSeries series) => plugin.updateEvent(
+            eventId: series.occurrences[editedSlot].instanceId,
+            title: editedTitle),
+        editedTitle,
+      ),
+      (
+        'deleteEvent',
+        (DeviceCalendar plugin, SeededSeries series) =>
+            plugin.deleteEvent(
+                eventId: series.occurrences[editedSlot].instanceId),
+        null,
+      ),
+    ]) {
+      test(
+          '$label on one occurrence of a not-yet-uploaded series keeps the '
+          'series listed, and the change shows once it is uploaded (#163)',
+          () async {
+        final series = await seedDailySeries(plugin, calendarId);
+        expect((await readSyncIds(series.eventId))?.syncId, isNull,
+            reason: 'the arrange must leave the master unkeyed, as before '
+                'the adapter\'s first upload');
+
+        await edit(plugin, series);
+
+        // Until the upload the change is pending, not shown: the series
+        // lists as it was, the changed slot included, and an edited
+        // occurrence has no listing of its own yet.
+        expect(
+          startsOf(await occurrencesOf(
+              plugin, calendarId!, series.eventId, series.start)),
+          startsOf(series.occurrences),
+          reason: 'the series must list as it was while the master awaits '
+              'its first upload',
+        );
+        if (detachedTitle != null) {
+          expect(
+              await eventsTitled(
+                  plugin, calendarId!, detachedTitle, series.start),
+              isEmpty,
+              reason: 'the edited occurrence must not be listed a second '
+                  'time before the upload');
+        }
+
+        // The upload keys the master, the provider passes the key on to the
+        // exception, and the series' next expansion pairs them.
+        await markUploaded(series.eventId);
+        await touchSeries(series.eventId);
+
+        expect(
+          startsOf(await occurrencesOf(
+              plugin, calendarId!, series.eventId, series.start)),
+          startsExcept(series.occurrences, {editedSlot}),
+          reason: 'once uploaded, the series must skip the changed slot',
+        );
+        if (detachedTitle != null) {
+          await expectDetachedOnce(plugin, calendarId!, detachedTitle,
+              series.occurrences[editedSlot], series.start,
+              reason: 'once uploaded, the edited occurrence must be listed '
+                  'once, in its slot');
+        }
+      });
+    }
+
     test('updateRecurring(allEvents) marks the series dirty for upload',
         () async {
       final series = await seedUploadedSeries(plugin, calendarId);
@@ -327,6 +402,15 @@ void main() {
           reason: 'the copy must be flagged for upload');
       expect((await plugin.getEvent(copyId))?.status, EventStatus.canceled,
           reason: 'the copy must still cancel its slot');
+      // Before the upload the copy is pending, not shown: the new series
+      // lists as it was, the deleted slot included.
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, newTitle, series.start)),
+        startsOf(series.occurrences.skip(3)),
+        reason: 'the new series must stay listed while its master awaits '
+            'its first upload (#163)',
+      );
 
       // As for a detached occurrence: the upload keys the new master, the
       // provider passes the key on to the copy, and the next expansion

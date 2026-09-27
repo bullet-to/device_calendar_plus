@@ -1,3 +1,12 @@
+## Unreleased
+
+### Fixed
+- `updateEvent` or `deleteEvent` on a single occurrence of a recurring event
+  on a synced calendar (Google, Exchange) no longer hides the whole series
+  when the series hasn't synced yet. Until the calendar's first sync of the
+  series, it lists as it was, and the per-occurrence change shows once the
+  calendar syncs (#163, the synced-calendar side of #153).
+
 ## 0.8.0 - 2026-09-26
 
 ### Fixed

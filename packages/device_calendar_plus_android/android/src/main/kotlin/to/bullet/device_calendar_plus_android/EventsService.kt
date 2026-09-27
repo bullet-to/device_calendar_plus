@@ -1451,6 +1451,11 @@ class EventsService(
      * insert — so a future exception writer cannot skip it. Returns the new
      * exception's own event ID.
      *
+     * A synced series its adapter has not uploaded yet has no key to give
+     * the exception, so the insert is followed by a re-expand of the master
+     * (#163): the series stays listed, and the change shows once the adapter
+     * keys the master.
+     *
      * A plain caller's insert on every account. On a synced calendar that
      * marks the exception DIRTY for the adapter to upload — a cancellation
      * written as the sync adapter never leaves the device, and the next
@@ -1462,7 +1467,7 @@ class EventsService(
         series: SeriesRow,
         values: android.content.ContentValues
     ): Result<String> {
-        store.ensureLocalSeriesSyncId(series).getOrElse { return Result.failure(it) }
+        val key = store.ensureLocalSeriesSyncId(series).getOrElse { return Result.failure(it) }
 
         val uri = CalendarContract.Events.CONTENT_EXCEPTION_URI
             .buildUpon()
@@ -1476,6 +1481,16 @@ class EventsService(
                     "Failed to write an exception for event ${series.row.id}"
                 )
             )
+        // A zero row count is logged, not failed, unlike the truncate paths:
+        // the exception is already written, so failing here would misreport
+        // a write that happened, and a master that had vanished would have
+        // failed the insert above.
+        if (key == null && store.rewriteSeriesForReexpand(series.row, series.rrule) == 0) {
+            android.util.Log.w(
+                LOG_TAG,
+                "Could not re-expand unkeyed series ${series.row.id} after its exception insert (#163)"
+            )
+        }
         return Result.success(exceptionId)
     }
 
