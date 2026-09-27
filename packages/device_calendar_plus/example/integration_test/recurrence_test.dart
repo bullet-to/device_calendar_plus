@@ -1908,6 +1908,49 @@ void main() {
             reason: 'clearing must remove every occurrence\'s reminders');
       }
     });
+
+    test(
+        'updateRecurring thisAndFollowing sets reminders on the new series '
+        'only', () async {
+      // A rule-keeping split goes through each platform's split path (the
+      // new series on Android, EKSpan.futureEvents on iOS), not the
+      // allEvents one, so the reminders patch must survive it too (#175).
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 6);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(occurrences, hasLength(6));
+      final splitMillis = occurrences[3].startDate.millisecondsSinceEpoch;
+      const reminders = [Duration(minutes: 15), Duration(hours: 1)];
+
+      final newSeriesId = await plugin.updateRecurring(
+        occurrences[3].instanceId,
+        EventSpan.thisAndFollowing,
+        title: 'Reminded Tail',
+        reminders: const Patch.set(reminders),
+      );
+
+      final head = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expectTruncatedMaster(head, before: occurrences[3].startDate, count: 3);
+      for (final occurrence in head) {
+        expect(occurrence.reminders ?? const <Duration>[], isEmpty,
+            reason: 'occurrences before the split must keep their (empty) '
+                'reminders');
+      }
+
+      final tail =
+          await occurrencesOf(plugin, calendarId!, newSeriesId, series.start);
+      expect(tail, isNotEmpty,
+          reason: 'the new series must carry the occurrences from the split');
+      expect(tail.first.startDate.millisecondsSinceEpoch, splitMillis,
+          reason: 'the new series must start at the split point');
+      for (final occurrence in tail) {
+        expect(occurrence.reminders?.toSet(), reminders.toSet(),
+            reason: 'every occurrence of the new series must carry the '
+                'reminders');
+      }
+    });
   });
 
   // Anchor-shift: `start` moves the anchored occurrence to a new instant and
