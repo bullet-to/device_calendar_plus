@@ -102,11 +102,31 @@ final class PermissionServiceTests: XCTestCase {
   private func makeService(
     _ authorization: StubAuthorization,
     usageDescriptions: [String: String] = PermissionServiceTests.allUsageDescriptions,
-    record: AccessRecord = AccessRecord()
+    record: AccessRecord = AccessRecord(),
+    // Each check is the next main-runloop turn rather than a real delay, so a
+    // status that never settles runs out its checks without a clock.
+    deferral: @escaping RecordingAuthorization.Deferral = { DispatchQueue.main.async(execute: $0) }
   ) -> PermissionService {
     PermissionService(
-      authorization: RecordingAuthorization(wrapping: authorization, record: record),
+      authorization: RecordingAuthorization(
+        wrapping: authorization, record: record, deferral: deferral),
       usageDescriptions: { usageDescriptions[$0] })
+  }
+
+  /// EventKit's lag (#137): a deferral whose `onCheck`th check finds the live
+  /// status moved to `to`. The answer's handler, and every check before that,
+  /// still sees the stale value.
+  private func settling(
+    _ authorization: StubAuthorization, to settled: Access, onCheck: Int
+  ) -> RecordingAuthorization.Deferral {
+    var checks = 0
+    return { work in
+      DispatchQueue.main.async {
+        checks += 1
+        if checks == onCheck { authorization.status = settled }
+        work()
+      }
+    }
   }
 
   /// Drives the real request path so the service records the answer the way a
@@ -287,6 +307,10 @@ final class PermissionServiceTests: XCTestCase {
   /// while granting write-only. Recording it as `.denied` inside the stale
   /// window failed every write gate and stopped `requestPermissions` ever
   /// prompting again, for the rest of the process.
+  ///
+  /// This is the never-settles case: the request runs out its checks and
+  /// reports `.notDetermined`; the usual settling case is
+  /// `testAnUngrantedFullAskReportsTheStatusItSettlesOn`.
   func testAFullAskAnsweredAddEventsOnlyIsNotRecordedAsADenial() throws {
     let (service, authorization) = makeService()
     authorization.grants = false
@@ -300,11 +324,40 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertEqual(try service.hasPermissions().get(), .notDetermined)
     XCTAssertFalse(service.hasPermission(for: .write))
 
-    // ...and once the live status catches up with what the OS actually granted,
-    // the write gate opens on its own.
+    // Once the status catches up with what the OS actually granted, the write
+    // gate opens on its own.
     authorization.status = .writeOnly
 
     XCTAssertTrue(service.hasPermission(for: .write))
+  }
+
+  /// #137: an ungranted answer inside the stale window. The handler says
+  /// `false` while the live status still says `.notDetermined`, and only
+  /// catches up a moment later — to `.writeOnly` for "Add Events Only", to
+  /// `.denied` for "Don't Allow". Reporting the not-yet-settled status sent
+  /// Dart `.notDetermined` and failed a `createEvent` fired straight after the
+  /// prompt, so the request must wait for the OS's own answer. One row per
+  /// settled status, plus one where the lag outlasts the first re-check, so the
+  /// wait must keep re-reading rather than give up after one; a status that
+  /// never settles is `testAFullAskAnsweredAddEventsOnlyIsNotRecordedAsADenial`.
+  func testAnUngrantedFullAskReportsTheStatusItSettlesOn() throws {
+    let rows: [(settlesTo: Access, onCheck: Int, write: Bool, full: Bool)] = [
+      (.writeOnly, 1, true, false),
+      (.denied, 1, false, false),
+      (.writeOnly, 3, true, false),
+    ]
+    for row in rows {
+      let authorization = StubAuthorization()
+      authorization.grants = false
+      let service = makeService(
+        authorization,
+        deferral: settling(authorization, to: row.settlesTo, onCheck: row.onCheck))
+      let label = "\(row.settlesTo) on check \(row.onCheck)"
+
+      XCTAssertEqual(try requestPermissions(service), row.settlesTo, label)
+      XCTAssertEqual(service.hasPermission(for: .write), row.write, label)
+      XCTAssertEqual(service.hasPermission(for: .full), row.full, label)
+    }
   }
 
   /// The other half of that path: a full upgrade that was not granted must

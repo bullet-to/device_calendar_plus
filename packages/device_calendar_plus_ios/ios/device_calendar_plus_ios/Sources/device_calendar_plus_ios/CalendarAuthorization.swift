@@ -104,20 +104,54 @@ final class AccessRecord {
   }
 }
 
-/// Patches EventKit's stale-status window (#134) behind the seam, so nothing
-/// above has to know the window exists. `.denied` and `.restricted` are
-/// terminal and reported as-is, so a Settings revocation is honoured
-/// immediately and is never masked by an earlier grant. Below that, the
-/// recorded grant is reported whenever it outranks the live status — the OS
-/// confirmed that tier, so a lower live status is stale rather than
-/// authoritative.
+/// Patches EventKit's stale-status window behind the seam, in both
+/// directions, so nothing above has to know the window exists:
+///
+/// - **After a grant** (#134) it *records* the tier the OS confirmed, and
+///   reports that record whenever it outranks the lagging live status.
+/// - **After an ungranted answer** (#137) it *waits* for the status to settle;
+///   see `request(_:completion:)`.
+///
+/// Together these are the guarantee `PermissionService` leans on: once
+/// `request(_:completion:)` calls back, `status` reports the tier the OS
+/// settled on — or `.notDetermined` if the request errored, or the status
+/// never left it within the bounded wait (about a second). The raw `EventKitAuthorization` makes no such
+/// promise; that lag is the bug.
+///
+/// `.denied` and `.restricted` are terminal and reported as-is, so a Settings
+/// revocation is honoured immediately and is never masked by an earlier
+/// grant. Below that, the recorded grant wins whenever it outranks the live
+/// status — the OS confirmed that tier, so a lower live status is stale rather
+/// than authoritative.
 final class RecordingAuthorization: CalendarAuthorization {
+  /// Runs its argument a moment later. Injected so tests drive the wait for a
+  /// lagging status without a real clock.
+  typealias Deferral = (@escaping () -> Void) -> Void
+
+  /// The bounded wait for an ungranted answer's status to leave
+  /// `.notDetermined`: `settleChecks` re-reads, `settleInterval` apart, is
+  /// about a second in production.
+  private static let settleInterval: TimeInterval = 0.05
+  private static let settleChecks = 20
+
+  /// The production wait between re-reads of a lagging status.
+  static let settleDelay: Deferral = { work in
+    DispatchQueue.global(qos: .userInitiated).asyncAfter(
+      deadline: .now() + RecordingAuthorization.settleInterval, execute: work)
+  }
+
   private let wrapped: CalendarAuthorization
   private let record: AccessRecord
+  private let deferral: Deferral
 
-  init(wrapping wrapped: CalendarAuthorization, record: AccessRecord) {
+  init(
+    wrapping wrapped: CalendarAuthorization,
+    record: AccessRecord,
+    deferral: @escaping Deferral = RecordingAuthorization.settleDelay
+  ) {
     self.wrapped = wrapped
     self.record = record
+    self.deferral = deferral
   }
 
   var supportsWriteOnly: Bool { wrapped.supportsWriteOnly }
@@ -141,17 +175,47 @@ final class RecordingAuthorization: CalendarAuthorization {
   /// nothing clears the record and `requestPermissions` will not re-prompt on a
   /// terminal answer; forgetting a real refusal costs one redundant OS call.
   ///
-  /// The residual — that same answer reports `.notDetermined` until the live
-  /// status catches up, so a `createEvent` fired immediately after the prompt
-  /// can still fail its gate — is tracked on #137.
+  /// An ungranted answer is not guessed at either: it waits instead, briefly,
+  /// for the live status to leave `.notDetermined` (#137). The same stale
+  /// window that hides a grant hides an "Add Events Only" answer too, and the
+  /// caller's very next read — `requestPermissions`' report, then the gate on a
+  /// `createEvent` fired straight after it — must see the tier the OS settles
+  /// on, not the lag. A refusal settles on `.denied` just the same, and a
+  /// status that never moves costs a bounded wait before reporting
+  /// `.notDetermined` as before.
   func request(_ tier: CalendarPermissionType, completion: @escaping (Result<Bool, Error>) -> Void) {
     wrapped.request(tier) { result in
-      // Record before calling back: the caller's very next read may gate on
-      // this, and the OS status can still say notDetermined at that point.
-      if case .success(true) = result {
+      switch result {
+      case .success(true):
+        // Record before calling back: the caller's very next read may gate on
+        // this, and the OS status can still say notDetermined at that point.
         self.record.record(granted: tier)
+        completion(result)
+      case .success(false):
+        self.awaitSettledStatus(checksLeft: Self.settleChecks) { completion(result) }
+      case .failure:
+        completion(result)
       }
-      completion(result)
     }
+  }
+
+  /// Calls `done` once `status` has left `.notDetermined`, or once the checks
+  /// run out. Reads the patched `status`, so a recorded grant that already
+  /// outranks the lag — an upgrade answered "not that tier" — needs no wait.
+  private func awaitSettledStatus(checksLeft: Int, then done: @escaping () -> Void) {
+    guard status == .notDetermined else {
+      done()
+      return
+    }
+    guard checksLeft > 0 else {
+      // The bound is a guess at EventKit's lag; if a real device outlasts it,
+      // #137 is back, so leave a trace in the device log.
+      NSLog(
+        "device_calendar_plus: authorization status still notDetermined after an ungranted answer; reporting it"
+      )
+      done()
+      return
+    }
+    deferral { self.awaitSettledStatus(checksLeft: checksLeft - 1, then: done) }
   }
 }

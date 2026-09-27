@@ -181,11 +181,8 @@ class PermissionService {
         NSLog("device_calendar_plus: calendar access request failed: \(error)")
       }
 
-      // Re-read rather than translate the answer: a grant has already been
-      // folded into the seam's status, and everything else — a refusal, a
-      // not-that-tier answer, a request that errored — is left alone, so this
-      // reports the live status or `.notDetermined`. That is the honest answer
-      // in all three cases, and it keeps the app askable.
+      // Re-read rather than translate the answer: `RecordingAuthorization`
+      // guarantees the status has settled by the time it calls back.
       completion(.success(self.authorization.status))
     }
   }
