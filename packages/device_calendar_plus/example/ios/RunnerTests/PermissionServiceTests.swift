@@ -38,6 +38,10 @@ final class PermissionServiceTests: XCTestCase {
     /// instead of delivering it, so a test can put two asks in flight and
     /// choose which one the user answers first. `finishRequest()` releases it.
     var holdsRequest = false
+    /// When set, the live status moves here one runloop turn *after* the answer
+    /// is delivered — EventKit's stale window (#137): the handler has answered,
+    /// but `authorizationStatus` has not caught up yet.
+    var settlesTo: Access?
     /// One entry per OS prompt fired — "did we ask the user" is the behaviour.
     private(set) var requestedTiers: [CalendarPermissionType] = []
 
@@ -54,11 +58,18 @@ final class PermissionServiceTests: XCTestCase {
       requestedTiers.append(tier)
       let answer: Result<Bool, Error> =
         requestError.map { .failure($0) } ?? .success(grants)
-      guard holdsRequest else {
+      let settled = settlesTo
+      let deliver = {
         completion(answer)
+        if let settled = settled {
+          DispatchQueue.main.async { self.status = settled }
+        }
+      }
+      guard holdsRequest else {
+        deliver()
         return
       }
-      parkedAnswer = { completion(answer) }
+      parkedAnswer = deliver
     }
 
     /// Delivers the answer a held request parked — the user finally tapped.
@@ -105,7 +116,12 @@ final class PermissionServiceTests: XCTestCase {
     record: AccessRecord = AccessRecord()
   ) -> PermissionService {
     PermissionService(
-      authorization: RecordingAuthorization(wrapping: authorization, record: record),
+      authorization: RecordingAuthorization(
+        wrapping: authorization, record: record,
+        // The next main-runloop turn rather than a real delay: a stub's
+        // `settlesTo` lands first, and a status that never settles runs out
+        // its checks without the test waiting on a clock.
+        deferral: { DispatchQueue.main.async(execute: $0) }),
       usageDescriptions: { usageDescriptions[$0] })
   }
 
@@ -300,11 +316,27 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertEqual(try service.hasPermissions().get(), .notDetermined)
     XCTAssertFalse(service.hasPermission(for: .write))
 
-    // ...and once the live status catches up with what the OS actually granted,
-    // the write gate opens on its own.
+    // (That is the status never settling at all; #137 covers the usual case,
+    // where it catches up while the request waits.) Once it does catch up with
+    // what the OS actually granted, the write gate opens on its own.
     authorization.status = .writeOnly
 
     XCTAssertTrue(service.hasPermission(for: .write))
+  }
+
+  /// #137: the "Add Events Only" answer inside the stale window. The handler
+  /// says `false` while the live status still says `.notDetermined`, and only
+  /// catches up to `.writeOnly` a moment later. Reporting the not-yet-settled
+  /// status sent Dart `.notDetermined` and failed a `createEvent` fired straight
+  /// after the prompt, so the request must wait for the OS's own answer.
+  func testAFullAskAnsweredAddEventsOnlyReportsWriteOnlyOnceTheStatusSettles() throws {
+    let (service, authorization) = makeService()
+    authorization.grants = false
+    authorization.settlesTo = .writeOnly
+
+    XCTAssertEqual(try requestPermissions(service), .writeOnly)
+    XCTAssertTrue(service.hasPermission(for: .write))
+    XCTAssertFalse(service.hasPermission(for: .full))
   }
 
   /// The other half of that path: a full upgrade that was not granted must

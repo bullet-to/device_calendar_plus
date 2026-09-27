@@ -112,12 +112,32 @@ final class AccessRecord {
 /// confirmed that tier, so a lower live status is stale rather than
 /// authoritative.
 final class RecordingAuthorization: CalendarAuthorization {
+  /// Runs its argument a moment later. Injected so tests drive the wait for a
+  /// lagging status without a real clock.
+  typealias Deferral = (@escaping () -> Void) -> Void
+
+  /// The production wait between re-reads of a lagging status.
+  static let shortDelay: Deferral = { work in
+    DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.05, execute: work)
+  }
+
   private let wrapped: CalendarAuthorization
   private let record: AccessRecord
+  private let deferral: Deferral
+  private let settleChecks: Int
 
-  init(wrapping wrapped: CalendarAuthorization, record: AccessRecord) {
+  /// `settleChecks` bounds the wait for an ungranted answer's status to leave
+  /// `.notDetermined`: 20 checks of `shortDelay` is about a second.
+  init(
+    wrapping wrapped: CalendarAuthorization,
+    record: AccessRecord,
+    deferral: @escaping Deferral = RecordingAuthorization.shortDelay,
+    settleChecks: Int = 20
+  ) {
     self.wrapped = wrapped
     self.record = record
+    self.deferral = deferral
+    self.settleChecks = settleChecks
   }
 
   var supportsWriteOnly: Bool { wrapped.supportsWriteOnly }
@@ -141,17 +161,38 @@ final class RecordingAuthorization: CalendarAuthorization {
   /// nothing clears the record and `requestPermissions` will not re-prompt on a
   /// terminal answer; forgetting a real refusal costs one redundant OS call.
   ///
-  /// The residual — that same answer reports `.notDetermined` until the live
-  /// status catches up, so a `createEvent` fired immediately after the prompt
-  /// can still fail its gate — is tracked on #137.
+  /// An ungranted answer is not guessed at either: it waits instead, briefly,
+  /// for the live status to leave `.notDetermined` (#137). The same stale
+  /// window that hides a grant hides an "Add Events Only" answer too, and the
+  /// caller's very next read — `requestPermissions`' report, then the gate on a
+  /// `createEvent` fired straight after it — must see the tier the OS settles
+  /// on, not the lag. A refusal settles on `.denied` just the same, and a
+  /// status that never moves costs a bounded wait before reporting
+  /// `.notDetermined` as before.
   func request(_ tier: CalendarPermissionType, completion: @escaping (Result<Bool, Error>) -> Void) {
     wrapped.request(tier) { result in
-      // Record before calling back: the caller's very next read may gate on
-      // this, and the OS status can still say notDetermined at that point.
-      if case .success(true) = result {
+      switch result {
+      case .success(true):
+        // Record before calling back: the caller's very next read may gate on
+        // this, and the OS status can still say notDetermined at that point.
         self.record.record(granted: tier)
+        completion(result)
+      case .success(false):
+        self.awaitSettledStatus(checksLeft: self.settleChecks) { completion(result) }
+      case .failure:
+        completion(result)
       }
-      completion(result)
     }
+  }
+
+  /// Calls `done` once `status` has left `.notDetermined`, or once the checks
+  /// run out. Reads the patched `status`, so a recorded grant that already
+  /// outranks the lag — an upgrade answered "not that tier" — needs no wait.
+  private func awaitSettledStatus(checksLeft: Int, then done: @escaping () -> Void) {
+    guard checksLeft > 0, status == .notDetermined else {
+      done()
+      return
+    }
+    deferral { self.awaitSettledStatus(checksLeft: checksLeft - 1, then: done) }
   }
 }

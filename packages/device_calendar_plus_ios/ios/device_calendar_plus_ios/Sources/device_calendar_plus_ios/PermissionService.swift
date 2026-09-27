@@ -182,10 +182,11 @@ class PermissionService {
       }
 
       // Re-read rather than translate the answer: a grant has already been
-      // folded into the seam's status, and everything else — a refusal, a
-      // not-that-tier answer, a request that errored — is left alone, so this
-      // reports the live status or `.notDetermined`. That is the honest answer
-      // in all three cases, and it keeps the app askable.
+      // folded into the seam's status, and the seam only hands back a refusal
+      // or a not-that-tier once the status has had a moment to settle (#137).
+      // Nothing else is recorded, so this reports the live status or
+      // `.notDetermined` — the honest answer in every case, and it keeps the
+      // app askable.
       completion(.success(self.authorization.status))
     }
   }

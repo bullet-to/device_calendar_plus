@@ -13,6 +13,10 @@
   `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, or malformed input) with
   `INVALID_ARGUMENTS` and writes nothing, as `updateRecurring` already does.
   It used to drop the rule and save a one-off event (#125).
+- On iOS 18, answering a full-access prompt with **Add Events Only**
+  reports `writeOnly` rather than `notDetermined`, so a `createEvent` fired
+  straight after the prompt passes its permission gate. The request now waits
+  briefly for the OS status to catch up with an ungranted answer (#137).
 
 ## 0.8.0 - 2026-09-26
 
