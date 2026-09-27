@@ -1077,6 +1077,11 @@ class EventsService(
                 )
             }
 
+            // Refuse a rule iOS can't store before any write, at the point
+            // iOS's updateRecurring parses it, rather than handing it to the
+            // provider: that would keep FREQ=HOURLY as an hourly series.
+            unsupportedRuleFailure(recurrenceRule)?.let { return Result.failure(it) }
+
             // A `start` that moves the day of a series whose rule pins that day
             // explicitly is ambiguous (see updateRecurring docs) — refuse it
             // unless the caller also supplies the new rule. Implicit rules (no
@@ -1646,6 +1651,19 @@ class EventsService(
             else -> CalendarContract.Events.AVAILABILITY_BUSY
         }
     }
+
+    /**
+     * The INVALID_ARGUMENTS failure for a recurrence [rule] iOS can't store
+     * (see [RruleString.hasSupportedFrequency]), or null when [rule] is null
+     * or supported.
+     */
+    private fun unsupportedRuleFailure(rule: String?): CalendarException? =
+        rule?.takeUnless(RruleString::hasSupportedFrequency)?.let {
+            CalendarException(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "Invalid recurrence rule: $it"
+            )
+        }
 
     /**
      * Whether moving the anchor from [referenceMillis] to [targetMillis] would
