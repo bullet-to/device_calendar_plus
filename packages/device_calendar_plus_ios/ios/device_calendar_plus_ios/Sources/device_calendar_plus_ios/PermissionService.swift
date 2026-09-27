@@ -181,10 +181,8 @@ class PermissionService {
         NSLog("device_calendar_plus: calendar access request failed: \(error)")
       }
 
-      // Re-read rather than translate the answer. `RecordingAuthorization`
-      // guarantees the status has settled by the time it calls back: a grant
-      // is recorded, and an ungranted answer waits out EventKit's lag. An
-      // errored request, or a status that never settled, reads notDetermined.
+      // Re-read rather than translate the answer: `RecordingAuthorization`
+      // guarantees the status has settled by the time it calls back.
       completion(.success(self.authorization.status))
     }
   }

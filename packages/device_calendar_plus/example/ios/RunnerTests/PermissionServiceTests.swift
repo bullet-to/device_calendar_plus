@@ -38,10 +38,6 @@ final class PermissionServiceTests: XCTestCase {
     /// instead of delivering it, so a test can put two asks in flight and
     /// choose which one the user answers first. `finishRequest()` releases it.
     var holdsRequest = false
-    /// When set, the live status moves here straight after the answer's
-    /// handler returns, so anything that reads the status inside the handler
-    /// still sees the stale value (#137).
-    var settlesTo: Access?
     /// One entry per OS prompt fired — "did we ask the user" is the behaviour.
     private(set) var requestedTiers: [CalendarPermissionType] = []
 
@@ -58,16 +54,11 @@ final class PermissionServiceTests: XCTestCase {
       requestedTiers.append(tier)
       let answer: Result<Bool, Error> =
         requestError.map { .failure($0) } ?? .success(grants)
-      let settled = settlesTo
-      let deliver = {
-        completion(answer)
-        if let settled = settled { self.status = settled }
-      }
       guard holdsRequest else {
-        deliver()
+        completion(answer)
         return
       }
-      parkedAnswer = deliver
+      parkedAnswer = { completion(answer) }
     }
 
     /// Delivers the answer a held request parked — the user finally tapped.
@@ -113,14 +104,29 @@ final class PermissionServiceTests: XCTestCase {
     usageDescriptions: [String: String] = PermissionServiceTests.allUsageDescriptions,
     record: AccessRecord = AccessRecord(),
     // Each check is the next main-runloop turn rather than a real delay, so a
-    // stub's `settlesTo` is seen by the first deferred check, and a status that
-    // never settles runs out its checks without a clock.
+    // status that never settles runs out its checks without a clock.
     deferral: @escaping RecordingAuthorization.Deferral = { DispatchQueue.main.async(execute: $0) }
   ) -> PermissionService {
     PermissionService(
       authorization: RecordingAuthorization(
         wrapping: authorization, record: record, deferral: deferral),
       usageDescriptions: { usageDescriptions[$0] })
+  }
+
+  /// EventKit's lag (#137): a deferral whose `onCheck`th check finds the live
+  /// status moved to `to`. The answer's handler, and every check before that,
+  /// still sees the stale value.
+  private func settling(
+    _ authorization: StubAuthorization, to settled: Access, onCheck: Int
+  ) -> RecordingAuthorization.Deferral {
+    var checks = 0
+    return { work in
+      DispatchQueue.main.async {
+        checks += 1
+        if checks == onCheck { authorization.status = settled }
+        work()
+      }
+    }
   }
 
   /// Drives the real request path so the service records the answer the way a
@@ -331,44 +337,27 @@ final class PermissionServiceTests: XCTestCase {
   /// `.denied` for "Don't Allow". Reporting the not-yet-settled status sent
   /// Dart `.notDetermined` and failed a `createEvent` fired straight after the
   /// prompt, so the request must wait for the OS's own answer. One row per
-  /// settled status; a status that never settles is
-  /// `testAFullAskAnsweredAddEventsOnlyIsNotRecordedAsADenial`.
+  /// settled status, plus one where the lag outlasts the first re-check, so the
+  /// wait must keep re-reading rather than give up after one; a status that
+  /// never settles is `testAFullAskAnsweredAddEventsOnlyIsNotRecordedAsADenial`.
   func testAnUngrantedFullAskReportsTheStatusItSettlesOn() throws {
-    let rows: [(settlesTo: Access, write: Bool, full: Bool)] = [
-      (.writeOnly, true, false),
-      (.denied, false, false),
+    let rows: [(settlesTo: Access, onCheck: Int, write: Bool, full: Bool)] = [
+      (.writeOnly, 1, true, false),
+      (.denied, 1, false, false),
+      (.writeOnly, 3, true, false),
     ]
     for row in rows {
-      let (service, authorization) = makeService()
+      let authorization = StubAuthorization()
       authorization.grants = false
-      authorization.settlesTo = row.settlesTo
+      let service = makeService(
+        authorization,
+        deferral: settling(authorization, to: row.settlesTo, onCheck: row.onCheck))
+      let label = "\(row.settlesTo) on check \(row.onCheck)"
 
-      XCTAssertEqual(try requestPermissions(service), row.settlesTo, "\(row.settlesTo)")
-      XCTAssertEqual(service.hasPermission(for: .write), row.write, "\(row.settlesTo)")
-      XCTAssertEqual(service.hasPermission(for: .full), row.full, "\(row.settlesTo)")
+      XCTAssertEqual(try requestPermissions(service), row.settlesTo, label)
+      XCTAssertEqual(service.hasPermission(for: .write), row.write, label)
+      XCTAssertEqual(service.hasPermission(for: .full), row.full, label)
     }
-  }
-
-  /// EventKit's lag can outlast the first re-check, so the wait keeps
-  /// re-reading rather than giving up after one: here the status only settles
-  /// on the third deferred check.
-  func testAnUngrantedFullAskReportsAStatusThatSettlesAfterSeveralChecks() throws {
-    let authorization = StubAuthorization()
-    authorization.grants = false
-    var checks = 0
-    let service = makeService(
-      authorization,
-      deferral: { work in
-        DispatchQueue.main.async {
-          checks += 1
-          if checks == 3 { authorization.status = .writeOnly }
-          work()
-        }
-      })
-
-    XCTAssertEqual(try requestPermissions(service), .writeOnly)
-    XCTAssertTrue(service.hasPermission(for: .write))
-    XCTAssertFalse(service.hasPermission(for: .full))
   }
 
   /// The other half of that path: a full upgrade that was not granted must

@@ -109,15 +109,13 @@ final class AccessRecord {
 ///
 /// - **After a grant** (#134) it *records* the tier the OS confirmed, and
 ///   reports that record whenever it outranks the lagging live status.
-/// - **After an ungranted answer** (#137) it *waits*, bounded (about a second
-///   in production), for the live status to leave `.notDetermined` before
-///   calling back — so every refused or "Add Events Only" prompt now completes
-///   only once the OS has settled, or the wait runs out.
+/// - **After an ungranted answer** (#137) it *waits* for the status to settle;
+///   see `request(_:completion:)`.
 ///
 /// Together these are the guarantee `PermissionService` leans on: once
 /// `request(_:completion:)` calls back, `status` reports the tier the OS
 /// settled on — or `.notDetermined` if the request errored, or the status
-/// never left it within the wait. The raw `EventKitAuthorization` makes no such
+/// never left it within the bounded wait (about a second). The raw `EventKitAuthorization` makes no such
 /// promise; that lag is the bug.
 ///
 /// `.denied` and `.restricted` are terminal and reported as-is, so a Settings
