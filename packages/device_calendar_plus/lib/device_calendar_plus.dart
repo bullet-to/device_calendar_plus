@@ -446,6 +446,11 @@ class DeviceCalendar {
   /// blank new-event editor instead); prefer the view modal and let the user tap
   /// Edit. See [doc/native-ui.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/native-ui.md).
   /// Requires full access.
+  ///
+  /// Throws [DeviceCalendarException] with [DeviceCalendarError.notFound] when
+  /// the event doesn't exist, and with [DeviceCalendarError.operationFailed]
+  /// when a native modal is already showing (one at a time, shared with
+  /// [showCreateEventModal]) or there's no Activity/window to present from.
   Future<void> showEventModal(String id, {bool edit = false}) async {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -893,6 +898,10 @@ class DeviceCalendar {
   /// editor runs in-process and does require full access (request it with
   /// [requestPermissions] first); without it this throws
   /// [DeviceCalendarException] with [DeviceCalendarError.permissionDenied].
+  ///
+  /// Throws [DeviceCalendarException] with [DeviceCalendarError.operationFailed]
+  /// when a native modal is already showing (one at a time, shared with
+  /// [showEventModal]) or there's no Activity/window to present from.
   Future<void> showCreateEventModal({
     String? title,
     DateTime? startDate,

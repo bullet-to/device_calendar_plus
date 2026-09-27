@@ -20,6 +20,26 @@
   - `deleteEvent(eventId: seriesId)` on a recurring event →
     `deleteRecurring(seriesId, EventSpan.allEvents)`.
 
+### Fixed
+- The native modals (`showEventModal`, `showCreateEventModal`) always
+  complete; several paths used to leave the `await` hanging or crash (#123):
+  - One modal at a time: a call while another modal is showing throws
+    `DeviceCalendarException(operationFailed)` straight away. It used to
+    orphan the first call's future and, on iOS, fail to present, so both
+    hung.
+  - Android: rotating the device while a modal is open no longer drops the
+    result; the future completes when the calendar app returns.
+  - iOS: swiping the view modal down completes the future.
+  - iOS: a modal no longer silently fails to appear when the app is already
+    presenting a sheet; it's presented on top.
+  - With no Activity (Android) or window (iOS) to present from, the call
+    throws `DeviceCalendarException(operationFailed)`, as `openAppSettings`
+    does. iOS used to crash, and Android threw an unconverted
+    `PlatformException`.
+  - Android: `showEventModal` on an event that doesn't exist throws
+    `DeviceCalendarException(notFound)`, as iOS does. It used to open the
+    calendar app on nothing and complete normally.
+
 ### Added
 - `updateRecurring` takes `reminders` (a `Patch<List<Duration>>`), to set or
   clear reminders across a series, as `updateEvent` does for one event (#175).
