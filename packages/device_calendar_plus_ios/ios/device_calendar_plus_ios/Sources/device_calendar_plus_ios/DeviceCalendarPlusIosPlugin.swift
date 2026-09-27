@@ -7,10 +7,12 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   UIAdaptivePresentationControllerDelegate
 {
   private let eventStore = EKEventStore()
-  private lazy var permissionService = PermissionService(
-    authorization: RecordingAuthorization(
-      wrapping: EventKitAuthorization(eventStore: eventStore),
-      record: .shared))
+  /// The OS authorization seam. Tests replace it before the first call so a
+  /// permission gate answers from a fixture, not the simulator's own grant.
+  lazy var calendarAuthorization: CalendarAuthorization = RecordingAuthorization(
+    wrapping: EventKitAuthorization(eventStore: eventStore),
+    record: .shared)
+  private lazy var permissionService = PermissionService(authorization: calendarAuthorization)
   private lazy var calendarService = CalendarService(eventStore: eventStore, permissionService: permissionService)
   private lazy var eventsService = EventsService(eventStore: eventStore, permissionService: permissionService)
   /// The reply for the native modal that's showing, if any.

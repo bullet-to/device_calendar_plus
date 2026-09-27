@@ -10,6 +10,23 @@ import XCTest
 final class ModalLifecycleTests: XCTestCase {
   private let plugin = DeviceCalendarPlusIosPlugin()
 
+  /// Calendar access refused, whatever the simulator has granted: every
+  /// showEventModal lookup fails permissionDenied, deterministically.
+  private struct DeniedAuthorization: CalendarAuthorization {
+    let supportsWriteOnly = true
+    let status = CalendarAccess.denied
+    func request(
+      _ tier: CalendarPermissionType, completion: @escaping (Result<Bool, Error>) -> Void
+    ) {
+      completion(.success(false))
+    }
+  }
+
+  override func setUp() {
+    super.setUp()
+    plugin.calendarAuthorization = DeniedAuthorization()
+  }
+
   /// What a channel reply carried: the error code, or "success".
   private func describe(_ reply: Any?) -> String {
     (reply as? FlutterError)?.code ?? "success"
@@ -36,11 +53,10 @@ final class ModalLifecycleTests: XCTestCase {
 
     XCTAssertEqual(second, [PlatformExceptionCodes.operationFailed])
 
-    // The first call fails its lookup (no access, or no such event) — which
-    // frees the slot for the next modal.
+    // The first call fails its lookup (access is denied) — which frees the
+    // slot for the next modal.
     wait(for: [firstReplied], timeout: 5)
-    XCTAssertEqual(first.count, 1)
-    XCTAssertNotEqual(first.first, "success")
+    XCTAssertEqual(first, [PlatformExceptionCodes.permissionDenied])
 
     // So the next call is accepted: it isn't refused on the spot, and it
     // resolves through its own lookup rather than as a busy slot.
@@ -54,8 +70,7 @@ final class ModalLifecycleTests: XCTestCase {
     }
     XCTAssertEqual(third, [])
     wait(for: [thirdReplied], timeout: 5)
-    XCTAssertEqual(third.count, 1)
-    XCTAssertNotEqual(third.first, PlatformExceptionCodes.operationFailed)
+    XCTAssertEqual(third, [PlatformExceptionCodes.permissionDenied])
   }
 
   // MARK: - swipe-down
@@ -120,8 +135,7 @@ final class ModalLifecycleTests: XCTestCase {
       nextReplied.fulfill()
     }
     wait(for: [nextReplied], timeout: 5)
-    XCTAssertEqual(next.count, 1)
-    XCTAssertNotEqual(next.first, PlatformExceptionCodes.operationFailed)
+    XCTAssertEqual(next, [PlatformExceptionCodes.permissionDenied])
   }
 
   /// `present` from a controller that's already presenting silently does
