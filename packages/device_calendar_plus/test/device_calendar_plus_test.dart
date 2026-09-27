@@ -37,6 +37,7 @@ typedef UpdateRecurringCall = ({
   String? timeZone,
   String? availability,
   Patch<String>? recurrenceRule,
+  Patch<List<int>>? reminders,
 });
 
 class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
@@ -317,6 +318,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? timeZone,
     String? availability,
     Patch<String>? recurrenceRule,
+    Patch<List<int>>? reminders,
   }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
     lastUpdateRecurring = (
@@ -333,6 +335,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       timeZone: timeZone,
       availability: availability,
       recurrenceRule: recurrenceRule,
+      reminders: reminders,
     );
     return updateRecurringResult;
   }
@@ -596,7 +599,7 @@ void main() {
             .setPermissionStatus(CalendarPermissionStatus.notDetermined);
 
         // No changed fields: a valid no-op that must not trigger a prompt.
-        await DeviceCalendar.instance.updateEvent(eventId: 'evt');
+        await DeviceCalendar.instance.updateEvent(instanceId: 'evt');
 
         expect(mockPlatform.requestPermissionsCallCount, 0);
       });
@@ -1182,7 +1185,7 @@ void main() {
     group('updateEvent', () {
       test('normalizes dates when isAllDay is true', () async {
         await DeviceCalendar.instance.updateEvent(
-          eventId: 'event-123',
+          instanceId: 'event-123',
           startDate: DateTime(2024, 3, 15, 14, 30, 45),
           endDate: DateTime(2024, 3, 16, 18, 15, 30),
           isAllDay: true,
@@ -1193,10 +1196,10 @@ void main() {
         expect(call.endDate, DateTime(2024, 3, 16));
       });
 
-      test('throws ArgumentError when eventId is empty', () async {
+      test('throws ArgumentError when instanceId is empty', () async {
         expect(
           () => DeviceCalendar.instance.updateEvent(
-            eventId: '',
+            instanceId: '',
             title: 'New Title',
           ),
           throwsArgumentError,
@@ -1204,7 +1207,7 @@ void main() {
       });
 
       test('is a no-op when no fields provided', () async {
-        await DeviceCalendar.instance.updateEvent(eventId: 'event-123');
+        await DeviceCalendar.instance.updateEvent(instanceId: 'event-123');
         // Short-circuits before any platform write.
         expect(mockPlatform.lastUpdateEvent, isNull);
       });
@@ -1212,7 +1215,7 @@ void main() {
       test('throws ArgumentError when endDate is before startDate', () async {
         expect(
           () => DeviceCalendar.instance.updateEvent(
-            eventId: 'event-123',
+            instanceId: 'event-123',
             startDate: DateTime(2024, 3, 20, 11, 0),
             endDate: DateTime(2024, 3, 20, 10, 0),
           ),
@@ -1222,7 +1225,7 @@ void main() {
 
       test('passes a reminders Patch.set through as minutes', () async {
         await DeviceCalendar.instance.updateEvent(
-          eventId: 'event-123',
+          instanceId: 'event-123',
           reminders: Patch.set([Duration(minutes: 30), Duration(seconds: 90)]),
         );
 
@@ -1233,7 +1236,7 @@ void main() {
 
       test('passes a reminders Patch.clear through unchanged', () async {
         await DeviceCalendar.instance.updateEvent(
-          eventId: 'event-123',
+          instanceId: 'event-123',
           reminders: const Patch.clear(),
         );
 
@@ -1245,7 +1248,7 @@ void main() {
 
       test('reminders alone is enough to not be a no-op', () async {
         await DeviceCalendar.instance.updateEvent(
-          eventId: 'event-123',
+          instanceId: 'event-123',
           reminders: const Patch.clear(),
         );
         expect(mockPlatform.lastUpdateEvent, isNotNull);
@@ -1255,7 +1258,7 @@ void main() {
           () async {
         expect(
           () => DeviceCalendar.instance.updateEvent(
-            eventId: 'event-123',
+            instanceId: 'event-123',
             reminders: Patch.set([Duration(minutes: -5)]),
           ),
           throwsArgumentError,
@@ -1459,13 +1462,55 @@ void main() {
           isA<PatchClear<String>>(),
         );
       });
+
+      test('passes a reminders Patch.set through as minutes', () async {
+        await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventSpan.allEvents,
+          reminders: Patch.set([
+            Duration(minutes: 30),
+            Duration(seconds: 90),
+            Duration(minutes: 30),
+          ]),
+        );
+
+        final reminders = mockPlatform.lastUpdateRecurring?.reminders;
+        expect(reminders, isA<PatchSet<List<int>>>());
+        expect((reminders as PatchSet<List<int>>).value, [30, 2]);
+      });
+
+      test('reminders Patch.clear alone is enough to not be a no-op',
+          () async {
+        await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventSpan.allEvents,
+          reminders: const Patch.clear(),
+        );
+
+        expect(
+          mockPlatform.lastUpdateRecurring?.reminders,
+          isA<PatchClear<List<int>>>(),
+        );
+      });
+
+      test('throws ArgumentError on a negative reminder in Patch.set', () {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            reminders: Patch.set([Duration(minutes: -5)]),
+          ),
+          throwsArgumentError,
+        );
+        expect(mockPlatform.lastUpdateRecurring, isNull);
+      });
     });
 
     group('updateEvent with instance ID', () {
       test('passes the parsed event ID and occurrence timestamp through',
           () async {
         await DeviceCalendar.instance.updateEvent(
-          eventId: 'event-123@1700000000000',
+          instanceId: 'event-123@1700000000000',
           title: 'Moved this week',
         );
 
@@ -1481,7 +1526,7 @@ void main() {
         // different day entirely. The dates must arrive intact — not reduced
         // to a time-of-day.
         await DeviceCalendar.instance.updateEvent(
-          eventId: 'event-123@1700000000000',
+          instanceId: 'event-123@1700000000000',
           startDate: DateTime(2024, 3, 20, 14, 0),
           endDate: DateTime(2024, 3, 20, 14, 30),
         );
@@ -1494,7 +1539,7 @@ void main() {
 
       test('bare event ID passes a null timestamp', () async {
         await DeviceCalendar.instance.updateEvent(
-          eventId: 'event-123',
+          instanceId: 'event-123',
           title: 'New Title',
         );
 
@@ -1580,13 +1625,13 @@ void main() {
     group('deleteEvent', () {
       test('throws ArgumentError when instance ID is empty', () async {
         expect(
-          () => DeviceCalendar.instance.deleteEvent(eventId: ''),
+          () => DeviceCalendar.instance.deleteEvent(instanceId: ''),
           throwsArgumentError,
         );
       });
 
       test('bare event ID passes a null timestamp', () async {
-        await DeviceCalendar.instance.deleteEvent(eventId: 'event-123');
+        await DeviceCalendar.instance.deleteEvent(instanceId: 'event-123');
 
         final call = mockPlatform.lastDeleteEvent!;
         expect(call.eventId, 'event-123');
@@ -1596,7 +1641,7 @@ void main() {
       test('passes the parsed event ID and occurrence timestamp through',
           () async {
         await DeviceCalendar.instance.deleteEvent(
-          eventId: 'event-123@1700000000000',
+          instanceId: 'event-123@1700000000000',
         );
 
         final call = mockPlatform.lastDeleteEvent!;

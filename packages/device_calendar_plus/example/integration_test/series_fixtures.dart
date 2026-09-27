@@ -240,7 +240,7 @@ Future<String> detachOccurrence(
   String title,
 ) async {
   await plugin.updateEvent(
-    eventId: series.occurrences[index].instanceId,
+    instanceId: series.occurrences[index].instanceId,
     title: title,
   );
   final detached = await eventsTitled(plugin, calendarId, title, series.start);

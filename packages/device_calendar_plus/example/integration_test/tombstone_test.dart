@@ -101,13 +101,14 @@ void main() {
       final t = await tombstoneSeries(plugin, calendarId);
 
       await expectLater(
-        plugin.updateEvent(eventId: t.series.eventId, title: 'Tombstone edit'),
+        plugin.updateEvent(
+            instanceId: t.series.eventId, title: 'Tombstone edit'),
         throwsNotFound,
         reason: 'updateEvent must not edit a tombstone',
       );
       await expectLater(
         plugin.updateEvent(
-            eventId: t.series.occurrences[2].instanceId,
+            instanceId: t.series.occurrences[2].instanceId,
             title: 'Tombstone edit'),
         throwsNotFound,
         reason: 'updateEvent must not write an exception against a tombstone',
@@ -139,7 +140,7 @@ void main() {
       final t = await tombstoneSeries(plugin, calendarId);
 
       await expectLater(
-        plugin.deleteEvent(eventId: t.series.occurrences[2].instanceId),
+        plugin.deleteEvent(instanceId: t.series.occurrences[2].instanceId),
         throwsNotFound,
         reason: 'deleteEvent must not cancel an occurrence of a tombstone',
       );
@@ -153,8 +154,8 @@ void main() {
     });
 
     test(
-        'deleteEvent on the series ID collects the tombstone and its '
-        'exception (#153)', () async {
+        'deleteRecurring(allEvents) on the series ID collects the tombstone '
+        'and its exception (#153)', () async {
       final t = await tombstoneSeries(plugin, calendarId);
 
       // The plugin deletes as a sync adapter, which is what collects it;
@@ -162,11 +163,11 @@ void main() {
       // exception along with the master. The seed's read of the Events row
       // does not filter DELETED=1, so a null there is the row physically
       // gone, not merely tombstoned.
-      await plugin.deleteEvent(eventId: t.series.eventId);
+      await plugin.deleteRecurring(t.series.eventId, EventSpan.allEvents);
       expect(
         await readSyncIds(t.series.eventId),
         isNull,
-        reason: 'the tombstone must be physically gone after deleteEvent',
+        reason: 'the tombstone must be physically gone after the delete',
       );
       expect(
         await readSyncIds(t.exceptionId),

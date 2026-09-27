@@ -84,7 +84,7 @@ void main() {
     );
 
     await plugin.updateEvent(
-      eventId: eventId,
+      instanceId: eventId,
       reminders: Patch.set([const Duration(minutes: 30)]),
     );
 
@@ -105,7 +105,7 @@ void main() {
     );
 
     await plugin.updateEvent(
-      eventId: eventId,
+      instanceId: eventId,
       reminders: const Patch.clear(),
     );
 

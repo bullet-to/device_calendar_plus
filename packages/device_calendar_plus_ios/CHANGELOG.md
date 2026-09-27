@@ -1,5 +1,13 @@
 ## Unreleased
 
+### Changed
+- **Breaking:** `updateEvent` and `deleteEvent` without a `timestamp` refuse
+  a recurring series with `INVALID_ARGUMENTS` and write nothing; series-wide
+  changes go through `updateRecurring` / `deleteRecurring` (#175).
+- `updateRecurring` forwards a `reminders` patch. A `thisAndFollowing` split
+  that clears the rule keeps the occurrence's reminders on the standalone
+  event it leaves, as Android does (#175).
+
 ### Fixed
 - `createEvent` refuses a recurrence rule it can't parse (a `FREQ` other than
   `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, or malformed input) with

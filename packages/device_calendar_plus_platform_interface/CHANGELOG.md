@@ -1,3 +1,12 @@
+## Unreleased
+
+### Changed
+- **Breaking:** `updateRecurring` gains a `Patch<List<int>>? reminders`
+  parameter (whole minutes before start), as `updateEvent` has (#175).
+- `updateEvent` / `deleteEvent` with a null `timestamp` target a one-off
+  event; implementations refuse a recurring series with
+  `INVALID_ARGUMENTS` (#175).
+
 ## 0.7.0 - 2026-06-17
 
 ### Changed

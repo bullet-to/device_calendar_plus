@@ -743,10 +743,11 @@ class EventsService(
     }
     
     /**
-     * Deletes an event. With a [timestamp], removes only the occurrence at
+     * Deletes one thing. With a [timestamp], removes only the occurrence at
      * that instant from its recurring series, as a cancelled exception;
-     * without one, deletes the event itself (the whole series when
-     * recurring).
+     * without one, deletes a one-off event. A bare ID of a recurring series
+     * is refused with INVALID_ARGUMENTS and nothing is deleted — whole-series
+     * deletes go through [deleteRecurring] (#175).
      */
     fun deleteEvent(eventId: String, timestamp: Long? = null): Result<Unit> {
         fullAccessFailure(context)?.let { return Result.failure(it) }
@@ -755,6 +756,11 @@ class EventsService(
             if (timestamp != null) {
                 deleteEventInstance(eventId, timestamp)
             } else {
+                // A missing row falls through to deleteEventMaster, which
+                // reports NOT_FOUND (or cleans up orphaned exceptions).
+                store.readEventRow(eventId).getOrNull()
+                    ?.let { seriesByBareIdFailure(it, "deleteRecurring", "delete") }
+                    ?.let { return Result.failure(it) }
                 deleteEventMaster(eventId)
             }
         } catch (e: SecurityException) {
@@ -823,9 +829,31 @@ class EventsService(
     }
     
     /**
-     * Updates an event. With a [timestamp], detaches the occurrence at that
+     * INVALID_ARGUMENTS when [row] is a recurring series addressed by its bare
+     * ID: [updateEvent] and [deleteEvent] act on one thing — a one-off event
+     * or one occurrence — so a series-wide change has to go through
+     * [replacement] with `EventSpan.allEvents` (#175). Null for a one-off.
+     */
+    private fun seriesByBareIdFailure(
+        row: EventRow,
+        replacement: String,
+        verb: String
+    ): CalendarException? {
+        if (row.rrule == null) return null
+        return CalendarException(
+            PlatformExceptionCodes.INVALID_ARGUMENTS,
+            "Event ${row.id} is a recurring series. To $verb the whole series " +
+                "use $replacement(id, EventSpan.allEvents); to $verb one " +
+                "occurrence pass its instanceId."
+        )
+    }
+
+    /**
+     * Updates one thing. With a [timestamp], detaches the occurrence at that
      * instant from its recurring series and applies the changes to it alone;
-     * without one, updates the event itself (the whole series when recurring).
+     * without one, updates a one-off event. A bare ID of a recurring series
+     * is refused with INVALID_ARGUMENTS and nothing is written — series edits
+     * go through [updateRecurring] (#175).
      */
     fun updateEvent(
         eventId: String,
@@ -860,8 +888,8 @@ class EventsService(
     }
 
     /**
-     * The bare-event-ID path of [updateEvent]: updates the event row itself —
-     * the whole series when recurring.
+     * The bare-event-ID path of [updateEvent]: updates a one-off event's row.
+     * A recurring series is refused before any write.
      */
     private fun updateEventMaster(
         eventId: String,
@@ -872,6 +900,8 @@ class EventsService(
         // The existing row decides all-day date normalization when the call
         // doesn't change the flag.
         val row = store.readEventRow(eventId).getOrElse { return Result.failure(it) }
+        seriesByBareIdFailure(row, "updateRecurring", "change")
+            ?.let { return Result.failure(it) }
 
         // Build ContentValues with only provided fields
         val values = android.content.ContentValues()
@@ -1370,7 +1400,9 @@ class EventsService(
 
         return try {
             when (span) {
-                "allEvents" -> deleteEvent(eventId)
+                // The master delete directly: deleteEvent refuses a bare
+                // series ID, which is exactly what allEvents is for.
+                "allEvents" -> deleteEventMaster(eventId)
                 "thisAndFollowing" -> deleteRecurringThisAndFollowing(eventId, timestamp)
                 else -> Result.failure(
                     CalendarException(

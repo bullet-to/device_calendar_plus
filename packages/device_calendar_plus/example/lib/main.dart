@@ -295,7 +295,7 @@ class _MyHomePageState extends State<MyHomePage> {
       final newTitle = '${event.title}!';
 
       await DeviceCalendar.instance.updateEvent(
-        eventId: event.instanceId,
+        instanceId: event.instanceId,
         title: newTitle,
       );
 
@@ -325,7 +325,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _deleteEvent(Event event) async {
     try {
-      await DeviceCalendar.instance.deleteEvent(eventId: event.instanceId);
+      await DeviceCalendar.instance.deleteEvent(instanceId: event.instanceId);
 
       if (!mounted) return;
 

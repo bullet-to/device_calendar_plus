@@ -12,6 +12,14 @@ final throwsNotFound = throwsA(isA<DeviceCalendarException>().having(
   DeviceCalendarError.notFound,
 ));
 
+/// Matches a [DeviceCalendarException] carrying
+/// [DeviceCalendarError.invalidArguments].
+final throwsInvalidArguments = throwsA(isA<DeviceCalendarException>().having(
+  (e) => e.errorCode,
+  'errorCode',
+  DeviceCalendarError.invalidArguments,
+));
+
 /// Local midnight [daysFromNow] days from today. Built via the constructor
 /// rather than `DateTime.add`, so the result is a calendar day rather than
 /// 24 hours (which lands an hour off across a DST transition).

@@ -107,7 +107,7 @@ Future<Event> moveOccurrence(
   final occurrence = series.occurrences[index];
   final movedStart = occurrence.startDate.add(shift);
   await plugin.updateEvent(
-    eventId: occurrence.instanceId,
+    instanceId: occurrence.instanceId,
     title: title,
     startDate: movedStart,
     endDate: occurrence.endDate.add(shift),
@@ -788,7 +788,7 @@ void main() {
       final wholeSecond =
           occurrences[1].startDate.millisecondsSinceEpoch + 2 * 3600000;
       await plugin.updateEvent(
-        eventId: occurrences[1].instanceId,
+        instanceId: occurrences[1].instanceId,
         title: title,
         startDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 671),
         endDate: DateTime.fromMillisecondsSinceEpoch(wholeSecond + 3600671),
@@ -1110,7 +1110,7 @@ void main() {
         expect(calendarId, isNotNull,
             reason: 'setUpAll must create a calendar');
         final series = await createWeeklySeries(plugin, calendarId!, count: 4);
-        await plugin.deleteEvent(eventId: series.eventId);
+        await plugin.deleteRecurring(series.eventId, EventSpan.allEvents);
 
         await expectLater(
           DeviceCalendarPlusPlatform.instance.updateRecurring(
@@ -1289,7 +1289,7 @@ void main() {
         // Re-parented, not merely kept: deleting the new series takes the
         // detached occurrence past the split with it, and leaves the one
         // before the split on the old series.
-        await plugin.deleteEvent(eventId: split.newSeriesId);
+        await plugin.deleteRecurring(split.newSeriesId, EventSpan.allEvents);
         expect(await eventsTitled(plugin, id, pastTitle, series.start), isEmpty,
             reason: 'the detached occurrence past the split must belong to '
                 'the new series');
@@ -1326,7 +1326,7 @@ void main() {
             reason: 'the moved occurrence must survive once, with its own '
                 'title at its dragged time');
 
-        await plugin.deleteEvent(eventId: split.newSeriesId);
+        await plugin.deleteRecurring(split.newSeriesId, EventSpan.allEvents);
         expect(
             await eventsTitled(
                 plugin, calendarId!, split.titles.single, split.series.start),
@@ -1356,7 +1356,7 @@ void main() {
             reason: 'the new series must still generate [6]\'s slot, which '
                 'nothing detached stands in for');
 
-        await plugin.deleteEvent(eventId: split.newSeriesId);
+        await plugin.deleteRecurring(split.newSeriesId, EventSpan.allEvents);
         // The listing half is unverified on Android (#159), as in the
         // delete path's "keeps a detached occurrence by its original slot":
         // the row read still runs.
@@ -1426,7 +1426,7 @@ void main() {
           );
         }
 
-        await plugin.deleteEvent(eventId: split.newSeriesId);
+        await plugin.deleteRecurring(split.newSeriesId, EventSpan.allEvents);
         for (final title in split.titles) {
           expect(await eventsTitled(plugin, id, title, series.start), isEmpty,
               reason: 'the detached occurrence must belong to the new series');
@@ -1560,7 +1560,8 @@ void main() {
           final id = calendarId!;
           final tag = DateTime.now().microsecondsSinceEpoch;
 
-          await plugin.deleteEvent(eventId: series.occurrences[6].instanceId);
+          await plugin.deleteEvent(
+              instanceId: series.occurrences[6].instanceId);
 
           final newTitle = 'New series past deleted $tag';
           final anchor = series.occurrences[3];
@@ -1597,7 +1598,7 @@ void main() {
       final target = occurrences[4];
 
       await plugin.updateEvent(
-        eventId: target.instanceId,
+        instanceId: target.instanceId,
         title: 'Just this one',
       );
 
@@ -1643,7 +1644,7 @@ void main() {
 
       await expectLater(
         plugin.updateEvent(
-          eventId: target.instanceId,
+          instanceId: target.instanceId,
           startDate: target.startDate.add(const Duration(days: 2)),
         ),
         throwsA(isA<DeviceCalendarException>().having(
@@ -1678,7 +1679,7 @@ void main() {
       final movedStart = target.startDate.add(const Duration(days: 1));
 
       await plugin.updateEvent(
-        eventId: target.instanceId,
+        instanceId: target.instanceId,
         startDate: movedStart,
         endDate: target.endDate.add(const Duration(days: 1)),
       );
@@ -1715,9 +1716,10 @@ void main() {
       final first = occurrences[2];
       final second = occurrences[5];
 
-      await plugin.updateEvent(eventId: first.instanceId, title: 'First #153');
       await plugin.updateEvent(
-          eventId: second.instanceId, title: 'Second #153');
+          instanceId: first.instanceId, title: 'First #153');
+      await plugin.updateEvent(
+          instanceId: second.instanceId, title: 'Second #153');
 
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);
@@ -1784,7 +1786,7 @@ void main() {
           reason: 'the seed must leave the exception keyless, #153\'s state');
 
       await plugin.updateEvent(
-          eventId: rekeying.instanceId, title: 'Rekeyed #153');
+          instanceId: rekeying.instanceId, title: 'Rekeyed #153');
 
       final masterKey = (await readSyncIds(series.eventId))?.syncId;
       expect(masterKey, isNotNull, reason: 'the edit must key the master');
@@ -1809,25 +1811,102 @@ void main() {
       );
     }, skip: !Platform.isAndroid);
 
-    test('updateEvent on a recurring eventId updates the whole series',
+    test('updateEvent refuses a bare recurring-series ID and writes nothing',
         () async {
-      // Per the v0.3.0 contract, `updateEvent` on a recurring event always
-      // affects the entire series — semantically equivalent to
-      // `updateRecurring(EventSpan.allEvents)`. Guards against the two
-      // methods drifting apart on the native side.
+      // updateEvent acts on one thing (#175): moving a series' start through
+      // it used to shift the whole series and drop every earlier occurrence
+      // without an error. Series edits go through updateRecurring, so a bare
+      // series ID is refused before any write.
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(before, isNotEmpty);
 
-      await plugin.updateEvent(
-        eventId: series.eventId,
-        title: 'Legacy Updated',
+      await expectLater(
+        plugin.updateEvent(
+          instanceId: series.eventId,
+          title: 'Refused',
+          startDate: series.start.add(const Duration(days: 2)),
+          endDate: series.start.add(const Duration(days: 2, hours: 1)),
+        ),
+        throwsInvalidArguments,
       );
 
-      final occurrences = await occurrencesOf(
+      final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);
-      expect(occurrences, isNotEmpty);
-      expect(occurrences.every((e) => e.title == 'Legacy Updated'), isTrue,
-          reason: 'every occurrence of the series must reflect the update');
+      expect(startsOf(after), startsOf(before),
+          reason: 'a refused update must leave every occurrence in place');
+      expect(after.every((e) => e.title == 'Daily Series'), isTrue,
+          reason: 'a refused update must not change any field');
+    });
+
+    test('updateEvent on a one-off event still edits it', () async {
+      // A one-off event's instanceId is its eventId, so the rename changes
+      // nothing for it: it still moves (#175).
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final start = DateTime.now().add(const Duration(hours: 1));
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'One-off',
+        startDate: start,
+        endDate: start.add(const Duration(hours: 1)),
+      );
+      final event = (await plugin.getEvent(eventId))!;
+      expect(event.instanceId, event.eventId);
+
+      final moved = start.add(const Duration(days: 1));
+      await plugin.updateEvent(
+        instanceId: event.instanceId,
+        startDate: moved,
+        endDate: moved.add(const Duration(hours: 1)),
+      );
+
+      final after = (await plugin.getEvent(eventId))!;
+      expect(after.startDate.millisecondsSinceEpoch ~/ 1000,
+          moved.millisecondsSinceEpoch ~/ 1000);
+
+      await plugin.deleteEvent(instanceId: event.instanceId);
+      expect(await plugin.getEvent(eventId), isNull);
+    });
+
+    test('updateRecurring sets and clears reminders across the series',
+        () async {
+      // reminders is the one field updateEvent had that updateRecurring
+      // lacked; with series edits routed through updateRecurring it needs
+      // it (#175).
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createDailySeries(plugin, calendarId!, count: 4);
+
+      await plugin.updateRecurring(
+        series.eventId,
+        EventSpan.allEvents,
+        reminders: const Patch.set([
+          Duration(minutes: 15),
+          Duration(hours: 1),
+        ]),
+      );
+      final withReminders = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(withReminders, hasLength(4));
+      for (final occurrence in withReminders) {
+        expect(occurrence.reminders?.toSet(),
+            {const Duration(minutes: 15), const Duration(hours: 1)},
+            reason: 'every occurrence must carry the series reminders');
+      }
+
+      await plugin.updateRecurring(
+        series.eventId,
+        EventSpan.allEvents,
+        reminders: const Patch.clear(),
+      );
+      final cleared = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(cleared, hasLength(4));
+      for (final occurrence in cleared) {
+        expect(occurrence.reminders ?? const <Duration>[], isEmpty,
+            reason: 'clearing must remove every occurrence\'s reminders');
+      }
     });
   });
 
@@ -2247,7 +2326,7 @@ void main() {
       final series = await seedDailySeries(plugin, calendarId);
       final occurrences = series.occurrences;
 
-      await plugin.deleteEvent(eventId: occurrences[4].instanceId);
+      await plugin.deleteEvent(instanceId: occurrences[4].instanceId);
 
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);
@@ -2261,12 +2340,12 @@ void main() {
       );
     });
 
-    test('deleteEvent on a recurring eventId removes the whole series',
+    test('deleteEvent refuses a bare recurring-series ID and deletes nothing',
         () async {
-      // Per the v0.3.0 contract, `deleteEvent` on a recurring event always
-      // removes the entire series — semantically equivalent to
-      // `deleteRecurring(EventSpan.allEvents)`. Guards against the two
-      // methods drifting apart on the native side.
+      // deleteEvent acts on one thing (#175): a series-wide delete has to go
+      // through deleteRecurring(allEvents), so a bare series ID — easy to
+      // pass by mistake as `event.eventId` — is refused, not a silent
+      // whole-series delete.
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final series = await createDailySeries(plugin, calendarId!);
 
@@ -2274,15 +2353,18 @@ void main() {
           plugin, calendarId!, series.eventId, series.start);
       expect(before, isNotEmpty);
 
-      await plugin.deleteEvent(eventId: series.eventId);
+      await expectLater(
+        plugin.deleteEvent(instanceId: series.eventId),
+        throwsInvalidArguments,
+      );
 
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);
-      expect(after, isEmpty, reason: 'the whole series should be gone');
-      expect(await plugin.getEvent(series.eventId), isNull);
+      expect(startsOf(after), startsOf(before),
+          reason: 'a refused delete must leave every occurrence in place');
     });
 
-    test('deleteEvent on a recurring eventId removes its detached occurrences',
+    test('deleteRecurring allEvents removes the detached occurrences too',
         () async {
       // An occurrence edited through its instance ID becomes a detached
       // exception row. Deleting the series must take it along — on a local
@@ -2295,7 +2377,7 @@ void main() {
 
       await detachOccurrence(plugin, calendarId!, series, 4, 'Detached #153');
 
-      await plugin.deleteEvent(eventId: series.eventId);
+      await plugin.deleteRecurring(series.eventId, EventSpan.allEvents);
 
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);

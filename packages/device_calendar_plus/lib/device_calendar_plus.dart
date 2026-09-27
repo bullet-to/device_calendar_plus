@@ -543,21 +543,29 @@ class DeviceCalendar {
     }
   }
 
-  /// Deletes an event. A bare event ID deletes the event (the whole series, if
-  /// recurring); an instance ID removes only that occurrence.
+  /// Deletes one thing: a one-off event, or a single occurrence of a recurring
+  /// series.
   ///
-  /// To truncate a series from a split point forward, use [deleteRecurring].
+  /// Pass [Event.instanceId]. For a one-off event that equals its
+  /// [Event.eventId]; for an occurrence it carries the occurrence timestamp
+  /// (`eventId@timestamp`), and only that occurrence is removed.
+  ///
+  /// A bare ID of a recurring series is refused with [DeviceCalendarException]
+  /// ([DeviceCalendarError.invalidArguments]) and nothing is deleted: to delete
+  /// the whole series use [deleteRecurring] with [EventSpan.allEvents], and to
+  /// truncate it from an occurrence forward use [EventSpan.thisAndFollowing].
   /// Requires full access.
   ///
   /// Throws [DeviceCalendarException] ([DeviceCalendarError.notFound]) when
   /// there is no such event.
-  Future<void> deleteEvent({required String eventId}) async {
-    requireNonBlank(eventId, name: 'eventId', label: 'Event ID');
+  Future<void> deleteEvent({required String instanceId}) async {
+    requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
 
-    // A bare event ID carries no timestamp and targets the event itself (the
-    // whole series when recurring); an instance ID carries the occurrence
-    // timestamp, which the platform uses to remove that occurrence alone.
-    final parsed = InstanceIdParser.parse(eventId);
+    // A bare ID carries no timestamp and targets a one-off event (the
+    // platform refuses a recurring series); an instance ID carries the
+    // occurrence timestamp, which the platform uses to remove that
+    // occurrence alone.
+    final parsed = InstanceIdParser.parse(instanceId);
 
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -575,12 +583,17 @@ class DeviceCalendar {
     }
   }
 
-  /// Updates an event. A bare [eventId] updates the event (the whole series, if
-  /// recurring); an instance ID detaches and edits one occurrence (its
-  /// [startDate]/[endDate] are absolute, so it can move to another day).
+  /// Updates one thing: a one-off event, or a single occurrence of a recurring
+  /// series.
   ///
-  /// To change a property across a series or from a split point forward, use
-  /// [updateRecurring].
+  /// Pass [Event.instanceId]. For a one-off event that equals its
+  /// [Event.eventId]; for an occurrence it carries the occurrence timestamp
+  /// (`eventId@timestamp`), and the occurrence is detached and edited alone
+  /// (its [startDate]/[endDate] are absolute, so it can move to another day).
+  ///
+  /// A bare ID of a recurring series is refused with [DeviceCalendarException]
+  /// ([DeviceCalendarError.invalidArguments]) and nothing is written: to change
+  /// a series, or split it from an occurrence forward, use [updateRecurring].
   ///
   /// Only the fields you pass change. [description], [location], [url], and
   /// [reminders] take a [Patch] — omit to leave unchanged, [Patch.set] to
@@ -588,7 +601,7 @@ class DeviceCalendar {
   /// wall-clock time rather than preserving the instant. Passing no fields is a
   /// no-op. Requires full access.
   Future<void> updateEvent({
-    required String eventId,
+    required String instanceId,
     String? title,
     DateTime? startDate,
     DateTime? endDate,
@@ -600,8 +613,8 @@ class DeviceCalendar {
     EventAvailability? availability,
     Patch<List<Duration>>? reminders,
   }) async {
-    // Validate eventId
-    requireNonBlank(eventId, name: 'eventId', label: 'Event ID');
+    // Validate instanceId
+    requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
 
     // No changed fields is a valid no-op (e.g. the user pressed Save without
     // editing): the event already matches the requested values, so there is
@@ -641,10 +654,11 @@ class DeviceCalendar {
     final normalizedEndDate =
         (isAllDay == true && endDate != null) ? _stripTime(endDate) : endDate;
 
-    // A bare event ID carries no timestamp and targets the event itself (the
-    // whole series when recurring); an instance ID carries the occurrence
-    // timestamp, which the platform uses to detach and edit that occurrence.
-    final parsed = InstanceIdParser.parse(eventId);
+    // A bare ID carries no timestamp and targets a one-off event (the
+    // platform refuses a recurring series); an instance ID carries the
+    // occurrence timestamp, which the platform uses to detach and edit that
+    // occurrence.
+    final parsed = InstanceIdParser.parse(instanceId);
 
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -686,7 +700,9 @@ class DeviceCalendar {
   /// delta — changing day and time together, measured in the event's timezone
   /// (so DST-safe). [duration] must be non-negative whole minutes (whole days
   /// for all-day events). [recurrenceRule] takes a [Patch]: [Patch.set] to
-  /// change the rule, [Patch.clear] to stop recurring.
+  /// change the rule, [Patch.clear] to stop recurring. [reminders] takes a
+  /// [Patch] too: [Patch.set] replaces the scope's reminders, [Patch.clear]
+  /// removes them (lead times before start, validated as in [createEvent]).
   ///
   /// A new rule re-anchors the scope on the first day it generates on or after
   /// the anchor (the occurrence for `thisAndFollowing`, the series start for
@@ -720,6 +736,7 @@ class DeviceCalendar {
     String? timeZone,
     EventAvailability? availability,
     Patch<RecurrenceRule>? recurrenceRule,
+    Patch<List<Duration>>? reminders,
   }) async {
     // Validate instanceId
     requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
@@ -783,9 +800,18 @@ class DeviceCalendar {
         isAllDay == null &&
         timeZone == null &&
         availability == null &&
-        recurrenceRule == null) {
+        recurrenceRule == null &&
+        reminders == null) {
       return parsed.eventId;
     }
+
+    // Map the typed reminders Patch to the minutes wire format, as updateEvent
+    // does. Validation (negative durations) happens inside _remindersToMinutes.
+    final Patch<List<int>>? reminderMinutes = switch (reminders) {
+      null => null,
+      PatchSet(:final value) => Patch.set(_remindersToMinutes(value)!),
+      PatchClear() => const Patch.clear(),
+    };
 
     // The platform layer works in RRULE strings; map the typed Patch across.
     final Patch<String>? recurrenceRulePatch = switch (recurrenceRule) {
@@ -810,6 +836,7 @@ class DeviceCalendar {
         timeZone: timeZone,
         availability: availability?.name,
         recurrenceRule: recurrenceRulePatch,
+        reminders: reminderMinutes,
       );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
@@ -822,8 +849,7 @@ class DeviceCalendar {
   }
 
   /// Deletes a recurring **series** by [span]:
-  /// - [EventSpan.allEvents] — deletes the whole series (same as [deleteEvent]
-  ///   with a bare event ID).
+  /// - [EventSpan.allEvents] — deletes the whole series.
   /// - [EventSpan.thisAndFollowing] — removes the occurrence and every later
   ///   one, truncating the series. Requires [instanceId] to carry an occurrence
   ///   timestamp (a bare event ID throws [ArgumentError]). An occurrence that

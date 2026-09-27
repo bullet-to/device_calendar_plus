@@ -96,7 +96,7 @@ void main() {
       final series = await seedDailySeries(plugin, calendarId);
       final stale = series.occurrences[4].instanceId;
 
-      await plugin.deleteEvent(eventId: stale);
+      await plugin.deleteEvent(instanceId: stale);
 
       expect(
         await plugin.getEvent(stale),

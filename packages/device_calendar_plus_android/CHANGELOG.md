@@ -1,5 +1,12 @@
 ## Unreleased
 
+### Changed
+- **Breaking:** `updateEvent` and `deleteEvent` without a `timestamp` refuse
+  a recurring series with `INVALID_ARGUMENTS` and write nothing; series-wide
+  changes go through `updateRecurring` / `deleteRecurring`. This also closes
+  the path that wrote `DTEND` onto a recurring master (#175, #125).
+- `updateRecurring` forwards a `reminders` patch (#175).
+
 ### Fixed
 - `updateEvent` or `deleteEvent` on a single occurrence of a recurring event
   on a synced calendar (Google, Exchange) no longer hides the whole series

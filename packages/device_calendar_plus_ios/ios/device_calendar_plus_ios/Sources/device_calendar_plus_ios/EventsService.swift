@@ -875,9 +875,32 @@ class EventsService {
     return parts.joined(separator: ";")
   }
   
-  /// Deletes an event. With a `timestamp`, removes only the occurrence at
-  /// that instant from its recurring series; without one, deletes the event
-  /// itself (the whole series when recurring).
+  /// `invalidArguments` when `event` is a recurring series addressed by its
+  /// bare ID (no `timestamp`): `updateEvent` and `deleteEvent` act on one
+  /// thing — a one-off event or one occurrence — so a series-wide change has
+  /// to go through `replacement` with `EventSpan.allEvents` (#175). Nil
+  /// otherwise.
+  private func seriesByBareIdError(
+    _ event: EKEvent,
+    eventId: String,
+    timestamp: Int64?,
+    replacement: String,
+    verb: String
+  ) -> CalendarError? {
+    guard timestamp == nil, event.hasRecurrenceRules else { return nil }
+    return CalendarError(
+      code: PlatformExceptionCodes.invalidArguments,
+      message: "Event \(eventId) is a recurring series. To \(verb) the whole "
+        + "series use \(replacement)(id, EventSpan.allEvents); to \(verb) one "
+        + "occurrence pass its instanceId."
+    )
+  }
+
+  /// Deletes one thing. With a `timestamp`, removes only the occurrence at
+  /// that instant from its recurring series; without one, deletes a one-off
+  /// event. A bare ID of a recurring series is refused with
+  /// `invalidArguments` and nothing is deleted — whole-series deletes go
+  /// through `deleteRecurring` (#175).
   func deleteEvent(
     eventId: String,
     timestamp: Int64?,
@@ -917,9 +940,16 @@ class EventsService {
       return
     }
 
-    // An occurrence delete removes .thisEvent only. A bare event ID removes
-    // the whole series (.futureEvents from the master; on a non-recurring
-    // event that behaves like .thisEvent).
+    if let error = seriesByBareIdError(
+      foundEvent, eventId: eventId, timestamp: timestamp,
+      replacement: "deleteRecurring", verb: "delete"
+    ) {
+      completion(.failure(error))
+      return
+    }
+
+    // An occurrence delete removes .thisEvent only. A bare ID reaches here
+    // only for a one-off event, where .futureEvents behaves like .thisEvent.
     let span: EKSpan = (timestamp != nil) ? .thisEvent : .futureEvents
 
     do {
@@ -933,9 +963,11 @@ class EventsService {
     }
   }
 
-  /// Updates an event. With a `timestamp`, detaches the occurrence at that
+  /// Updates one thing. With a `timestamp`, detaches the occurrence at that
   /// instant from its recurring series and applies the changes to it alone;
-  /// without one, updates the event itself (the whole series when recurring).
+  /// without one, updates a one-off event. A bare ID of a recurring series is
+  /// refused with `invalidArguments` and nothing is written — series edits go
+  /// through `updateRecurring` (#175).
   func updateEvent(
     eventId: String,
     timestamp: Int64?,
@@ -978,6 +1010,14 @@ class EventsService {
       return
     }
 
+    if let error = seriesByBareIdError(
+      foundEvent, eventId: eventId, timestamp: timestamp,
+      replacement: "updateRecurring", verb: "change"
+    ) {
+      completion(.failure(error))
+      return
+    }
+
     // An occurrence edit leaves an omitted date at the occurrence's own
     // value, so a startDate alone can overtake the end. Reject the inverted
     // range here, before mutating the live EKEvent — matching Android, which
@@ -1001,8 +1041,8 @@ class EventsService {
     patch.applyTimeZone(to: foundEvent)
 
     // An occurrence edit saves .thisEvent, detaching it as an exception. A
-    // bare event ID follows the whole series (.futureEvents from the master;
-    // on a non-recurring event that behaves like .thisEvent).
+    // bare ID reaches here only for a one-off event, where .futureEvents
+    // behaves like .thisEvent.
     let span: EKSpan = (timestamp != nil) ? .thisEvent : .futureEvents
 
     // Save updated event
@@ -1244,6 +1284,10 @@ class EventsService {
     standalone.url = occurrence.url
     standalone.timeZone = occurrence.timeZone
     standalone.availability = occurrence.availability
+    // The occurrence already carries any reminders patch, so the standalone
+    // takes its alarms — as Android's new series takes the patched (or
+    // inherited) reminder rows. An EKAlarm belongs to one event, so copy it.
+    standalone.alarms = occurrence.alarms?.compactMap { $0.copy() as? EKAlarm }
 
     // Two-phase save: stage the truncation uncommitted, then commit both with
     // the standalone. On failure `reset()` discards both so the calendar is
