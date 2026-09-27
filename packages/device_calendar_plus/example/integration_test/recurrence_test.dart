@@ -242,6 +242,47 @@ Future<void> expectWholeSecondSeries(
       reason: 'every occurrence must start at a whole second');
 }
 
+/// Creates a four-count weekly series, runs [act] against it — on the series
+/// for [EventSpan.allEvents], on its third occurrence otherwise — and expects
+/// it to throw [throws]. The refusal must leave the series' occurrences as
+/// they were and create no new series in the calendar.
+Future<void> expectRefusalLeavesSeriesUntouched(
+  DeviceCalendar plugin,
+  String calendarId,
+  EventSpan span,
+  Future<void> Function(String targetId) act,
+  Matcher throws, {
+  String? reason,
+}) async {
+  final series = await createWeeklySeries(plugin, calendarId, count: 4);
+  final before = await occurrencesOf(
+      plugin, calendarId, series.eventId, series.start,
+      windowDays: 45);
+  expect(before.length, greaterThanOrEqualTo(3),
+      reason: 'the weekly series should have expanded into occurrences');
+  final windowStart = series.start.subtract(const Duration(days: 1));
+  final windowEnd = series.start.add(const Duration(days: 45));
+  final calendarBefore = await plugin.listEvents(windowStart, windowEnd,
+      calendarIds: [calendarId]);
+  final targetId =
+      span == EventSpan.allEvents ? series.eventId : before[2].instanceId;
+
+  await expectLater(act(targetId), throws, reason: reason);
+
+  final after = await occurrencesOf(
+      plugin, calendarId, series.eventId, series.start,
+      windowDays: 45);
+  expect(
+    after.map((e) => e.startDate).toList(),
+    before.map((e) => e.startDate).toList(),
+    reason: 'a refused $span rule must leave the series as it was',
+  );
+  final calendarAfter = await plugin.listEvents(windowStart, windowEnd,
+      calendarIds: [calendarId]);
+  expect(calendarAfter.length, calendarBefore.length,
+      reason: 'a refused $span rule must not create a new series');
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -960,21 +1001,11 @@ void main() {
           'for $span and leaves the series untouched', () async {
         expect(calendarId, isNotNull,
             reason: 'setUpAll must create a calendar');
-        final series = await createWeeklySeries(plugin, calendarId!, count: 4);
-        final before = await occurrencesOf(
-            plugin, calendarId!, series.eventId, series.start,
-            windowDays: 45);
-        expect(before.length, greaterThanOrEqualTo(3),
-            reason: 'the weekly series should have expanded into occurrences');
-        final windowEnd = series.start.add(const Duration(days: 45));
-        final calendarBefore = await plugin.listEvents(
-            series.start.subtract(const Duration(days: 1)), windowEnd,
-            calendarIds: [calendarId!]);
-        final id =
-            span == EventSpan.allEvents ? series.eventId : before[2].instanceId;
-
-        await expectLater(
-          plugin.updateRecurring(
+        await expectRefusalLeavesSeriesUntouched(
+          plugin,
+          calendarId!,
+          span,
+          (id) => plugin.updateRecurring(
             id,
             span,
             // 30 February: constructible, never generated.
@@ -985,20 +1016,6 @@ void main() {
               'errorCode', DeviceCalendarError.invalidArguments)),
           reason: '$span must refuse a rule that never generates',
         );
-
-        final after = await occurrencesOf(
-            plugin, calendarId!, series.eventId, series.start,
-            windowDays: 45);
-        expect(
-          after.map((e) => e.startDate).toList(),
-          before.map((e) => e.startDate).toList(),
-          reason: 'a refused $span rule must leave the series as it was',
-        );
-        final calendarAfter = await plugin.listEvents(
-            series.start.subtract(const Duration(days: 1)), windowEnd,
-            calendarIds: [calendarId!]);
-        expect(calendarAfter.length, calendarBefore.length,
-            reason: 'a refused $span rule must not create a new series');
       });
     }
 
@@ -1013,49 +1030,25 @@ void main() {
             '("$rrule") for $span and leaves the series untouched', () async {
           expect(calendarId, isNotNull,
               reason: 'setUpAll must create a calendar');
-          final series =
-              await createWeeklySeries(plugin, calendarId!, count: 4);
-          final before = await occurrencesOf(
-              plugin, calendarId!, series.eventId, series.start,
-              windowDays: 45);
-          expect(before.length, greaterThanOrEqualTo(3),
-              reason: 'the weekly series should have expanded into '
-                  'occurrences');
-          final windowEnd = series.start.add(const Duration(days: 45));
-          final calendarBefore = await plugin.listEvents(
-              series.start.subtract(const Duration(days: 1)), windowEnd,
-              calendarIds: [calendarId!]);
-          final target = InstanceIdParser.parse(span == EventSpan.allEvents
-              ? series.eventId
-              : before[2].instanceId);
-
-          await expectLater(
-            DeviceCalendarPlusPlatform.instance.updateRecurring(
-              target.eventId,
-              target.timestamp,
-              span.name,
-              recurrenceRule: Patch.set(rrule),
-            ),
+          await expectRefusalLeavesSeriesUntouched(
+            plugin,
+            calendarId!,
+            span,
+            (id) {
+              final target = InstanceIdParser.parse(id);
+              return DeviceCalendarPlusPlatform.instance.updateRecurring(
+                target.eventId,
+                target.timestamp,
+                span.name,
+                recurrenceRule: Patch.set(rrule),
+              );
+            },
             throwsA(isA<PlatformException>().having(
               (e) => e.code,
               'code',
               PlatformExceptionCodes.invalidArguments,
             )),
           );
-
-          final after = await occurrencesOf(
-              plugin, calendarId!, series.eventId, series.start,
-              windowDays: 45);
-          expect(
-            after.map((e) => e.startDate).toList(),
-            before.map((e) => e.startDate).toList(),
-            reason: 'a refused $span rule must leave the series as it was',
-          );
-          final calendarAfter = await plugin.listEvents(
-              series.start.subtract(const Duration(days: 1)), windowEnd,
-              calendarIds: [calendarId!]);
-          expect(calendarAfter.length, calendarBefore.length,
-              reason: 'a refused $span rule must not create a new series');
         });
       }
     }
