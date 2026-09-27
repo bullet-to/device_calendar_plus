@@ -513,7 +513,8 @@ class DeviceCalendar {
     final normalizedEndDate = isAllDay ? _stripTime(endDate) : endDate;
 
     // Convert reminders to whole minutes before start (the wire format).
-    final reminderMinutes = _remindersToMinutes(reminders);
+    final reminderMinutes =
+        reminders == null ? null : _remindersToMinutes(reminders);
 
     await _ensurePermission(CalendarAccessLevel.writeOnly);
     try {
@@ -632,13 +633,7 @@ class DeviceCalendar {
       return;
     }
 
-    // Map the typed reminders Patch to the minutes wire format. Validation
-    // (negative durations) happens inside _remindersToMinutes.
-    final Patch<List<int>>? reminderMinutes = switch (reminders) {
-      null => null,
-      PatchSet(:final value) => Patch.set(_remindersToMinutes(value)!),
-      PatchClear() => const Patch.clear(),
-    };
+    final reminderMinutes = _reminderMinutesPatch(reminders);
 
     // Validate dates if both are provided
     if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
@@ -805,13 +800,7 @@ class DeviceCalendar {
       return parsed.eventId;
     }
 
-    // Map the typed reminders Patch to the minutes wire format, as updateEvent
-    // does. Validation (negative durations) happens inside _remindersToMinutes.
-    final Patch<List<int>>? reminderMinutes = switch (reminders) {
-      null => null,
-      PatchSet(:final value) => Patch.set(_remindersToMinutes(value)!),
-      PatchClear() => const Patch.clear(),
-    };
+    final reminderMinutes = _reminderMinutesPatch(reminders);
 
     // The platform layer works in RRULE strings; map the typed Patch across.
     final Patch<String>? recurrenceRulePatch = switch (recurrenceRule) {
@@ -964,9 +953,7 @@ class DeviceCalendar {
   /// interpretation and throws [ArgumentError]; zero (at start) is allowed.
   /// Sub-minute values round to the nearest minute. Duplicate minute values are
   /// de-duplicated to avoid redundant alarm rows, preserving first-seen order.
-  /// Returns `null` for a `null` input (no reminders).
-  static List<int>? _remindersToMinutes(List<Duration>? reminders) {
-    if (reminders == null) return null;
+  static List<int> _remindersToMinutes(List<Duration> reminders) {
     final seen = <int>{};
     final minutes = <int>[];
     for (final reminder in reminders) {
@@ -982,4 +969,17 @@ class DeviceCalendar {
     }
     return minutes;
   }
+
+  /// Maps a typed reminders [Patch] to the minutes wire format, for the
+  /// update methods: `null` leaves reminders unchanged, [Patch.clear] removes
+  /// them, and [Patch.set] converts via [_remindersToMinutes] (which throws
+  /// [ArgumentError] on a negative offset).
+  static Patch<List<int>>? _reminderMinutesPatch(
+    Patch<List<Duration>>? reminders,
+  ) =>
+      switch (reminders) {
+        null => null,
+        PatchSet(:final value) => Patch.set(_remindersToMinutes(value)),
+        PatchClear() => const Patch.clear(),
+      };
 }

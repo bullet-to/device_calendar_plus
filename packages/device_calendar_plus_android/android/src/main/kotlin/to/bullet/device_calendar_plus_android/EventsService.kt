@@ -756,12 +756,7 @@ class EventsService(
             if (timestamp != null) {
                 deleteEventInstance(eventId, timestamp)
             } else {
-                // A missing row falls through to deleteEventMaster, which
-                // reports NOT_FOUND (or cleans up orphaned exceptions).
-                store.readEventRow(eventId).getOrNull()
-                    ?.let { seriesByBareIdFailure(it, "deleteRecurring", "delete") }
-                    ?.let { return Result.failure(it) }
-                deleteEventMaster(eventId)
+                deleteOneOff(eventId)
             }
         } catch (e: SecurityException) {
             Result.failure(
@@ -781,9 +776,22 @@ class EventsService(
     }
 
     /**
-     * The bare-event-ID path of [deleteEvent]: deletes the event row itself —
-     * the whole series when recurring — and any detached occurrences keyed
-     * to it by `original_id`.
+     * The bare-event-ID path of [deleteEvent]: deletes a one-off event.
+     * NOT_FOUND when the event is missing or a DELETED tombstone, and a
+     * recurring series is refused before any delete — both checked against
+     * the live row, as [updateOneOff] does.
+     */
+    private fun deleteOneOff(eventId: String): Result<Unit> {
+        val row = store.readEventRow(eventId).getOrElse { return Result.failure(it) }
+        seriesByBareIdFailure(row, "deleteRecurring", "delete")
+            ?.let { return Result.failure(it) }
+        return deleteEventWithExceptions(eventId)
+    }
+
+    /**
+     * Deletes event row [eventId] and any detached occurrences keyed to it by
+     * `original_id` — the shared primitive behind [deleteOneOff] and
+     * [deleteRecurring]'s `allEvents` span, where it removes the whole series.
      *
      * The exceptions have to be named here because the provider cascades a
      * series delete only to a master with no `_sync_id`, and both a synced
@@ -795,7 +803,7 @@ class EventsService(
      * exceptions orphaned by a master that is already gone still match, so
      * deleting that ID cleans them up and reports success, not NOT_FOUND.
      */
-    private fun deleteEventMaster(eventId: String): Result<Unit> {
+    private fun deleteEventWithExceptions(eventId: String): Result<Unit> {
         // On a synced calendar this tombstones the rows (DELETED=1) for the
         // adapter to upload; on a local one it removes them — see
         // SeriesRowStore.deleteUri.
@@ -868,7 +876,7 @@ class EventsService(
             if (timestamp != null) {
                 updateEventInstance(eventId, timestamp, startDate, endDate, patch)
             } else {
-                updateEventMaster(eventId, startDate, endDate, patch)
+                updateOneOff(eventId, startDate, endDate, patch)
             }
         } catch (e: SecurityException) {
             Result.failure(
@@ -891,7 +899,7 @@ class EventsService(
      * The bare-event-ID path of [updateEvent]: updates a one-off event's row.
      * A recurring series is refused before any write.
      */
-    private fun updateEventMaster(
+    private fun updateOneOff(
         eventId: String,
         startDate: java.util.Date?,
         endDate: java.util.Date?,
@@ -1400,9 +1408,7 @@ class EventsService(
 
         return try {
             when (span) {
-                // The master delete directly: deleteEvent refuses a bare
-                // series ID, which is exactly what allEvents is for.
-                "allEvents" -> deleteEventMaster(eventId)
+                "allEvents" -> deleteEventWithExceptions(eventId)
                 "thisAndFollowing" -> deleteRecurringThisAndFollowing(eventId, timestamp)
                 else -> Result.failure(
                     CalendarException(
@@ -1747,7 +1753,7 @@ class EventsService(
     }
 
     /**
-     * The account of event row [eventId], for [deleteEventMaster] to build
+     * The account of event row [eventId], for [deleteEventWithExceptions] to build
      * its delete from, or null when the row is gone altogether. Reads
      * through a DELETED tombstone on purpose: a local one is still to be
      * collected.

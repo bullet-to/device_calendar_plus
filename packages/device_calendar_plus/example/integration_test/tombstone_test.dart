@@ -154,6 +154,22 @@ void main() {
     });
 
     test(
+        'deleteEvent on the bare series ID reports notFound and leaves the '
+        'tombstone alone (#153, #175)', () async {
+      final t = await tombstoneSeries(plugin, calendarId);
+      final before = await readSyncIds(t.series.eventId);
+      expect(before, isNotNull, reason: 'the seed must leave a tombstone row');
+
+      await expectLater(
+        plugin.deleteEvent(instanceId: t.series.eventId),
+        throwsNotFound,
+        reason: 'deleteEvent acts on one live thing; a tombstone is gone',
+      );
+      expect(await readSyncIds(t.series.eventId), before,
+          reason: 'deleteEvent must not collect the tombstone');
+    });
+
+    test(
         'deleteRecurring(allEvents) on the series ID collects the tombstone '
         'and its exception (#153)', () async {
       final t = await tombstoneSeries(plugin, calendarId);

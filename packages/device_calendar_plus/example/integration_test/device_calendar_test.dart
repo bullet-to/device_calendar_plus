@@ -967,8 +967,11 @@ void main() {
       // Verify update
       final event = await plugin.getEvent(eventId);
       expect(event, isNotNull);
+      expect(event!.instanceId, eventId,
+          reason: "a one-off's instanceId is its eventId, so updateEvent "
+              'takes either (#175)');
       // Allow small time differences (within 1 minute)
-      expect(event!.startDate.difference(newStart).abs(),
+      expect(event.startDate.difference(newStart).abs(),
           lessThan(Duration(minutes: 1)));
       expect(event.endDate.difference(newEnd).abs(),
           lessThan(Duration(minutes: 1)));

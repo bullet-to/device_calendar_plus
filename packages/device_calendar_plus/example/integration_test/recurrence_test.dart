@@ -1841,35 +1841,6 @@ void main() {
           reason: 'a refused update must not change any field');
     });
 
-    test('updateEvent on a one-off event still edits it', () async {
-      // A one-off event's instanceId is its eventId, so the rename changes
-      // nothing for it: it still moves (#175).
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      final start = DateTime.now().add(const Duration(hours: 1));
-      final eventId = await plugin.createEvent(
-        calendarId: calendarId,
-        title: 'One-off',
-        startDate: start,
-        endDate: start.add(const Duration(hours: 1)),
-      );
-      final event = (await plugin.getEvent(eventId))!;
-      expect(event.instanceId, event.eventId);
-
-      final moved = start.add(const Duration(days: 1));
-      await plugin.updateEvent(
-        instanceId: event.instanceId,
-        startDate: moved,
-        endDate: moved.add(const Duration(hours: 1)),
-      );
-
-      final after = (await plugin.getEvent(eventId))!;
-      expect(after.startDate.millisecondsSinceEpoch ~/ 1000,
-          moved.millisecondsSinceEpoch ~/ 1000);
-
-      await plugin.deleteEvent(instanceId: event.instanceId);
-      expect(await plugin.getEvent(eventId), isNull);
-    });
-
     test('updateRecurring sets and clears reminders across the series',
         () async {
       // reminders is the one field updateEvent had that updateRecurring
@@ -1951,6 +1922,66 @@ void main() {
                 'reminders');
       }
     });
+
+    // A rule-clearing split leaves a standalone event at the split point,
+    // built field by field on iOS rather than through EKSpan.futureEvents —
+    // and it used to drop the occurrence's alarms (#175). Both the patched
+    // and the inherited reminders must land on it.
+    for (final (label, seriesReminders, patch, expected) in [
+      (
+        'sets a reminders patch on',
+        null,
+        const Patch<List<Duration>>.set(
+            [Duration(minutes: 15), Duration(hours: 1)]),
+        {const Duration(minutes: 15), const Duration(hours: 1)},
+      ),
+      (
+        'keeps the series reminders on',
+        const [Duration(minutes: 10), Duration(minutes: 30)],
+        null,
+        {const Duration(minutes: 10), const Duration(minutes: 30)},
+      ),
+    ]) {
+      test(
+          'updateRecurring thisAndFollowing with the rule cleared $label the '
+          'standalone it leaves (#175)', () async {
+        expect(calendarId, isNotNull,
+            reason: 'setUpAll must create a calendar');
+        final series = await createDailySeries(plugin, calendarId!,
+            count: 6, reminders: seriesReminders);
+        final occurrences = await occurrencesOf(
+            plugin, calendarId!, series.eventId, series.start);
+        expect(occurrences, hasLength(6));
+        final splitMillis = occurrences[3].startDate.millisecondsSinceEpoch;
+
+        final standaloneId = await plugin.updateRecurring(
+          occurrences[3].instanceId,
+          EventSpan.thisAndFollowing,
+          recurrenceRule: const Patch.clear(),
+          reminders: patch,
+        );
+
+        final standalone = await plugin.getEvent(standaloneId);
+        expect(standalone, isNotNull);
+        expect(standalone!.recurrenceRule, isNull);
+        expect(standalone.startDate.millisecondsSinceEpoch, splitMillis,
+            reason: 'the standalone must sit at the split point');
+        expect(standalone.reminders?.toSet(), expected,
+            reason: 'the standalone must carry the split occurrence\'s '
+                'reminders');
+
+        final head = await occurrencesOf(
+            plugin, calendarId!, series.eventId, series.start);
+        expectTruncatedMaster(head,
+            before: occurrences[3].startDate, count: 3);
+        for (final occurrence in head) {
+          expect(occurrence.reminders?.toSet() ?? const <Duration>{},
+              (seriesReminders ?? const <Duration>[]).toSet(),
+              reason: 'occurrences before the split must keep the series '
+                  'reminders');
+        }
+      });
+    }
   });
 
   // Anchor-shift: `start` moves the anchored occurrence to a new instant and

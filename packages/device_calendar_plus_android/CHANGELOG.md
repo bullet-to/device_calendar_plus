@@ -5,6 +5,9 @@
   a recurring series with `INVALID_ARGUMENTS` and write nothing; series-wide
   changes go through `updateRecurring` / `deleteRecurring`. This also closes
   the path that wrote `DTEND` onto a recurring master (#175, #125).
+  `deleteEvent` on a bare ID that is gone or only a `DELETED=1` tombstone
+  reports `NOT_FOUND`; collecting a tombstoned series is
+  `deleteRecurring(allEvents)`'s job.
 - `updateRecurring` forwards a `reminders` patch (#175).
 
 ### Fixed

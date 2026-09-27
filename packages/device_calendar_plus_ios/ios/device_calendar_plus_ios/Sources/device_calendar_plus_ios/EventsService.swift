@@ -948,12 +948,10 @@ class EventsService {
       return
     }
 
-    // An occurrence delete removes .thisEvent only. A bare ID reaches here
-    // only for a one-off event, where .futureEvents behaves like .thisEvent.
-    let span: EKSpan = (timestamp != nil) ? .thisEvent : .futureEvents
-
+    // One thing only: an occurrence or a one-off (a bare series ID was
+    // refused above), so .thisEvent can never reach the rest of a series.
     do {
-      try eventStore.remove(foundEvent, span: span)
+      try eventStore.remove(foundEvent, span: .thisEvent)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
@@ -1040,14 +1038,10 @@ class EventsService {
     if let endDate = endDate { foundEvent.endDate = endDate }
     patch.applyTimeZone(to: foundEvent)
 
-    // An occurrence edit saves .thisEvent, detaching it as an exception. A
-    // bare ID reaches here only for a one-off event, where .futureEvents
-    // behaves like .thisEvent.
-    let span: EKSpan = (timestamp != nil) ? .thisEvent : .futureEvents
-
-    // Save updated event
+    // One thing only: an occurrence edit detaches it as an exception, and a
+    // one-off saves as itself (a bare series ID was refused above).
     do {
-      try eventStore.save(foundEvent, span: span, commit: true)
+      try eventStore.save(foundEvent, span: .thisEvent, commit: true)
       completion(.success(()))
     } catch {
       completion(.failure(CalendarError(
@@ -1286,8 +1280,13 @@ class EventsService {
     standalone.availability = occurrence.availability
     // The occurrence already carries any reminders patch, so the standalone
     // takes its alarms — as Android's new series takes the patched (or
-    // inherited) reminder rows. An EKAlarm belongs to one event, so copy it.
-    standalone.alarms = occurrence.alarms?.compactMap { $0.copy() as? EKAlarm }
+    // inherited) reminder rows. An EKAlarm belongs to one event, so build
+    // fresh ones: handing over `copy()`s of an inherited alarm strips it from
+    // the series the split leaves behind.
+    standalone.alarms = occurrence.alarms?.map { alarm in
+      alarm.absoluteDate.map { EKAlarm(absoluteDate: $0) }
+        ?? EKAlarm(relativeOffset: alarm.relativeOffset)
+    }
 
     // Two-phase save: stage the truncation uncommitted, then commit both with
     // the standalone. On failure `reset()` discards both so the calendar is
