@@ -13,12 +13,19 @@ final throwsNotFound = throwsA(isA<DeviceCalendarException>().having(
 ));
 
 /// Matches a [DeviceCalendarException] carrying
-/// [DeviceCalendarError.invalidArguments].
-final throwsInvalidArguments = throwsA(isA<DeviceCalendarException>().having(
-  (e) => e.errorCode,
-  'errorCode',
-  DeviceCalendarError.invalidArguments,
-));
+/// [DeviceCalendarError.invalidArguments]. With [mentioning], the message must
+/// also contain it (e.g. the replacement method a refusal points at).
+Matcher throwsInvalidArguments({String? mentioning}) {
+  var matcher = isA<DeviceCalendarException>().having(
+    (e) => e.errorCode,
+    'errorCode',
+    DeviceCalendarError.invalidArguments,
+  );
+  if (mentioning != null) {
+    matcher = matcher.having((e) => e.message, 'message', contains(mentioning));
+  }
+  return throwsA(matcher);
+}
 
 /// Local midnight [daysFromNow] days from today. Built via the constructor
 /// rather than `DateTime.add`, so the result is a calendar day rather than

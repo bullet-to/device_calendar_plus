@@ -1063,8 +1063,7 @@ void main() {
             recurrenceRule:
                 Patch.set(YearlyRecurrence(months: [2], daysOfMonth: [30])),
           ),
-          throwsA(isA<DeviceCalendarException>().having((e) => e.errorCode,
-              'errorCode', DeviceCalendarError.invalidArguments)),
+          throwsInvalidArguments(),
           reason: '$span must refuse a rule that never generates',
         );
       });
@@ -1647,11 +1646,7 @@ void main() {
           instanceId: target.instanceId,
           startDate: target.startDate.add(const Duration(days: 2)),
         ),
-        throwsA(isA<DeviceCalendarException>().having(
-          (e) => e.errorCode,
-          'errorCode',
-          DeviceCalendarError.invalidArguments,
-        )),
+        throwsInvalidArguments(),
       );
     });
 
@@ -1830,10 +1825,7 @@ void main() {
           startDate: series.start.add(const Duration(days: 2)),
           endDate: series.start.add(const Duration(days: 2, hours: 1)),
         ),
-        throwsA(isA<DeviceCalendarException>()
-            .having((e) => e.errorCode, 'errorCode',
-                DeviceCalendarError.invalidArguments)
-            .having((e) => e.message, 'message', contains('updateRecurring'))),
+        throwsInvalidArguments(mentioning: 'updateRecurring'),
       );
 
       final after = await occurrencesOf(
@@ -2157,8 +2149,7 @@ void main() {
           EventSpan.allEvents,
           start: before.first.startDate.add(const Duration(days: 1)),
         ),
-        throwsA(isA<DeviceCalendarException>().having((e) => e.errorCode,
-            'errorCode', DeviceCalendarError.invalidArguments)),
+        throwsInvalidArguments(),
       );
     });
 
@@ -2432,10 +2423,7 @@ void main() {
 
       await expectLater(
         plugin.deleteEvent(instanceId: series.eventId),
-        throwsA(isA<DeviceCalendarException>()
-            .having((e) => e.errorCode, 'errorCode',
-                DeviceCalendarError.invalidArguments)
-            .having((e) => e.message, 'message', contains('deleteRecurring'))),
+        throwsInvalidArguments(mentioning: 'deleteRecurring'),
       );
 
       final after = await occurrencesOf(

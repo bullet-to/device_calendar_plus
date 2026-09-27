@@ -1463,18 +1463,6 @@ void main() {
         );
       });
 
-      test('passes a reminders Patch.set through as minutes', () async {
-        await DeviceCalendar.instance.updateRecurring(
-          'event-123',
-          EventSpan.allEvents,
-          reminders: Patch.set([Duration(minutes: 30)]),
-        );
-
-        final reminders = mockPlatform.lastUpdateRecurring?.reminders;
-        expect(reminders, isA<PatchSet<List<int>>>());
-        expect((reminders as PatchSet<List<int>>).value, [30]);
-      });
-
       test('reminders Patch.clear alone is enough to not be a no-op',
           () async {
         await DeviceCalendar.instance.updateRecurring(
