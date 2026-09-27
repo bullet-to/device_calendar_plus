@@ -181,8 +181,10 @@ class PermissionService {
         NSLog("device_calendar_plus: calendar access request failed: \(error)")
       }
 
-      // Re-read rather than translate the answer: the seam's status already
-      // reflects it.
+      // Re-read rather than translate the answer: the seam has recorded a
+      // grant, or waited for an ungranted answer's status to settle, and an
+      // errored request leaves the live status — .notDetermined, still
+      // askable — which is the honest report.
       completion(.success(self.authorization.status))
     }
   }

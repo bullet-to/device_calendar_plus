@@ -38,9 +38,9 @@ final class PermissionServiceTests: XCTestCase {
     /// instead of delivering it, so a test can put two asks in flight and
     /// choose which one the user answers first. `finishRequest()` releases it.
     var holdsRequest = false
-    /// When set, the live status moves here one runloop turn *after* the answer
-    /// is delivered — EventKit's stale window (#137): the handler has answered,
-    /// but `authorizationStatus` has not caught up yet.
+    /// When set, the live status moves here straight after the answer's
+    /// handler returns, so anything that reads the status inside the handler
+    /// still sees the stale value (#137).
     var settlesTo: Access?
     /// One entry per OS prompt fired — "did we ask the user" is the behaviour.
     private(set) var requestedTiers: [CalendarPermissionType] = []
@@ -61,9 +61,7 @@ final class PermissionServiceTests: XCTestCase {
       let settled = settlesTo
       let deliver = {
         completion(answer)
-        if let settled = settled {
-          DispatchQueue.main.async { self.status = settled }
-        }
+        if let settled = settled { self.status = settled }
       }
       guard holdsRequest else {
         deliver()
@@ -119,9 +117,8 @@ final class PermissionServiceTests: XCTestCase {
       authorization: RecordingAuthorization(
         wrapping: authorization, record: record,
         // Each check is the next main-runloop turn rather than a real delay,
-        // so a stub's `settlesTo` (queued right behind the first check) is
-        // seen by the second, and a status that never settles runs out its
-        // checks without the test waiting on a clock.
+        // so a stub's `settlesTo` is seen by the first deferred check, and a
+        // status that never settles runs out its checks without a clock.
         deferral: { DispatchQueue.main.async(execute: $0) }),
       usageDescriptions: { usageDescriptions[$0] })
   }
@@ -304,6 +301,10 @@ final class PermissionServiceTests: XCTestCase {
   /// while granting write-only. Recording it as `.denied` inside the stale
   /// window failed every write gate and stopped `requestPermissions` ever
   /// prompting again, for the rest of the process.
+  ///
+  /// This is the never-settles case: the request runs out its checks and
+  /// reports `.notDetermined`; the usual settling case is
+  /// `testAnUngrantedFullAskReportsTheStatusItSettlesOn`.
   func testAFullAskAnsweredAddEventsOnlyIsNotRecordedAsADenial() throws {
     let (service, authorization) = makeService()
     authorization.grants = false
@@ -317,9 +318,8 @@ final class PermissionServiceTests: XCTestCase {
     XCTAssertEqual(try service.hasPermissions().get(), .notDetermined)
     XCTAssertFalse(service.hasPermission(for: .write))
 
-    // (That is the status never settling at all; #137 covers the usual case,
-    // where it catches up while the request waits.) Once it does catch up with
-    // what the OS actually granted, the write gate opens on its own.
+    // Once the status catches up with what the OS actually granted, the write
+    // gate opens on its own.
     authorization.status = .writeOnly
 
     XCTAssertTrue(service.hasPermission(for: .write))

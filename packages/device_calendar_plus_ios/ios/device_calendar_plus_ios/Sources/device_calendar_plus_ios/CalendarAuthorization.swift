@@ -112,11 +112,8 @@ final class AccessRecord {
 /// confirmed that tier, so a lower live status is stale rather than
 /// authoritative.
 ///
-/// The same window hides an ungranted answer (#137): the handler has said
-/// `false`, but the live status still reads `.notDetermined` for a moment
-/// before it settles on `.writeOnly` ("Add Events Only") or `.denied`. So an
-/// ungranted request waits, briefly, for the status to settle before calling
-/// back, and the caller's very next read sees the OS's own answer.
+/// An ungranted request also waits, bounded, for the status to leave
+/// `.notDetermined` — see `request(_:completion:)`.
 final class RecordingAuthorization: CalendarAuthorization {
   /// Runs its argument a moment later. Injected so tests drive the wait for a
   /// lagging status without a real clock.
