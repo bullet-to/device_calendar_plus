@@ -17,6 +17,9 @@ protocol CalendarAuthorization {
   /// granting write-only — so it is never on its own evidence of a refusal. A
   /// request that never reached the user is `.failure`, kept distinct because it
   /// is the one branch nothing downstream can see.
+  ///
+  /// Once `completion` runs, `status` reports the tier the OS settled on — or
+  /// `.notDetermined` if it has not settled, or the request errored.
   func request(_ tier: CalendarPermissionType, completion: @escaping (Result<Bool, Error>) -> Void)
 }
 
@@ -194,7 +197,16 @@ final class RecordingAuthorization: CalendarAuthorization {
   /// run out. Reads the patched `status`, so a recorded grant that already
   /// outranks the lag — an upgrade answered "not that tier" — needs no wait.
   private func awaitSettledStatus(checksLeft: Int, then done: @escaping () -> Void) {
-    guard checksLeft > 0, status == .notDetermined else {
+    guard status == .notDetermined else {
+      done()
+      return
+    }
+    guard checksLeft > 0 else {
+      // The bound is a guess at EventKit's lag; if a real device outlasts it,
+      // #137 is back, so leave a trace in the device log.
+      NSLog(
+        "device_calendar_plus: authorization status still notDetermined after an ungranted answer; reporting it"
+      )
       done()
       return
     }
