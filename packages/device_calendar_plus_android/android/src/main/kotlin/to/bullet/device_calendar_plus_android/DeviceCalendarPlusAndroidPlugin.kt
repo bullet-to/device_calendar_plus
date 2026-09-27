@@ -43,6 +43,13 @@ class DeviceCalendarPlusAndroidPlugin internal constructor(
     internal val pendingModal = PendingModal()
     private var providerExecutor: Executor? = null
 
+    /**
+     * showEventModal's lookup. A seam so JVM tests can drive what the lookup
+     * finds — the real one is provider IPC they have no provider for.
+     */
+    internal var modalEventLookup: EventsService.(String, Long?) -> kotlin.Result<Long> =
+        EventsService::findEventForModal
+
     constructor() : this(
         newProviderExecutor = {
             Executors.newSingleThreadExecutor { runnable ->
@@ -55,6 +62,7 @@ class DeviceCalendarPlusAndroidPlugin internal constructor(
     companion object {
         internal const val SHOW_EVENT_REQUEST_CODE = 1001
         internal const val CREATE_EVENT_REQUEST_CODE = 1002
+        private const val ACTIVITY_NOT_AVAILABLE = "Activity not available"
 
         // Lazy so constructing the plugin doesn't touch the Looper — JVM unit
         // tests can instantiate the class without an Android runtime.
@@ -168,7 +176,7 @@ class DeviceCalendarPlusAndroidPlugin internal constructor(
             // the same code — callers shouldn't handle two errors for one state.
             result.error(
                 PlatformExceptionCodes.OPERATION_FAILED,
-                "Activity not available",
+                ACTIVITY_NOT_AVAILABLE,
                 null
             )
             return
@@ -324,20 +332,18 @@ class DeviceCalendarPlusAndroidPlugin internal constructor(
         launchModalAfterLookup(
             SHOW_EVENT_REQUEST_CODE,
             result,
-            lookup = { service.findEventForModal(eventId, timestamp) },
+            lookup = { service.modalEventLookup(eventId, timestamp) },
         ) { currentActivity, requestCode, rowId ->
-            service.showEvent(currentActivity, rowId, timestamp, edit, requestCode)
+            EventModalIntents.showEvent(currentActivity, rowId, timestamp, edit, requestCode)
         }
     }
 
     private fun handleShowCreateEventModal(call: MethodCall, result: Result) {
-        val service = eventsService ?: error("EventsService not initialized - plugin lifecycle error")
-
         val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
 
         // No lookup: ACTION_INSERT needs nothing from the provider.
         launchModalNow(CREATE_EVENT_REQUEST_CODE, result) { currentActivity, requestCode ->
-            service.showCreateEvent(
+            EventModalIntents.showCreateEvent(
                 activityContext = currentActivity,
                 title = args["title"] as? String,
                 startDate = args["startDate"] as? Long,
@@ -363,8 +369,8 @@ class DeviceCalendarPlusAndroidPlugin internal constructor(
         result: Result,
         launch: (Activity, Int) -> kotlin.Result<Unit>,
     ) {
-        val currentActivity = claimModal(requestCode, result) ?: return
-        launch(currentActivity, requestCode).onFailure(pendingModal::fail)
+        if (!claimModal(requestCode, result)) return
+        launchClaimed { currentActivity -> launch(currentActivity, requestCode) }
     }
 
     /**
@@ -379,21 +385,18 @@ class DeviceCalendarPlusAndroidPlugin internal constructor(
         lookup: () -> kotlin.Result<T>,
         launch: (Activity, Int, T) -> kotlin.Result<Unit>,
     ) {
-        claimModal(requestCode, result) ?: return
+        if (!claimModal(requestCode, result)) return
         onProvider(lookup) { found ->
             // The claim can be resolved while the lookup runs (the activity
             // went away); then there's nothing left to launch.
             if (!pendingModal.holds(result)) return@onProvider
             found.fold(
+                // The activity can be gone here and not the claim: mid config
+                // change, between detach and reattach. launchClaimed fails
+                // that rather than waiting for the recreated activity — still
+                // exactly one reply.
                 onSuccess = { value ->
-                    // The activity can be gone here and not the claim: mid
-                    // config change, between detach and reattach. That fails
-                    // rather than waiting for the recreated activity — still
-                    // exactly one reply.
-                    val currentActivity = activity ?: return@fold pendingModal.fail(
-                        CalendarException(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available")
-                    )
-                    launch(currentActivity, requestCode, value).onFailure(pendingModal::fail)
+                    launchClaimed { currentActivity -> launch(currentActivity, requestCode, value) }
                 },
                 onFailure = pendingModal::fail,
             )
@@ -401,17 +404,28 @@ class DeviceCalendarPlusAndroidPlugin internal constructor(
     }
 
     /**
-     * Claims the modal slot for [requestCode], returning the activity to
-     * launch from. With no activity, replies OPERATION_FAILED — the code
-     * openAppSettings and requestPermissions use for the same state — and
-     * returns null, as it does when the slot is taken.
+     * Claims the modal slot for [requestCode]. With no activity, replies
+     * OPERATION_FAILED — the code openAppSettings and requestPermissions use
+     * for the same state — and returns false, as it does when the slot is
+     * taken.
      */
-    private fun claimModal(requestCode: Int, result: Result): Activity? {
-        val currentActivity = activity ?: run {
-            result.error(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available", null)
-            return null
+    private fun claimModal(requestCode: Int, result: Result): Boolean {
+        if (activity == null) {
+            result.error(PlatformExceptionCodes.OPERATION_FAILED, ACTIVITY_NOT_AVAILABLE, null)
+            return false
         }
-        return currentActivity.takeIf { pendingModal.begin(requestCode, result) }
+        return pendingModal.begin(requestCode, result)
+    }
+
+    /**
+     * Runs the claimed modal's [launch] from the current activity, failing
+     * the claim when there's no activity or the launch fails.
+     */
+    private fun launchClaimed(launch: (Activity) -> kotlin.Result<Unit>) {
+        val currentActivity = activity ?: return pendingModal.fail(
+            CalendarException(PlatformExceptionCodes.OPERATION_FAILED, ACTIVITY_NOT_AVAILABLE)
+        )
+        launch(currentActivity).onFailure(pendingModal::fail)
     }
 
     private fun handleCreateEvent(call: MethodCall, result: Result) {

@@ -157,4 +157,34 @@ internal class ModalLifecycleTest {
         assertEquals(listOf("success(null)"), result.replies)
         assertEquals(emptyList(), next.replies)
     }
+
+    // A config change detaches the activity but keeps the claim. If the
+    // lookup lands in that window there's nothing to launch from, so the
+    // call fails once rather than waiting on the recreated activity.
+    @Test
+    fun showEventModal_configChangeDuringLookup_failsOnceWithOperationFailed() {
+        plugin.modalEventLookup = { _, _ -> Result.success(1L) }
+        plugin.onAttachedToActivity(activityBinding())
+        val result = call("showEventModal", mapOf("eventId" to "1"))
+
+        plugin.onDetachedFromActivityForConfigChanges()
+        runProviderWork()
+
+        assertEquals(operationFailed, result.replies)
+    }
+
+    @Test
+    fun showEventModal_lookupFailsNotFound_repliesItAndFreesTheSlot() {
+        plugin.modalEventLookup = { _, _ ->
+            Result.failure(CalendarException(PlatformExceptionCodes.NOT_FOUND, "Event not found"))
+        }
+        plugin.onAttachedToActivity(activityBinding())
+        val result = call("showEventModal", mapOf("eventId" to "1"))
+        runProviderWork()
+
+        assertEquals(listOf("error(${PlatformExceptionCodes.NOT_FOUND})"), result.replies)
+        val next = RecordingResult()
+        assertTrue(plugin.pendingModal.begin(createCode, next))
+        assertEquals(emptyList(), next.replies)
+    }
 }

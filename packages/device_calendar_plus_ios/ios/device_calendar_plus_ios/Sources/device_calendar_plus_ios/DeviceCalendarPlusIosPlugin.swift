@@ -414,7 +414,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
         case .success(let value):
           self.presentModal(build(value))
         case .failure(let error):
-          self.pendingModal.fail(code: error.code, message: error.message)
+          self.pendingModal.fail(error)
         }
       }
     }
@@ -460,6 +460,11 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
   /// Presents the pending modal's controller from the top of the key window's
   /// presentation stack. With no window to present from, the call fails
   /// OPERATION_FAILED, as Android does with no Activity (#123).
+  ///
+  /// UIKit refuses a `present` it can't honour (the presenter is off-screen,
+  /// or mid-transition) by logging and doing nothing, so no dismissal would
+  /// ever reply. The outcome is checked rather than assumed: a refused
+  /// presentation fails the call too.
   private func presentModal(_ viewController: UIViewController) {
     guard let root = rootViewController() else {
       pendingModal.fail(
@@ -468,13 +473,19 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       return
     }
     Self.topPresenter(from: root).present(viewController, animated: true, completion: nil)
+    // `present` links the two controllers synchronously when it accepts.
+    if viewController.presentingViewController == nil {
+      pendingModal.fail(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "Couldn't present the modal")
+    }
   }
 
   /// The controller to present from: the top of `root`'s presentation stack.
   /// `present` from a controller that's already presenting something (say the
   /// host app's own sheet) silently does nothing, which would leave the reply
   /// pending forever. A controller on its way out doesn't count.
-  static func topPresenter(from root: UIViewController) -> UIViewController {
+  private static func topPresenter(from root: UIViewController) -> UIViewController {
     var presenter = root
     while let presented = presenter.presentedViewController, !presented.isBeingDismissed {
       presenter = presented
