@@ -76,20 +76,19 @@ final class ModalLifecycleTests: XCTestCase {
   /// The view sheet used to have no presentation delegate, so the swipe-down
   /// above never reached the plugin.
   func testTheViewSheetReportsItsDismissalToThePlugin() {
-    let container = plugin.modalContainer(for: EKEventViewController())
+    let sheet = plugin.eventViewerSheet(for: EKEvent(eventStore: EKEventStore()))
 
-    XCTAssertTrue(container is UINavigationController)
-    XCTAssertTrue(container?.presentationController?.delegate === plugin)
+    XCTAssertTrue(sheet.topViewController is EKEventViewController)
+    XCTAssertTrue(sheet.presentationController?.delegate === plugin)
   }
 
   /// The editor handles its own pull-down through its edit delegate, so it
   /// keeps its own presentation delegate.
   func testTheEditorSheetKeepsItsOwnPresentationDelegate() {
-    let editor = EKEventEditViewController()
-    let container = plugin.modalContainer(for: editor)
+    let editor = plugin.eventEditor(for: nil)
 
-    XCTAssertTrue(container === editor)
-    XCTAssertFalse(container?.presentationController?.delegate === plugin)
+    XCTAssertTrue(editor.editViewDelegate === plugin)
+    XCTAssertFalse(editor.presentationController?.delegate === plugin)
   }
 
   // MARK: - presenting

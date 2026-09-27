@@ -1,5 +1,4 @@
 import EventKit
-import EventKitUI
 
 /// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
 /// two platforms must stay in lockstep.
@@ -341,11 +340,13 @@ class EventsService {
     }
   }
   
-  func showEvent(
+  /// The event for showEventModal to present: the occurrence at `timestamp`,
+  /// or the event itself without one. The plugin builds the modal around it,
+  /// as Android's findEventForModal leaves the launch to its plugin.
+  func findEventForModal(
     eventId: String,
     timestamp: Int64?,
-    edit: Bool = false,
-    completion: @escaping (Result<UIViewController, CalendarError>) -> Void
+    completion: @escaping (Result<EKEvent, CalendarError>) -> Void
   ) {
     // Check permission
     guard permissionService.hasPermission(for: .full) else {
@@ -396,21 +397,8 @@ class EventsService {
       )))
       return
     }
-    
-    if edit {
-      let editViewController = EKEventEditViewController()
-      editViewController.eventStore = eventStore
-      editViewController.event = foundEvent
-      completion(.success(editViewController))
-    } else {
-      let eventViewController = EKEventViewController()
-      eventViewController.event = foundEvent
-      // Keep the Edit button: Android's ACTION_VIEW screen also lets the user
-      // edit from the view, so allowing it here preserves cross-platform parity.
-      eventViewController.allowsEditing = true
-      eventViewController.allowsCalendarPreview = true
-      completion(.success(eventViewController))
-    }
+
+    completion(.success(foundEvent))
   }
   
   /// Resolves the calendar to write a new event into.

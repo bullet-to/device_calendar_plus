@@ -369,17 +369,11 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
 
     guard pendingModal.begin(result) else { return }
 
-    eventsService.showEvent(eventId: eventId, timestamp: timestamp, edit: edit) { serviceResult in
+    eventsService.findEventForModal(eventId: eventId, timestamp: timestamp) { serviceResult in
       DispatchQueue.main.async {
         switch serviceResult {
-        case .success(let viewController):
-          guard let container = self.modalContainer(for: viewController) else {
-            self.pendingModal.fail(
-              code: PlatformExceptionCodes.unknownError,
-              message: "Unexpected event view controller")
-            return
-          }
-          self.presentModal(container)
+        case .success(let event):
+          self.presentModal(edit ? self.eventEditor(for: event) : self.eventViewerSheet(for: event))
         case .failure(let error):
           self.pendingModal.fail(code: error.code, message: error.message)
         }
@@ -405,13 +399,7 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
       DispatchQueue.main.async {
         switch serviceResult {
         case .success(let event):
-          let editViewController = EKEventEditViewController()
-          editViewController.eventStore = self.eventStore
-          editViewController.event = event // nil = blank editor
-          editViewController.editViewDelegate = self
-
-          self.presentModal(editViewController)
-
+          self.presentModal(self.eventEditor(for: event)) // nil = blank editor
         case .failure(let error):
           self.pendingModal.fail(code: error.code, message: error.message)
         }
@@ -419,32 +407,41 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
   }
 
-  /// The page sheet to present for showEvent's controller, with this plugin
-  /// wired as its delegate. Nil for a controller it doesn't know.
+  /// The editor page sheet for `event`, or a blank editor for nil, with this
+  /// plugin as its edit delegate.
   ///
   /// EKEventEditViewController is itself a UINavigationController, so it's
-  /// presented directly and handles its own pull-down through its delegate.
+  /// presented directly and handles its own pull-down through its delegate —
+  /// it keeps its own presentation delegate.
+  func eventEditor(for event: EKEvent?) -> EKEventEditViewController {
+    let editor = EKEventEditViewController()
+    editor.eventStore = eventStore
+    editor.event = event
+    editor.editViewDelegate = self
+    editor.modalPresentationStyle = .pageSheet
+    return editor
+  }
+
+  /// The viewer page sheet for `event`, with this plugin as its delegate.
+  ///
   /// EKEventViewController needs wrapping in a navigation controller for its
   /// action buttons and dismissal to work, and swiping its sheet down doesn't
-  /// reach eventViewController(_:didCompleteWith:) — so only that sheet takes
-  /// the presentation delegate, to hear the dismissal itself (#123).
-  func modalContainer(for viewController: UIViewController) -> UIViewController? {
-    switch viewController {
-    case let editor as EKEventEditViewController:
-      editor.editViewDelegate = self
-      editor.modalPresentationStyle = .pageSheet
-      return editor
-    case let viewer as EKEventViewController:
-      viewer.delegate = self
-      let navigationController = UINavigationController(rootViewController: viewer)
-      // Set the style before touching `presentationController`, which builds
-      // the controller for the style current at that moment.
-      navigationController.modalPresentationStyle = .pageSheet
-      navigationController.presentationController?.delegate = self
-      return navigationController
-    default:
-      return nil
-    }
+  /// reach eventViewController(_:didCompleteWith:) — so this sheet takes the
+  /// presentation delegate too, to hear the dismissal itself (#123).
+  func eventViewerSheet(for event: EKEvent) -> UINavigationController {
+    let viewer = EKEventViewController()
+    viewer.event = event
+    // Keep the Edit button: Android's ACTION_VIEW screen also lets the user
+    // edit from the view, so allowing it here preserves cross-platform parity.
+    viewer.allowsEditing = true
+    viewer.allowsCalendarPreview = true
+    viewer.delegate = self
+    let navigationController = UINavigationController(rootViewController: viewer)
+    // Set the style before touching `presentationController`, which builds
+    // the controller for the style current at that moment.
+    navigationController.modalPresentationStyle = .pageSheet
+    navigationController.presentationController?.delegate = self
+    return navigationController
   }
 
   /// Presents the pending modal's controller from the top of the key window's

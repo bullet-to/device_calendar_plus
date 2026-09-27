@@ -298,7 +298,7 @@ class DeviceCalendarPlusAndroidPlugin :
             return
         }
 
-        launchModal(
+        launchModalAfterLookup(
             SHOW_EVENT_REQUEST_CODE,
             result,
             lookup = { service.findEventForModal(eventId, timestamp) },
@@ -313,7 +313,7 @@ class DeviceCalendarPlusAndroidPlugin :
         val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
 
         // No lookup: ACTION_INSERT needs nothing from the provider.
-        launchModal(CREATE_EVENT_REQUEST_CODE, result) { currentActivity, requestCode ->
+        launchModalNow(CREATE_EVENT_REQUEST_CODE, result) { currentActivity, requestCode ->
             service.showCreateEvent(
                 activityContext = currentActivity,
                 title = args["title"] as? String,
@@ -330,32 +330,33 @@ class DeviceCalendarPlusAndroidPlugin :
     }
 
     /**
-     * Launches a modal with [launch] from the current activity, replying to
-     * [result] when it closes (from onActivityResult). Every failure — no
-     * activity, a modal already showing, the launch — replies once.
+     * Launches a modal with [launch] from the current activity right away,
+     * replying to [result] when it closes (from onActivityResult). Every
+     * failure — no activity, a modal already showing, the launch — replies
+     * once.
      */
-    private fun launchModal(
+    private fun launchModalNow(
         requestCode: Int,
         result: Result,
         launch: (Activity, Int) -> kotlin.Result<Unit>,
     ) {
-        if (!claimModal(requestCode, result)) return
-        startClaimedModal(requestCode, launch)
+        val currentActivity = claimModal(requestCode, result) ?: return
+        launch(currentActivity, requestCode).onFailure(pendingModal::fail)
     }
 
     /**
-     * [launchModal] behind a [lookup] whose value [launch] needs. The lookup
-     * is provider IPC, so it runs on the provider executor like every other
-     * query (#73). The slot is claimed first, so two calls in one turn can't
-     * both get through — as on iOS, which also looks up after claiming.
+     * [launchModalNow] behind a [lookup] whose value [launch] needs. The
+     * lookup is provider IPC, so it runs on the provider executor like every
+     * other query (#73). The slot is claimed first, so two calls in one turn
+     * can't both get through — as on iOS, which also looks up after claiming.
      */
-    private fun <T> launchModal(
+    private fun <T> launchModalAfterLookup(
         requestCode: Int,
         result: Result,
         lookup: () -> kotlin.Result<T>,
         launch: (Activity, Int, T) -> kotlin.Result<Unit>,
     ) {
-        if (!claimModal(requestCode, result)) return
+        claimModal(requestCode, result) ?: return
         providerExecutor!!.execute {
             val found = try {
                 lookup()
@@ -368,7 +369,14 @@ class DeviceCalendarPlusAndroidPlugin :
                 if (!pendingModal.holds(result)) return@post
                 found.fold(
                     onSuccess = { value ->
-                        startClaimedModal(requestCode) { activity, code -> launch(activity, code, value) }
+                        // The activity can be gone here and not the claim:
+                        // mid config change, between detach and reattach.
+                        // That fails rather than waiting for the recreated
+                        // activity — still exactly one reply.
+                        val currentActivity = activity ?: return@fold pendingModal.fail(
+                            CalendarException(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available")
+                        )
+                        launch(currentActivity, requestCode, value).onFailure(pendingModal::fail)
                     },
                     onFailure = pendingModal::fail,
                 )
@@ -377,23 +385,17 @@ class DeviceCalendarPlusAndroidPlugin :
     }
 
     /**
-     * Claims the modal slot for [requestCode]. With no activity, replies
-     * OPERATION_FAILED — the code openAppSettings and requestPermissions use
-     * for the same state — and returns false.
+     * Claims the modal slot for [requestCode], returning the activity to
+     * launch from. With no activity, replies OPERATION_FAILED — the code
+     * openAppSettings and requestPermissions use for the same state — and
+     * returns null, as it does when the slot is taken.
      */
-    private fun claimModal(requestCode: Int, result: Result): Boolean {
-        if (activity == null) {
+    private fun claimModal(requestCode: Int, result: Result): Activity? {
+        val currentActivity = activity ?: run {
             result.error(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available", null)
-            return false
+            return null
         }
-        return pendingModal.begin(requestCode, result)
-    }
-
-    private fun startClaimedModal(requestCode: Int, launch: (Activity, Int) -> kotlin.Result<Unit>) {
-        val currentActivity = activity ?: return pendingModal.fail(
-            CalendarException(PlatformExceptionCodes.OPERATION_FAILED, "Activity not available")
-        )
-        launch(currentActivity, requestCode).onFailure(pendingModal::fail)
+        return currentActivity.takeIf { pendingModal.begin(requestCode, result) }
     }
 
     private fun handleCreateEvent(call: MethodCall, result: Result) {
