@@ -536,14 +536,10 @@ class EventsService {
     // before the save, as updateRecurring does — never dropped into a
     // one-off event (#125).
     if let rruleString = recurrenceRule {
-      guard let rule = parseRecurrenceRule(rruleString) else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "Invalid recurrence rule: \(rruleString)"
-        )))
-        return
+      switch requireRecurrenceRule(rruleString) {
+      case .success(let rule): event.recurrenceRules = [rule]
+      case .failure(let error): completion(.failure(error)); return
       }
-      event.recurrenceRules = [rule]
     }
 
     // Set relative reminders (alarms). Each value is whole minutes before
@@ -640,7 +636,21 @@ class EventsService {
   }
 
   // MARK: - RRULE <-> EKRecurrenceRule conversion
-  
+
+  /// Parses an RRULE string for a write, failing with INVALID_ARGUMENTS when
+  /// EventKit can't express it — a write must refuse the rule rather than
+  /// drop it. Prefill paths (the native editor) call `parseRecurrenceRule`
+  /// directly, since dropping a bad rule there is the right behaviour.
+  private func requireRecurrenceRule(_ rrule: String) -> Result<EKRecurrenceRule, CalendarError> {
+    guard let rule = parseRecurrenceRule(rrule) else {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Invalid recurrence rule: \(rrule)"
+      ))
+    }
+    return .success(rule)
+  }
+
   /// Parses an RRULE string into an EKRecurrenceRule.
   private func parseRecurrenceRule(_ rrule: String) -> EKRecurrenceRule? {
     var params: [String: String] = [:]
@@ -1320,14 +1330,10 @@ class EventsService {
     // mutations could otherwise ride along with a later save.
     var parsedRecurrenceRule: EKRecurrenceRule?
     if !patch.clearedFields.contains("recurrenceRule"), let rruleString = recurrenceRule {
-      guard let rule = parseRecurrenceRule(rruleString) else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "Invalid recurrence rule: \(rruleString)"
-        )))
-        return
+      switch requireRecurrenceRule(rruleString) {
+      case .success(let rule): parsedRecurrenceRule = rule
+      case .failure(let error): completion(.failure(error)); return
       }
-      parsedRecurrenceRule = rule
     }
 
     let newStart: Date
