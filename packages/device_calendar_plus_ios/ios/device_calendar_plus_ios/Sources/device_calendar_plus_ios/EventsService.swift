@@ -1128,7 +1128,7 @@ class EventsService {
   /// (see updateRecurring docs), so the caller must supply a new rule. Rules
   /// with no explicit anchor return false — they follow the anchor freely.
   /// Android's counterpart is `dayMoveConflictsWithRule`.
-  private func dayMoveConflictsWithRule(
+  static func dayMoveConflictsWithRule(
     rule: EKRecurrenceRule,
     reference: Date,
     target: Date,
@@ -1140,9 +1140,14 @@ class EventsService {
       return calendar.component(unit, from: reference)
         != calendar.component(unit, from: target)
     }
-    if let days = rule.daysOfTheWeek, !days.isEmpty { return changed(.weekday) }
-    if let dom = rule.daysOfTheMonth, !dom.isEmpty { return changed(.day) }
-    if let months = rule.monthsOfTheYear, !months.isEmpty { return changed(.month) }
+    // Check every pinned part: a BYDAY rule can also pin BYMONTH or
+    // BYMONTHDAY, and a move that keeps the weekday can still break those.
+    let hasByDay = !(rule.daysOfTheWeek?.isEmpty ?? true)
+    let hasByMonthDay = !(rule.daysOfTheMonth?.isEmpty ?? true)
+    let hasByMonth = !(rule.monthsOfTheYear?.isEmpty ?? true)
+    if hasByDay && changed(.weekday) { return true }
+    if hasByMonthDay && changed(.day) { return true }
+    if hasByMonth && changed(.month) { return true }
     return false
   }
 
@@ -1220,7 +1225,7 @@ class EventsService {
 
       if !changingRule,
          let existingRule = event.recurrenceRules?.first,
-         dayMoveConflictsWithRule(
+         Self.dayMoveConflictsWithRule(
            rule: existingRule, reference: reference, target: target, timeZone: timeZone
          ) {
         return .failure(CalendarError(
