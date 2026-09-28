@@ -79,37 +79,23 @@ enum SeriesDates {
   /// start) when nothing moves it. Android's counterpart is
   /// `resolveSeriesTimes`.
   ///
-  /// `target`, when given, shifts the anchor first: `base` moves by the
-  /// wall-clock delta from `reference` (the occurrence being edited, or the
-  /// series anchor) to `target`. That fails with `invalidArguments` when the
-  /// move would change a day `existingRule` pins explicitly and the caller
-  /// didn't also change the rule (the move is ambiguous — see updateRecurring
-  /// docs), and with `operationFailed` if the shift can't be computed.
+  /// Frames: stored = `storedZone ?? deviceZone`; edit = `deviceZone` when
+  /// `isAllDay`, else stored. All-day edits run locally because EventKit
+  /// floats an all-day start onto its local date.
   ///
-  /// Two zones frame the series' calendar days. The stored frame is the
-  /// series' stored zone (`deviceZone` when it has none — EventKit gives
-  /// all-day events a nil zone). The edit frame is the device zone for an
-  /// all-day result — EventKit floats an all-day start onto its local date,
-  /// and the plugin passes all-day starts as local midnights — and the stored
-  /// frame for a timed one. Reading a timed series stored in another zone
-  /// (e.g. UTC) in its stored frame while toggling it all-day would snap the
-  /// anchor to that zone's midnight, which floats onto the previous local day
-  /// west of it: an extra occurrence off the rule's pinned weekday that also
-  /// uses up one of its COUNT. Android's counterpart is `seriesTimeZone`,
-  /// which frames all-day in UTC because the Calendar Provider stores
-  /// all-day as UTC midnight.
+  /// - `target` shifts `base` by the wall-clock delta from `reference` (the
+  ///   occurrence being edited, or the series anchor) to `target`, in the
+  ///   edit frame.
+  /// - Unless `changingRule`, that move is first checked against the days
+  ///   `existingRule` pins, reading `reference` in the stored frame and
+  ///   `target` in the edit frame. So an all-day toggle onto a local day that
+  ///   differs from the stored-zone day counts as a day move, as on Android.
+  /// - A new `rule` then walks the anchor, in the edit frame, onto the first
+  ///   day it generates (#140).
   ///
-  /// The shift and the new-rule walk run in the edit frame. Base and
-  /// reference are the same wall-clock time of the one series, so reading
-  /// them in the edit zone moves both alike and leaves the day delta intact
-  /// (Android's `resolveSeriesTimes` does the same). The conflict check reads
-  /// `reference` in the stored frame and `target` in the edit one.
-  ///
-  /// A new `rule` then walks the anchor onto the first day it generates: the
-  /// rule may not generate the anchor's day (a Saturday series switched to
-  /// Sundays), and EventKit would keep that day as an extra first occurrence
-  /// (#140). A rule that generates nothing within five years of the anchor
-  /// fails with `invalidArguments` rather than leaving that orphan behind.
+  /// Fails with `invalidArguments` when the move changes a pinned day or the
+  /// new rule generates nothing within five years of the anchor, and with
+  /// `operationFailed` if the shift can't be computed.
   static func resolveSeriesStart(
     base: Date,
     storedZone: TimeZone?,
