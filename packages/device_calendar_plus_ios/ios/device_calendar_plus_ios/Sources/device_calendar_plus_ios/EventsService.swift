@@ -1127,18 +1127,24 @@ class EventsService {
   /// it would, an anchor shift alone can't say what the new pattern should be
   /// (see updateRecurring docs), so the caller must supply a new rule. Rules
   /// with no explicit anchor return false — they follow the anchor freely.
-  /// Android's counterpart is `dayMoveConflictsWithRule`.
+  /// Each date is read in its own frame: `reference` in the zone the series
+  /// is stored in, `target` in the zone it has after the edit — they differ
+  /// only when the edit toggles all-day. Android's counterpart is
+  /// `dayMoveConflictsWithRule`.
   private func dayMoveConflictsWithRule(
     rule: EKRecurrenceRule,
     reference: Date,
+    referenceZone: TimeZone,
     target: Date,
-    timeZone: TimeZone
+    targetZone: TimeZone
   ) -> Bool {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = timeZone
+    var referenceCalendar = Calendar(identifier: .gregorian)
+    referenceCalendar.timeZone = referenceZone
+    var targetCalendar = Calendar(identifier: .gregorian)
+    targetCalendar.timeZone = targetZone
     func changed(_ unit: Calendar.Component) -> Bool {
-      return calendar.component(unit, from: reference)
-        != calendar.component(unit, from: target)
+      return referenceCalendar.component(unit, from: reference)
+        != targetCalendar.component(unit, from: target)
     }
     if let days = rule.daysOfTheWeek, !days.isEmpty { return changed(.weekday) }
     if let dom = rule.daysOfTheMonth, !dom.isEmpty { return changed(.day) }
@@ -1193,6 +1199,18 @@ class EventsService {
   /// ambiguous — see updateRecurring docs), and with `operationFailed` if the
   /// shift can't be computed.
   ///
+  /// The shift is computed in the event's post-edit frame: device-local time
+  /// for an all-day result — EventKit floats an all-day start onto its local
+  /// date, and the plugin passes all-day starts as local midnights — and the
+  /// stored zone otherwise. Reading a timed series stored in another zone
+  /// (e.g. UTC) in its stored frame while toggling it all-day would snap the
+  /// anchor to that zone's midnight, which floats onto the previous local day
+  /// west of it: an extra occurrence off the rule's pinned weekday that also
+  /// uses up one of its COUNT. Base and reference are the same wall-clock
+  /// time of the one series, so reading them in the post-edit zone moves both
+  /// alike and leaves the day delta intact (Android's `resolveSeriesTimes`
+  /// does the same).
+  ///
   /// A new `rule` then walks the anchor onto the first day it generates: the
   /// rule may not generate the anchor's day (a Saturday series switched to
   /// Sundays), and EventKit would keep that day as an extra first occurrence
@@ -1206,7 +1224,8 @@ class EventsService {
     rule: EKRecurrenceRule?,
     changingRule: Bool
   ) -> Result<Date, CalendarError> {
-    let timeZone = event.timeZone ?? .current
+    let storedZone = event.timeZone ?? .current
+    let timeZone = isAllDay ? TimeZone.current : storedZone
     var start: Date = event.startDate
 
     if let newStartMillis = newStartMillis {
@@ -1221,7 +1240,9 @@ class EventsService {
       if !changingRule,
          let existingRule = event.recurrenceRules?.first,
          dayMoveConflictsWithRule(
-           rule: existingRule, reference: reference, target: target, timeZone: timeZone
+           rule: existingRule,
+           reference: reference, referenceZone: storedZone,
+           target: target, targetZone: timeZone
          ) {
         return .failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
