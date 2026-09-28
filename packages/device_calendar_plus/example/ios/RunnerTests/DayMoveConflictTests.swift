@@ -3,40 +3,16 @@ import XCTest
 
 @testable import device_calendar_plus_ios
 
-/// `EventsService.dayMoveConflictsWithRule` decides whether moving a series'
+/// `SeriesDates.dayMoveConflictsWithRule` decides whether moving a series'
 /// anchor breaks a day-spec its rule pins (BYDAY, BYMONTHDAY, BYMONTH). Each
 /// pinned part is checked on its own, matching Android's
-/// `dayMoveConflictsWithRule`.
-final class DayMoveConflictTests: XCTestCase {
-  private let stockholm = TimeZone(identifier: "Europe/Stockholm")!
-
-  private func at(_ year: Int, _ month: Int, _ day: Int, hour: Int = 10) -> Date {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = stockholm
-    return calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
-  }
-
-  private func rule(
-    _ frequency: EKRecurrenceFrequency,
-    days: [EKRecurrenceDayOfWeek]? = nil,
-    daysOfMonth: [Int]? = nil,
-    months: [Int]? = nil
-  ) -> EKRecurrenceRule {
-    return EKRecurrenceRule(
-      recurrenceWith: frequency,
-      interval: 1,
-      daysOfTheWeek: days,
-      daysOfTheMonth: daysOfMonth?.map { NSNumber(value: $0) },
-      monthsOfTheYear: months?.map { NSNumber(value: $0) },
-      weeksOfTheYear: nil,
-      daysOfTheYear: nil,
-      setPositions: nil,
-      end: nil
-    )
-  }
-
+/// `dayMoveConflictsWithRule`. Lives here rather than in the integration
+/// suite because it covers pinned-part combinations the typed Dart API can't
+/// build (BYDAY with BYMONTHDAY is only reachable through a raw RRULE), so an
+/// integration test can't set them up.
+final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   private func conflicts(_ rule: EKRecurrenceRule, from: Date, to: Date) -> Bool {
-    return EventsService.dayMoveConflictsWithRule(
+    return SeriesDates.dayMoveConflictsWithRule(
       rule: rule, reference: from, target: to, timeZone: stockholm
     )
   }

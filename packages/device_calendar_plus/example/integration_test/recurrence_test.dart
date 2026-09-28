@@ -2182,6 +2182,48 @@ void main() {
       );
     });
 
+    test('day shift that keeps the weekday but leaves a pinned BYMONTH throws',
+        () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      // Yearly on the 4th Thursday of November, anchored on Thu 26 Nov 2026.
+      // +7 days lands on Thu 3 Dec: the weekday holds, but BYMONTH=11 does
+      // not, so both platforms must refuse the move without a new rule.
+      final anchor = DateTime.utc(2026, 11, 26, 15);
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId!,
+        title: 'Thanksgiving Series',
+        startDate: anchor,
+        endDate: anchor.add(const Duration(hours: 1)),
+        recurrenceRule: YearlyRecurrence.byWeekday(
+          months: [11],
+          daysOfWeek: [RecurrenceDay(DayOfWeek.thursday, position: 4)],
+          end: const CountEnd(3),
+        ),
+        timeZone: 'UTC',
+      );
+      final before = await occurrencesOf(plugin, calendarId!, eventId, anchor,
+          windowDays: 400);
+      expect(before.length, greaterThanOrEqualTo(2),
+          reason: 'the yearly series should have expanded into occurrences');
+
+      await expectLater(
+        plugin.updateRecurring(
+          before.first.instanceId,
+          EventSpan.allEvents,
+          start: before.first.startDate.add(const Duration(days: 7)),
+        ),
+        throwsInvalidArguments(),
+      );
+
+      final after = await occurrencesOf(plugin, calendarId!, eventId, anchor,
+          windowDays: 400);
+      expect(
+        after.map((e) => e.startDate).toList(),
+        before.map((e) => e.startDate).toList(),
+        reason: 'a refused move must leave the series as it was',
+      );
+    });
+
     test('time-only shift on an explicit-BYDAY rule is allowed', () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final startDay = DateTime.now().add(const Duration(hours: 1));

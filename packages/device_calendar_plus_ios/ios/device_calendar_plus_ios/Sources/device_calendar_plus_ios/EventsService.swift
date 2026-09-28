@@ -1121,36 +1121,6 @@ class EventsService {
     )
   }
 
-  /// Whether moving the anchor from `reference` to `target` would change the
-  /// day-spec that `rule` pins explicitly: the weekday for a BYDAY rule, the
-  /// day-of-month for a BYMONTHDAY rule, or the month for a BYMONTH rule. When
-  /// it would, an anchor shift alone can't say what the new pattern should be
-  /// (see updateRecurring docs), so the caller must supply a new rule. Rules
-  /// with no explicit anchor return false — they follow the anchor freely.
-  /// Android's counterpart is `dayMoveConflictsWithRule`.
-  static func dayMoveConflictsWithRule(
-    rule: EKRecurrenceRule,
-    reference: Date,
-    target: Date,
-    timeZone: TimeZone
-  ) -> Bool {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = timeZone
-    func changed(_ unit: Calendar.Component) -> Bool {
-      return calendar.component(unit, from: reference)
-        != calendar.component(unit, from: target)
-    }
-    // Check every pinned part: a BYDAY rule can also pin BYMONTH or
-    // BYMONTHDAY, and a move that keeps the weekday can still break those.
-    let hasByDay = !(rule.daysOfTheWeek?.isEmpty ?? true)
-    let hasByMonthDay = !(rule.daysOfTheMonth?.isEmpty ?? true)
-    let hasByMonth = !(rule.monthsOfTheYear?.isEmpty ?? true)
-    if hasByDay && changed(.weekday) { return true }
-    if hasByMonthDay && changed(.day) { return true }
-    if hasByMonth && changed(.month) { return true }
-    return false
-  }
-
   /// Translates `base` by the wall-clock delta from `reference` to `target`,
   /// computed in `timeZone`: shifts by the whole-day difference and sets the
   /// time-of-day to `target`'s. DST-safe — it counts calendar days and sets a
@@ -1225,7 +1195,7 @@ class EventsService {
 
       if !changingRule,
          let existingRule = event.recurrenceRules?.first,
-         Self.dayMoveConflictsWithRule(
+         SeriesDates.dayMoveConflictsWithRule(
            rule: existingRule, reference: reference, target: target, timeZone: timeZone
          ) {
         return .failure(CalendarError(

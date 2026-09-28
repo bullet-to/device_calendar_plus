@@ -7,35 +7,7 @@ import XCTest
 /// day on or after the intended anchor that the new rule generates, keeping
 /// the anchor's wall-clock time in the event's timezone (#140). Mirrors the
 /// Kotlin `RecurrenceAnchorTest` case for case — the platforms must agree.
-final class RecurrenceAnchorTests: XCTestCase {
-  private let stockholm = TimeZone(identifier: "Europe/Stockholm")!
-
-  private func at(_ year: Int, _ month: Int, _ day: Int, hour: Int = 10) -> Date {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = stockholm
-    return calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
-  }
-
-  private func rule(
-    _ frequency: EKRecurrenceFrequency,
-    days: [EKRecurrenceDayOfWeek]? = nil,
-    daysOfMonth: [Int]? = nil,
-    months: [Int]? = nil,
-    setPositions: [Int]? = nil
-  ) -> EKRecurrenceRule {
-    return EKRecurrenceRule(
-      recurrenceWith: frequency,
-      interval: 1,
-      daysOfTheWeek: days,
-      daysOfTheMonth: daysOfMonth?.map { NSNumber(value: $0) },
-      monthsOfTheYear: months?.map { NSNumber(value: $0) },
-      weeksOfTheYear: nil,
-      daysOfTheYear: nil,
-      setPositions: setPositions?.map { NSNumber(value: $0) },
-      end: nil
-    )
-  }
-
+final class RecurrenceAnchorTests: XCTestCase, RecurrenceFixtures {
   private func firstMatch(_ rule: EKRecurrenceRule, from: Date) -> Date? {
     return RecurrenceAnchor.firstMatch(of: rule, onOrAfter: from, timeZone: stockholm)
   }
