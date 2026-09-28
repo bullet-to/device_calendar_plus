@@ -2459,6 +2459,56 @@ void main() {
         before: split.startDate,
       );
     });
+
+    // Toggling all-day changes the frame a series' days are read in: the
+    // series was stored in UTC, but the all-day start is a local midnight.
+    // iOS once snapped the new all-day anchor to UTC midnight, a day early
+    // west of UTC, leaving an extra occurrence off the rule's weekday; east
+    // of UTC it read the local-midnight target as the previous UTC day and
+    // refused the same-day toggle.
+    test(
+        'toggling a timed explicit-BYDAY series all-day with a same-day start '
+        'keeps every occurrence on its calendar day', () async {
+      // Local noon is the same date in UTC for offsets from -11 through +12
+      // hours, so the weekday the UTC-stored series pins is the local one too.
+      final today = localMidnight(2);
+      final start = DateTime(today.year, today.month, today.day, 12);
+      final series = await seedSeries(
+        plugin,
+        calendarId,
+        count: 4,
+        minOccurrences: 4,
+        windowDays: 30,
+        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+            plugin, calendarId,
+            title: 'Timed To All-day',
+            count: count,
+            daysOfWeek: [weekdayOf(start)],
+            start: start),
+      );
+      final before = series.occurrences;
+      final first = before.first.startDate.toLocal();
+
+      await plugin.updateRecurring(
+        before.first.instanceId,
+        EventSpan.allEvents,
+        isAllDay: true,
+        start: DateTime(first.year, first.month, first.day),
+        duration: const Duration(days: 1),
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 30);
+      expect(after.every((e) => e.isAllDay), isTrue,
+          reason: 'every occurrence must be all-day');
+      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
+      expect(
+        after.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        before.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        reason: 'each occurrence must stay on its original calendar day',
+      );
+    });
   });
 
   group('Recurrence Delete Tests', () {
