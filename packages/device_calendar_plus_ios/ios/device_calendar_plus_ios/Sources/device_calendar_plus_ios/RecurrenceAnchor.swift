@@ -41,7 +41,7 @@ enum RecurrenceAnchor {
     for _ in 0..<maxLookaheadDays {
       if matcher.generates(day) { return day }
       // Whole-day steps keep the wall-clock time across DST (mirrors
-      // shiftStart).
+      // SeriesDates.shiftStart).
       guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { return nil }
       day = next
     }

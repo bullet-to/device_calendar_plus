@@ -6,10 +6,10 @@ import XCTest
 /// `SeriesDates.dayMoveConflictsWithRule` decides whether moving a series'
 /// anchor breaks a day-spec its rule pins (BYDAY, BYMONTHDAY, BYMONTH). Each
 /// pinned part is checked on its own, matching Android's
-/// `dayMoveConflictsWithRule`. Lives here rather than in the integration
-/// suite because it covers pinned-part combinations the typed Dart API can't
-/// build (BYDAY with BYMONTHDAY is only reachable through a raw RRULE), so an
-/// integration test can't set them up.
+/// `dayMoveConflictsWithRule`. The BYDAY+BYMONTH case is also covered end to
+/// end by the integration suite; this file exists mainly for BYDAY with
+/// BYMONTHDAY, which the typed Dart API can't build (it's only reachable
+/// through a raw RRULE), and as a fast regression check on all three parts.
 final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   private func conflicts(_ rule: EKRecurrenceRule, from: Date, to: Date) -> Bool {
     return SeriesDates.dayMoveConflictsWithRule(

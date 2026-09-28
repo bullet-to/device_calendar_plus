@@ -1121,42 +1121,6 @@ class EventsService {
     )
   }
 
-  /// Translates `base` by the wall-clock delta from `reference` to `target`,
-  /// computed in `timeZone`: shifts by the whole-day difference and sets the
-  /// time-of-day to `target`'s. DST-safe — it counts calendar days and sets a
-  /// wall-clock time rather than adding a raw interval. For all-day events the
-  /// day shifts but the time-of-day is left at the start of day.
-  ///
-  /// This is the anchor-shift that lets a single `updateRecurring` move both
-  /// the time and the day of a series (issue #103). Android's counterpart is
-  /// `SplitShift.slot`.
-  private func shiftStart(
-    _ base: Date,
-    reference: Date,
-    to target: Date,
-    isAllDay: Bool,
-    timeZone: TimeZone
-  ) -> Date? {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = timeZone
-    let refDay = calendar.startOfDay(for: reference)
-    let targetDay = calendar.startOfDay(for: target)
-    let dayDelta = calendar.dateComponents([.day], from: refDay, to: targetDay).day ?? 0
-    guard let shiftedDay = calendar.date(byAdding: .day, value: dayDelta, to: base) else {
-      return nil
-    }
-    if isAllDay {
-      return calendar.startOfDay(for: shiftedDay)
-    }
-    let tod = calendar.dateComponents([.hour, .minute, .second], from: target)
-    return calendar.date(
-      bySettingHour: tod.hour ?? 0,
-      minute: tod.minute ?? 0,
-      second: tod.second ?? 0,
-      of: shiftedDay
-    )
-  }
-
   /// The start a series update leaves `event` with: its current start when
   /// nothing moves it. Android's counterpart is `resolveSeriesTimes`.
   ///
@@ -1206,7 +1170,7 @@ class EventsService {
         ))
       }
 
-      guard let shifted = shiftStart(
+      guard let shifted = SeriesDates.shiftStart(
         event.startDate, reference: reference, to: target,
         isAllDay: isAllDay, timeZone: timeZone
       ) else {

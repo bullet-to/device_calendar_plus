@@ -170,7 +170,7 @@ internal fun resolveSeriesTimes(
  * BYMONTH rule. When it would, an anchor shift alone can't say what the new
  * pattern should be (see updateRecurring docs), so the caller must supply a
  * new rule. Rules with no explicit anchor return false — they follow the
- * anchor freely. iOS's counterpart is `dayMoveConflictsWithRule`.
+ * anchor freely. iOS's counterpart is `SeriesDates.dayMoveConflictsWithRule`.
  *
  * Each instant is read in the zone that frames its own calendar day (see
  * [seriesTimeZone]): an all-day one is stored as UTC midnight, so it is read
