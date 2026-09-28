@@ -8,25 +8,6 @@ import Foundation
 /// tests can drive the zones the integration harness can't set on iOS.
 /// Android's counterpart is `SeriesDates.kt`.
 enum SeriesDates {
-  /// The zone that frames a series' calendar days after an edit: the device
-  /// zone for an all-day result — EventKit floats an all-day start onto its
-  /// local date, and the plugin passes all-day starts as local midnights —
-  /// and the series' stored zone otherwise (`deviceZone` when it has none).
-  ///
-  /// Reading a timed series stored in another zone (e.g. UTC) in its stored
-  /// frame while toggling it all-day would snap the anchor to that zone's
-  /// midnight, which floats onto the previous local day west of it: an extra
-  /// occurrence off the rule's pinned weekday that also uses up one of its
-  /// COUNT. Android's counterpart is `seriesTimeZone`, which frames all-day
-  /// in UTC because the Calendar Provider stores all-day as UTC midnight.
-  static func seriesTimeZone(
-    stored: TimeZone?,
-    isAllDay: Bool,
-    deviceZone: TimeZone
-  ) -> TimeZone {
-    return isAllDay ? deviceZone : (stored ?? deviceZone)
-  }
-
   /// Whether moving the anchor from `reference` to `target` would change the
   /// day-spec that `rule` pins explicitly: the weekday for a BYDAY rule, the
   /// day-of-month for a BYMONTHDAY rule, or the month for a BYMONTH rule. When
@@ -37,7 +18,7 @@ enum SeriesDates {
   /// is stored in, `target` in the zone it has after the edit — they differ
   /// only when the edit toggles all-day. Android's counterpart is
   /// `dayMoveConflictsWithRule`.
-  static func dayMoveConflictsWithRule(
+  private static func dayMoveConflictsWithRule(
     rule: EKRecurrenceRule,
     reference: Date,
     referenceZone: TimeZone,
@@ -67,7 +48,7 @@ enum SeriesDates {
   /// This is the anchor-shift that lets a single `updateRecurring` move both
   /// the time and the day of a series (issue #103). Android's counterpart is
   /// `SplitShift.slot`.
-  static func shiftStart(
+  private static func shiftStart(
     _ base: Date,
     reference: Date,
     to target: Date,
@@ -105,12 +86,24 @@ enum SeriesDates {
   /// didn't also change the rule (the move is ambiguous — see updateRecurring
   /// docs), and with `operationFailed` if the shift can't be computed.
   ///
-  /// The shift is computed in the post-edit frame (see `seriesTimeZone`).
-  /// Base and reference are the same wall-clock time of the one series, so
-  /// reading them in the post-edit zone moves both alike and leaves the day
-  /// delta intact (Android's `resolveSeriesTimes` does the same). The
-  /// conflict check reads `reference` in the stored frame and `target` in
-  /// the post-edit one.
+  /// Two zones frame the series' calendar days. The stored frame is the
+  /// series' stored zone (`deviceZone` when it has none — EventKit gives
+  /// all-day events a nil zone). The edit frame is the device zone for an
+  /// all-day result — EventKit floats an all-day start onto its local date,
+  /// and the plugin passes all-day starts as local midnights — and the stored
+  /// frame for a timed one. Reading a timed series stored in another zone
+  /// (e.g. UTC) in its stored frame while toggling it all-day would snap the
+  /// anchor to that zone's midnight, which floats onto the previous local day
+  /// west of it: an extra occurrence off the rule's pinned weekday that also
+  /// uses up one of its COUNT. Android's counterpart is `seriesTimeZone`,
+  /// which frames all-day in UTC because the Calendar Provider stores
+  /// all-day as UTC midnight.
+  ///
+  /// The shift and the new-rule walk run in the edit frame. Base and
+  /// reference are the same wall-clock time of the one series, so reading
+  /// them in the edit zone moves both alike and leaves the day delta intact
+  /// (Android's `resolveSeriesTimes` does the same). The conflict check reads
+  /// `reference` in the stored frame and `target` in the edit one.
   ///
   /// A new `rule` then walks the anchor onto the first day it generates: the
   /// rule may not generate the anchor's day (a Saturday series switched to
@@ -128,8 +121,8 @@ enum SeriesDates {
     changingRule: Bool,
     deviceZone: TimeZone
   ) -> Result<Date, CalendarError> {
-    let storedFrame = seriesTimeZone(stored: storedZone, isAllDay: false, deviceZone: deviceZone)
-    let editFrame = seriesTimeZone(stored: storedZone, isAllDay: isAllDay, deviceZone: deviceZone)
+    let storedFrame = storedZone ?? deviceZone
+    let editFrame = isAllDay ? deviceZone : storedFrame
     var start = base
 
     if let target = target {
