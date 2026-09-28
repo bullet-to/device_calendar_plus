@@ -2460,27 +2460,33 @@ void main() {
       );
     });
 
-    // The same frame question when the edit toggles all-day: the series was
-    // stored in UTC, but the all-day start is a local midnight. iOS once
-    // snapped the new all-day anchor to UTC midnight, a day early west of
-    // UTC, leaving an extra occurrence off the rule's weekday.
+    // Toggling all-day changes the frame a series' days are read in: the
+    // series was stored in UTC, but the all-day start is a local midnight.
+    // iOS once snapped the new all-day anchor to UTC midnight, a day early
+    // west of UTC, leaving an extra occurrence off the rule's weekday; east
+    // of UTC it read the local-midnight target as the previous UTC day and
+    // refused the same-day toggle.
     test(
         'toggling a timed explicit-BYDAY series all-day with a same-day start '
         'keeps every occurrence on its calendar day', () async {
-      final id = requireCalendar(calendarId);
-      // Local noon is the same date in UTC for any offset within ±11 hours,
-      // so the weekday the UTC-stored series pins is the local one too.
+      // Local noon is the same date in UTC for offsets from -11 through +12
+      // hours, so the weekday the UTC-stored series pins is the local one too.
       final today = localMidnight(2);
       final start = DateTime(today.year, today.month, today.day, 12);
-      final series = await createWeeklySeries(plugin, id,
-          title: 'Timed To All-day',
-          count: 4,
-          daysOfWeek: [weekdayOf(start)],
-          start: start);
-      final before = await occurrencesOf(
-          plugin, id, series.eventId, series.start,
-          windowDays: 30);
-      expect(before.length, 4);
+      final series = await seedSeries(
+        plugin,
+        calendarId,
+        count: 4,
+        minOccurrences: 4,
+        windowDays: 30,
+        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+            plugin, calendarId,
+            title: 'Timed To All-day',
+            count: count,
+            daysOfWeek: [weekdayOf(start)],
+            start: start),
+      );
+      final before = series.occurrences;
       final first = before.first.startDate.toLocal();
 
       await plugin.updateRecurring(
@@ -2492,7 +2498,7 @@ void main() {
       );
 
       final after = await occurrencesOf(
-          plugin, id, series.eventId, series.start,
+          plugin, calendarId!, series.eventId, series.start,
           windowDays: 30);
       expect(after.every((e) => e.isAllDay), isTrue,
           reason: 'every occurrence must be all-day');
