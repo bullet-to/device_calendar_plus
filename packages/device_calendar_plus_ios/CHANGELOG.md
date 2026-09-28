@@ -9,6 +9,10 @@
   event it leaves, as Android does (#175).
 
 ### Fixed
+- `updateRecurring` refuses a start move with no new rule when it breaks any
+  day the rule pins, as Android does. It checked only BYDAY when the rule
+  had one, so a yearly `BYMONTH=11;BYDAY=4TH` series could move to a
+  Thursday in December (#188).
 - Modal plumbing (#123): a second `showEventModal`/`showCreateEventModal`
   while one is showing fails `OPERATION_FAILED` instead of orphaning the
   first reply; swiping the view modal down resolves it; a modal is presented

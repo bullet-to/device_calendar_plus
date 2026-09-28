@@ -33,7 +33,8 @@ internal fun calendarDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone)
  * a later date would put an hour off. The anchor-shift that lets
  * [EventsService.updateRecurring] move both the time and the day of a
  * series (#103), and where a `thisAndFollowing` split carries what it
- * carries (#158); iOS's counterparts are `shiftStart` and EKSpan.futureEvents.
+ * carries (#158); iOS's counterparts are `SeriesDates.shiftStart` and
+ * EKSpan.futureEvents.
  *
  * [slot] is where a date lands on the moved series: that many days on, at
  * the new anchor's wall-clock time of day (midnight for all-day, which is
@@ -170,7 +171,7 @@ internal fun resolveSeriesTimes(
  * BYMONTH rule. When it would, an anchor shift alone can't say what the new
  * pattern should be (see updateRecurring docs), so the caller must supply a
  * new rule. Rules with no explicit anchor return false — they follow the
- * anchor freely. iOS's counterpart is `dayMoveConflictsWithRule`.
+ * anchor freely. iOS's counterpart is `SeriesDates.dayMoveConflictsWithRule`.
  *
  * Each instant is read in the zone that frames its own calendar day (see
  * [seriesTimeZone]): an all-day one is stored as UTC midnight, so it is read

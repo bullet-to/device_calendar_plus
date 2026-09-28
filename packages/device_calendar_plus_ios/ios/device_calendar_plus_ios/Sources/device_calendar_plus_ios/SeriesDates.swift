@@ -18,7 +18,7 @@ enum SeriesDates {
   /// is stored in, `target` in the zone it has after the edit — they differ
   /// only when the edit toggles all-day. Android's counterpart is
   /// `dayMoveConflictsWithRule`.
-  private static func dayMoveConflictsWithRule(
+  static func dayMoveConflictsWithRule(
     rule: EKRecurrenceRule,
     reference: Date,
     referenceZone: TimeZone,
@@ -33,9 +33,11 @@ enum SeriesDates {
       return referenceCalendar.component(unit, from: reference)
         != targetCalendar.component(unit, from: target)
     }
-    if let days = rule.daysOfTheWeek, !days.isEmpty { return changed(.weekday) }
-    if let dom = rule.daysOfTheMonth, !dom.isEmpty { return changed(.day) }
-    if let months = rule.monthsOfTheYear, !months.isEmpty { return changed(.month) }
+    // Each pinned part is checked on its own, as Android does: a BYDAY rule
+    // can pin a month or a day of the month too (e.g. BYMONTH=11;BYDAY=4TH).
+    if let days = rule.daysOfTheWeek, !days.isEmpty, changed(.weekday) { return true }
+    if let dom = rule.daysOfTheMonth, !dom.isEmpty, changed(.day) { return true }
+    if let months = rule.monthsOfTheYear, !months.isEmpty, changed(.month) { return true }
     return false
   }
 
