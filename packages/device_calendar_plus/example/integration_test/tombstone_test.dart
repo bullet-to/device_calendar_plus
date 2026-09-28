@@ -25,7 +25,7 @@ import 'test_seed.dart';
 /// own event ID.
 Future<({SeededSeries series, String detachedTitle, String exceptionId})>
     tombstoneSeries(DeviceCalendar plugin, String? calendarId) async {
-  final series = await seedDailySeries(plugin, calendarId);
+  final series = await seedSeries(plugin, calendarId);
   final detachedTitle =
       'Detached before tombstone #153 ${DateTime.now().millisecondsSinceEpoch}';
 
