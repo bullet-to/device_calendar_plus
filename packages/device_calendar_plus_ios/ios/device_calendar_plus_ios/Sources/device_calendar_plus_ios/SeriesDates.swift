@@ -85,7 +85,14 @@ enum SeriesDates {
   ///
   /// - `target` shifts `base` by the wall-clock delta from `reference` (the
   ///   occurrence being edited, or the series anchor) to `target`, in the
-  ///   edit frame.
+  ///   edit frame. `base` and `reference` were written in the stored frame,
+  ///   so reading them in the edit frame is only safe because they are the
+  ///   same instant, or occurrences of one series at the same wall-clock
+  ///   time: the wrong zone puts both on the same wrong day and the error
+  ///   cancels out of the day delta (unless a DST change between them
+  ///   carries just one across the other zone's midnight). Keep that
+  ///   invariant, or read them in the stored frame, when changing either
+  ///   input.
   /// - Unless `changingRule`, that move is first checked against the days
   ///   `existingRule` pins, reading `reference` in the stored frame and
   ///   `target` in the edit frame. So an all-day toggle onto a local day that
