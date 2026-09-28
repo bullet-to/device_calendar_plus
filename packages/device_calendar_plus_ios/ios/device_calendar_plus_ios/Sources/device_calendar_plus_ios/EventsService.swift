@@ -1121,22 +1121,11 @@ class EventsService {
     )
   }
 
-  /// The start a series update leaves `event` with: its current start when
-  /// nothing moves it. Android's counterpart is `resolveSeriesTimes`.
-  ///
-  /// `newStartMillis`, when given, shifts the anchor first: `event`'s start
-  /// moves by the wall-clock delta from the reference occurrence (the one at
-  /// `timestamp`, or the series anchor when none) to the target. That fails
-  /// with `invalidArguments` when the move would change a day the rule pins
-  /// explicitly and the caller didn't also change the rule (the move is
-  /// ambiguous — see updateRecurring docs), and with `operationFailed` if the
-  /// shift can't be computed.
-  ///
-  /// A new `rule` then walks the anchor onto the first day it generates: the
-  /// rule may not generate the anchor's day (a Saturday series switched to
-  /// Sundays), and EventKit would keep that day as an extra first occurrence
-  /// (#140). A rule that generates nothing within five years of the anchor
-  /// fails with `invalidArguments` rather than leaving that orphan behind.
+  /// The start a series update leaves `event` with — see
+  /// `SeriesDates.resolveSeriesStart`, which this feeds the event's stored
+  /// start, zone and rule, and the device's zone. `newStartMillis` is the
+  /// target start; `timestamp` picks the reference occurrence (the series
+  /// anchor when nil).
   private func resolveSeriesStart(
     for event: EKEvent,
     newStartMillis: Int64?,
@@ -1145,55 +1134,23 @@ class EventsService {
     rule: EKRecurrenceRule?,
     changingRule: Bool
   ) -> Result<Date, CalendarError> {
-    let timeZone = event.timeZone ?? .current
-    var start: Date = event.startDate
-
-    if let newStartMillis = newStartMillis {
-      let target = Date(timeIntervalSince1970: TimeInterval(newStartMillis) / 1000.0)
-      let reference: Date
-      if let timestamp = timestamp {
-        reference = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
-      } else {
-        reference = event.startDate
-      }
-
-      if !changingRule,
-         let existingRule = event.recurrenceRules?.first,
-         SeriesDates.dayMoveConflictsWithRule(
-           rule: existingRule, reference: reference, target: target, timeZone: timeZone
-         ) {
-        return .failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "start moves this series to a different day, but its "
-            + "recurrence rule pins specific days. Pass a recurrenceRule to "
-            + "specify the new pattern."
-        ))
-      }
-
-      guard let shifted = SeriesDates.shiftStart(
-        event.startDate, reference: reference, to: target,
-        isAllDay: isAllDay, timeZone: timeZone
-      ) else {
-        return .failure(CalendarError(
-          code: PlatformExceptionCodes.operationFailed,
-          message: "Could not apply the new start to the event"
-        ))
-      }
-      start = shifted
+    let target = newStartMillis.map {
+      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
     }
-
-    if let rule = rule {
-      guard let anchored = RecurrenceAnchor.firstMatch(
-        of: rule, onOrAfter: start, timeZone: timeZone
-      ) else {
-        return .failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "recurrenceRule generates no occurrences within five years of the anchor"
-        ))
-      }
-      start = anchored
-    }
-    return .success(start)
+    let reference: Date = timestamp.map {
+      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
+    } ?? event.startDate
+    return SeriesDates.resolveSeriesStart(
+      base: event.startDate,
+      storedZone: event.timeZone,
+      existingRule: event.recurrenceRules?.first,
+      target: target,
+      reference: reference,
+      isAllDay: isAllDay,
+      rule: rule,
+      changingRule: changingRule,
+      deviceZone: .current
+    )
   }
 
   /// Splits a `thisAndFollowing` series at `occurrence` and turns that

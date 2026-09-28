@@ -16,7 +16,8 @@ import XCTest
 final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   private func conflicts(_ rule: EKRecurrenceRule, from: Date, to: Date) -> Bool {
     return SeriesDates.dayMoveConflictsWithRule(
-      rule: rule, reference: from, target: to, timeZone: stockholm
+      rule: rule, reference: from, referenceZone: stockholm,
+      target: to, targetZone: stockholm
     )
   }
 
