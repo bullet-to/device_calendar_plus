@@ -8,8 +8,11 @@ import XCTest
 /// pinned part is checked on its own, matching Android's
 /// `dayMoveConflictsWithRule`. The BYDAY+BYMONTH case is also covered end to
 /// end by the integration suite; this file exists mainly for BYDAY with
-/// BYMONTHDAY, which the typed Dart API can't build (it's only reachable
-/// through a raw RRULE), and as a fast regression check on all three parts.
+/// BYMONTHDAY, which the plugin can't create (the typed API has no
+/// BYDAY+BYMONTHDAY shape and writes send `toRruleString()`), so it only
+/// reaches `updateRecurring` on events made by another app. An integration
+/// test can't set that up; this also serves as a fast regression check on
+/// all three parts.
 final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   private func conflicts(_ rule: EKRecurrenceRule, from: Date, to: Date) -> Bool {
     return SeriesDates.dayMoveConflictsWithRule(
