@@ -102,15 +102,14 @@ internal class SplitShift private constructor(
  * delta from [referenceMillis] to [targetStart] (see [SplitShift]).
  * [targetStart] is already in the frame after the edit
  * ([resolveTargetStart]), while [baseMillis] and [referenceMillis] are in
- * the row's stored frame. Unlike the day-move check, which reads each in its
- * own zone, this reads all three in the one post-edit zone. That differs
- * from the stored zone only when the same edit toggles all-day, and it is
- * still safe then: base and reference are the same instant or occurrences
- * of the same series at the same wall-clock time, so the wrong zone moves
- * both onto the same wrong day (unless a DST change between them carries
- * just one across the other zone's midnight), the error cancels out of the
- * day delta, and
- * [SplitShift.slot] then resets the time of day for the new frame. Keep
+ * the row's stored frame, yet this reads all three in the one post-edit
+ * zone. That differs from the stored zone only when the same edit toggles
+ * all-day, and it is still safe then: base and reference are the same
+ * instant or occurrences of the same series at the same wall-clock time,
+ * so the wrong zone moves both onto the same wrong day (unless a DST change
+ * between them carries just one across the other zone's midnight), the
+ * error cancels out of the day delta, and [SplitShift.slot] then resets the
+ * time of day for the new frame. Keep
  * that invariant, or pass the stored zone in, when changing either input.
  * A new [rrule] then moves it onto the first day the rule generates, keeping
  * its wall-clock time — the anchor a series switched to a new rule must
@@ -165,61 +164,32 @@ internal fun resolveSeriesTimes(
 }
 
 /**
- * Whether moving the anchor from [referenceMillis] to [targetMillis] would
- * change the day-spec that [rrule] pins explicitly: the weekday for a
- * BYDAY rule, the day-of-month for a BYMONTHDAY rule, or the month for a
- * BYMONTH rule. When it would, an anchor shift alone can't say what the new
- * pattern should be (see updateRecurring docs), so the caller must supply a
- * new rule. Rules with no explicit anchor return false — they follow the
- * anchor freely. iOS's counterpart is `SeriesDates.dayMoveConflictsWithRule`.
- *
- * Each instant is read in the zone that frames its own calendar day (see
- * [seriesTimeZone]): an all-day one is stored as UTC midnight, so it is read
- * in UTC. Reading a UTC-midnight date in the device zone puts it on the day
- * before west of UTC (#144).
- */
-internal fun dayMoveConflictsWithRule(
-    rrule: String,
-    referenceMillis: Long,
-    referenceZone: TimeZone,
-    targetMillis: Long,
-    targetZone: TimeZone
-): Boolean {
-    val parts = RruleString.params(rrule)
-    val hasByDay = "BYDAY" in parts
-    val hasByMonthDay = "BYMONTHDAY" in parts
-    val hasByMonth = "BYMONTH" in parts
-    if (!hasByDay && !hasByMonthDay && !hasByMonth) return false
-    val ref = Calendar.getInstance(referenceZone).apply { timeInMillis = referenceMillis }
-    val tgt = Calendar.getInstance(targetZone).apply { timeInMillis = targetMillis }
-    fun changed(field: Int) = ref.get(field) != tgt.get(field)
-    if (hasByDay && changed(Calendar.DAY_OF_WEEK)) return true
-    if (hasByMonthDay && changed(Calendar.DAY_OF_MONTH)) return true
-    if (hasByMonth && changed(Calendar.MONTH)) return true
-    return false
-}
-
-/**
  * The caller's new series start brought into the stored frame, or the
- * INVALID_ARGUMENTS failure when it moves the day of a series whose rule pins
- * that day explicitly (see [dayMoveConflictsWithRule]) and no new rule is
- * given. Null when there is no new start. Runs before any write.
+ * INVALID_ARGUMENTS failure when no new rule is given and the existing
+ * [rowRrule] doesn't generate the new start's day. Null when there is no new
+ * start. Runs before any write.
+ *
+ * The check asks whether the rule generates the target day
+ * ([RecurrenceAnchor.generates]) rather than comparing the weekday, day of
+ * month and month the rule pins: those let an ordinal BYDAY (`4TH`, `-1FR`)
+ * or a BYSETPOS series move onto a day it doesn't generate, leaving an
+ * orphan first occurrence like #140's (#189). Parts the rule leaves implicit
+ * come from the target, so a rule that pins no day follows the anchor
+ * anywhere, and a time-only move always passes. iOS's counterpart is the
+ * check in `SeriesDates.resolveSeriesStart`.
  *
  * [newStartMillis] is a local instant (a Dart DateTime) meant in
  * [deviceZone]; an all-day series is stored as UTC midnight, so it becomes
- * that via [storageMillis], as updateEvent does. The check and the anchor
- * shift then compare like with like on either side of UTC (#144). The stored
- * [referenceMillis] is read in the row's own frame ([rowAllDay],
- * [rowTimeZone]); the target in the frame after the edit
- * ([effectiveIsAllDay]), which differs when the same edit toggles all-day.
- * Implicit rules (no BYDAY/BYMONTHDAY/BYMONTH) just follow the anchor.
+ * that via [storageMillis], as updateEvent does, and the anchor shift then
+ * compares like with like on either side of UTC (#144). The target's day is
+ * read in the frame after the edit ([effectiveIsAllDay], [rowTimeZone]; see
+ * [seriesTimeZone]), so an all-day toggle onto a day the rule doesn't
+ * generate is refused like any other day move.
  */
 internal fun resolveTargetStart(
     newStartMillis: Long?,
     rowRrule: String?,
-    rowAllDay: Boolean,
     rowTimeZone: String?,
-    referenceMillis: Long,
     effectiveIsAllDay: Boolean,
     changingRule: Boolean,
     deviceZone: TimeZone = TimeZone.getDefault()
@@ -227,10 +197,8 @@ internal fun resolveTargetStart(
     if (newStartMillis == null) return Result.success(null)
     val targetStart = storageMillis(newStartMillis, effectiveIsAllDay, deviceZone)
     if (!changingRule && rowRrule != null &&
-        dayMoveConflictsWithRule(
+        !RecurrenceAnchor.generates(
             rowRrule,
-            referenceMillis,
-            seriesTimeZone(rowTimeZone, rowAllDay),
             targetStart,
             seriesTimeZone(rowTimeZone, effectiveIsAllDay)
         )
@@ -238,9 +206,9 @@ internal fun resolveTargetStart(
         return Result.failure(
             CalendarException(
                 PlatformExceptionCodes.INVALID_ARGUMENTS,
-                "start moves this series to a different day, but its " +
-                    "recurrence rule pins specific days. Pass a " +
-                    "recurrenceRule to specify the new pattern."
+                "start moves this series onto a day its recurrence " +
+                    "rule doesn't generate. Pass a recurrenceRule to " +
+                    "specify the new pattern."
             )
         )
     }

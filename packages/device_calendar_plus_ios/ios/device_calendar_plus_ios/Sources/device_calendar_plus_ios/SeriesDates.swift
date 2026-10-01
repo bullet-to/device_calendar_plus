@@ -2,45 +2,12 @@ import EventKit
 import Foundation
 
 /// The date arithmetic behind a series update: which zone frames a series'
-/// calendar days, whether an anchor move clashes with the rule's pinned
-/// days, and the start the update leaves the series with. Pure — the device
+/// calendar days, whether an anchor move lands on a day the rule generates,
+/// and the start the update leaves the series with. Pure — the device
 /// zone is passed in rather than read from `TimeZone.current`, so native
 /// tests can drive the zones the integration harness can't set on iOS.
 /// Android's counterpart is `SeriesDates.kt`.
 enum SeriesDates {
-  /// Whether moving the anchor from `reference` to `target` would change the
-  /// day-spec that `rule` pins explicitly: the weekday for a BYDAY rule, the
-  /// day-of-month for a BYMONTHDAY rule, or the month for a BYMONTH rule. When
-  /// it would, an anchor shift alone can't say what the new pattern should be
-  /// (see updateRecurring docs), so the caller must supply a new rule. Rules
-  /// with no explicit anchor return false — they follow the anchor freely.
-  /// Each date is read in its own frame: `reference` in the zone the series
-  /// is stored in, `target` in the zone it has after the edit — they differ
-  /// only when the edit toggles all-day. Android's counterpart is
-  /// `dayMoveConflictsWithRule`.
-  static func dayMoveConflictsWithRule(
-    rule: EKRecurrenceRule,
-    reference: Date,
-    referenceZone: TimeZone,
-    target: Date,
-    targetZone: TimeZone
-  ) -> Bool {
-    var referenceCalendar = Calendar(identifier: .gregorian)
-    referenceCalendar.timeZone = referenceZone
-    var targetCalendar = Calendar(identifier: .gregorian)
-    targetCalendar.timeZone = targetZone
-    func changed(_ unit: Calendar.Component) -> Bool {
-      return referenceCalendar.component(unit, from: reference)
-        != targetCalendar.component(unit, from: target)
-    }
-    // Each pinned part is checked on its own, as Android does: a BYDAY rule
-    // can pin a month or a day of the month too (e.g. BYMONTH=11;BYDAY=4TH).
-    if let days = rule.daysOfTheWeek, !days.isEmpty, changed(.weekday) { return true }
-    if let dom = rule.daysOfTheMonth, !dom.isEmpty, changed(.day) { return true }
-    if let months = rule.monthsOfTheYear, !months.isEmpty, changed(.month) { return true }
-    return false
-  }
-
   /// Translates `base` by the wall-clock delta from `reference` to `target`,
   /// computed in `timeZone`: shifts by the whole-day difference and sets the
   /// time-of-day to `target`'s. DST-safe — it counts calendar days and sets a
@@ -95,14 +62,20 @@ enum SeriesDates {
   ///   carries just one across the other zone's midnight). Keep that
   ///   invariant, or read them in the stored frame, when changing either
   ///   input.
-  /// - Unless `changingRule`, that move is first checked against the days
-  ///   `existingRule` pins, reading `reference` in the stored frame and
-  ///   `target` in the edit frame. So an all-day toggle onto a local day that
-  ///   differs from the stored-zone day counts as a day move, as on Android.
+  /// - Unless `changingRule`, that move is first checked against
+  ///   `existingRule`: `target`'s day, read in the edit frame, must be one
+  ///   the rule generates (`RecurrenceAnchor.generates`, with the parts the
+  ///   rule leaves implicit taken from `target`). Comparing the weekday, day
+  ///   of month and month the rule pins instead let an ordinal BYDAY (`4TH`,
+  ///   `-1FR`) or BYSETPOS series move onto a day it doesn't generate,
+  ///   orphaning its first occurrence as in #140 (#189). A time-only move
+  ///   always passes, and an all-day toggle onto a local day the rule
+  ///   doesn't generate is refused like any other day move. Android's
+  ///   counterpart is the check in `resolveTargetStart`.
   /// - A new `rule` then walks the anchor, in the edit frame, onto the first
   ///   day it generates (#140).
   ///
-  /// Fails with `invalidArguments` when the move changes a pinned day or the
+  /// Fails with `invalidArguments` when the move leaves the rule's days or the
   /// new rule generates nothing within five years of the anchor, and with
   /// `operationFailed` if the shift can't be computed.
   static func resolveSeriesStart(
@@ -123,16 +96,11 @@ enum SeriesDates {
     if let target = target {
       if !changingRule,
          let existingRule = existingRule,
-         dayMoveConflictsWithRule(
-           rule: existingRule,
-           reference: reference, referenceZone: storedFrame,
-           target: target, targetZone: editFrame
-         ) {
+         !RecurrenceAnchor.generates(existingRule, day: target, timeZone: editFrame) {
         return .failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
-          message: "start moves this series to a different day, but its "
-            + "recurrence rule pins specific days. Pass a recurrenceRule to "
-            + "specify the new pattern."
+          message: "start moves this series onto a day its recurrence rule "
+            + "doesn't generate. Pass a recurrenceRule to specify the new pattern."
         ))
       }
 

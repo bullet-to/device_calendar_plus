@@ -999,9 +999,7 @@ class EventsService(
             val targetStart = resolveTargetStart(
                 newStartMillis = newStartMillis,
                 rowRrule = row.rrule,
-                rowAllDay = row.allDay,
                 rowTimeZone = row.timeZone,
-                referenceMillis = timestamp ?: row.dtstart,
                 effectiveIsAllDay = effectiveIsAllDay,
                 changingRule = changingRule
             ).getOrElse { return Result.failure(it) }

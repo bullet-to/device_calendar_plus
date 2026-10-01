@@ -22,14 +22,11 @@ internal class ResolveTargetStartTest {
     private fun stored(day: Int) = instantAt(utc, 2026, 6, day)
 
     /**
-     * Resolves [newStart] against the stored [reference] start of a
-     * [rrule] series on a device in [zone]. [rowAllDay] is the row's frame
-     * before the edit, [effectiveIsAllDay] after it.
+     * Resolves [newStart] for a [rrule] series on a device in [zone].
+     * [effectiveIsAllDay] is the series' frame after the edit.
      */
     private fun resolve(
         newStart: Long,
-        reference: Long,
-        rowAllDay: Boolean = true,
         effectiveIsAllDay: Boolean = true,
         rrule: String = "FREQ=WEEKLY;BYDAY=SA",
         zone: TimeZone = la,
@@ -37,20 +34,18 @@ internal class ResolveTargetStartTest {
     ) = resolveTargetStart(
         newStartMillis = newStart,
         rowRrule = rrule,
-        rowAllDay = rowAllDay,
         rowTimeZone = zone.id,
-        referenceMillis = reference,
         effectiveIsAllDay = effectiveIsAllDay,
         changingRule = changingRule,
         deviceZone = zone
     )
 
     /**
-     * Moves an all-day [rrule] series stored on June [storedDay] to the
-     * local midnight of June [newDay], from a device in [zone].
+     * Moves an all-day [rrule] series stored on Saturday 6 June to the local
+     * midnight of June [newDay], from a device in [zone].
      */
-    private fun moveAllDay(rrule: String, storedDay: Int, newDay: Int, zone: TimeZone) =
-        resolve(instantAt(zone, 2026, 6, newDay), stored(storedDay), rrule = rrule, zone = zone)
+    private fun moveAllDay(rrule: String, newDay: Int, zone: TimeZone) =
+        resolve(instantAt(zone, 2026, 6, newDay), rrule = rrule, zone = zone)
 
     private fun Result<Long?>.failureCode() =
         assertIs<CalendarException>(
@@ -63,31 +58,31 @@ internal class ResolveTargetStartTest {
     // Saturday was refused and moving to the Friday let through.
     @Test
     fun resolveTargetStart_allDaySameDayWestOfUtc_returnsStoredMidnight() {
-        val result = moveAllDay("FREQ=WEEKLY;BYDAY=SA", 6, 6, la)
+        val result = moveAllDay("FREQ=WEEKLY;BYDAY=SA", 6, la)
         assertEquals(stored(6), result.getOrThrow())
     }
 
     @Test
     fun resolveTargetStart_allDayDayEarlierWestOfUtc_refused() {
-        val result = moveAllDay("FREQ=WEEKLY;BYDAY=SA", 6, 5, la)
+        val result = moveAllDay("FREQ=WEEKLY;BYDAY=SA", 5, la)
         assertEquals(PlatformExceptionCodes.INVALID_ARGUMENTS, result.failureCode())
     }
 
     @Test
     fun resolveTargetStart_allDayMonthDayMoveWestOfUtc_refused() {
-        val result = moveAllDay("FREQ=MONTHLY;BYMONTHDAY=6", 6, 5, la)
+        val result = moveAllDay("FREQ=MONTHLY;BYMONTHDAY=6", 5, la)
         assertEquals(PlatformExceptionCodes.INVALID_ARGUMENTS, result.failureCode())
     }
 
     @Test
     fun resolveTargetStart_allDaySameDayEastOfUtc_returnsStoredMidnight() {
-        val result = moveAllDay("FREQ=WEEKLY;BYDAY=SA", 6, 6, sydney)
+        val result = moveAllDay("FREQ=WEEKLY;BYDAY=SA", 6, sydney)
         assertEquals(stored(6), result.getOrThrow())
     }
 
     @Test
     fun resolveTargetStart_allDayDayLaterEastOfUtc_refused() {
-        val result = moveAllDay("FREQ=WEEKLY;BYDAY=SA", 6, 7, sydney)
+        val result = moveAllDay("FREQ=WEEKLY;BYDAY=SA", 7, sydney)
         assertEquals(PlatformExceptionCodes.INVALID_ARGUMENTS, result.failureCode())
     }
 
@@ -95,41 +90,37 @@ internal class ResolveTargetStartTest {
     // unconverted, a one-day move counted zero days and left the series put.
     @Test
     fun resolveTargetStart_allDayDayLaterEastOfUtcImplicitRule_returnsNextStoredMidnight() {
-        val result = moveAllDay("FREQ=DAILY;COUNT=4", 6, 7, sydney)
+        val result = moveAllDay("FREQ=DAILY;COUNT=4", 7, sydney)
         assertEquals(stored(7), result.getOrThrow())
     }
 
     @Test
     fun resolveTargetStart_allDayDayLaterWestOfUtcImplicitRule_returnsNextStoredMidnight() {
-        val result = moveAllDay("FREQ=DAILY;COUNT=4", 6, 7, la)
+        val result = moveAllDay("FREQ=DAILY;COUNT=4", 7, la)
         assertEquals(stored(7), result.getOrThrow())
     }
 
-    // The same edit toggles all-day off: the stored start is read in UTC,
-    // the new timed start in the row's zone.
+    // The same edit toggles all-day off: the new timed start is read in the
+    // row's zone, not the UTC of the stored all-day start.
     @Test
     fun resolveTargetStart_allDayToTimedSameDay_returnsTimedStart() {
         val newStart = instantAt(la, 2026, 6, 6, 9)
-        val result = resolve(newStart, stored(6), effectiveIsAllDay = false)
+        val result = resolve(newStart, effectiveIsAllDay = false)
         assertEquals(newStart, result.getOrThrow())
     }
 
     @Test
     fun resolveTargetStart_allDayToTimedDayEarlier_refused() {
-        val result = resolve(instantAt(la, 2026, 6, 5, 9), stored(6), effectiveIsAllDay = false)
+        val result = resolve(instantAt(la, 2026, 6, 5, 9), effectiveIsAllDay = false)
         assertEquals(PlatformExceptionCodes.INVALID_ARGUMENTS, result.failureCode())
     }
 
-    // The same edit toggles all-day on: Saturday 20:00 Los Angeles is Sunday
-    // in UTC, so reading both instants in one zone would refuse a same-day
-    // move.
+    // The same edit toggles a Saturday 20:00 Los Angeles series (Sunday in
+    // UTC) all-day: its local Saturday midnight becomes Saturday's UTC
+    // midnight, which the rule generates.
     @Test
     fun resolveTargetStart_timedToAllDaySameDay_returnsStoredMidnight() {
-        val result = resolve(
-            instantAt(la, 2026, 6, 6),
-            instantAt(la, 2026, 6, 6, 20),
-            rowAllDay = false
-        )
+        val result = resolve(instantAt(la, 2026, 6, 6))
         assertEquals(stored(6), result.getOrThrow())
     }
 
@@ -140,7 +131,6 @@ internal class ResolveTargetStartTest {
     fun resolveTargetStart_allDayDayMoveWithNewRule_returnsStoredMidnight() {
         val result = resolve(
             instantAt(sydney, 2026, 6, 7),
-            stored(6),
             zone = sydney,
             changingRule = true
         )

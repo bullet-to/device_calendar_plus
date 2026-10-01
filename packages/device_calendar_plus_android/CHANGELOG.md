@@ -1,3 +1,13 @@
+## Unreleased
+
+### Fixed
+- `updateRecurring` refuses a start move with no new rule unless the existing
+  rule generates the new day, as iOS does. It compared only the weekday, day
+  of month and month the rule pins, so an ordinal BYDAY or a BYSETPOS series
+  (the 4th Thursday of November, say) could move to another occurrence of its
+  weekday (the 3rd Thursday), leaving DTSTART on a day the rule never
+  generates (#189).
+
 ## 0.9.0 - 2026-09-30
 
 ### Changed

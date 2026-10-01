@@ -48,6 +48,22 @@ enum RecurrenceAnchor {
     return nil
   }
 
+  /// Whether `rule` generates the calendar day (in `timeZone`) of `day`,
+  /// with the parts it leaves implicit filled in from `day` itself, as they
+  /// would be from a start moved there. So a rule that pins no day generates
+  /// any day. The day-move check behind updateRecurring (#189).
+  static func generates(
+    _ rule: EKRecurrenceRule,
+    day: Date,
+    timeZone: TimeZone
+  ) -> Bool {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    return Matcher(
+      rule: Rule(rule).impliedBy(anchor: day, calendar: calendar), calendar: calendar
+    ).generates(day)
+  }
+
   /// One BYDAY entry: `weekday` is a Gregorian weekday (1 = Sunday),
   /// `ordinal` 0 = every.
   private struct ByDay {

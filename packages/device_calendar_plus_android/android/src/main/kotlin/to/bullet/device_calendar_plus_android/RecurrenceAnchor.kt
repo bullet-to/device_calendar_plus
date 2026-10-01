@@ -66,6 +66,19 @@ internal object RecurrenceAnchor {
         return null
     }
 
+    /**
+     * Whether the rule generates the calendar day (in [tz]) of [millis],
+     * with the parts it leaves implicit filled in from [millis] itself, as
+     * they would be from a DTSTART moved there. So a rule that pins no day
+     * generates any day, and one outside the modelled subset is assumed to.
+     * The day-move check behind updateRecurring (#189).
+     */
+    fun generates(rrule: String, millis: Long, tz: TimeZone): Boolean {
+        val cal = Calendar.getInstance(tz).apply { timeInMillis = millis }
+        val rule = parse(rrule)?.impliedBy(cal) ?: return true
+        return Matcher(rule).generates(cal)
+    }
+
     private fun parse(rrule: String): Rule? {
         val params = RruleString.params(rrule)
         val freq = when (params["FREQ"]?.uppercase()) {
