@@ -1043,7 +1043,7 @@ class EventsService(
         val willBeRecurring = when (ruleEdit) {
             SeriesRuleEdit.Clear -> false
             is SeriesRuleEdit.Replace -> true
-            is SeriesRuleEdit.Keep -> wasRecurring
+            is SeriesRuleEdit.Keep -> ruleEdit.rule != null
         }
         when (ruleEdit) {
             SeriesRuleEdit.Clear -> values.putNull(CalendarContract.Events.RRULE)
@@ -1065,9 +1065,9 @@ class EventsService(
             targetStart = targetStart,
             durationMinutes = durationMinutes,
             ruleEdit = ruleEdit,
-            timeZoneId = row.timeZone,
             isAllDay = effectiveIsAllDay,
-            storedZone = seriesTimeZone(row.timeZone, row.allDay)
+            storedZone = seriesTimeZone(row.timeZone, row.allDay),
+            editZone = seriesTimeZone(row.timeZone, effectiveIsAllDay)
         ).getOrElse { return Result.failure(it) }
         // A `start` equal to the current anchor is still a rewrite: the
         // DTSTART/DURATION (and RRULE, below) re-put is what makes the
@@ -1087,8 +1087,8 @@ class EventsService(
                 // occurrence. Re-writing the (unchanged) RRULE forces the
                 // CalendarProvider to re-expand — the mirror of the
                 // DTSTART/DURATION rewrite used when only the rule changes.
-                if (ruleEdit is SeriesRuleEdit.Keep && row.rrule != null) {
-                    values.put(CalendarContract.Events.RRULE, row.rrule)
+                (ruleEdit as? SeriesRuleEdit.Keep)?.rule?.let {
+                    values.put(CalendarContract.Events.RRULE, it)
                 }
             } else {
                 values.put(CalendarContract.Events.DTEND, newStart + newDurationMs)
@@ -1191,9 +1191,9 @@ class EventsService(
             targetStart = targetStart,
             durationMinutes = durationMinutes,
             ruleEdit = ruleEdit,
-            timeZoneId = row.timeZone,
             isAllDay = effectiveIsAllDay,
-            storedZone = seriesTimeZone(row.timeZone, row.allDay)
+            storedZone = seriesTimeZone(row.timeZone, row.allDay),
+            editZone = seriesTimeZone(row.timeZone, effectiveIsAllDay)
         ).getOrElse { return Result.failure(it) }
         val newEnd = newStart + newDurationMs
 

@@ -34,15 +34,6 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
     )
   }
 
-  private func assertRefused(
-    _ result: Result<Date, CalendarError>, file: StaticString = #filePath, line: UInt = #line
-  ) {
-    guard case .failure(let error) = result else {
-      return XCTFail("expected the day move to be refused, got \(result)", file: file, line: line)
-    }
-    XCTAssertEqual(error.code, PlatformExceptionCodes.invalidArguments, file: file, line: line)
-  }
-
   /// Yearly on the 4th Thursday of November.
   private var thanksgiving: EKRecurrenceRule {
     rule(.yearly, days: [EKRecurrenceDayOfWeek(.thursday, weekNumber: 4)], months: [11])

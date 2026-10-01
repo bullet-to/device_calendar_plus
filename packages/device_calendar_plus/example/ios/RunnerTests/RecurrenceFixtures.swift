@@ -1,5 +1,8 @@
 import EventKit
 import Foundation
+import XCTest
+
+@testable import device_calendar_plus_ios
 
 /// Shared fixtures for the recurrence tests: a fixed zone, dates built in it,
 /// and a terse `EKRecurrenceRule` builder. Conform a test case to pick them up.
@@ -33,4 +36,15 @@ extension RecurrenceFixtures {
       end: nil
     )
   }
+}
+
+/// Asserts `result` is an invalid-arguments refusal, as Kotlin's
+/// `Result.assertRefused` (TestResults.kt) does.
+func assertRefused<T>(
+  _ result: Result<T, CalendarError>, file: StaticString = #filePath, line: UInt = #line
+) {
+  guard case .failure(let error) = result else {
+    return XCTFail("expected a refusal, got \(result)", file: file, line: line)
+  }
+  XCTAssertEqual(error.code, PlatformExceptionCodes.invalidArguments, file: file, line: line)
 }

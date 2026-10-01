@@ -94,10 +94,7 @@ final class SeriesDatesTests: XCTestCase {
       isAllDay: false,
       deviceZone: losAngeles
     )
-    guard case .failure(let error) = result else {
-      return XCTFail("expected the day move to be refused, got \(result)")
-    }
-    XCTAssertEqual(error.code, PlatformExceptionCodes.invalidArguments)
+    assertRefused(result)
   }
 
   // East of UTC with a new rule: the re-anchor reads the local-midnight
@@ -142,9 +139,6 @@ final class SeriesDatesTests: XCTestCase {
       ruleEdit: .keep(SeriesDatesTests.weekly(on: .wednesday)),
       deviceZone: sydney
     )
-    guard case .failure(let error) = result else {
-      return XCTFail("expected the day move to be refused, got \(result)")
-    }
-    XCTAssertEqual(error.code, PlatformExceptionCodes.invalidArguments)
+    assertRefused(result)
   }
 }

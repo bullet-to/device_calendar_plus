@@ -73,6 +73,11 @@ enum SeriesDates {
       return !sameCalendarDay(from, fromZone, to, timeZone)
         && !RecurrenceAnchor.generates(rule, day: to, timeZone: timeZone)
     }
+    // Both checks are needed, even though they repeat each other when the
+    // reference is the base. On a {Mon,Tue,Fri} series starting Monday,
+    // moving Friday to Saturday shifts the start to Tuesday, which the rule
+    // generates: only the first check refuses it. Moving Monday to Tuesday
+    // shifts a Friday start to Saturday: only the second does (#140).
     return movesOffRule(from: reference, fromZone: referenceZone, to: target)
       || movesOffRule(from: base, fromZone: timeZone, to: shifted)
   }

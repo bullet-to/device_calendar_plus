@@ -126,8 +126,10 @@ internal sealed class SeriesRuleEdit {
  * [targetStart] is already in the frame after the edit
  * ([resolveTargetStart]), while [baseMillis] and [referenceMillis] are in
  * the row's stored frame [storedZone], yet the shift reads all three in the
- * one post-edit zone. That differs from the stored zone only when the same
- * edit toggles all-day, and it is still safe then: base and reference are
+ * one post-edit zone [editZone]. Callers build both with [seriesTimeZone]:
+ * [storedZone] from the row, [editZone] from the series after the edit
+ * ([isAllDay] is its all-day state then). [editZone] differs from
+ * [storedZone] only when the same edit toggles all-day, and it is still safe then: base and reference are
  * the same instant or occurrences of the same series at the same wall-clock
  * time, so the wrong zone moves both onto the same wrong day (unless a DST
  * change between them carries just one across the other zone's midnight),
@@ -153,17 +155,16 @@ internal fun resolveSeriesTimes(
     targetStart: Long?,
     durationMinutes: Int?,
     ruleEdit: SeriesRuleEdit,
-    timeZoneId: String?,
     isAllDay: Boolean,
-    storedZone: TimeZone
+    storedZone: TimeZone,
+    editZone: TimeZone
 ): Result<Pair<Long, Long>> {
-    val tz = seriesTimeZone(timeZoneId, isAllDay)
     // A slot copies the new start's time of day, already whole seconds.
     // With no new start the stored start is kept as is, even with millis
     // from an older version or another app: rewriting it would orphan
     // detached occurrences keyed at those millis (#165).
     val shiftedStart = if (targetStart != null) {
-        SplitShift.of(referenceMillis, targetStart, tz, isAllDay).slot(baseMillis)
+        SplitShift.of(referenceMillis, targetStart, editZone, isAllDay).slot(baseMillis)
     } else {
         baseMillis
     }
@@ -176,7 +177,7 @@ internal fun resolveSeriesTimes(
                     baseMillis = baseMillis,
                     targetStart = targetStart,
                     shiftedStart = shiftedStart,
-                    tz = tz
+                    tz = editZone
                 )
             ) {
                 return Result.failure(
@@ -193,7 +194,7 @@ internal fun resolveSeriesTimes(
         // A rule re-anchor moves the series anyway, so it drops any stored
         // millis too, like every event time the plugin writes (#165).
         is SeriesRuleEdit.Replace ->
-            RecurrenceAnchor.firstMatch(ruleEdit.rule, shiftedStart, tz)?.let(::wholeSeconds)
+            RecurrenceAnchor.firstMatch(ruleEdit.rule, shiftedStart, editZone)?.let(::wholeSeconds)
                 ?: return Result.failure(
                     CalendarException(
                         PlatformExceptionCodes.INVALID_ARGUMENTS,
@@ -235,6 +236,11 @@ private fun leavesRule(
 ): Boolean {
     fun movesOffRule(from: Long, fromZone: TimeZone, to: Long) =
         !sameCalendarDay(from, fromZone, to, tz) && !RecurrenceAnchor.generates(rule, to, tz)
+    // Both checks are needed, even though they repeat each other when the
+    // reference is the base. On a {Mon,Tue,Fri} series starting Monday,
+    // moving Friday to Saturday shifts the start to Tuesday, which the rule
+    // generates: only the first check refuses it. Moving Monday to Tuesday
+    // shifts a Friday start to Saturday: only the second does (#140).
     return movesOffRule(referenceMillis, referenceZone, targetStart) ||
         movesOffRule(baseMillis, tz, shiftedStart)
 }
