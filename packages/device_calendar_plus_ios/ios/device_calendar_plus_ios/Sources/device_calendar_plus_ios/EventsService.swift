@@ -950,21 +950,41 @@ class EventsService {
   /// Resolves the event `updateRecurring` / `deleteRecurring` act on for
   /// `span`. "allEvents" works from the master (the whole series);
   /// "thisAndFollowing" works from the specific occurrence at `timestamp`,
-  /// and fails with `invalidArguments` when no timestamp is given. Fails with
-  /// `notFound` when there is no such event.
+  /// and fails with `invalidArguments` when no timestamp is given or the
+  /// event is not recurring. Fails with `notFound` when there is no such
+  /// event.
   private func resolveSeriesTarget(
     eventId: String,
     timestamp: Int64?,
     span: String
   ) -> Result<EKEvent, CalendarError> {
-    let isThisAndFollowing = span == "thisAndFollowing"
-    if isThisAndFollowing && timestamp == nil {
+    guard span == "thisAndFollowing" else {
+      return resolveTarget(eventId: eventId, timestamp: nil)
+    }
+    guard let timestamp = timestamp else {
       return .failure(CalendarError(
         code: PlatformExceptionCodes.invalidArguments,
         message: "\(span) requires an occurrence timestamp"
       ))
     }
-    return resolveTarget(eventId: eventId, timestamp: isThisAndFollowing ? timestamp : nil)
+
+    // A one-off event has no series to split or truncate. Checked on the
+    // event itself, before the occurrence lookup: `findOccurrence` matches by
+    // overlap, so a timestamp inside a one-off would resolve to the whole
+    // event and the split would edit or delete it (#124). As Android does.
+    switch resolveTarget(eventId: eventId, timestamp: nil) {
+    case .failure(let error):
+      return .failure(error)
+    case .success(let event) where !event.hasRecurrenceRules:
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.invalidArguments,
+        message: "Event \(eventId) is not recurring, so it has no single occurrence "
+          + "to address; edit or delete the event itself instead"
+      ))
+    case .success:
+      break
+    }
+    return resolveTarget(eventId: eventId, timestamp: timestamp)
   }
 
   /// Deletes one thing. With a `timestamp`, removes only the occurrence at
