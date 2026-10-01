@@ -9,6 +9,10 @@
   event it leaves, as Android does (#175).
 
 ### Fixed
+- `updateRecurring` and `deleteRecurring` with `thisAndFollowing` refuse a
+  non-recurring event with `INVALID_ARGUMENTS` and write nothing, as Android
+  does. A timestamp that fell inside the event matched it, so the whole event
+  was edited or deleted and the call reported success (#124).
 - `updateRecurring` refuses a start move with no new rule when it breaks any
   day the rule pins, as Android does. It checked only BYDAY when the rule
   had one, so a yearly `BYMONTH=11;BYDAY=4TH` series could move to a

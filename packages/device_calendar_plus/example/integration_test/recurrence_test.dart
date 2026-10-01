@@ -121,6 +121,30 @@ void expectTruncatedMaster(
   );
 }
 
+/// Creates a one-off (non-recurring) event titled [title], an hour from now
+/// at a whole second, and returns its ID with an instance ID carrying its own
+/// start as the occurrence timestamp — a timestamp that falls inside the
+/// event, for the #124 tests that hand a one-off to a series-split call.
+Future<({String eventId, String instanceId})> createOneOffWithTimestamp(
+  DeviceCalendar plugin,
+  String calendarId,
+  String title,
+) async {
+  final start = DateTime.fromMillisecondsSinceEpoch(
+    (DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600) * 1000,
+  );
+  final eventId = await plugin.createEvent(
+    calendarId: calendarId,
+    title: title,
+    startDate: start,
+    endDate: start.add(const Duration(hours: 1)),
+  );
+  return (
+    eventId: eventId,
+    instanceId: '$eventId@${start.millisecondsSinceEpoch}',
+  );
+}
+
 /// Moves [series]' occurrence at [index] by [shift] as a per-occurrence edit,
 /// retitling it [title] so it can be found afterwards (see [eventsTitled]),
 /// and returns the detached copy as listed at its new time, asserting it
@@ -1153,6 +1177,32 @@ void main() {
         );
       });
     }
+
+    test(
+        'thisAndFollowing on a one-off event is refused with invalidArguments '
+        'and leaves the event untouched (#124)', () async {
+      // A one-off has no occurrence apart from itself, so there is no series
+      // to split. iOS used to match the timestamp against the event by
+      // overlap and edit the whole event; Android refuses.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final event = await createOneOffWithTimestamp(
+          plugin, calendarId!, 'One-off split update #124');
+
+      await expectLater(
+        plugin.updateRecurring(
+          event.instanceId,
+          EventSpan.thisAndFollowing,
+          title: 'Split #124',
+        ),
+        throwsInvalidArguments(mentioning: 'not recurring'),
+      );
+
+      final after = await plugin.getEvent(event.eventId);
+      expect(after, isNotNull, reason: 'a refused update must keep the event');
+      expect(after!.title, 'One-off split update #124',
+          reason: 'a refused update must leave the event unchanged');
+      expect(after.isRecurring, isFalse);
+    });
 
     test(
         'thisAndFollowing with Patch.clear turns the anchor into a standalone '
@@ -2657,6 +2707,26 @@ void main() {
           plugin, calendarId!, series.eventId, series.start);
       expect(startsOf(after), startsOf(before),
           reason: 'a refused delete must leave every occurrence in place');
+    });
+
+    test(
+        'thisAndFollowing on a one-off event is refused with invalidArguments '
+        'and deletes nothing (#124)', () async {
+      // A one-off has no occurrence apart from itself, so there is no series
+      // to truncate. iOS used to match the timestamp against the event by
+      // overlap and delete it; Android refuses.
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final event = await createOneOffWithTimestamp(
+          plugin, calendarId!, 'One-off split delete #124');
+
+      await expectLater(
+        plugin.deleteRecurring(event.instanceId, EventSpan.thisAndFollowing),
+        throwsInvalidArguments(mentioning: 'not recurring'),
+      );
+
+      final after = await plugin.getEvent(event.eventId);
+      expect(after, isNotNull, reason: 'a refused delete must keep the event');
+      expect(after!.title, 'One-off split delete #124');
     });
 
     test('deleteRecurring allEvents removes the detached occurrences too',
