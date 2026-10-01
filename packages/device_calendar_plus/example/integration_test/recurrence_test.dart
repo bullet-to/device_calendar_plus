@@ -2447,13 +2447,20 @@ void main() {
       // A Mon/Wed/Fri series whose start sits on Tue 3 Nov 2026, off its
       // rule, as one anchored by another app can. Retiming that first
       // occurrence +2h on the same Tuesday isn't a day move, so it must not
-      // be refused, though the rule doesn't generate the day (#189).
+      // be refused, though the rule doesn't generate the day (#189). iOS
+      // lists the off-rule start as the first occurrence; Android's provider
+      // may not, and then the retime is of the Wed 4 Nov occurrence, which
+      // keeps the stored start on its Tuesday just the same.
       final start = DateTime.utc(2026, 11, 3, 15);
       final series = await createMwfSeries(start: start);
       final before = series.occurrences;
       expect(before, isNotEmpty);
-      expect(before.first.startDate.toUtc(), start,
-          reason: 'the off-rule start shows as the first occurrence');
+      expect(
+        before.first.startDate.toUtc(),
+        anyOf(start, DateTime.utc(2026, 11, 4, 15)),
+        reason: 'the series lists from its Tuesday start or the Wednesday '
+            'after it',
+      );
 
       await plugin.updateRecurring(
         before.first.instanceId,
