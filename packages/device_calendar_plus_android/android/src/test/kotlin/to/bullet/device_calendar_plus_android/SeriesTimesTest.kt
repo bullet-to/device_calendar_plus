@@ -30,7 +30,9 @@ internal class SeriesTimesTest {
         durationMinutes = durationMinutes,
         rrule = rrule,
         timeZoneId = "America/New_York",
-        isAllDay = false
+        isAllDay = false,
+        wasAllDay = false,
+        keptRule = null
     ).getOrThrow()
 
     // Rewriting the start would orphan detached occurrences keyed at the

@@ -144,6 +144,16 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
     )
   }
 
+  // A series another app anchored off its rule, on Tue 3 Nov: retiming that
+  // first occurrence on the same Tuesday isn't a day move, so it isn't
+  // refused, though the rule doesn't generate the day.
+  func testAllowsATimeOnlyMoveOfAnOffRuleFirstOccurrence() {
+    let target = at(2026, 11, 3, hour: 15)
+    XCTAssertEqual(
+      try move(mondayWednesdayFriday, from: at(2026, 11, 3), to: target).get(), target
+    )
+  }
+
   // The Thu 26 Nov occurrence (4th Thursday) of a series starting Thu 22 Oct
   // moves to Thu 24 Dec (also a 4th Thursday), but the start moves 28 days
   // with it, onto Thu 19 Nov, the 3rd.

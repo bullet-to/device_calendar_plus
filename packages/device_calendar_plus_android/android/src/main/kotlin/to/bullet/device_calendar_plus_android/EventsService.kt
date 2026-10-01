@@ -1068,7 +1068,7 @@ class EventsService(
         val (newStart, newDurationMs) = resolveSeriesTimes(
             row.dtstart, timestamp ?: row.dtstart, eventDurationMillis(row),
             targetStart, durationMinutes, recurrenceRule, row.timeZone,
-            effectiveIsAllDay, keptRule
+            effectiveIsAllDay, row.allDay, keptRule
         ).getOrElse { return Result.failure(it) }
         // A `start` equal to the current anchor is still a rewrite: the
         // DTSTART/DURATION (and RRULE, below) re-put is what makes the
@@ -1190,7 +1190,7 @@ class EventsService(
         val (newStart, newDurationMs) = resolveSeriesTimes(
             timestamp, timestamp, eventDurationMillis(row),
             targetStart, durationMinutes, recurrenceRule, row.timeZone,
-            effectiveIsAllDay, keptRule
+            effectiveIsAllDay, row.allDay, keptRule
         ).getOrElse { return Result.failure(it) }
         val newEnd = newStart + newDurationMs
 

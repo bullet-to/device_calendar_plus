@@ -136,10 +136,11 @@ final class SeriesDatesTests: XCTestCase {
   }
 
   // The flip side of the east-of-UTC case, matching Android's
-  // resolveTargetStart: a Wednesday-23:00-UTC series shows on Thursday in
-  // Sydney, but the weekday it pins is the stored-zone one. Toggling it
-  // all-day onto the Thursday it shows on lands on a day the rule doesn't
-  // generate, so it needs a new rule like any other day move.
+  // resolveSeriesTimes day-move check (AllDayStartFrameTest): a
+  // Wednesday-23:00-UTC series shows on Thursday in Sydney, but the weekday
+  // it pins is the stored-zone one. Toggling it all-day onto the Thursday it
+  // shows on lands on a day the rule doesn't generate, so it needs a new
+  // rule like any other day move.
   func testAllDayToggleOntoTheNextLocalDayOfTheStoredDayIsRefused() {
     let result = resolve(
       base: at(utc, 9, 30, hour: 23),

@@ -2097,6 +2097,26 @@ void main() {
       }
     }
 
+    /// A 6-count weekly Mon/Wed/Fri series stored in UTC, starting at
+    /// [start] (Mon 2 Nov 2026 15:00 UTC unless given), and its occurrences.
+    Future<({String eventId, List<Event> occurrences})> createMwfSeries({
+      DateTime? start,
+    }) async {
+      final anchor = start ?? DateTime.utc(2026, 11, 2, 15);
+      final series = await createWeeklySeries(plugin, calendarId!,
+          count: 6,
+          daysOfWeek: [
+            DayOfWeek.monday,
+            DayOfWeek.wednesday,
+            DayOfWeek.friday,
+          ],
+          start: anchor);
+      final occurrences = await occurrencesOf(
+          plugin, calendarId!, series.eventId, anchor,
+          windowDays: 30);
+      return (eventId: series.eventId, occurrences: occurrences);
+    }
+
     test('allEvents start shift moves every occurrence by the time delta',
         () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
@@ -2322,17 +2342,8 @@ void main() {
       // Weekly on Mon/Wed/Fri, anchored on Mon 2 Nov 2026. +2 days lands on
       // Wed 4 Nov, a day the rule generates, so the move needs no new rule.
       final anchor = DateTime.utc(2026, 11, 2, 15);
-      final series = await createWeeklySeries(plugin, calendarId!,
-          count: 6,
-          daysOfWeek: [
-            DayOfWeek.monday,
-            DayOfWeek.wednesday,
-            DayOfWeek.friday,
-          ],
-          start: anchor);
-      final before = await occurrencesOf(
-          plugin, calendarId!, series.eventId, anchor,
-          windowDays: 30);
+      final series = await createMwfSeries();
+      final before = series.occurrences;
       expect(before.length, 6);
 
       await plugin.updateRecurring(
@@ -2364,17 +2375,8 @@ void main() {
       // an allEvents move shifts the series start by the same +3 days, onto
       // Thu 5 Nov, which it doesn't (#189).
       final anchor = DateTime.utc(2026, 11, 2, 15);
-      final series = await createWeeklySeries(plugin, calendarId!,
-          count: 6,
-          daysOfWeek: [
-            DayOfWeek.monday,
-            DayOfWeek.wednesday,
-            DayOfWeek.friday,
-          ],
-          start: anchor);
-      final before = await occurrencesOf(
-          plugin, calendarId!, series.eventId, anchor,
-          windowDays: 30);
+      final series = await createMwfSeries();
+      final before = series.occurrences;
       expect(before.length, 6);
       final friday = before[2];
       expect(friday.startDate.toUtc(), DateTime.utc(2026, 11, 6, 15));
@@ -2393,6 +2395,76 @@ void main() {
           windowDays: 30);
       expect(startsOf(after), startsOf(before),
           reason: 'a refused move must leave the series as it was');
+    });
+
+    test(
+        'thisAndFollowing day shift onto another ordinal of a pinned BYDAY '
+        'throws', () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      // Yearly on the 4th Thursday of November, anchored on Thu 26 Nov 2026.
+      // Splitting at the Thu 25 Nov 2027 occurrence and moving it -7 days
+      // lands the new series on Thu 18 Nov 2027, the 3rd Thursday, which the
+      // kept rule doesn't generate (#189).
+      final anchor = DateTime.utc(2026, 11, 26, 15);
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId!,
+        title: 'Thanksgiving Ordinal Split Series',
+        startDate: anchor,
+        endDate: anchor.add(const Duration(hours: 1)),
+        recurrenceRule: YearlyRecurrence.byWeekday(
+          months: [11],
+          daysOfWeek: [RecurrenceDay(DayOfWeek.thursday, position: 4)],
+          end: const CountEnd(3),
+        ),
+        timeZone: 'UTC',
+      );
+      final before = await occurrencesOf(plugin, calendarId!, eventId, anchor,
+          windowDays: 800);
+      expect(before.length, 3,
+          reason: 'the yearly series should have expanded into occurrences');
+      final second = before[1];
+      expect(second.startDate.toUtc(), DateTime.utc(2027, 11, 25, 15));
+
+      await expectLater(
+        plugin.updateRecurring(
+          second.instanceId,
+          EventSpan.thisAndFollowing,
+          start: second.startDate.subtract(const Duration(days: 7)),
+        ),
+        throwsInvalidArguments(),
+      );
+
+      final after = await occurrencesOf(plugin, calendarId!, eventId, anchor,
+          windowDays: 800);
+      expect(startsOf(after), startsOf(before),
+          reason: 'a refused split must leave the series as it was');
+    });
+
+    test(
+        'time-only shift of a series start the explicit-BYDAY rule does not '
+        'generate is allowed', () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      // A Mon/Wed/Fri series whose start sits on Tue 3 Nov 2026, off its
+      // rule, as one anchored by another app can. Retiming that first
+      // occurrence +2h on the same Tuesday isn't a day move, so it must not
+      // be refused, though the rule doesn't generate the day (#189).
+      final start = DateTime.utc(2026, 11, 3, 15);
+      final series = await createMwfSeries(start: start);
+      final before = series.occurrences;
+      expect(before, isNotEmpty);
+      expect(before.first.startDate.toUtc(), start,
+          reason: 'the off-rule start shows as the first occurrence');
+
+      await plugin.updateRecurring(
+        before.first.instanceId,
+        EventSpan.allEvents,
+        start: before.first.startDate.add(const Duration(hours: 2)),
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, start,
+          windowDays: 30);
+      expectShifted(before, after, const Duration(hours: 2));
     });
 
     test('time-only shift on an explicit-BYDAY rule is allowed', () async {

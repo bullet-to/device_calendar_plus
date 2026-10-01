@@ -117,14 +117,13 @@ internal class SplitShift private constructor(
  * shifted start onto the first day it generates, keeping its wall-clock time,
  * and fails with INVALID_ARGUMENTS when it generates nothing within five
  * years. With no new rule, [keptRule] (the rule the series keeps; null when
- * the edit sets or clears one, or the event doesn't recur) must generate
- * [targetStart]'s day and, when the shift moves the start to another day,
- * the shifted start's day too, each read in the post-edit zone with the
- * parts the rule leaves implicit taken from that day
- * ([RecurrenceAnchor.generates]); otherwise the move fails with
- * INVALID_ARGUMENTS. A time-only move leaves a start the rule doesn't
- * generate (one anchored off its rule by another app, or in another zone)
- * where it is. The duration is overridden when [durationMinutes] is given.
+ * the edit sets or clears one, or the event doesn't recur) must generate the
+ * days the move lands on ([leavesRule]); otherwise the move fails with
+ * INVALID_ARGUMENTS. [wasAllDay] is the series' frame before the edit, which
+ * frames [referenceMillis]'s day for that check. A time-only move leaves a
+ * start the rule doesn't generate (one anchored off its rule by another app,
+ * or in another zone) where it is. The duration is overridden when
+ * [durationMinutes] is given.
  */
 internal fun resolveSeriesTimes(
     baseMillis: Long,
@@ -135,7 +134,8 @@ internal fun resolveSeriesTimes(
     rrule: String?,
     timeZoneId: String?,
     isAllDay: Boolean,
-    keptRule: String? = null
+    wasAllDay: Boolean,
+    keptRule: String?
 ): Result<Pair<Long, Long>> {
     val tz = seriesTimeZone(timeZoneId, isAllDay)
     // A slot copies the new start's time of day, already whole seconds.
@@ -147,11 +147,15 @@ internal fun resolveSeriesTimes(
     } else {
         baseMillis
     }
-    if (targetStart != null && keptRule != null && (
-            !RecurrenceAnchor.generates(keptRule, targetStart, tz) ||
-                (calendarDaysBetween(baseMillis, shiftedStart, tz) != 0 &&
-                    !RecurrenceAnchor.generates(keptRule, shiftedStart, tz))
-            )
+    if (targetStart != null && keptRule != null && leavesRule(
+            keptRule,
+            referenceMillis = referenceMillis,
+            referenceZone = seriesTimeZone(timeZoneId, wasAllDay),
+            baseMillis = baseMillis,
+            targetStart = targetStart,
+            shiftedStart = shiftedStart,
+            tz = tz
+        )
     ) {
         return Result.failure(
             CalendarException(
@@ -185,6 +189,42 @@ internal fun resolveSeriesTimes(
         wholeSeconds(existingDurationMillis)
     }
     return Result.success(Pair(newStart, newDurationMs))
+}
+
+/**
+ * Whether a start move leaves [rule]'s days: it moves the occurrence at
+ * [referenceMillis] to another day, [targetStart]'s, that the rule doesn't
+ * generate, or the shift moves the series start [baseMillis] to another day,
+ * [shiftedStart]'s, that it doesn't. Days are read in the post-edit zone
+ * [tz], with the parts the rule leaves implicit taken from that day
+ * ([RecurrenceAnchor.generates]), except the reference's, which is read in
+ * [referenceZone], the zone it was stored in: an all-day toggle onto a local
+ * day that differs from the stored day is a day move. A same-day retime is
+ * not, so it never fails on a start the rule doesn't generate. iOS's
+ * counterpart is `SeriesDates.leavesRule`.
+ */
+private fun leavesRule(
+    rule: String,
+    referenceMillis: Long,
+    referenceZone: TimeZone,
+    baseMillis: Long,
+    targetStart: Long,
+    shiftedStart: Long,
+    tz: TimeZone
+): Boolean {
+    val targetMovesDay =
+        !sameCalendarDay(referenceMillis, referenceZone, targetStart, tz)
+    if (targetMovesDay && !RecurrenceAnchor.generates(rule, targetStart, tz)) return true
+    return calendarDaysBetween(baseMillis, shiftedStart, tz) != 0 &&
+        !RecurrenceAnchor.generates(rule, shiftedStart, tz)
+}
+
+/** Whether [a] read in [aZone] falls on the same calendar date as [b] in [bZone]. */
+private fun sameCalendarDay(a: Long, aZone: TimeZone, b: Long, bZone: TimeZone): Boolean {
+    val ac = Calendar.getInstance(aZone).apply { timeInMillis = a }
+    val bc = Calendar.getInstance(bZone).apply { timeInMillis = b }
+    return ac.get(Calendar.YEAR) == bc.get(Calendar.YEAR) &&
+        ac.get(Calendar.DAY_OF_YEAR) == bc.get(Calendar.DAY_OF_YEAR)
 }
 
 /**
