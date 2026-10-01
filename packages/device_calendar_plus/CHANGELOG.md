@@ -1,4 +1,4 @@
-## Unreleased (0.10.0)
+## 0.10.0 - 2026-09-30
 
 ### Changed
 - **Breaking:** `updateEvent` and `deleteEvent` act on one thing — a one-off
@@ -20,7 +20,39 @@
   - `deleteEvent(eventId: seriesId)` on a recurring event →
     `deleteRecurring(seriesId, EventSpan.allEvents)`.
 
+### Added
+- `updateRecurring` takes `reminders` (a `Patch<List<Duration>>`), to set or
+  clear reminders across a series, as `updateEvent` does for one event (#175).
+
 ### Fixed
+
+**Recurring events**
+- `updateRecurring` with `thisAndFollowing` on an event that doesn't repeat
+  is refused with `invalidArguments` on both platforms, and nothing is
+  written. iOS matched the timestamp against the event itself, so it edited
+  or deleted the whole event and reported success (#124).
+- Android: moving an all-day series with `updateRecurring` lands on the day
+  you asked for. The new start was compared in the wrong timezone: west of
+  UTC a same-day start was refused and a day-earlier move onto a day the rule
+  doesn't generate got through; east of UTC (e.g. Sydney) a one-day move did
+  nothing (#144).
+- iOS: switching a timed series to all-day with `updateRecurring` keeps every
+  occurrence on its calendar day. West of UTC the series gained an extra
+  occurrence the day before its start and lost its last one (#187).
+- iOS: `updateRecurring` refuses a start move with no new rule when it breaks
+  any day the rule pins, as Android does. A yearly
+  `BYMONTH=11;BYDAY=4TH` series could be moved to a Thursday in December
+  (#188).
+- `createEvent` and `updateRecurring` refuse a recurrence rule whose `FREQ`
+  isn't `DAILY`/`WEEKLY`/`MONTHLY`/`YEARLY`, or that is malformed, with
+  `invalidArguments` and write nothing, on both platforms. iOS `createEvent`
+  dropped the rule and saved a one-off event; Android stored `FREQ=HOURLY`
+  as an hourly series (#125).
+- Android: `updateEvent` or `deleteEvent` on one occurrence of a series on a
+  synced calendar (Google, Exchange) no longer hides the whole series when
+  the series hasn't synced yet (#163).
+
+**Native modals**
 - The native modals (`showEventModal`, `showCreateEventModal`) always
   complete; several paths used to leave the `await` hanging or crash (#123):
   - One modal at a time: a call while another modal is showing throws
@@ -40,9 +72,10 @@
     `DeviceCalendarException(notFound)`, as iOS does. It used to open the
     calendar app on nothing and complete normally.
 
-### Added
-- `updateRecurring` takes `reminders` (a `Patch<List<Duration>>`), to set or
-  clear reminders across a series, as `updateEvent` does for one event (#175).
+**Permissions**
+- iOS 18: answering a full-access prompt with **Add Events Only** reports
+  `writeOnly` rather than `notDetermined`, so a `createEvent` straight after
+  the prompt passes its permission check (#137).
 
 ## 0.9.0 - 2026-09-26
 

@@ -1,4 +1,4 @@
-## Unreleased
+## 0.9.0 - 2026-09-30
 
 ### Changed
 - **Breaking:** `updateEvent` and `deleteEvent` without a `timestamp` refuse
@@ -9,6 +9,12 @@
   event it leaves, as Android does (#175).
 
 ### Fixed
+- `updateRecurring(allEvents)` switching a timed series to all-day shifts the
+  start in local time, where EventKit puts all-day events. It shifted in the
+  series' stored zone, so a UTC-stored series landed on UTC midnight, which
+  west of UTC is the day before: the series gained an extra first occurrence
+  off its BYDAY and lost its last one. The day-move check reads each date in
+  its own zone too (#187).
 - `updateRecurring` and `deleteRecurring` with `thisAndFollowing` refuse a
   non-recurring event with `INVALID_ARGUMENTS` and write nothing, as Android
   does. A timestamp that fell inside the event matched it, so the whole event

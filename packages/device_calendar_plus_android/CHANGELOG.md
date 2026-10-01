@@ -1,4 +1,4 @@
-## Unreleased
+## 0.9.0 - 2026-09-30
 
 ### Changed
 - **Breaking:** `updateEvent` and `deleteEvent` without a `timestamp` refuse
@@ -11,6 +11,11 @@
 - `updateRecurring` forwards a `reminders` patch (#175).
 
 ### Fixed
+- `updateRecurring` on an all-day series converts the new `start` to the
+  stored UTC midnight before comparing it, as `updateEvent` already did. West
+  of UTC a same-day start was refused and a day-earlier move onto a day the
+  rule doesn't generate got through; east of UTC a one-day move counted as
+  zero days and the series stayed put (#144).
 - Modal plumbing (#123): a second `showEventModal`/`showCreateEventModal`
   while one is showing fails `OPERATION_FAILED` instead of orphaning the
   first reply; a pending modal survives a configuration change (rotation)
