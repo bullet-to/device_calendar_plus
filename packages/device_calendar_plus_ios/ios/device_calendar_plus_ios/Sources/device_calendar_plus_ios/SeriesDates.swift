@@ -82,6 +82,16 @@ enum SeriesDates {
       || movesOffRule(from: base, fromZone: timeZone, to: shifted)
   }
 
+  /// Whether `rule` pins the days it falls on (BYDAY, BYMONTHDAY, BYMONTH or
+  /// BYSETPOS) rather than taking them from its start. Android's
+  /// counterpart is `RruleString.pinsDays`.
+  private static func pinsDays(_ rule: EKRecurrenceRule) -> Bool {
+    return !(rule.daysOfTheWeek ?? []).isEmpty
+      || !(rule.daysOfTheMonth ?? []).isEmpty
+      || !(rule.monthsOfTheYear ?? []).isEmpty
+      || !(rule.setPositions ?? []).isEmpty
+  }
+
   /// Whether `a` read in `aZone` falls on the same calendar date as `b` in `bZone`.
   private static func sameCalendarDay(
     _ a: Date, _ aZone: TimeZone, _ b: Date, _ bZone: TimeZone
@@ -119,7 +129,8 @@ enum SeriesDates {
   ///   frame, onto the first day it generates; a cleared rule needs
   ///   neither. A time-only move leaves a start the kept rule doesn't
   ///   generate (one anchored off its rule by another app, or in another
-  ///   zone) where it is.
+  ///   zone) where it is. A `splitsSeries` (thisAndFollowing) move onto
+  ///   another day is also refused while the kept rule pins days (#194).
   ///
   /// Fails with `invalidArguments` when a start move lands on a day the kept
   /// rule doesn't generate or the new rule generates nothing within five
@@ -132,6 +143,7 @@ enum SeriesDates {
     reference: Date,
     isAllDay: Bool,
     ruleEdit: SeriesRuleEdit,
+    splitsSeries: Bool,
     deviceZone: TimeZone
   ) -> Result<Date, CalendarError> {
     let storedFrame = storedZone ?? deviceZone
@@ -149,16 +161,29 @@ enum SeriesDates {
         ))
       }
 
-      if case .keep(let keptRule?) = ruleEdit,
-         leavesRule(
-           keptRule, reference: reference, referenceZone: storedFrame,
-           base: base, target: target, shifted: shifted, timeZone: editFrame
-         ) {
-        return .failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "start moves this series onto a day its recurrence rule "
-            + "doesn't generate. Pass a recurrenceRule to specify the new pattern."
-        ))
+      if case .keep(let keptRule?) = ruleEdit {
+        // EventKit can't split a series whose rule pins days at an
+        // occurrence moved to another day: `.futureEvents` detaches it
+        // instead (#194). Refused on both platforms until it can.
+        if splitsSeries, pinsDays(keptRule),
+           !sameCalendarDay(reference, storedFrame, target, editFrame) {
+          return .failure(CalendarError(
+            code: PlatformExceptionCodes.invalidArguments,
+            message: "start moves a thisAndFollowing split onto another day, but "
+              + "the series' recurrence rule pins specific days. Pass a "
+              + "recurrenceRule to specify the new pattern."
+          ))
+        }
+        if leavesRule(
+          keptRule, reference: reference, referenceZone: storedFrame,
+          base: base, target: target, shifted: shifted, timeZone: editFrame
+        ) {
+          return .failure(CalendarError(
+            code: PlatformExceptionCodes.invalidArguments,
+            message: "start moves this series onto a day its recurrence rule "
+              + "doesn't generate. Pass a recurrenceRule to specify the new pattern."
+          ))
+        }
       }
       start = shifted
     }

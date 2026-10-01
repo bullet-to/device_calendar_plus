@@ -21,7 +21,8 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   /// Moves the occurrence at `reference` (the series start when nil) of a
   /// timed `rule` series that starts at `from` to `to`, keeping the rule.
   private func move(
-    _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil
+    _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil,
+    splitsSeries: Bool = false
   ) -> Result<Date, CalendarError> {
     return SeriesDates.resolveSeriesStart(
       base: from,
@@ -30,6 +31,7 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
       reference: reference ?? from,
       isAllDay: false,
       ruleEdit: .keep(rule),
+      splitsSeries: splitsSeries,
       deviceZone: stockholm
     )
   }
@@ -166,5 +168,34 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
       fourthThursday, from: at(2026, 10, 22), to: at(2026, 12, 24),
       reference: at(2026, 11, 26)
     ))
+  }
+
+  // A thisAndFollowing split onto another day the rule lists: Wed 4 Nov
+  // 2026 -> Fri 6 Nov. EventKit can't split a series whose rule pins days at
+  // a moved occurrence (#194), so both platforms refuse it for now; the same
+  // move through allEvents is allowed above.
+  func testRefusesASplitOntoAnotherListedDayOfAPinnedRule() {
+    assertRefused(
+      move(mondayWednesdayFriday, from: at(2026, 11, 4), to: at(2026, 11, 6), splitsSeries: true)
+    )
+  }
+
+  func testAllowsATimeOnlySplitOfAPinnedRule() {
+    let target = at(2026, 11, 4, hour: 15)
+    XCTAssertEqual(
+      try move(
+        mondayWednesdayFriday, from: at(2026, 11, 4), to: target, splitsSeries: true
+      ).get(),
+      target
+    )
+  }
+
+  // A rule that pins no day follows the split's new start.
+  func testAllowsASplitDayMoveOfAnImplicitRule() {
+    let target = at(2026, 11, 6)
+    XCTAssertEqual(
+      try move(rule(.weekly), from: at(2026, 11, 4), to: target, splitsSeries: true).get(),
+      target
+    )
   }
 }

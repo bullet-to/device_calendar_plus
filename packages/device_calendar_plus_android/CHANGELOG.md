@@ -7,7 +7,9 @@
   (the 4th Thursday of November, say) could move to another occurrence of its
   weekday (the 3rd Thursday), leaving DTSTART on a day the rule never
   generates (#189). A move onto another day the rule generates (Monday to
-  Wednesday of a Mon/Wed/Fri rule) is now allowed.
+  Wednesday of a Mon/Wed/Fri rule) is now allowed through `allEvents`; with
+  `thisAndFollowing` a move to another day still throws while the rule pins
+  days, until iOS can split such a series (#194).
 
 ## 0.9.0 - 2026-09-30
 

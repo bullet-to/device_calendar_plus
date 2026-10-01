@@ -719,8 +719,10 @@ class DeviceCalendar {
   /// `WeeklyRecurrence(daysOfWeek: …)` doesn't list, or the 3rd Thursday of a
   /// 4th-Thursday rule) throws
   /// [DeviceCalendarException] ([DeviceCalendarError.invalidArguments]),
-  /// because the result is ambiguous. Implicit rules and time-only changes
-  /// follow the anchor freely. See
+  /// because the result is ambiguous. With [EventSpan.thisAndFollowing], a
+  /// move to another day throws whenever the rule pins days, even onto a day
+  /// it generates, until iOS can split such a series (#194). Implicit rules
+  /// and time-only changes follow the anchor freely. See
   /// [doc/recurring-events.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/recurring-events.md).
   ///
   /// Returns the affected scope's event ID (the same ID for `allEvents`, the new

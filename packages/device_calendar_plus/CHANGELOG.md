@@ -9,7 +9,9 @@
   the rule never generates; that now throws
   `DeviceCalendarException(invalidArguments)`. A move onto another day the
   rule generates (Monday to Wednesday of a Mon/Wed/Fri rule), which used to
-  throw, is now allowed (#189).
+  throw, is now allowed through `EventSpan.allEvents`. With
+  `thisAndFollowing` a move to another day still throws while the rule pins
+  days (#189, #194).
 
 ## 0.10.0 - 2026-09-30
 

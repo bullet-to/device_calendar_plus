@@ -2434,6 +2434,37 @@ void main() {
     });
 
     test(
+        'thisAndFollowing day shift onto another listed weekday of an '
+        'explicit-BYDAY rule throws', () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      // Weekly on Mon/Wed/Fri. Splitting at Wed 11 Nov 2026 and moving it +2
+      // days lands on Fri 13 Nov, a day the rule generates, but EventKit's
+      // .futureEvents save detaches the occurrence instead of splitting a
+      // series whose rule pins days (#194). Refused on both platforms until
+      // iOS can split it; the same move through allEvents is allowed.
+      final series = await createMwfSeries();
+      final before = series.occurrences;
+      expect(before.length, 6);
+      final wednesday = before[4];
+      expect(wednesday.startDate.toUtc(), DateTime.utc(2026, 11, 11, 15));
+
+      await expectLater(
+        plugin.updateRecurring(
+          wednesday.instanceId,
+          EventSpan.thisAndFollowing,
+          start: wednesday.startDate.add(const Duration(days: 2)),
+        ),
+        throwsInvalidArguments(mentioning: 'pins specific days'),
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.anchor,
+          windowDays: 30);
+      expect(startsOf(after), startsOf(before),
+          reason: 'a refused split must leave the series as it was');
+    });
+
+    test(
         'time-only shift of a series start the explicit-BYDAY rule does not '
         'generate is allowed', () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');

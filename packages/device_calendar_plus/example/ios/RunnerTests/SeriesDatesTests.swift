@@ -54,6 +54,7 @@ final class SeriesDatesTests: XCTestCase {
       reference: base,
       isAllDay: isAllDay,
       ruleEdit: ruleEdit ?? .keep(thursdays),
+      splitsSeries: false,
       deviceZone: deviceZone
     )
   }

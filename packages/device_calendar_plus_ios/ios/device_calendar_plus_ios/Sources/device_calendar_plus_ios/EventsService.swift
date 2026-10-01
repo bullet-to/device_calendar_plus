@@ -1151,7 +1151,8 @@ class EventsService {
     newStartMillis: Int64?,
     timestamp: Int64?,
     isAllDay: Bool,
-    ruleEdit: SeriesRuleEdit
+    ruleEdit: SeriesRuleEdit,
+    splitsSeries: Bool
   ) -> Result<Date, CalendarError> {
     let target = newStartMillis.map {
       Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
@@ -1166,6 +1167,7 @@ class EventsService {
       reference: reference,
       isAllDay: isAllDay,
       ruleEdit: ruleEdit,
+      splitsSeries: splitsSeries,
       deviceZone: .current
     )
   }
@@ -1311,7 +1313,8 @@ class EventsService {
       newStartMillis: newStartMillis,
       timestamp: timestamp,
       isAllDay: effectiveIsAllDay,
-      ruleEdit: ruleEdit
+      ruleEdit: ruleEdit,
+      splitsSeries: span == "thisAndFollowing"
     ) {
     case .success(let start):
       newStart = start

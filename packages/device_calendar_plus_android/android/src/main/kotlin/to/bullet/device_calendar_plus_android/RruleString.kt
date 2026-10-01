@@ -17,6 +17,7 @@ internal object RruleString {
 
     /** The frequencies iOS EventKit can express, and so the plugin's contract. */
     private val SUPPORTED_FREQUENCIES = setOf("DAILY", "WEEKLY", "MONTHLY", "YEARLY")
+    private val DAY_PARTS = setOf("BYDAY", "BYMONTHDAY", "BYMONTH", "BYSETPOS")
 
     /** [rrule] without its `RRULE:` prefix, if it has one. */
     fun body(rrule: String): String =
@@ -58,6 +59,12 @@ internal object RruleString {
      */
     fun hasSupportedFrequency(rrule: String): Boolean =
         params(rrule)["FREQ"] in SUPPORTED_FREQUENCIES
+
+    /**
+     * Whether [rrule] pins the days it falls on (BYDAY, BYMONTHDAY, BYMONTH
+     * or BYSETPOS) rather than taking them from its start.
+     */
+    fun pinsDays(rrule: String): Boolean = params(rrule).keys.any { it in DAY_PARTS }
 
     /** The rule's COUNT, or null when it has none. */
     fun count(rrule: String): Int? = params(rrule)["COUNT"]?.toIntOrNull()

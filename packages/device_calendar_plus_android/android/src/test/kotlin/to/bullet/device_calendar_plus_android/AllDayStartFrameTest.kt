@@ -47,6 +47,7 @@ internal class AllDayStartFrameTest {
         ),
         durationMinutes = null,
         ruleEdit = ruleEdit,
+        splitsSeries = false,
         isAllDay = effectiveIsAllDay,
         timeZoneId = zone.id,
         storedZone = storedZone

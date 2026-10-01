@@ -1065,6 +1065,7 @@ class EventsService(
             targetStart = targetStart,
             durationMinutes = durationMinutes,
             ruleEdit = ruleEdit,
+            splitsSeries = false,
             isAllDay = effectiveIsAllDay,
             timeZoneId = row.timeZone,
             storedZone = seriesTimeZone(row.timeZone, row.allDay)
@@ -1191,6 +1192,7 @@ class EventsService(
             targetStart = targetStart,
             durationMinutes = durationMinutes,
             ruleEdit = ruleEdit,
+            splitsSeries = true,
             isAllDay = effectiveIsAllDay,
             timeZoneId = row.timeZone,
             storedZone = seriesTimeZone(row.timeZone, row.allDay)

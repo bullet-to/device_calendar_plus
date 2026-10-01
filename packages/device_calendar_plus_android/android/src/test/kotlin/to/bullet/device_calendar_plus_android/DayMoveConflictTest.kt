@@ -23,7 +23,13 @@ internal class DayMoveConflictTest {
      * starts at [base] to [to], keeping the rule; the series' new start, or
      * the refusal.
      */
-    private fun move(rrule: String, base: Long, to: Long, reference: Long = base) =
+    private fun move(
+        rrule: String,
+        base: Long,
+        to: Long,
+        reference: Long = base,
+        splitsSeries: Boolean = false
+    ) =
         resolveSeriesTimes(
             baseMillis = base,
             referenceMillis = reference,
@@ -31,6 +37,7 @@ internal class DayMoveConflictTest {
             targetStart = to,
             durationMinutes = null,
             ruleEdit = SeriesRuleEdit.Keep(rrule),
+            splitsSeries = splitsSeries,
             isAllDay = false,
             timeZoneId = utc.id,
             storedZone = utc
@@ -162,5 +169,35 @@ internal class DayMoveConflictTest {
         move(
             "FREQ=MONTHLY;BYDAY=4TH", at(10, 22), at(12, 24), reference = at(11, 26)
         ).assertRefused()
+    }
+
+    // A thisAndFollowing split onto another day the rule lists: Wed 4 Nov
+    // 2026 -> Fri 6 Nov. EventKit can't split a series whose rule pins days
+    // at a moved occurrence (#194), so both platforms refuse it for now; the
+    // same move through allEvents is allowed above.
+    @Test
+    fun resolveSeriesTimes_split_pinnedRule_moveOntoAnotherListedDay_refused() {
+        move("FREQ=WEEKLY;BYDAY=MO,WE,FR", at(11, 4), at(11, 6), splitsSeries = true)
+            .assertRefused()
+    }
+
+    @Test
+    fun resolveSeriesTimes_split_pinnedRule_timeOnlyMove_allowed() {
+        val target = at(11, 4, hour = 15)
+        assertEquals(
+            target,
+            move("FREQ=WEEKLY;BYDAY=MO,WE,FR", at(11, 4), target, splitsSeries = true)
+                .getOrThrow()
+        )
+    }
+
+    // A rule that pins no day follows the split's new start.
+    @Test
+    fun resolveSeriesTimes_split_implicitRule_dayMove_allowed() {
+        val target = at(11, 6)
+        assertEquals(
+            target,
+            move("FREQ=WEEKLY", at(11, 4), target, splitsSeries = true).getOrThrow()
+        )
     }
 }
