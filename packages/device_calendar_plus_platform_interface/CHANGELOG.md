@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.0 - 2026-09-30
 
 ### Changed
 - **Breaking:** `updateRecurring` gains a `Patch<List<int>>? reminders`
