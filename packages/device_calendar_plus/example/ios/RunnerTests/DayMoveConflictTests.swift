@@ -26,12 +26,10 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
     return SeriesDates.resolveSeriesStart(
       base: from,
       storedZone: stockholm,
-      existingRule: rule,
       target: to,
       reference: reference ?? from,
       isAllDay: false,
-      rule: nil,
-      changingRule: false,
+      ruleEdit: .keep(rule),
       deviceZone: stockholm
     )
   }

@@ -1,6 +1,15 @@
 import EventKit
 import Foundation
 
+/// What a series edit does to its recurrence rule: keep the one it has
+/// (`nil` when the event doesn't recur), replace it, or clear it. Android's
+/// counterpart is `SeriesRuleEdit` in `SeriesDates.kt`.
+enum SeriesRuleEdit {
+  case keep(EKRecurrenceRule?)
+  case replace(EKRecurrenceRule)
+  case clear
+}
+
 /// The date arithmetic behind a series update: which zone frames a series'
 /// calendar days, whether an anchor move lands on a day the rule generates,
 /// and the start the update leaves the series with. Pure — the device
@@ -44,16 +53,13 @@ enum SeriesDates {
     )
   }
 
-  /// Whether a start move leaves `rule`'s days: it moves the occurrence at
-  /// `reference` to another day, `target`'s, that the rule doesn't generate,
-  /// or the shift moves `base` to another day, `shifted`'s, that it doesn't.
-  /// Days are read in `timeZone` (the edit frame), with the parts the rule
-  /// leaves implicit taken from that day (`RecurrenceAnchor.generates`),
-  /// except `reference`'s, which is read in `referenceZone`, the stored
-  /// frame: an all-day toggle onto a local day that differs from the stored
-  /// day is a day move. A same-day retime is not, so it never fails on a
-  /// start the rule doesn't generate. Android's counterpart is `leavesRule`
-  /// in `SeriesDates.kt`.
+  /// Whether a start move leaves `rule`'s days: either move lands on another
+  /// day, read in `timeZone` (the edit frame), that the rule doesn't
+  /// generate (`RecurrenceAnchor.generates`). `reference` to `target`
+  /// guards the caller's intent; `reference` is read in `referenceZone`,
+  /// the stored frame, so an all-day toggle onto another local day is a day
+  /// move. `base` to `shifted` guards against the #140 orphan. Android's
+  /// counterpart is `leavesRule` in `SeriesDates.kt`.
   private static func leavesRule(
     _ rule: EKRecurrenceRule,
     reference: Date,
@@ -63,17 +69,24 @@ enum SeriesDates {
     shifted: Date,
     timeZone: TimeZone
   ) -> Bool {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = timeZone
-    var referenceCalendar = Calendar(identifier: .gregorian)
-    referenceCalendar.timeZone = referenceZone
-    let targetMovesDay = referenceCalendar.dateComponents([.year, .month, .day], from: reference)
-      != calendar.dateComponents([.year, .month, .day], from: target)
-    if targetMovesDay && !RecurrenceAnchor.generates(rule, day: target, timeZone: timeZone) {
-      return true
+    func movesOffRule(from: Date, fromZone: TimeZone, to: Date) -> Bool {
+      return !sameCalendarDay(from, fromZone, to, timeZone)
+        && !RecurrenceAnchor.generates(rule, day: to, timeZone: timeZone)
     }
-    return !calendar.isDate(shifted, inSameDayAs: base)
-      && !RecurrenceAnchor.generates(rule, day: shifted, timeZone: timeZone)
+    return movesOffRule(from: reference, fromZone: referenceZone, to: target)
+      || movesOffRule(from: base, fromZone: timeZone, to: shifted)
+  }
+
+  /// Whether `a` read in `aZone` falls on the same calendar date as `b` in `bZone`.
+  private static func sameCalendarDay(
+    _ a: Date, _ aZone: TimeZone, _ b: Date, _ bZone: TimeZone
+  ) -> Bool {
+    var aCalendar = Calendar(identifier: .gregorian)
+    aCalendar.timeZone = aZone
+    var bCalendar = Calendar(identifier: .gregorian)
+    bCalendar.timeZone = bZone
+    return aCalendar.dateComponents([.year, .month, .day], from: a)
+      == bCalendar.dateComponents([.year, .month, .day], from: b)
   }
 
   /// The start a series update leaves a series with: `base` (its current
@@ -95,12 +108,13 @@ enum SeriesDates {
   ///   invariant, or read them in the stored frame, when changing either
   ///   input.
   /// - The new start must be a day the series' rule generates, or EventKit
-  ///   shows it as an extra first occurrence (#140, #189). A new `rule`
-  ///   walks the shifted start, in the edit frame, onto the first day it
-  ///   generates. Unless `changingRule`, `existingRule` must generate the
-  ///   days the move lands on (`leavesRule`). A time-only move leaves a
-  ///   start the rule doesn't generate (one anchored off its rule by another
-  ///   app, or in another zone) where it is.
+  ///   shows it as an extra first occurrence (#140, #189). `ruleEdit`
+  ///   decides how: a kept rule must generate the days the move lands on
+  ///   (`leavesRule`); a replacing rule walks the shifted start, in the edit
+  ///   frame, onto the first day it generates; a cleared rule needs
+  ///   neither. A time-only move leaves a start the kept rule doesn't
+  ///   generate (one anchored off its rule by another app, or in another
+  ///   zone) where it is.
   ///
   /// Fails with `invalidArguments` when a start move lands on a day the kept
   /// rule doesn't generate or the new rule generates nothing within five
@@ -109,12 +123,10 @@ enum SeriesDates {
   static func resolveSeriesStart(
     base: Date,
     storedZone: TimeZone?,
-    existingRule: EKRecurrenceRule?,
     target: Date?,
     reference: Date,
     isAllDay: Bool,
-    rule: EKRecurrenceRule?,
-    changingRule: Bool,
+    ruleEdit: SeriesRuleEdit,
     deviceZone: TimeZone
   ) -> Result<Date, CalendarError> {
     let storedFrame = storedZone ?? deviceZone
@@ -132,9 +144,9 @@ enum SeriesDates {
         ))
       }
 
-      if !changingRule, let existingRule = existingRule,
+      if case .keep(let keptRule?) = ruleEdit,
          leavesRule(
-           existingRule, reference: reference, referenceZone: storedFrame,
+           keptRule, reference: reference, referenceZone: storedFrame,
            base: base, target: target, shifted: shifted, timeZone: editFrame
          ) {
         return .failure(CalendarError(
@@ -146,7 +158,7 @@ enum SeriesDates {
       start = shifted
     }
 
-    if let rule = rule {
+    if case .replace(let rule) = ruleEdit {
       guard let anchored = RecurrenceAnchor.firstMatch(
         of: rule, onOrAfter: start, timeZone: editFrame
       ) else {

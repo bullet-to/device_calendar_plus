@@ -28,11 +28,10 @@ internal class SeriesTimesTest {
         existingDurationMillis = duration,
         targetStart = null,
         durationMinutes = durationMinutes,
-        rrule = rrule,
+        ruleEdit = rrule?.let { SeriesRuleEdit.Replace(it) } ?: SeriesRuleEdit.Keep(null),
         timeZoneId = "America/New_York",
         isAllDay = false,
-        wasAllDay = false,
-        keptRule = null
+        storedZone = newYork
     ).getOrThrow()
 
     // Rewriting the start would orphan detached occurrences keyed at the
