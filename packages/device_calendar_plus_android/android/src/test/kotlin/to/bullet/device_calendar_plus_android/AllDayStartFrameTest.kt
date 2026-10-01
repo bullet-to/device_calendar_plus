@@ -48,8 +48,8 @@ internal class AllDayStartFrameTest {
         durationMinutes = null,
         ruleEdit = ruleEdit,
         isAllDay = effectiveIsAllDay,
-        storedZone = storedZone,
-        editZone = seriesTimeZone(zone.id, effectiveIsAllDay)
+        timeZoneId = zone.id,
+        storedZone = storedZone
     ).map { it.first }
 
     /**

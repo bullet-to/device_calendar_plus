@@ -126,16 +126,16 @@ internal sealed class SeriesRuleEdit {
  * [targetStart] is already in the frame after the edit
  * ([resolveTargetStart]), while [baseMillis] and [referenceMillis] are in
  * the row's stored frame [storedZone], yet the shift reads all three in the
- * one post-edit zone [editZone]. Callers build both with [seriesTimeZone]:
- * [storedZone] from the row, [editZone] from the series after the edit
- * ([isAllDay] is its all-day state then). [editZone] differs from
- * [storedZone] only when the same edit toggles all-day, and it is still safe then: base and reference are
- * the same instant or occurrences of the same series at the same wall-clock
- * time, so the wrong zone moves both onto the same wrong day (unless a DST
- * change between them carries just one across the other zone's midnight),
- * the error cancels out of the day delta, and [SplitShift.slot] then resets
- * the time of day for the new frame. Keep that invariant, or read them in
- * [storedZone], when changing either input.
+ * one post-edit zone, `seriesTimeZone(timeZoneId, isAllDay)` ([isAllDay] is
+ * the series' all-day state after the edit). That zone differs from
+ * [storedZone] only when the same edit toggles all-day, and it is still
+ * safe then: base and reference are the same instant or occurrences of the
+ * same series at the same wall-clock time, so the wrong zone moves both
+ * onto the same wrong day (unless a DST change between them carries just
+ * one across the other zone's midnight), the error cancels out of the day
+ * delta, and [SplitShift.slot] then resets the time of day for the new
+ * frame. Keep that invariant, or read them in [storedZone], when changing
+ * either input.
  *
  * The new start must be a day the series' rule generates, or the provider
  * emits it as an extra first occurrence (#140, #189). [ruleEdit] decides
@@ -156,9 +156,10 @@ internal fun resolveSeriesTimes(
     durationMinutes: Int?,
     ruleEdit: SeriesRuleEdit,
     isAllDay: Boolean,
-    storedZone: TimeZone,
-    editZone: TimeZone
+    timeZoneId: String?,
+    storedZone: TimeZone
 ): Result<Pair<Long, Long>> {
+    val editZone = seriesTimeZone(timeZoneId, isAllDay)
     // A slot copies the new start's time of day, already whole seconds.
     // With no new start the stored start is kept as is, even with millis
     // from an older version or another app: rewriting it would orphan
@@ -168,29 +169,28 @@ internal fun resolveSeriesTimes(
     } else {
         baseMillis
     }
+    val keptRule = (ruleEdit as? SeriesRuleEdit.Keep)?.rule
+    if (targetStart != null && keptRule != null && leavesRule(
+            keptRule,
+            referenceMillis = referenceMillis,
+            referenceZone = storedZone,
+            baseMillis = baseMillis,
+            targetStart = targetStart,
+            shiftedStart = shiftedStart,
+            tz = editZone
+        )
+    ) {
+        return Result.failure(
+            CalendarException(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "start moves this series onto a day its recurrence " +
+                    "rule doesn't generate. Pass a recurrenceRule to " +
+                    "specify the new pattern."
+            )
+        )
+    }
     val newStart = when (ruleEdit) {
-        is SeriesRuleEdit.Keep -> {
-            if (targetStart != null && ruleEdit.rule != null && leavesRule(
-                    ruleEdit.rule,
-                    referenceMillis = referenceMillis,
-                    referenceZone = storedZone,
-                    baseMillis = baseMillis,
-                    targetStart = targetStart,
-                    shiftedStart = shiftedStart,
-                    tz = editZone
-                )
-            ) {
-                return Result.failure(
-                    CalendarException(
-                        PlatformExceptionCodes.INVALID_ARGUMENTS,
-                        "start moves this series onto a day its recurrence " +
-                            "rule doesn't generate. Pass a recurrenceRule to " +
-                            "specify the new pattern."
-                    )
-                )
-            }
-            shiftedStart
-        }
+        is SeriesRuleEdit.Keep, SeriesRuleEdit.Clear -> shiftedStart
         // A rule re-anchor moves the series anyway, so it drops any stored
         // millis too, like every event time the plugin writes (#165).
         is SeriesRuleEdit.Replace ->
@@ -201,7 +201,6 @@ internal fun resolveSeriesTimes(
                         "recurrenceRule generates no occurrences within five years of the anchor"
                     )
                 )
-        SeriesRuleEdit.Clear -> shiftedStart
     }
     val newDurationMs = if (durationMinutes != null) {
         durationMinutes.toLong() * 60_000L

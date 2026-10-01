@@ -120,6 +120,20 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
     ))
   }
 
+  // The Fri 6 Nov occurrence of a {Mon,Tue,Fri} series starting Mon 2 Nov
+  // moves to Sat 7 Nov, which the rule doesn't generate. The start moves one
+  // day with it, onto Tue 3 Nov, which it does, so only the occurrence check
+  // refuses it.
+  func testRefusesALaterOccurrenceMoveOffTheRuleThatKeepsTheStartOnIt() {
+    let mondayTuesdayFriday = rule(
+      .weekly, days: [EKWeekday.monday, .tuesday, .friday].map { EKRecurrenceDayOfWeek($0) }
+    )
+    assertRefused(move(
+      mondayTuesdayFriday, from: at(2026, 11, 2), to: at(2026, 11, 7),
+      reference: at(2026, 11, 6)
+    ))
+  }
+
   // A series another app anchored off its rule, on Tue 3 Nov: retiming its
   // Wed 4 Nov occurrence keeps the start on that Tuesday, which isn't a day
   // move, so it isn't refused.

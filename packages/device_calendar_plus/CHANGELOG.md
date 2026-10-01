@@ -1,3 +1,16 @@
+## Unreleased
+
+### Fixed
+- `updateRecurring` refuses a `start` move to another day with no new
+  `recurrenceRule` unless the existing rule generates both the day the
+  occurrence moves to and the series' new start. An ordinal or BYSETPOS
+  series (the 4th Thursday of November, say) could move to another
+  occurrence of its weekday (the 3rd Thursday), leaving the start on a day
+  the rule never generates; that now throws
+  `DeviceCalendarException(invalidArguments)`. A move onto another day the
+  rule generates (Monday to Wednesday of a Mon/Wed/Fri rule), which used to
+  throw, is now allowed (#189).
+
 ## 0.10.0 - 2026-09-30
 
 ### Changed

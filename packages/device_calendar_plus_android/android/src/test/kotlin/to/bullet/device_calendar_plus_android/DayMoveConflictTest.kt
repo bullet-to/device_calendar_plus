@@ -32,8 +32,8 @@ internal class DayMoveConflictTest {
             durationMinutes = null,
             ruleEdit = SeriesRuleEdit.Keep(rrule),
             isAllDay = false,
-            storedZone = utc,
-            editZone = utc
+            timeZoneId = utc.id,
+            storedZone = utc
         ).map { it.first }
 
     private fun at(month: Int, day: Int, hour: Int = 10) = instantAt(utc, 2026, month, day, hour)
@@ -117,6 +117,17 @@ internal class DayMoveConflictTest {
     fun resolveSeriesTimes_multiDayByDay_laterOccurrenceMovePushesStartOffTheList_refused() {
         move(
             "FREQ=WEEKLY;BYDAY=MO,WE,FR", at(11, 2), at(11, 9), reference = at(11, 6)
+        ).assertRefused()
+    }
+
+    // The Fri 6 Nov occurrence of a {Mon,Tue,Fri} series starting Mon 2 Nov
+    // moves to Sat 7 Nov, which the rule doesn't generate. The start moves
+    // one day with it, onto Tue 3 Nov, which it does, so only the occurrence
+    // check refuses it.
+    @Test
+    fun resolveSeriesTimes_multiDayByDay_laterOccurrenceMoveOffTheListKeepsStartOnIt_refused() {
+        move(
+            "FREQ=WEEKLY;BYDAY=MO,TU,FR", at(11, 2), at(11, 7), reference = at(11, 6)
         ).assertRefused()
     }
 

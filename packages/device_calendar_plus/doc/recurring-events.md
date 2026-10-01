@@ -167,17 +167,18 @@ just follows the anchor.
 
 For rules that pin a day explicitly (`WeeklyRecurrence(daysOfWeek: …)`,
 `MonthlyRecurrence(daysOfMonth: …)`, positional rules like "2nd Tuesday"),
-`start` alone can only move the series' start onto a day the existing rule
-generates (the start moves by as many days as the occurrence you edit); any
-other day throws `DeviceCalendarException(invalidArguments)` —
-because moving one day of a multi-day rule is ambiguous (Mon of Mon/Wed/Fri →
-Tue could mean Tue/Wed/Fri or Tue/Thu/Sat). Pass the new `recurrenceRule` in
-the same call to say what the pattern should become. Time-only and
-duration-only changes never throw, and neither does a whole-week shift of a
-weekly rule. A positional rule is stricter: a week earlier turns the 4th
-Thursday into the 3rd, which the rule doesn't generate, so that throws. Watch
-the converse: a cross-midnight retime (11 PM → 1 AM) rolls the date forward,
-so it changes the weekday and will throw too.
+`start` alone can only move an occurrence to another day when the existing rule
+generates both that day and the day the series' start lands on (the start moves
+by as many days as the occurrence you edit). Anything else throws
+`DeviceCalendarException(invalidArguments)` — because moving one day of a
+multi-day rule is ambiguous (Mon of Mon/Wed/Fri → Tue could mean Tue/Wed/Fri or
+Tue/Thu/Sat). Pass the new `recurrenceRule` in the same call to say what the
+pattern should become. Time-only and duration-only changes never throw, and
+neither does a whole-week shift of a weekly rule. A positional rule is
+stricter: a week earlier turns the 4th Thursday into the 3rd, which the rule
+doesn't generate, so that throws. Watch the converse: a cross-midnight retime
+(11 PM → 1 AM) rolls the date forward, so it changes the weekday, and throws
+when the rule doesn't generate the new day.
 
 ### Customised occurrences
 
