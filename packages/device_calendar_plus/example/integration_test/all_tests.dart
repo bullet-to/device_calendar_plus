@@ -1,3 +1,11 @@
+// Every test gets 90s instead of the default 30s. The slower recurring-edit
+// tests (a split plus several provider writes and re-reads) can pass 30s on
+// an older physical Android device, which failed runs that had nothing wrong.
+@Timeout.factor(3)
+library;
+
+import 'package:flutter_test/flutter_test.dart';
+
 import 'attendee_test.dart' as attendee;
 import 'device_calendar_test.dart' as device_calendar;
 import 'edge_cases_test.dart' as edge_cases;
