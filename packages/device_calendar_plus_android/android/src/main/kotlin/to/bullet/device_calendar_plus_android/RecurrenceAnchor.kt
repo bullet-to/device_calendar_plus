@@ -55,8 +55,7 @@ internal object RecurrenceAnchor {
      */
     fun firstMatch(rrule: String, fromMillis: Long, tz: TimeZone): Long? {
         val cal = Calendar.getInstance(tz).apply { timeInMillis = fromMillis }
-        val rule = parse(rrule)?.impliedBy(cal) ?: return fromMillis
-        val matcher = Matcher(rule)
+        val matcher = matcher(rrule, cal) ?: return fromMillis
         repeat(MAX_LOOKAHEAD_DAYS) {
             if (matcher.generates(cal)) return cal.timeInMillis
             // Whole-day steps keep the wall-clock time across DST (mirrors
@@ -75,9 +74,16 @@ internal object RecurrenceAnchor {
      */
     fun generates(rrule: String, millis: Long, tz: TimeZone): Boolean {
         val cal = Calendar.getInstance(tz).apply { timeInMillis = millis }
-        val rule = parse(rrule)?.impliedBy(cal) ?: return true
-        return Matcher(rule).generates(cal)
+        return matcher(rrule, cal)?.generates(cal) ?: true
     }
+
+    /**
+     * The matcher for [rrule] anchored at [anchor], with the parts the rule
+     * leaves implicit filled in from [anchor] ([impliedBy]). Null for a rule
+     * outside the modelled subset, which callers treat as fitting its anchor.
+     */
+    private fun matcher(rrule: String, anchor: Calendar): Matcher? =
+        parse(rrule)?.impliedBy(anchor)?.let(::Matcher)
 
     private fun parse(rrule: String): Rule? {
         val params = RruleString.params(rrule)

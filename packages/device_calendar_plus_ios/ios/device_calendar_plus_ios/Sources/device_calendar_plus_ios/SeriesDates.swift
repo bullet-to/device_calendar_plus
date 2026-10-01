@@ -44,6 +44,23 @@ enum SeriesDates {
     )
   }
 
+  /// Whether a start move leaves `rule`'s days: `target`'s day isn't one it
+  /// generates, or the shift moves `base` to another day, `shifted`'s, that
+  /// isn't. Android's counterpart is the check in `resolveSeriesTimes`.
+  private static func leavesRule(
+    _ rule: EKRecurrenceRule,
+    base: Date,
+    target: Date,
+    shifted: Date,
+    timeZone: TimeZone
+  ) -> Bool {
+    if !RecurrenceAnchor.generates(rule, day: target, timeZone: timeZone) { return true }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    return !calendar.isDate(shifted, inSameDayAs: base)
+      && !RecurrenceAnchor.generates(rule, day: shifted, timeZone: timeZone)
+  }
+
   /// The start a series update leaves a series with: `base` (its current
   /// start) when nothing moves it. Android's counterpart is
   /// `resolveSeriesTimes`.
@@ -62,22 +79,21 @@ enum SeriesDates {
   ///   carries just one across the other zone's midnight). Keep that
   ///   invariant, or read them in the stored frame, when changing either
   ///   input.
-  /// - Unless `changingRule`, that move is first checked against
-  ///   `existingRule`: `target`'s day, read in the edit frame, must be one
-  ///   the rule generates (`RecurrenceAnchor.generates`, with the parts the
-  ///   rule leaves implicit taken from `target`). Comparing the weekday, day
-  ///   of month and month the rule pins instead let an ordinal BYDAY (`4TH`,
-  ///   `-1FR`) or BYSETPOS series move onto a day it doesn't generate,
-  ///   orphaning its first occurrence as in #140 (#189). A time-only move
-  ///   always passes, and an all-day toggle onto a local day the rule
-  ///   doesn't generate is refused like any other day move. Android's
-  ///   counterpart is the check in `resolveTargetStart`.
-  /// - A new `rule` then walks the anchor, in the edit frame, onto the first
-  ///   day it generates (#140).
+  /// - The new start must be a day the series' rule generates, or EventKit
+  ///   shows it as an extra first occurrence (#140, #189). A new `rule`
+  ///   walks the shifted start, in the edit frame, onto the first day it
+  ///   generates. Unless `changingRule`, `existingRule` must generate
+  ///   `target`'s day and, when the shift moves the start to another day,
+  ///   the shifted start's day too, each read in the edit frame with the
+  ///   parts the rule leaves implicit taken from that day
+  ///   (`RecurrenceAnchor.generates`). A time-only move leaves a start the
+  ///   rule doesn't generate (one anchored off its rule by another app, or
+  ///   in another zone) where it is.
   ///
-  /// Fails with `invalidArguments` when the move leaves the rule's days or the
-  /// new rule generates nothing within five years of the anchor, and with
-  /// `operationFailed` if the shift can't be computed.
+  /// Fails with `invalidArguments` when a start move lands on a day the kept
+  /// rule doesn't generate or the new rule generates nothing within five
+  /// years of the anchor, and with `operationFailed` if the shift can't be
+  /// computed.
   static func resolveSeriesStart(
     base: Date,
     storedZone: TimeZone?,
@@ -94,16 +110,6 @@ enum SeriesDates {
     var start = base
 
     if let target = target {
-      if !changingRule,
-         let existingRule = existingRule,
-         !RecurrenceAnchor.generates(existingRule, day: target, timeZone: editFrame) {
-        return .failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "start moves this series onto a day its recurrence rule "
-            + "doesn't generate. Pass a recurrenceRule to specify the new pattern."
-        ))
-      }
-
       guard let shifted = shiftStart(
         base, reference: reference, to: target,
         isAllDay: isAllDay, timeZone: editFrame
@@ -111,6 +117,15 @@ enum SeriesDates {
         return .failure(CalendarError(
           code: PlatformExceptionCodes.operationFailed,
           message: "Could not apply the new start to the event"
+        ))
+      }
+
+      if !changingRule, let existingRule = existingRule,
+         leavesRule(existingRule, base: base, target: target, shifted: shifted, timeZone: editFrame) {
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "start moves this series onto a day its recurrence rule "
+            + "doesn't generate. Pass a recurrenceRule to specify the new pattern."
         ))
       }
       start = shifted

@@ -167,8 +167,9 @@ just follows the anchor.
 
 For rules that pin a day explicitly (`WeeklyRecurrence(daysOfWeek: …)`,
 `MonthlyRecurrence(daysOfMonth: …)`, positional rules like "2nd Tuesday"),
-`start` alone can only move the series onto a day the existing rule
-generates; any other day throws `DeviceCalendarException(invalidArguments)` —
+`start` alone can only move the series' start onto a day the existing rule
+generates (the start moves by as many days as the occurrence you edit); any
+other day throws `DeviceCalendarException(invalidArguments)` —
 because moving one day of a multi-day rule is ambiguous (Mon of Mon/Wed/Fri →
 Tue could mean Tue/Wed/Fri or Tue/Thu/Sat). Pass the new `recurrenceRule` in
 the same call to say what the pattern should become. Time-only and

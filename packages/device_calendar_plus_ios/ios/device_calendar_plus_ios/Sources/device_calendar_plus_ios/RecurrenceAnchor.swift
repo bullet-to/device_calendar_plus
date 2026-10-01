@@ -34,9 +34,7 @@ enum RecurrenceAnchor {
   ) -> Date? {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = timeZone
-    let matcher = Matcher(
-      rule: Rule(rule).impliedBy(anchor: from, calendar: calendar), calendar: calendar
-    )
+    let matcher = Self.matcher(for: rule, anchor: from, calendar: calendar)
     var day = from
     for _ in 0..<maxLookaheadDays {
       if matcher.generates(day) { return day }
@@ -59,9 +57,19 @@ enum RecurrenceAnchor {
   ) -> Bool {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = timeZone
+    return matcher(for: rule, anchor: day, calendar: calendar).generates(day)
+  }
+
+  /// The matcher for `rule` anchored at `anchor`, with the parts the rule
+  /// leaves implicit filled in from `anchor` (`Rule.impliedBy`).
+  private static func matcher(
+    for rule: EKRecurrenceRule,
+    anchor: Date,
+    calendar: Calendar
+  ) -> Matcher {
     return Matcher(
-      rule: Rule(rule).impliedBy(anchor: day, calendar: calendar), calendar: calendar
-    ).generates(day)
+      rule: Rule(rule).impliedBy(anchor: anchor, calendar: calendar), calendar: calendar
+    )
   }
 
   /// One BYDAY entry: `weekday` is a Gregorian weekday (1 = Sunday),

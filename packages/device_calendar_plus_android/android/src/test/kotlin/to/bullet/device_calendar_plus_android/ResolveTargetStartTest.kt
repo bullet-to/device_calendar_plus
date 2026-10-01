@@ -3,15 +3,15 @@ package to.bullet.device_calendar_plus_android
 import java.util.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
 
 /**
  * updateRecurring's `start` pre-flight, [resolveTargetStart], on devices
  * either side of UTC (#144). A stored all-day occurrence is UTC midnight; the
  * caller's new start arrives from Dart as the device-local midnight of the
- * day it means, and must be brought into the stored frame before the
- * day-move check reads it and the anchor shift uses it. 2026-06-06 is a
- * Saturday.
+ * day it means, and must be brought into the stored frame before the anchor
+ * shift uses it and the day-move check reads the start it produces. Each
+ * case runs the start on through [resolveSeriesTimes], as an allEvents edit
+ * does, and reads back the series' new start. 2026-06-06 is a Saturday.
  */
 internal class ResolveTargetStartTest {
     private val utc = TimeZone.getTimeZone("UTC")
@@ -22,23 +22,33 @@ internal class ResolveTargetStartTest {
     private fun stored(day: Int) = instantAt(utc, 2026, 6, day)
 
     /**
-     * Resolves [newStart] for a [rrule] series on a device in [zone].
-     * [effectiveIsAllDay] is the series' frame after the edit.
+     * Moves a [rrule] series stored at [base] to [newStart] from a device in
+     * [zone], and returns the series' new start. [effectiveIsAllDay] is the
+     * series' frame after the edit. A [newRule] replaces [rrule], lifting the
+     * day-move check.
      */
     private fun resolve(
         newStart: Long,
         effectiveIsAllDay: Boolean = true,
         rrule: String = "FREQ=WEEKLY;BYDAY=SA",
         zone: TimeZone = la,
-        changingRule: Boolean = false
-    ) = resolveTargetStart(
-        newStartMillis = newStart,
-        rowRrule = rrule,
-        rowTimeZone = zone.id,
-        effectiveIsAllDay = effectiveIsAllDay,
-        changingRule = changingRule,
-        deviceZone = zone
-    )
+        base: Long = stored(6),
+        newRule: String? = null
+    ): Result<Long> = resolveSeriesTimes(
+        baseMillis = base,
+        referenceMillis = base,
+        existingDurationMillis = 3_600_000L,
+        targetStart = resolveTargetStart(
+            newStartMillis = newStart,
+            effectiveIsAllDay = effectiveIsAllDay,
+            deviceZone = zone
+        ),
+        durationMinutes = null,
+        rrule = newRule,
+        timeZoneId = zone.id,
+        isAllDay = effectiveIsAllDay,
+        keptRule = if (newRule == null) rrule else null
+    ).map { it.first }
 
     /**
      * Moves an all-day [rrule] series stored on Saturday 6 June to the local
@@ -46,12 +56,6 @@ internal class ResolveTargetStartTest {
      */
     private fun moveAllDay(rrule: String, newDay: Int, zone: TimeZone) =
         resolve(instantAt(zone, 2026, 6, newDay), rrule = rrule, zone = zone)
-
-    private fun Result<Long?>.failureCode() =
-        assertIs<CalendarException>(
-            exceptionOrNull(),
-            "expected a refusal, got ${getOrNull()}"
-        ).code
 
     // West of UTC the stored UTC midnight is the previous local evening:
     // read in the device zone it looked like a Friday, so keeping the
@@ -120,19 +124,20 @@ internal class ResolveTargetStartTest {
     // midnight, which the rule generates.
     @Test
     fun resolveTargetStart_timedToAllDaySameDay_returnsStoredMidnight() {
-        val result = resolve(instantAt(la, 2026, 6, 6))
+        val result = resolve(instantAt(la, 2026, 6, 6), base = instantAt(la, 2026, 6, 6, 20))
         assertEquals(stored(6), result.getOrThrow())
     }
 
     // A new rule lifts the day-move check, but the start still reaches the
     // #140 re-anchor in the stored frame: east of UTC the raw local midnight
-    // is the previous UTC day.
+    // is the previous UTC day. A daily rule fits any anchor, so the re-anchor
+    // keeps the start as shifted.
     @Test
     fun resolveTargetStart_allDayDayMoveWithNewRule_returnsStoredMidnight() {
         val result = resolve(
             instantAt(sydney, 2026, 6, 7),
             zone = sydney,
-            changingRule = true
+            newRule = "FREQ=DAILY"
         )
         assertEquals(stored(7), result.getOrThrow())
     }

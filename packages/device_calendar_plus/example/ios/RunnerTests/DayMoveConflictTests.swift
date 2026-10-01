@@ -3,10 +3,14 @@ import XCTest
 
 @testable import device_calendar_plus_ios
 
-/// The day-move check in `SeriesDates.resolveSeriesStart`: a start move with
-/// no new rule is refused unless the existing rule generates the target's
-/// day (#189). Timed series in one zone, so only the rule decides. Mirrors
-/// the Kotlin `DayMoveConflictTest` case for case — the platforms must agree.
+/// The day-move check in `SeriesDates.resolveSeriesStart`: with no new rule,
+/// the series' new start must be a day its existing rule generates (#189).
+/// Timed series in one zone, so only the rule decides. Mirrors the Kotlin
+/// `DayMoveConflictTest` case for case — the platforms must agree.
+///
+/// The new start is the base (the series start) shifted by the move from the
+/// reference occurrence to the target, so the cases where the two differ
+/// check the start that is written, not just the target.
 ///
 /// The ordinal and BYMONTH cases are also covered end to end by the
 /// integration suite. BYDAY with BYMONTHDAY is here because the plugin can't
@@ -14,15 +18,17 @@ import XCTest
 /// `toRruleString()`), so it only reaches `updateRecurring` on events made by
 /// another app, which an integration test can't set up.
 final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
-  /// Moves a timed `rule` series anchored at `from` to `to`, keeping the
-  /// rule.
-  private func move(_ rule: EKRecurrenceRule, from: Date, to: Date) -> Result<Date, CalendarError> {
+  /// Moves the occurrence at `reference` (the series start when nil) of a
+  /// timed `rule` series that starts at `from` to `to`, keeping the rule.
+  private func move(
+    _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil
+  ) -> Result<Date, CalendarError> {
     return SeriesDates.resolveSeriesStart(
       base: from,
       storedZone: stockholm,
       existingRule: rule,
       target: to,
-      reference: from,
+      reference: reference ?? from,
       isAllDay: false,
       rule: nil,
       changingRule: false,
@@ -84,5 +90,68 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   func testAllowsADayMoveOnARuleThatPinsNoDay() {
     let target = at(2026, 11, 19)
     XCTAssertEqual(try move(rule(.monthly), from: at(2026, 11, 26), to: target).get(), target)
+  }
+
+  /// Weekly on Monday, Wednesday and Friday.
+  private var mondayWednesdayFriday: EKRecurrenceRule {
+    rule(.weekly, days: [EKWeekday.monday, .wednesday, .friday].map { EKRecurrenceDayOfWeek($0) })
+  }
+
+  // Mon 2 Nov 2026 -> Wed 4 Nov: another day the rule lists.
+  func testAllowsAMoveOntoAnotherDayTheRuleGenerates() {
+    let target = at(2026, 11, 4)
+    XCTAssertEqual(
+      try move(mondayWednesdayFriday, from: at(2026, 11, 2), to: target).get(), target
+    )
+  }
+
+  // Mon 2 Nov 2026 -> Tue 3 Nov.
+  func testRefusesAMoveOntoADayTheRuleSkips() {
+    assertRefused(move(mondayWednesdayFriday, from: at(2026, 11, 2), to: at(2026, 11, 3)))
+  }
+
+  // The Wed 4 Nov occurrence of a series starting Mon 2 Nov moves to Fri 6
+  // Nov: the start moves two days with it, onto Wed 4 Nov.
+  func testAllowsALaterOccurrenceMoveThatKeepsTheStartOnTheRule() {
+    XCTAssertEqual(
+      try move(
+        mondayWednesdayFriday, from: at(2026, 11, 2), to: at(2026, 11, 6),
+        reference: at(2026, 11, 4)
+      ).get(),
+      at(2026, 11, 4)
+    )
+  }
+
+  // The Fri 6 Nov occurrence moves to Mon 9 Nov, a day the rule generates,
+  // but the start moves three days with it, onto Thu 5 Nov, which it doesn't.
+  func testRefusesALaterOccurrenceMoveThatPushesTheStartOffTheRule() {
+    assertRefused(move(
+      mondayWednesdayFriday, from: at(2026, 11, 2), to: at(2026, 11, 9),
+      reference: at(2026, 11, 6)
+    ))
+  }
+
+  // A series another app anchored off its rule, on Tue 3 Nov: retiming its
+  // Wed 4 Nov occurrence keeps the start on that Tuesday, which isn't a day
+  // move, so it isn't refused.
+  func testAllowsATimeOnlyMoveOfAStartTheRuleDoesntGenerate() {
+    XCTAssertEqual(
+      try move(
+        mondayWednesdayFriday, from: at(2026, 11, 3), to: at(2026, 11, 4, hour: 15),
+        reference: at(2026, 11, 4)
+      ).get(),
+      at(2026, 11, 3, hour: 15)
+    )
+  }
+
+  // The Thu 26 Nov occurrence (4th Thursday) of a series starting Thu 22 Oct
+  // moves to Thu 24 Dec (also a 4th Thursday), but the start moves 28 days
+  // with it, onto Thu 19 Nov, the 3rd.
+  func testRefusesALaterOccurrenceMoveThatPushesTheStartOffTheOrdinal() {
+    let fourthThursday = rule(.monthly, days: [EKRecurrenceDayOfWeek(.thursday, weekNumber: 4)])
+    assertRefused(move(
+      fourthThursday, from: at(2026, 10, 22), to: at(2026, 12, 24),
+      reference: at(2026, 11, 26)
+    ))
   }
 }

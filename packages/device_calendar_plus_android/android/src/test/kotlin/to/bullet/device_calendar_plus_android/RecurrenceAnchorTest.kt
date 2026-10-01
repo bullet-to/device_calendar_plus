@@ -237,6 +237,15 @@ internal class RecurrenceAnchorTest {
         assertEquals(anchor, RecurrenceAnchor.firstMatch("garbage", anchor, stockholm))
     }
 
+    // Intentional: a FREQ outside the modelled subset (HOURLY from another
+    // app, say) is assumed to fit any anchor, so its BYDAY doesn't refuse a
+    // day move — the plugin can't tell which days such a rule generates.
+    @Test
+    fun generates_unsupportedFreq_acceptsAnyDay() {
+        val tuesday = at(2026, 11, 3)
+        assertEquals(true, RecurrenceAnchor.generates("FREQ=HOURLY;BYDAY=MO", tuesday, stockholm))
+    }
+
     // 30 February never comes, so the walk gives up rather than looping —
     // and the caller refuses the rule instead of anchoring off it.
     @Test

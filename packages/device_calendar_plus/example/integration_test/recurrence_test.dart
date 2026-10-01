@@ -2315,11 +2315,93 @@ void main() {
       );
     });
 
+    test(
+        'day shift onto another listed weekday of an explicit-BYDAY rule '
+        'moves the anchor', () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      // Weekly on Mon/Wed/Fri, anchored on Mon 2 Nov 2026. +2 days lands on
+      // Wed 4 Nov, a day the rule generates, so the move needs no new rule.
+      final anchor = DateTime.utc(2026, 11, 2, 15);
+      final series = await createWeeklySeries(plugin, calendarId!,
+          count: 6,
+          daysOfWeek: [
+            DayOfWeek.monday,
+            DayOfWeek.wednesday,
+            DayOfWeek.friday,
+          ],
+          start: anchor);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, anchor,
+          windowDays: 30);
+      expect(before.length, 6);
+
+      await plugin.updateRecurring(
+        before.first.instanceId,
+        EventSpan.allEvents,
+        start: before.first.startDate.add(const Duration(days: 2)),
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, anchor,
+          windowDays: 30);
+      expect(after, isNotEmpty);
+      expect(after.first.startDate.toUtc(), DateTime.utc(2026, 11, 4, 15),
+          reason: 'the series must now start on the Wednesday');
+      expect(
+        after.map((e) => e.startDate.toUtc().weekday).toSet(),
+        everyElement(
+            isIn([DateTime.monday, DateTime.wednesday, DateTime.friday])),
+        reason: 'every occurrence must stay on the rule',
+      );
+    });
+
+    test(
+        'day shift of a later occurrence that pushes the series start off an '
+        'explicit-BYDAY rule throws', () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      // Weekly on Mon/Wed/Fri, anchored on Mon 2 Nov 2026. Moving the Fri 6
+      // Nov occurrence to Mon 9 Nov lands it on a day the rule generates, but
+      // an allEvents move shifts the series start by the same +3 days, onto
+      // Thu 5 Nov, which it doesn't (#189).
+      final anchor = DateTime.utc(2026, 11, 2, 15);
+      final series = await createWeeklySeries(plugin, calendarId!,
+          count: 6,
+          daysOfWeek: [
+            DayOfWeek.monday,
+            DayOfWeek.wednesday,
+            DayOfWeek.friday,
+          ],
+          start: anchor);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, anchor,
+          windowDays: 30);
+      expect(before.length, 6);
+      final friday = before[2];
+      expect(friday.startDate.toUtc(), DateTime.utc(2026, 11, 6, 15));
+
+      await expectLater(
+        plugin.updateRecurring(
+          friday.instanceId,
+          EventSpan.allEvents,
+          start: friday.startDate.add(const Duration(days: 3)),
+        ),
+        throwsInvalidArguments(),
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, anchor,
+          windowDays: 30);
+      expect(startsOf(after), startsOf(before),
+          reason: 'a refused move must leave the series as it was');
+    });
+
     test('time-only shift on an explicit-BYDAY rule is allowed', () async {
       expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
       final startDay = DateTime.now().add(const Duration(hours: 1));
+      // The series is stored in UTC, so pin its UTC weekday: the local one
+      // leaves the start off the rule whenever the two dates differ.
       final series = await createWeeklySeries(plugin, calendarId!,
-          count: 4, daysOfWeek: [weekdayOf(startDay)], start: startDay);
+          count: 4, daysOfWeek: [weekdayOf(startDay.toUtc())], start: startDay);
       final before = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start,
           windowDays: 45);

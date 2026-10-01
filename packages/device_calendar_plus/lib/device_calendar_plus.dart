@@ -712,9 +712,10 @@ class DeviceCalendar {
   /// February, say) throws [DeviceCalendarException]
   /// ([DeviceCalendarError.invalidArguments]) and leaves the series untouched.
   ///
-  /// Moving [start] onto a day the existing rule doesn't generate (another
-  /// weekday of a `WeeklyRecurrence(daysOfWeek: …)`, or the 3rd Thursday of a
-  /// 4th-Thursday rule) without also passing a [recurrenceRule] throws
+  /// A [start] that moves the series' start onto a day the existing rule
+  /// doesn't generate (a weekday a `WeeklyRecurrence(daysOfWeek: …)` doesn't
+  /// list, or the 3rd Thursday of a 4th-Thursday rule) without also passing a
+  /// [recurrenceRule] throws
   /// [DeviceCalendarException] ([DeviceCalendarError.invalidArguments]),
   /// because the result is ambiguous. Implicit rules and time-only changes
   /// follow the anchor freely. See
