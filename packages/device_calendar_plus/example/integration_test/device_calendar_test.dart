@@ -5,6 +5,7 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'test_helpers.dart';
 import 'test_seed.dart';
 
 /// Probes whether the given calendar's source supports event availability.
@@ -1084,14 +1085,7 @@ void main() {
       );
       createdCalendarIds.add(calendarId);
 
-      // A local time on another UTC date, where the zone allows one: just
-      // after midnight east of UTC, just before it west of UTC (where the
-      // hour also runs into the next day).
-      final now = DateTime.now();
-      final day = DateTime(now.year, now.month, now.day + 2);
-      final start = day.timeZoneOffset.isNegative
-          ? day.add(const Duration(hours: 23, minutes: 30))
-          : day.add(const Duration(minutes: 30));
+      final start = startOnOtherUtcDate(localMidnight(2));
       final end = start.add(const Duration(hours: 1));
       final eventId = await plugin.createEvent(
         calendarId: calendarId,
@@ -1103,15 +1097,13 @@ void main() {
 
       await plugin.updateEvent(instanceId: eventId, isAllDay: true);
 
-      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
-      final lastDay = dayOf(end.subtract(const Duration(milliseconds: 1)));
+      final lastDay = localDay(end.subtract(const Duration(milliseconds: 1)));
       final event = await plugin.getEvent(eventId);
       expect(event, isNotNull);
       expect(event!.isAllDay, true);
-      expect(dayOf(event.startDate.toLocal()), dayOf(start),
+      expect(localDay(event.startDate.toLocal()), localDay(start),
           reason: 'the event must stay on its own calendar day');
-      expect(event.endDate.toLocal(),
-          DateTime(lastDay.year, lastDay.month, lastDay.day + 1),
+      expect(event.endDate.toLocal(), nextLocalMidnight(lastDay),
           reason: 'the event must span every day its timed self touched');
     });
 

@@ -54,22 +54,19 @@ internal object AllDayDates {
         localDateToUtcMidnight(endMillis - 1, zone) + MILLIS_PER_DAY
 
     /**
-     * The duration, in minutes, a timed event at [startMillis] lasting
+     * The all-day DTSTART and DTEND a timed event at [startMillis] lasting
      * [durationMillis] takes once an edit toggles it all-day without new
-     * dates: whole days, one for every [zone] date it touches from its start
-     * to its last moment, and at least one. EventKit makes the same span of
-     * it on iOS. The toggled event starts at
-     * [localDateToUtcMidnight] of [startMillis].
+     * dates: UTC midnight of its [zone] date, through whole days, one for
+     * every [zone] date it touches from its start to its last moment, and at
+     * least one. EventKit makes the same span of it on iOS.
      */
-    fun toggleDurationMinutes(
+    fun toggleSpan(
         startMillis: Long,
         durationMillis: Long,
         zone: TimeZone = TimeZone.getDefault()
-    ): Int {
-        val firstDay = localDateToUtcMidnight(startMillis, zone)
-        val endEdge = windowEndUtcMidnight(startMillis + maxOf(durationMillis, 1L), zone)
-        return ((endEdge - firstDay) / 60_000L).toInt()
-    }
+    ): Pair<Long, Long> =
+        localDateToUtcMidnight(startMillis, zone) to
+            windowEndUtcMidnight(startMillis + maxOf(durationMillis, 1L), zone)
 
     /**
      * Midnight, in [zone], of the calendar date that [millis] falls on in

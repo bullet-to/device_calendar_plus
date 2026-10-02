@@ -1718,13 +1718,7 @@ void main() {
     test(
         'updateEvent toggling a timed occurrence all-day with no dates keeps '
         'it on its calendar day', () async {
-      // A local time on another UTC date, where the zone allows one: just
-      // after midnight east of UTC, just before it west of UTC (where the
-      // hour also runs into the next day).
-      final day = localMidnight(2);
-      final start = day.timeZoneOffset.isNegative
-          ? day.add(const Duration(hours: 23, minutes: 30))
-          : day.add(const Duration(minutes: 30));
+      final start = startOnOtherUtcDate(localMidnight(2));
       final series = await seedSeries(
         plugin,
         calendarId,
@@ -1743,8 +1737,7 @@ void main() {
         isAllDay: true,
       );
 
-      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
-      final lastDay = dayOf(target.endDate
+      final lastDay = localDay(target.endDate
           .toLocal()
           .subtract(const Duration(milliseconds: 1)));
       final detached = await eventsTitled(
@@ -1753,8 +1746,8 @@ void main() {
       expect(detached, hasLength(1),
           reason: 'the detached occurrence must be listed once');
       expect(detached.single.isAllDay, isTrue);
-      expect(dayOf(detached.single.startDate.toLocal()),
-          dayOf(target.startDate.toLocal()),
+      expect(localDay(detached.single.startDate.toLocal()),
+          localDay(target.startDate.toLocal()),
           reason: 'the occurrence must stay on its own calendar day');
       expect(detached.single.endDate.toLocal(), nextLocalMidnight(lastDay),
           reason: 'the occurrence must span every day its timed self '

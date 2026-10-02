@@ -45,42 +45,47 @@ internal class AllDayDatesTest {
         }
     }
 
-    private val oneDayMinutes = 24 * 60
     private val hour = 3_600_000L
+    private val day = 24 * hour
 
     // A timed event inside one local date toggles to that one day.
     @Test
-    fun toggleDurationMinutes_withinOneDate_isOneDay() {
+    fun toggleSpan_withinOneDate_isThatOneDay() {
         for (zone in zones) {
             val start = instantAt(zone, 2026, 9, 26, 0, 30)
-            assertEquals(oneDayMinutes, AllDayDates.toggleDurationMinutes(start, hour, zone), zone.id)
+            val expected = instantAt(utc, 2026, 9, 26) to instantAt(utc, 2026, 9, 27)
+            assertEquals(expected, AllDayDates.toggleSpan(start, hour, zone), zone.id)
         }
     }
 
     // An event running past local midnight spans both dates it touches.
     @Test
-    fun toggleDurationMinutes_crossingLocalMidnight_isTwoDays() {
+    fun toggleSpan_crossingLocalMidnight_isBothDays() {
         for (zone in zones) {
             val start = instantAt(zone, 2026, 9, 26, 23, 30)
-            assertEquals(2 * oneDayMinutes, AllDayDates.toggleDurationMinutes(start, hour, zone), zone.id)
+            val expected = instantAt(utc, 2026, 9, 26) to instantAt(utc, 2026, 9, 28)
+            assertEquals(expected, AllDayDates.toggleSpan(start, hour, zone), zone.id)
         }
     }
 
     // An event ending exactly on local midnight doesn't touch the next date.
     @Test
-    fun toggleDurationMinutes_endingOnLocalMidnight_isOneDay() {
+    fun toggleSpan_endingOnLocalMidnight_isOneDay() {
         for (zone in zones) {
             val start = instantAt(zone, 2026, 9, 26, 23)
-            assertEquals(oneDayMinutes, AllDayDates.toggleDurationMinutes(start, hour, zone), zone.id)
+            val expected = instantAt(utc, 2026, 9, 26) to instantAt(utc, 2026, 9, 27)
+            assertEquals(expected, AllDayDates.toggleSpan(start, hour, zone), zone.id)
         }
     }
 
     // A zero-length event still takes its one day.
     @Test
-    fun toggleDurationMinutes_zeroLength_isOneDay() {
+    fun toggleSpan_zeroLength_isOneDay() {
         for (zone in zones) {
             val start = instantAt(zone, 2026, 9, 26)
-            assertEquals(oneDayMinutes, AllDayDates.toggleDurationMinutes(start, 0L, zone), zone.id)
+            val (spanStart, spanEnd) = AllDayDates.toggleSpan(start, 0L, zone)
+            assertEquals(instantAt(utc, 2026, 9, 26), spanStart, zone.id)
+            assertEquals(day, spanEnd - spanStart, zone.id)
         }
     }
 }

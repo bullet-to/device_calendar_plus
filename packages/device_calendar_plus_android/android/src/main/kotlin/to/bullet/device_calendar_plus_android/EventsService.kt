@@ -806,12 +806,8 @@ class EventsService(
             if (endMillis != null) {
                 values.put(CalendarContract.Events.DTEND, endMillis)
             }
-        } else if (patch.isAllDay == true && !row.allDay) {
-            // A bare toggle of a timed event moves it into the all-day frame,
-            // as EventKit does: its own local date, spanning every day it
-            // touched. Left timed under ALL_DAY=1, the provider read it as a
-            // UTC date, a day off where that isn't the local one.
-            val (start, end) = allDayToggleTimes(row.dtstart, eventDurationMillis(row))
+        } else if (patch.isBareAllDayToggle(row.allDay, startDate, endDate)) {
+            val (start, end) = AllDayDates.toggleSpan(row.dtstart, eventDurationMillis(row))
             values.put(CalendarContract.Events.DTSTART, start)
             values.put(CalendarContract.Events.DTEND, end)
         }
@@ -902,34 +898,19 @@ class EventsService(
         val series = store.readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
         val effectiveIsAllDay = patch.isAllDay ?: series.row.allDay
-        // A bare toggle of a timed occurrence moves it into the all-day
-        // frame, as EventKit does: its own local date, spanning every day it
-        // touched. Left timed under ALL_DAY=1, the provider read it as a UTC
-        // date, a day off where that isn't the local one.
-        val toggled = if (
-            startDate == null && endDate == null &&
-            patch.isAllDay == true && !series.row.allDay
-        ) {
-            allDayToggleTimes(timestamp, eventDurationMillis(series.row))
-        } else {
-            null
-        }
-        val newStart = if (toggled != null) {
-            toggled.first
-        } else if (startDate != null) {
-            storageMillis(startDate.time, effectiveIsAllDay)
-        } else {
-            timestamp
-        }
-        // Without an explicit endDate the occurrence's own end stays put —
-        // matching iOS, where setting startDate leaves endDate untouched.
-        val newEnd = if (toggled != null) {
-            toggled.second
-        } else if (endDate != null) {
-            storageMillis(endDate.time, effectiveIsAllDay)
-        } else {
-            timestamp + eventDurationMillis(series.row)
-        }
+        val (newStart, newEnd) =
+            if (patch.isBareAllDayToggle(series.row.allDay, startDate, endDate)) {
+                AllDayDates.toggleSpan(timestamp, eventDurationMillis(series.row))
+            } else {
+                // Without an explicit endDate the occurrence's own end stays
+                // put — matching iOS, where setting startDate leaves endDate
+                // untouched.
+                Pair(
+                    startDate?.let { storageMillis(it.time, effectiveIsAllDay) } ?: timestamp,
+                    endDate?.let { storageMillis(it.time, effectiveIsAllDay) }
+                        ?: (timestamp + eventDurationMillis(series.row))
+                )
+            }
         if (newEnd <= newStart) {
             return Result.failure(
                 CalendarException(
@@ -1601,16 +1582,18 @@ class EventsService(
         }
 
     /**
-     * The all-day DTSTART and DTEND of a timed event at [startMillis] lasting
-     * [durationMillis], toggled all-day without new dates: UTC midnight of
-     * its device-local date, and the whole days
-     * [AllDayDates.toggleDurationMinutes] gives it.
+     * Whether this edit is a bare all-day toggle of a timed event: `isAllDay
+     * = true` with no new dates, on a row that isn't all-day yet. EventKit
+     * moves such an event into the all-day frame — its own local date,
+     * spanning every day it touched ([AllDayDates.toggleSpan]). Left timed
+     * under ALL_DAY=1, the provider read it as a UTC date, a day off where
+     * that isn't the local one.
      */
-    private fun allDayToggleTimes(startMillis: Long, durationMillis: Long): Pair<Long, Long> {
-        val start = AllDayDates.localDateToUtcMidnight(startMillis)
-        val minutes = AllDayDates.toggleDurationMinutes(startMillis, durationMillis)
-        return start to start + minutes * 60_000L
-    }
+    private fun EventFieldPatch.isBareAllDayToggle(
+        rowAllDay: Boolean,
+        startDate: java.util.Date?,
+        endDate: java.util.Date?
+    ): Boolean = startDate == null && endDate == null && isAllDay == true && !rowAllDay
 
     /** Resolves an event's duration, falling back to one hour when unknown. */
     private fun eventDurationMillis(row: EventRow): Long =
