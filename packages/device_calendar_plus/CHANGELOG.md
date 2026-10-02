@@ -1,3 +1,16 @@
+## Unreleased
+
+### Fixed
+- Android: `updateRecurring` with `EventSpan.thisAndFollowing` on a
+  `CountEnd` series that started more than five years before the split no
+  longer gives the new series too many occurrences (#124).
+- Android: `updateRecurring` with `isAllDay: true` and no `start` or
+  `duration` keeps each occurrence on its own calendar day, spanning every
+  day it touched, as on iOS. The series used to read back as a single
+  occurrence, or on the wrong date (#124).
+- Android: a `thisAndFollowing` split that fails part-way no longer leaves a
+  `DELETED=1` tombstone of the new series on a local calendar (#124).
+
 ## 0.10.1 - 2026-10-01
 
 ### Fixed

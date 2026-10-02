@@ -1252,8 +1252,13 @@ class EventsService(
             store.rewriteSeriesForReexpand(row, truncatedRrule)
         if (truncatedRows == 0) {
             // Roll back the new series so the calendar is left unchanged.
+            // Through deleteUri, as every plugin delete goes: a plain delete
+            // of a keyed row on a local calendar (some providers key every
+            // row) leaves a DELETED=1 tombstone no adapter will collect
+            // (#132, #124). The new series shares the master's calendar, so
+            // the master's account is its own.
             context.contentResolver.delete(
-                CalendarContract.Events.CONTENT_URI,
+                store.deleteUri(row.account),
                 "${CalendarContract.Events._ID} = ?",
                 arrayOf(newEventId)
             )
