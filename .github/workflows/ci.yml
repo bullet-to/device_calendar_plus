@@ -10,7 +10,12 @@ on:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded PR pushes cancel; pushes to main don't, so every main commit
+  # gets a result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 env:
   # Pinned. The packages' floor is 3.44, but the Kotlin job's built-in Kotlin
@@ -21,6 +26,7 @@ jobs:
   dart:
     name: Dart (analyze + unit tests)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -38,20 +44,23 @@ jobs:
       - run: flutter analyze --no-fatal-infos
 
       - name: Unit tests
+        # Every package with a test/ dir, so a new package is picked up
+        # without editing this list. Keeps going after a failure so one run
+        # reports every failing package.
         run: |
-          for package in \
-            packages/device_calendar_plus \
-            packages/device_calendar_plus_platform_interface \
-            packages/device_calendar_plus_android \
-            packages/device_calendar_plus_ios; do
+          status=0
+          for test_dir in packages/*/test; do
+            package=$(dirname "$test_dir")
             echo "::group::$package"
-            (cd "$package" && flutter test)
+            (cd "$package" && flutter test) || status=1
             echo "::endgroup::"
           done
+          exit $status
 
   kotlin:
     name: Kotlin unit tests (${{ matrix.mode }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -93,6 +102,7 @@ jobs:
   swift:
     name: Swift unit tests
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
