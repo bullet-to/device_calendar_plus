@@ -321,6 +321,22 @@ final class SeriesDatesTests: XCTestCase {
       isAllDay: false
     )
     XCTAssertEqual(end, newStart.addingTimeInterval(2 * 86_400))
+
+    // Kept: an all-day event toggled timed keeps its stored interval exactly
+    // (one second short of a day), not the wall-clock span.
+    let storedStart = at(newYork, 10, 24)
+    let storedEnd = endOfDay(newYork, 10, 24)
+    let keptEnd = resolveEnd(
+      start: storedStart,
+      end: storedEnd,
+      newStart: newStart,
+      durationMinutes: nil,
+      isAllDay: false
+    )
+    XCTAssertEqual(
+      keptEnd,
+      newStart.addingTimeInterval(storedEnd.timeIntervalSince(storedStart))
+    )
   }
 
   // A timed event toggled all-day whose wall-clock span runs backwards
