@@ -1072,6 +1072,49 @@ void main() {
       expect(event.startDate.second, 0);
     });
 
+    // The toggle alone, with no dates, must still move the stored times into
+    // the all-day frame. Android once left the timed DTSTART/DTEND under
+    // ALL_DAY=1, and the provider reads an all-day time as a UTC date, so a
+    // time whose UTC date isn't its local one read back a day off.
+    test('Change Timed Event to All-Day with no dates keeps its calendar days',
+        () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Timed to All-Day No Dates Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      // A local time on another UTC date, where the zone allows one: just
+      // after midnight east of UTC, just before it west of UTC (where the
+      // hour also runs into the next day).
+      final now = DateTime.now();
+      final day = DateTime(now.year, now.month, now.day + 2);
+      final start = day.timeZoneOffset.isNegative
+          ? day.add(const Duration(hours: 23, minutes: 30))
+          : day.add(const Duration(minutes: 30));
+      final end = start.add(const Duration(hours: 1));
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Timed to All-Day No Dates',
+        startDate: start,
+        endDate: end,
+        timeZone: 'UTC',
+      );
+
+      await plugin.updateEvent(instanceId: eventId, isAllDay: true);
+
+      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
+      final lastDay = dayOf(end.subtract(const Duration(milliseconds: 1)));
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.isAllDay, true);
+      expect(dayOf(event.startDate.toLocal()), dayOf(start),
+          reason: 'the event must stay on its own calendar day');
+      expect(event.endDate.toLocal(),
+          DateTime(lastDay.year, lastDay.month, lastDay.day + 1),
+          reason: 'the event must span every day its timed self touched');
+    });
+
     test('Extend an All-Day Event to Two Days (#195)', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(

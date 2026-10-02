@@ -806,6 +806,14 @@ class EventsService(
             if (endMillis != null) {
                 values.put(CalendarContract.Events.DTEND, endMillis)
             }
+        } else if (patch.isAllDay == true && !row.allDay) {
+            // A bare toggle of a timed event moves it into the all-day frame,
+            // as EventKit does: its own local date, spanning every day it
+            // touched. Left timed under ALL_DAY=1, the provider read it as a
+            // UTC date, a day off where that isn't the local one.
+            val (start, end) = allDayToggleTimes(row.dtstart, eventDurationMillis(row))
+            values.put(CalendarContract.Events.DTSTART, start)
+            values.put(CalendarContract.Events.DTEND, end)
         }
 
         // Update timezone if provided
@@ -894,14 +902,30 @@ class EventsService(
         val series = store.readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
         val effectiveIsAllDay = patch.isAllDay ?: series.row.allDay
-        val newStart = if (startDate != null) {
+        // A bare toggle of a timed occurrence moves it into the all-day
+        // frame, as EventKit does: its own local date, spanning every day it
+        // touched. Left timed under ALL_DAY=1, the provider read it as a UTC
+        // date, a day off where that isn't the local one.
+        val toggled = if (
+            startDate == null && endDate == null &&
+            patch.isAllDay == true && !series.row.allDay
+        ) {
+            allDayToggleTimes(timestamp, eventDurationMillis(series.row))
+        } else {
+            null
+        }
+        val newStart = if (toggled != null) {
+            toggled.first
+        } else if (startDate != null) {
             storageMillis(startDate.time, effectiveIsAllDay)
         } else {
             timestamp
         }
         // Without an explicit endDate the occurrence's own end stays put —
         // matching iOS, where setting startDate leaves endDate untouched.
-        val newEnd = if (endDate != null) {
+        val newEnd = if (toggled != null) {
+            toggled.second
+        } else if (endDate != null) {
             storageMillis(endDate.time, effectiveIsAllDay)
         } else {
             timestamp + eventDurationMillis(series.row)
@@ -1575,6 +1599,18 @@ class EventsService(
                 "Invalid recurrence rule: $it"
             )
         }
+
+    /**
+     * The all-day DTSTART and DTEND of a timed event at [startMillis] lasting
+     * [durationMillis], toggled all-day without new dates: UTC midnight of
+     * its device-local date, and the whole days
+     * [AllDayDates.toggleDurationMinutes] gives it.
+     */
+    private fun allDayToggleTimes(startMillis: Long, durationMillis: Long): Pair<Long, Long> {
+        val start = AllDayDates.localDateToUtcMidnight(startMillis)
+        val minutes = AllDayDates.toggleDurationMinutes(startMillis, durationMillis)
+        return start to start + minutes * 60_000L
+    }
 
     /** Resolves an event's duration, falling back to one hour when unknown. */
     private fun eventDurationMillis(row: EventRow): Long =
