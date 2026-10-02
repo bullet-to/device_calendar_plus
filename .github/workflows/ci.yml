@@ -42,20 +42,10 @@ jobs:
       # Infos, warnings and errors all fail the job.
       - run: flutter analyze
 
+      # Every package with a test/ dir; keeps going after a failure so one
+      # run reports every failing package.
       - name: Unit tests
-        # Every package with a test/ dir, so a new package is picked up
-        # without editing this list. Keeps going after a failure so one run
-        # reports every failing package. CONTRIBUTING's "Unit tests (all
-        # packages)" is this same loop; keep the two in step.
-        run: |
-          status=0
-          for test_dir in packages/*/test; do
-            package=$(dirname "$test_dir")
-            echo "::group::$package"
-            (cd "$package" && flutter test) || status=1
-            echo "::endgroup::"
-          done
-          exit $status
+        run: ./run_unit_tests.sh
 
   kotlin:
     name: Kotlin unit tests (${{ matrix.mode }})

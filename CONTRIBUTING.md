@@ -69,9 +69,9 @@ CI (`.github/workflows/ci.yml`) runs on every PR and every push to `main`:
 modes, and the Swift tests on a macOS simulator. Integration tests aren't in
 CI, so run those by hand.
 
-Unit tests (all packages, the same loop CI runs), from the repo root:
+Unit tests (all packages, the same script CI runs):
 ```bash
-for d in packages/*/test; do (cd "$(dirname "$d")" && flutter test); done
+./run_unit_tests.sh
 ```
 
 Integration tests:
