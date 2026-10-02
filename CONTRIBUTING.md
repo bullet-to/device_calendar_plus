@@ -64,6 +64,11 @@ The thin shims that call the OS permission APIs directly (`EventKitAuthorization
 
 ### Running tests
 
+CI (`.github/workflows/ci.yml`) runs on every PR and every push to `main`:
+`flutter analyze` plus the Dart unit tests, the Kotlin tests in both Kotlin
+modes, and the Swift tests on a macOS simulator. Integration tests aren't in
+CI, so run those by hand.
+
 Unit tests (all packages):
 ```bash
 very_good test --recursive

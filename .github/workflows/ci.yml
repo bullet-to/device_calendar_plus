@@ -1,0 +1,109 @@
+name: CI
+
+# Dart, Kotlin and Swift unit tests on every PR and every push to main (#136).
+# On-device integration tests stay manual: run_integration_tests.sh.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned. The packages' floor is 3.44, but the Kotlin job's built-in Kotlin
+  # mode needs 3.47+, so CI runs the version the repo is developed on.
+  FLUTTER_VERSION: 3.47.3
+
+jobs:
+  dart:
+    name: Dart (analyze + unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      # One pub get resolves the whole workspace.
+      - run: flutter pub get
+
+      # Warnings and errors fail the job; the example app's existing infos
+      # (avoid_print and friends) don't.
+      - run: flutter analyze --no-fatal-infos
+
+      - name: Unit tests
+        run: |
+          for package in \
+            packages/device_calendar_plus \
+            packages/device_calendar_plus_platform_interface \
+            packages/device_calendar_plus_android \
+            packages/device_calendar_plus_ios; do
+            echo "::group::$package"
+            (cd "$package" && flutter test)
+            echo "::endgroup::"
+          done
+
+  kotlin:
+    name: Kotlin unit tests (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: default Kotlin
+            gradle-args: ""
+          - mode: built-in Kotlin
+            gradle-args: -Pandroid.builtInKotlin=true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The Gradle wrapper isn't committed; --config-only generates it (and
+      # local.properties) without building an APK.
+      - name: Generate the example's Android config
+        working-directory: packages/device_calendar_plus/example
+        run: |
+          flutter pub get
+          flutter build apk --config-only
+
+      - name: Run testDebugUnitTest
+        working-directory: packages/device_calendar_plus/example/android
+        run: ./gradlew :device_calendar_plus_android:testDebugUnitTest ${{ matrix.gradle-args }}
+
+  swift:
+    name: Swift unit tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - run: flutter pub get
+
+      # Generates the Xcode config, runs RunnerTests on the first available
+      # iPhone simulator, and restores the pod-install churn afterwards.
+      - name: Run RunnerTests
+        working-directory: packages/device_calendar_plus/example/ios
+        run: ./run_swift_tests.sh
