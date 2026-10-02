@@ -2,7 +2,7 @@ import EventKit
 
 /// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
 /// two platforms must stay in lockstep.
-private let minutesPerDay = 1440
+let minutesPerDay = 1440
 
 extension EKEventAvailability {
   var stringValue: String {
@@ -1330,10 +1330,16 @@ class EventsService {
     // anchor resolves to the current start, and skips the time rewrite for a
     // change that moves nothing (mirrors Android's rewriteTimeColumns).
     if newStartMillis != nil || durationMinutes != nil || newStart != foundEvent.startDate {
-      let duration = durationMinutes.map { TimeInterval($0 * 60) }
-        ?? foundEvent.endDate.timeIntervalSince(foundEvent.startDate)
+      let newEnd = SeriesDates.resolveSeriesEnd(
+        start: foundEvent.startDate,
+        end: foundEvent.endDate,
+        newStart: newStart,
+        durationMinutes: durationMinutes,
+        isAllDay: effectiveIsAllDay,
+        deviceZone: .current
+      )
       foundEvent.startDate = newStart
-      foundEvent.endDate = newStart.addingTimeInterval(duration)
+      foundEvent.endDate = newEnd
     }
 
     patch.applyTimeZone(to: foundEvent)

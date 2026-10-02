@@ -201,4 +201,35 @@ enum SeriesDates {
     }
     return .success(start)
   }
+
+  /// The end a series update leaves a series with, once its start moves to
+  /// `newStart`: `durationMinutes` after it, or the current `start`–`end`
+  /// span when no duration is given.
+  ///
+  /// All-day spans count calendar days in `deviceZone` (the all-day edit
+  /// frame): EventKit keeps an all-day event at local midnight, so a day
+  /// added as 86,400 seconds falls an hour short or long across a DST
+  /// change, and the event loses or gains its last day (#195). Timed spans
+  /// stay exact intervals.
+  static func resolveSeriesEnd(
+    start: Date,
+    end: Date,
+    newStart: Date,
+    durationMinutes: Int?,
+    isAllDay: Bool,
+    deviceZone: TimeZone
+  ) -> Date {
+    if isAllDay {
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.timeZone = deviceZone
+      let span = durationMinutes.map { DateComponents(day: $0 / minutesPerDay) }
+        ?? calendar.dateComponents([.day, .hour, .minute, .second], from: start, to: end)
+      if let newEnd = calendar.date(byAdding: span, to: newStart) {
+        return newEnd
+      }
+    }
+    let duration = durationMinutes.map { TimeInterval($0 * 60) }
+      ?? end.timeIntervalSince(start)
+    return newStart.addingTimeInterval(duration)
+  }
 }

@@ -142,4 +142,86 @@ final class SeriesDatesTests: XCTestCase {
     )
     assertRefused(result)
   }
+
+  // MARK: - resolveSeriesEnd(...) (#195)
+
+  private let newYork = TimeZone(identifier: "America/New_York")!
+
+  /// The last second of a calendar day in `zone`: where EventKit puts an
+  /// all-day event's end.
+  private func endOfDay(_ zone: TimeZone, _ month: Int, _ day: Int) -> Date {
+    return at(zone, month, day, hour: 23).addingTimeInterval(59 * 60 + 59)
+  }
+
+  private func resolveEnd(
+    start: Date,
+    end: Date,
+    newStart: Date,
+    durationMinutes: Int?,
+    isAllDay: Bool
+  ) -> Date {
+    return SeriesDates.resolveSeriesEnd(
+      start: start,
+      end: end,
+      newStart: newStart,
+      durationMinutes: durationMinutes,
+      isAllDay: isAllDay,
+      deviceZone: newYork
+    )
+  }
+
+  // An all-day duration counts calendar days: two days from 31 October is
+  // 2 November, even though 1 November (DST end) is 25 hours long. Adding
+  // 172,800 seconds stopped at 1 November 23:00, a day short.
+  func testAllDayDurationAcrossDstEndCountsCalendarDays() {
+    let end = resolveEnd(
+      start: at(newYork, 10, 24),
+      end: endOfDay(newYork, 10, 24),
+      newStart: at(newYork, 10, 31),
+      durationMinutes: 2 * 1440,
+      isAllDay: true
+    )
+    XCTAssertEqual(end, at(newYork, 11, 2))
+  }
+
+  // And across DST start (8 March, 23 hours long) it doesn't overshoot into
+  // the next day.
+  func testAllDayDurationAcrossDstStartCountsCalendarDays() {
+    let end = resolveEnd(
+      start: at(newYork, 2, 28),
+      end: endOfDay(newYork, 2, 28),
+      newStart: at(newYork, 3, 7),
+      durationMinutes: 2 * 1440,
+      isAllDay: true
+    )
+    XCTAssertEqual(end, at(newYork, 3, 9))
+  }
+
+  // With no duration, a moved all-day series keeps its span in calendar
+  // days. Carried as seconds across DST start, a three-day span ending at
+  // 23:59:59 ran an hour into a fourth day.
+  func testAllDayKeptSpanAcrossDstStartKeepsItsDays() {
+    let end = resolveEnd(
+      start: at(newYork, 2, 28),
+      end: endOfDay(newYork, 3, 2),
+      newStart: at(newYork, 3, 7),
+      durationMinutes: nil,
+      isAllDay: true
+    )
+    XCTAssertEqual(end, endOfDay(newYork, 3, 9))
+  }
+
+  // Timed durations stay exact: two days from 31 October 23:00 is 172,800
+  // seconds later, whatever the wall clock reads.
+  func testTimedDurationAcrossDstEndIsExact() {
+    let newStart = at(newYork, 10, 31, hour: 23)
+    let end = resolveEnd(
+      start: at(newYork, 10, 24, hour: 23),
+      end: at(newYork, 10, 24, hour: 23),
+      newStart: newStart,
+      durationMinutes: 2 * 1440,
+      isAllDay: false
+    )
+    XCTAssertEqual(end, newStart.addingTimeInterval(2 * 86_400))
+  }
 }

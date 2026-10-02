@@ -10,6 +10,10 @@
   Wednesday of a Mon/Wed/Fri rule) is now allowed through `allEvents`; with
   `thisAndFollowing` a move to another day still throws while the rule pins
   days, until iOS can split such a series (#194).
+- `updateRecurring` on an all-day series adds `duration` (or keeps the
+  existing span, when only `start` moves) in calendar days rather than
+  86,400-second days, so a multi-day all-day series no longer loses or gains
+  its last day when its span crosses a DST change (#195).
 
 ## 0.9.0 - 2026-09-30
 
