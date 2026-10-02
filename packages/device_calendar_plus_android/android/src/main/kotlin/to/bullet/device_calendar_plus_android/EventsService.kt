@@ -991,29 +991,22 @@ class EventsService(
             // provider: that would keep FREQ=HOURLY as an hourly series.
             unsupportedRuleFailure(recurrenceRule)?.let { return Result.failure(it) }
 
-            // Bring the caller's local `start` into the stored frame and refuse
-            // a day move a pinned rule can't follow (#144; see updateRecurring
-            // docs).
-            val changingRule = recurrenceRule != null ||
-                "recurrenceRule" in patch.clearedFields
-            val targetStart = resolveTargetStart(
-                newStartMillis = newStartMillis,
-                rowRrule = row.rrule,
-                rowAllDay = row.allDay,
-                rowTimeZone = row.timeZone,
-                referenceMillis = timestamp ?: row.dtstart,
-                effectiveIsAllDay = effectiveIsAllDay,
-                changingRule = changingRule
-            ).getOrElse { return Result.failure(it) }
+            // Bring the caller's local `start` into the stored frame (#144).
+            // resolveSeriesTimes then refuses a start the kept rule doesn't
+            // generate (#189; see updateRecurring docs).
+            val targetStart = resolveTargetStart(newStartMillis, effectiveIsAllDay)
+            val ruleEdit = SeriesRuleEdit.of(
+                recurrenceRule,
+                cleared = "recurrenceRule" in patch.clearedFields,
+                existing = row.rrule
+            )
 
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    row, timestamp, targetStart,
-                    durationMinutes, recurrenceRule, patch
+                    row, timestamp, targetStart, durationMinutes, ruleEdit, patch
                 )
                 else -> updateRecurringAllEvents(
-                    row, timestamp, targetStart,
-                    durationMinutes, recurrenceRule, patch
+                    row, timestamp, targetStart, durationMinutes, ruleEdit, patch
                 )
             }
         } catch (e: SecurityException) {
@@ -1039,7 +1032,7 @@ class EventsService(
         // Already in the stored frame (see resolveTargetStart).
         targetStart: Long?,
         durationMinutes: Int?,
-        recurrenceRule: String?,
+        ruleEdit: SeriesRuleEdit,
         patch: EventFieldPatch
     ): Result<String> {
         val values = android.content.ContentValues()
@@ -1047,16 +1040,15 @@ class EventsService(
 
         // Recurrence rule column and the resulting recurring state.
         val wasRecurring = row.rrule != null
-        val clearRrule = "recurrenceRule" in patch.clearedFields
-        val willBeRecurring = when {
-            clearRrule -> false
-            recurrenceRule != null -> true
-            else -> wasRecurring
+        val willBeRecurring = when (ruleEdit) {
+            SeriesRuleEdit.Clear -> false
+            is SeriesRuleEdit.Replace -> true
+            is SeriesRuleEdit.Keep -> ruleEdit.rule != null
         }
-        if (clearRrule) {
-            values.putNull(CalendarContract.Events.RRULE)
-        } else if (recurrenceRule != null) {
-            values.put(CalendarContract.Events.RRULE, recurrenceRule)
+        when (ruleEdit) {
+            SeriesRuleEdit.Clear -> values.putNull(CalendarContract.Events.RRULE)
+            is SeriesRuleEdit.Replace -> values.put(CalendarContract.Events.RRULE, ruleEdit.rule)
+            is SeriesRuleEdit.Keep -> {}
         }
 
         // Time columns. A recurring event must use DURATION (and no DTEND); a
@@ -1067,9 +1059,16 @@ class EventsService(
         // (timestamp), or the series anchor itself when none was given — and
         // then onto the new rule, when one is given (#140).
         val (newStart, newDurationMs) = resolveSeriesTimes(
-            row.dtstart, timestamp ?: row.dtstart, eventDurationMillis(row),
-            targetStart, durationMinutes, recurrenceRule, row.timeZone,
-            effectiveIsAllDay
+            baseMillis = row.dtstart,
+            referenceMillis = timestamp ?: row.dtstart,
+            existingDurationMillis = eventDurationMillis(row),
+            targetStart = targetStart,
+            durationMinutes = durationMinutes,
+            ruleEdit = ruleEdit,
+            splitsSeries = false,
+            isAllDay = effectiveIsAllDay,
+            timeZoneId = row.timeZone,
+            storedZone = seriesTimeZone(row.timeZone, row.allDay)
         ).getOrElse { return Result.failure(it) }
         // A `start` equal to the current anchor is still a rewrite: the
         // DTSTART/DURATION (and RRULE, below) re-put is what makes the
@@ -1089,8 +1088,8 @@ class EventsService(
                 // occurrence. Re-writing the (unchanged) RRULE forces the
                 // CalendarProvider to re-expand — the mirror of the
                 // DTSTART/DURATION rewrite used when only the rule changes.
-                if (!clearRrule && recurrenceRule == null && row.rrule != null) {
-                    values.put(CalendarContract.Events.RRULE, row.rrule)
+                (ruleEdit as? SeriesRuleEdit.Keep)?.rule?.let {
+                    values.put(CalendarContract.Events.RRULE, it)
                 }
             } else {
                 values.put(CalendarContract.Events.DTEND, newStart + newDurationMs)
@@ -1131,7 +1130,7 @@ class EventsService(
         // Already in the stored frame (see resolveTargetStart).
         targetStart: Long?,
         durationMinutes: Int?,
-        recurrenceRule: String?,
+        ruleEdit: SeriesRuleEdit,
         patch: EventFieldPatch
     ): Result<String> {
         if (timestamp == null) {
@@ -1163,10 +1162,10 @@ class EventsService(
             if ("url" in patch.clearedFields) null else (patch.url ?: row.url)
         val effectiveTimeZone = patch.timeZone ?: row.timeZone
         val effectiveAvailability = patch.availability ?: row.availability
-        val effectiveRrule = when {
-            "recurrenceRule" in patch.clearedFields -> null
-            recurrenceRule != null -> recurrenceRule
-            else -> {
+        val effectiveRrule = when (ruleEdit) {
+            SeriesRuleEdit.Clear -> null
+            is SeriesRuleEdit.Replace -> ruleEdit.rule
+            is SeriesRuleEdit.Keep -> {
                 // Rule unchanged: the new series inherits the original rule. A
                 // COUNT must drop by the occurrences left on the old series,
                 // or the new series would over-generate.
@@ -1187,9 +1186,16 @@ class EventsService(
         // provider keeps the old day as an extra first occurrence (#140).
         // Duration is the master's unless overridden.
         val (newStart, newDurationMs) = resolveSeriesTimes(
-            timestamp, timestamp, eventDurationMillis(row),
-            targetStart, durationMinutes, recurrenceRule, row.timeZone,
-            effectiveIsAllDay
+            baseMillis = timestamp,
+            referenceMillis = timestamp,
+            existingDurationMillis = eventDurationMillis(row),
+            targetStart = targetStart,
+            durationMinutes = durationMinutes,
+            ruleEdit = ruleEdit,
+            splitsSeries = true,
+            isAllDay = effectiveIsAllDay,
+            timeZoneId = row.timeZone,
+            storedZone = seriesTimeZone(row.timeZone, row.allDay)
         ).getOrElse { return Result.failure(it) }
         val newEnd = newStart + newDurationMs
 

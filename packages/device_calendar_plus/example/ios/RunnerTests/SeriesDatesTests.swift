@@ -38,27 +38,23 @@ final class SeriesDatesTests: XCTestCase {
   /// FREQ=WEEKLY;BYDAY=TH — 1 October 2026 is a Thursday.
   private let thursdays = SeriesDatesTests.weekly(on: .thursday)
 
-  /// An allEvents edit of a UTC-stored series (Thursdays unless
-  /// `existingRule` says otherwise) anchored at `base`, moving it to
-  /// `target`, optionally with a new `rule`.
+  /// An allEvents edit of a UTC-stored series anchored at `base`, moving it
+  /// to `target`; `ruleEdit` keeps the Thursday rule unless given.
   private func resolve(
     base: Date,
     target: Date,
     isAllDay: Bool,
-    existingRule: EKRecurrenceRule? = nil,
-    rule: EKRecurrenceRule? = nil,
-    changingRule: Bool = false,
+    ruleEdit: SeriesRuleEdit? = nil,
     deviceZone: TimeZone
   ) -> Result<Date, CalendarError> {
     return SeriesDates.resolveSeriesStart(
       base: base,
       storedZone: utc,
-      existingRule: existingRule ?? thursdays,
       target: target,
       reference: base,
       isAllDay: isAllDay,
-      rule: rule,
-      changingRule: changingRule,
+      ruleEdit: ruleEdit ?? .keep(thursdays),
+      splitsSeries: false,
       deviceZone: deviceZone
     )
   }
@@ -99,10 +95,7 @@ final class SeriesDatesTests: XCTestCase {
       isAllDay: false,
       deviceZone: losAngeles
     )
-    guard case .failure(let error) = result else {
-      return XCTFail("expected the day move to be refused, got \(result)")
-    }
-    XCTAssertEqual(error.code, PlatformExceptionCodes.invalidArguments)
+    assertRefused(result)
   }
 
   // East of UTC with a new rule: the re-anchor reads the local-midnight
@@ -113,8 +106,7 @@ final class SeriesDatesTests: XCTestCase {
       base: at(sydney, 10, 1, hour: 12),
       target: at(sydney, 10, 1),
       isAllDay: true,
-      rule: thursdays,
-      changingRule: true,
+      ruleEdit: .replace(thursdays),
       deviceZone: sydney
     )
     XCTAssertEqual(try result.get(), at(sydney, 10, 1))
@@ -128,29 +120,26 @@ final class SeriesDatesTests: XCTestCase {
       base: at(sydney, 10, 1, hour: 12),
       target: at(sydney, 10, 1),
       isAllDay: true,
-      rule: SeriesDatesTests.weekly(on: .friday),
-      changingRule: true,
+      ruleEdit: .replace(SeriesDatesTests.weekly(on: .friday)),
       deviceZone: sydney
     )
     XCTAssertEqual(try result.get(), at(sydney, 10, 2))
   }
 
-  // The flip side of the east-of-UTC case, matching Android's
-  // dayMoveConflictsWithRule: a Wednesday-23:00-UTC series shows on Thursday
-  // in Sydney, but the weekday it pins is the stored-zone one. Toggling it
-  // all-day onto the Thursday it shows on changes that weekday, so it needs
-  // a new rule like any other day move.
+  // The flip side of the east-of-UTC case, mirrored by Android's
+  // AllDayStartFrameTest (timedToAllDayOntoNextLocalDayEastOfUtc): a
+  // Wednesday-23:00-UTC series shows on Thursday in Sydney, but the weekday
+  // it pins is the stored-zone one. Toggling it all-day onto the Thursday it
+  // shows on lands on a day the rule doesn't generate, so it needs a new
+  // rule like any other day move.
   func testAllDayToggleOntoTheNextLocalDayOfTheStoredDayIsRefused() {
     let result = resolve(
       base: at(utc, 9, 30, hour: 23),
       target: at(sydney, 10, 1),
       isAllDay: true,
-      existingRule: SeriesDatesTests.weekly(on: .wednesday),
+      ruleEdit: .keep(SeriesDatesTests.weekly(on: .wednesday)),
       deviceZone: sydney
     )
-    guard case .failure(let error) = result else {
-      return XCTFail("expected the day move to be refused, got \(result)")
-    }
-    XCTAssertEqual(error.code, PlatformExceptionCodes.invalidArguments)
+    assertRefused(result)
   }
 }

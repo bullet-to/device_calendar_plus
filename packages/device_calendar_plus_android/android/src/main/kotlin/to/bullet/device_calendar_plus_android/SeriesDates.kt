@@ -95,6 +95,29 @@ internal class SplitShift private constructor(
 }
 
 /**
+ * What a series edit does to its recurrence rule: keep the one it has
+ * ([Keep.rule] is null when the event doesn't recur), replace it, or clear
+ * it. Built once from the method-channel `recurrenceRule` and
+ * `clearedFields`, which the Dart `Patch` keeps mutually exclusive. iOS's
+ * counterpart is `SeriesRuleEdit` in `SeriesDates.swift`.
+ */
+internal sealed class SeriesRuleEdit {
+    data class Keep(val rule: String?) : SeriesRuleEdit()
+    data class Replace(val rule: String) : SeriesRuleEdit()
+    object Clear : SeriesRuleEdit()
+
+    companion object {
+        /** The edit [recurrenceRule] (or a [cleared] rule) makes to a series whose rule is [existing]. */
+        fun of(recurrenceRule: String?, cleared: Boolean, existing: String?): SeriesRuleEdit =
+            when {
+                cleared -> Clear
+                recurrenceRule != null -> Replace(recurrenceRule)
+                else -> Keep(existing)
+            }
+    }
+}
+
+/**
  * Resolves the start and duration for a series-level edit; iOS's
  * counterpart is `resolveSeriesStart`.
  *
@@ -102,22 +125,30 @@ internal class SplitShift private constructor(
  * delta from [referenceMillis] to [targetStart] (see [SplitShift]).
  * [targetStart] is already in the frame after the edit
  * ([resolveTargetStart]), while [baseMillis] and [referenceMillis] are in
- * the row's stored frame. Unlike the day-move check, which reads each in its
- * own zone, this reads all three in the one post-edit zone. That differs
- * from the stored zone only when the same edit toggles all-day, and it is
- * still safe then: base and reference are the same instant or occurrences
- * of the same series at the same wall-clock time, so the wrong zone moves
- * both onto the same wrong day (unless a DST change between them carries
- * just one across the other zone's midnight), the error cancels out of the
- * day delta, and
- * [SplitShift.slot] then resets the time of day for the new frame. Keep
- * that invariant, or pass the stored zone in, when changing either input.
- * A new [rrule] then moves it onto the first day the rule generates, keeping
- * its wall-clock time — the anchor a series switched to a new rule must
- * have, or the provider emits the old day as an extra occurrence (#140).
- * A rule that generates nothing within five years of the anchor fails
- * with INVALID_ARGUMENTS rather than leaving that orphan behind. The
- * duration is overridden when [durationMinutes] is given.
+ * the row's stored frame [storedZone], yet the shift reads all three in the
+ * one post-edit zone, `seriesTimeZone(timeZoneId, isAllDay)` ([isAllDay] is
+ * the series' all-day state after the edit). That zone differs from
+ * [storedZone] only when the same edit toggles all-day, and it is still
+ * safe then: base and reference are the same instant or occurrences of the
+ * same series at the same wall-clock time, so the wrong zone moves both
+ * onto the same wrong day (unless a DST change between them carries just
+ * one across the other zone's midnight), the error cancels out of the day
+ * delta, and [SplitShift.slot] then resets the time of day for the new
+ * frame. Keep that invariant, or read them in [storedZone], when changing
+ * either input.
+ *
+ * The new start must be a day the series' rule generates, or the provider
+ * emits it as an extra first occurrence (#140, #189). [ruleEdit] decides
+ * how: a kept rule must generate the days a move lands on ([leavesRule]),
+ * or the move fails with INVALID_ARGUMENTS; a replacing rule moves the
+ * shifted start onto the first day it generates, keeping its wall-clock
+ * time, and fails with INVALID_ARGUMENTS when it generates nothing within
+ * five years; a cleared rule needs neither. A time-only move leaves a start
+ * the kept rule doesn't generate (one anchored off its rule by another app,
+ * or in another zone) where it is. A [splitsSeries] (thisAndFollowing) move
+ * onto another day is also refused while the kept rule pins days (#194).
+ * The duration is overridden when
+ * [durationMinutes] is given.
  */
 internal fun resolveSeriesTimes(
     baseMillis: Long,
@@ -125,32 +156,65 @@ internal fun resolveSeriesTimes(
     existingDurationMillis: Long,
     targetStart: Long?,
     durationMinutes: Int?,
-    rrule: String?,
+    ruleEdit: SeriesRuleEdit,
+    splitsSeries: Boolean,
+    isAllDay: Boolean,
     timeZoneId: String?,
-    isAllDay: Boolean
+    storedZone: TimeZone
 ): Result<Pair<Long, Long>> {
-    val tz = seriesTimeZone(timeZoneId, isAllDay)
+    val editZone = seriesTimeZone(timeZoneId, isAllDay)
     // A slot copies the new start's time of day, already whole seconds.
     // With no new start the stored start is kept as is, even with millis
     // from an older version or another app: rewriting it would orphan
     // detached occurrences keyed at those millis (#165).
     val shiftedStart = if (targetStart != null) {
-        SplitShift.of(referenceMillis, targetStart, tz, isAllDay).slot(baseMillis)
+        SplitShift.of(referenceMillis, targetStart, editZone, isAllDay).slot(baseMillis)
     } else {
         baseMillis
     }
-    val newStart = if (rrule != null) {
+    val keptRule = (ruleEdit as? SeriesRuleEdit.Keep)?.rule
+    if (targetStart != null && keptRule != null) {
+        val refusal = when {
+            // iOS can't split a series whose rule pins days at an occurrence
+            // moved to another day: EventKit detaches it instead (#194).
+            // Refused on both platforms until it can.
+            splitsSeries && RruleString.pinsDays(keptRule) &&
+                !sameCalendarDay(referenceMillis, storedZone, targetStart, editZone) ->
+                "start moves a thisAndFollowing split onto another day, but " +
+                    "the series' recurrence rule pins specific days. Pass a " +
+                    "recurrenceRule to specify the new pattern."
+            leavesRule(
+                keptRule,
+                referenceMillis = referenceMillis,
+                referenceZone = storedZone,
+                baseMillis = baseMillis,
+                targetStart = targetStart,
+                shiftedStart = shiftedStart,
+                tz = editZone
+            ) ->
+                "start moves this series onto a day its recurrence " +
+                    "rule doesn't generate. Pass a recurrenceRule to " +
+                    "specify the new pattern."
+            else -> null
+        }
+        if (refusal != null) {
+            return Result.failure(
+                CalendarException(PlatformExceptionCodes.INVALID_ARGUMENTS, refusal)
+            )
+        }
+    }
+    val newStart = when (ruleEdit) {
+        is SeriesRuleEdit.Keep, SeriesRuleEdit.Clear -> shiftedStart
         // A rule re-anchor moves the series anyway, so it drops any stored
         // millis too, like every event time the plugin writes (#165).
-        RecurrenceAnchor.firstMatch(rrule, shiftedStart, tz)?.let(::wholeSeconds)
-            ?: return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.INVALID_ARGUMENTS,
-                    "recurrenceRule generates no occurrences within five years of the anchor"
+        is SeriesRuleEdit.Replace ->
+            RecurrenceAnchor.firstMatch(ruleEdit.rule, shiftedStart, editZone)?.let(::wholeSeconds)
+                ?: return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.INVALID_ARGUMENTS,
+                        "recurrenceRule generates no occurrences within five years of the anchor"
+                    )
                 )
-            )
-    } else {
-        shiftedStart
     }
     val newDurationMs = if (durationMinutes != null) {
         durationMinutes.toLong() * 60_000L
@@ -165,84 +229,55 @@ internal fun resolveSeriesTimes(
 }
 
 /**
- * Whether moving the anchor from [referenceMillis] to [targetMillis] would
- * change the day-spec that [rrule] pins explicitly: the weekday for a
- * BYDAY rule, the day-of-month for a BYMONTHDAY rule, or the month for a
- * BYMONTH rule. When it would, an anchor shift alone can't say what the new
- * pattern should be (see updateRecurring docs), so the caller must supply a
- * new rule. Rules with no explicit anchor return false — they follow the
- * anchor freely. iOS's counterpart is `SeriesDates.dayMoveConflictsWithRule`.
- *
- * Each instant is read in the zone that frames its own calendar day (see
- * [seriesTimeZone]): an all-day one is stored as UTC midnight, so it is read
- * in UTC. Reading a UTC-midnight date in the device zone puts it on the day
- * before west of UTC (#144).
+ * Whether a start move leaves [rule]'s days: either move lands on another
+ * day, read in the post-edit zone [tz], that the rule doesn't generate
+ * ([RecurrenceAnchor.generates]). The occurrence at [referenceMillis] to
+ * [targetStart] guards the caller's intent; the reference is read in
+ * [referenceZone], its stored frame, so an all-day toggle onto another
+ * local day is a day move. The series start [baseMillis] to [shiftedStart]
+ * guards against the #140 orphan. iOS's counterpart is
+ * `SeriesDates.leavesRule`.
  */
-internal fun dayMoveConflictsWithRule(
-    rrule: String,
+private fun leavesRule(
+    rule: String,
     referenceMillis: Long,
     referenceZone: TimeZone,
-    targetMillis: Long,
-    targetZone: TimeZone
+    baseMillis: Long,
+    targetStart: Long,
+    shiftedStart: Long,
+    tz: TimeZone
 ): Boolean {
-    val parts = RruleString.params(rrule)
-    val hasByDay = "BYDAY" in parts
-    val hasByMonthDay = "BYMONTHDAY" in parts
-    val hasByMonth = "BYMONTH" in parts
-    if (!hasByDay && !hasByMonthDay && !hasByMonth) return false
-    val ref = Calendar.getInstance(referenceZone).apply { timeInMillis = referenceMillis }
-    val tgt = Calendar.getInstance(targetZone).apply { timeInMillis = targetMillis }
-    fun changed(field: Int) = ref.get(field) != tgt.get(field)
-    if (hasByDay && changed(Calendar.DAY_OF_WEEK)) return true
-    if (hasByMonthDay && changed(Calendar.DAY_OF_MONTH)) return true
-    if (hasByMonth && changed(Calendar.MONTH)) return true
-    return false
+    fun movesOffRule(from: Long, fromZone: TimeZone, to: Long) =
+        !sameCalendarDay(from, fromZone, to, tz) && !RecurrenceAnchor.generates(rule, to, tz)
+    // Both checks are needed, even though they repeat each other when the
+    // reference is the base. On a {Mon,Tue,Fri} series starting Monday,
+    // moving Friday to Saturday shifts the start to Tuesday, which the rule
+    // generates: only the first check refuses it. Moving Monday to Tuesday
+    // shifts a Friday start to Saturday: only the second does (#140).
+    return movesOffRule(referenceMillis, referenceZone, targetStart) ||
+        movesOffRule(baseMillis, tz, shiftedStart)
+}
+
+/** Whether [a] read in [aZone] falls on the same calendar date as [b] in [bZone]. */
+private fun sameCalendarDay(a: Long, aZone: TimeZone, b: Long, bZone: TimeZone): Boolean {
+    val ac = Calendar.getInstance(aZone).apply { timeInMillis = a }
+    val bc = Calendar.getInstance(bZone).apply { timeInMillis = b }
+    return ac.get(Calendar.YEAR) == bc.get(Calendar.YEAR) &&
+        ac.get(Calendar.DAY_OF_YEAR) == bc.get(Calendar.DAY_OF_YEAR)
 }
 
 /**
- * The caller's new series start brought into the stored frame, or the
- * INVALID_ARGUMENTS failure when it moves the day of a series whose rule pins
- * that day explicitly (see [dayMoveConflictsWithRule]) and no new rule is
- * given. Null when there is no new start. Runs before any write.
+ * The caller's new series start brought into the stored frame, or null when
+ * there is no new start.
  *
  * [newStartMillis] is a local instant (a Dart DateTime) meant in
  * [deviceZone]; an all-day series is stored as UTC midnight, so it becomes
- * that via [storageMillis], as updateEvent does. The check and the anchor
- * shift then compare like with like on either side of UTC (#144). The stored
- * [referenceMillis] is read in the row's own frame ([rowAllDay],
- * [rowTimeZone]); the target in the frame after the edit
- * ([effectiveIsAllDay]), which differs when the same edit toggles all-day.
- * Implicit rules (no BYDAY/BYMONTHDAY/BYMONTH) just follow the anchor.
+ * that via [storageMillis], as updateEvent does, and the anchor shift in
+ * [resolveSeriesTimes] then compares like with like on either side of UTC
+ * (#144). [effectiveIsAllDay] is the series' frame after the edit.
  */
 internal fun resolveTargetStart(
     newStartMillis: Long?,
-    rowRrule: String?,
-    rowAllDay: Boolean,
-    rowTimeZone: String?,
-    referenceMillis: Long,
     effectiveIsAllDay: Boolean,
-    changingRule: Boolean,
     deviceZone: TimeZone = TimeZone.getDefault()
-): Result<Long?> {
-    if (newStartMillis == null) return Result.success(null)
-    val targetStart = storageMillis(newStartMillis, effectiveIsAllDay, deviceZone)
-    if (!changingRule && rowRrule != null &&
-        dayMoveConflictsWithRule(
-            rowRrule,
-            referenceMillis,
-            seriesTimeZone(rowTimeZone, rowAllDay),
-            targetStart,
-            seriesTimeZone(rowTimeZone, effectiveIsAllDay)
-        )
-    ) {
-        return Result.failure(
-            CalendarException(
-                PlatformExceptionCodes.INVALID_ARGUMENTS,
-                "start moves this series to a different day, but its " +
-                    "recurrence rule pins specific days. Pass a " +
-                    "recurrenceRule to specify the new pattern."
-            )
-        )
-    }
-    return Result.success(targetStart)
-}
+): Long? = newStartMillis?.let { storageMillis(it, effectiveIsAllDay, deviceZone) }

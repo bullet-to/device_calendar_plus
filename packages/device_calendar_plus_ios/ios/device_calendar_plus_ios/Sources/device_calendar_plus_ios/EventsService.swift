@@ -1143,16 +1143,16 @@ class EventsService {
 
   /// The start a series update leaves `event` with — see
   /// `SeriesDates.resolveSeriesStart`, which this feeds the event's stored
-  /// start, zone and rule, and the device's zone. `newStartMillis` is the
-  /// target start; `timestamp` picks the reference occurrence (the series
-  /// anchor when nil).
+  /// start and zone, and the device's zone. `newStartMillis` is the target
+  /// start; `timestamp` picks the reference occurrence (the series anchor
+  /// when nil).
   private func resolveSeriesStart(
     for event: EKEvent,
     newStartMillis: Int64?,
     timestamp: Int64?,
     isAllDay: Bool,
-    rule: EKRecurrenceRule?,
-    changingRule: Bool
+    ruleEdit: SeriesRuleEdit,
+    splitsSeries: Bool
   ) -> Result<Date, CalendarError> {
     let target = newStartMillis.map {
       Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
@@ -1163,12 +1163,11 @@ class EventsService {
     return SeriesDates.resolveSeriesStart(
       base: event.startDate,
       storedZone: event.timeZone,
-      existingRule: event.recurrenceRules?.first,
       target: target,
       reference: reference,
       isAllDay: isAllDay,
-      rule: rule,
-      changingRule: changingRule,
+      ruleEdit: ruleEdit,
+      splitsSeries: splitsSeries,
       deviceZone: .current
     )
   }
@@ -1296,12 +1295,16 @@ class EventsService {
     // the event. EventKit keeps the fetched EKEvent live in its cache, so
     // every failure exit must happen while it is still unmodified — orphaned
     // mutations could otherwise ride along with a later save.
-    var parsedRecurrenceRule: EKRecurrenceRule?
-    if !patch.clearedFields.contains("recurrenceRule"), let rruleString = recurrenceRule {
+    let ruleEdit: SeriesRuleEdit
+    if patch.clearedFields.contains("recurrenceRule") {
+      ruleEdit = .clear
+    } else if let rruleString = recurrenceRule {
       switch requireRecurrenceRule(rruleString) {
-      case .success(let rule): parsedRecurrenceRule = rule
+      case .success(let rule): ruleEdit = .replace(rule)
       case .failure(let error): completion(.failure(error)); return
       }
+    } else {
+      ruleEdit = .keep(foundEvent.recurrenceRules?.first)
     }
 
     let newStart: Date
@@ -1310,8 +1313,8 @@ class EventsService {
       newStartMillis: newStartMillis,
       timestamp: timestamp,
       isAllDay: effectiveIsAllDay,
-      rule: parsedRecurrenceRule,
-      changingRule: recurrenceRule != nil || patch.clearedFields.contains("recurrenceRule")
+      ruleEdit: ruleEdit,
+      splitsSeries: span == "thisAndFollowing"
     ) {
     case .success(let start):
       newStart = start
@@ -1340,7 +1343,7 @@ class EventsService {
     // series by hand rather than through the shared save below — mirror
     // Android's dedicated `updateRecurringThisAndFollowing` (#93).
     if span == "thisAndFollowing",
-       patch.clearedFields.contains("recurrenceRule"),
+       case .clear = ruleEdit,
        let timestamp = timestamp {
       detachThisAndFollowing(
         occurrence: foundEvent,
@@ -1352,10 +1355,10 @@ class EventsService {
     }
 
     // Apply the recurrence-rule patch.
-    if patch.clearedFields.contains("recurrenceRule") {
-      foundEvent.recurrenceRules = nil
-    } else if let rule = parsedRecurrenceRule {
-      foundEvent.recurrenceRules = [rule]
+    switch ruleEdit {
+    case .clear: foundEvent.recurrenceRules = nil
+    case .replace(let rule): foundEvent.recurrenceRules = [rule]
+    case .keep: break
     }
 
     // Both series spans save with .futureEvents: from the master that is the

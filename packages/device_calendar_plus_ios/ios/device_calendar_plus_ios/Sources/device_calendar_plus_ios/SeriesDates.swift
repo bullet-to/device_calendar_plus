@@ -1,46 +1,22 @@
 import EventKit
 import Foundation
 
+/// What a series edit does to its recurrence rule: keep the one it has
+/// (`nil` when the event doesn't recur), replace it, or clear it. Android's
+/// counterpart is `SeriesRuleEdit` in `SeriesDates.kt`.
+enum SeriesRuleEdit {
+  case keep(EKRecurrenceRule?)
+  case replace(EKRecurrenceRule)
+  case clear
+}
+
 /// The date arithmetic behind a series update: which zone frames a series'
-/// calendar days, whether an anchor move clashes with the rule's pinned
-/// days, and the start the update leaves the series with. Pure — the device
+/// calendar days, whether an anchor move lands on a day the rule generates,
+/// and the start the update leaves the series with. Pure — the device
 /// zone is passed in rather than read from `TimeZone.current`, so native
 /// tests can drive the zones the integration harness can't set on iOS.
 /// Android's counterpart is `SeriesDates.kt`.
 enum SeriesDates {
-  /// Whether moving the anchor from `reference` to `target` would change the
-  /// day-spec that `rule` pins explicitly: the weekday for a BYDAY rule, the
-  /// day-of-month for a BYMONTHDAY rule, or the month for a BYMONTH rule. When
-  /// it would, an anchor shift alone can't say what the new pattern should be
-  /// (see updateRecurring docs), so the caller must supply a new rule. Rules
-  /// with no explicit anchor return false — they follow the anchor freely.
-  /// Each date is read in its own frame: `reference` in the zone the series
-  /// is stored in, `target` in the zone it has after the edit — they differ
-  /// only when the edit toggles all-day. Android's counterpart is
-  /// `dayMoveConflictsWithRule`.
-  static func dayMoveConflictsWithRule(
-    rule: EKRecurrenceRule,
-    reference: Date,
-    referenceZone: TimeZone,
-    target: Date,
-    targetZone: TimeZone
-  ) -> Bool {
-    var referenceCalendar = Calendar(identifier: .gregorian)
-    referenceCalendar.timeZone = referenceZone
-    var targetCalendar = Calendar(identifier: .gregorian)
-    targetCalendar.timeZone = targetZone
-    func changed(_ unit: Calendar.Component) -> Bool {
-      return referenceCalendar.component(unit, from: reference)
-        != targetCalendar.component(unit, from: target)
-    }
-    // Each pinned part is checked on its own, as Android does: a BYDAY rule
-    // can pin a month or a day of the month too (e.g. BYMONTH=11;BYDAY=4TH).
-    if let days = rule.daysOfTheWeek, !days.isEmpty, changed(.weekday) { return true }
-    if let dom = rule.daysOfTheMonth, !dom.isEmpty, changed(.day) { return true }
-    if let months = rule.monthsOfTheYear, !months.isEmpty, changed(.month) { return true }
-    return false
-  }
-
   /// Translates `base` by the wall-clock delta from `reference` to `target`,
   /// computed in `timeZone`: shifts by the whole-day difference and sets the
   /// time-of-day to `target`'s. DST-safe — it counts calendar days and sets a
@@ -77,6 +53,57 @@ enum SeriesDates {
     )
   }
 
+  /// Whether a start move leaves `rule`'s days: either move lands on another
+  /// day, read in `timeZone` (the edit frame), that the rule doesn't
+  /// generate (`RecurrenceAnchor.generates`). `reference` to `target`
+  /// guards the caller's intent; `reference` is read in `referenceZone`,
+  /// the stored frame, so an all-day toggle onto another local day is a day
+  /// move. `base` to `shifted` guards against the #140 orphan. Android's
+  /// counterpart is `leavesRule` in `SeriesDates.kt`.
+  private static func leavesRule(
+    _ rule: EKRecurrenceRule,
+    reference: Date,
+    referenceZone: TimeZone,
+    base: Date,
+    target: Date,
+    shifted: Date,
+    timeZone: TimeZone
+  ) -> Bool {
+    func movesOffRule(from: Date, fromZone: TimeZone, to: Date) -> Bool {
+      return !sameCalendarDay(from, fromZone, to, timeZone)
+        && !RecurrenceAnchor.generates(rule, day: to, timeZone: timeZone)
+    }
+    // Both checks are needed, even though they repeat each other when the
+    // reference is the base. On a {Mon,Tue,Fri} series starting Monday,
+    // moving Friday to Saturday shifts the start to Tuesday, which the rule
+    // generates: only the first check refuses it. Moving Monday to Tuesday
+    // shifts a Friday start to Saturday: only the second does (#140).
+    return movesOffRule(from: reference, fromZone: referenceZone, to: target)
+      || movesOffRule(from: base, fromZone: timeZone, to: shifted)
+  }
+
+  /// Whether `rule` pins the days it falls on (BYDAY, BYMONTHDAY, BYMONTH or
+  /// BYSETPOS) rather than taking them from its start. Android's
+  /// counterpart is `RruleString.pinsDays`.
+  private static func pinsDays(_ rule: EKRecurrenceRule) -> Bool {
+    return !(rule.daysOfTheWeek ?? []).isEmpty
+      || !(rule.daysOfTheMonth ?? []).isEmpty
+      || !(rule.monthsOfTheYear ?? []).isEmpty
+      || !(rule.setPositions ?? []).isEmpty
+  }
+
+  /// Whether `a` read in `aZone` falls on the same calendar date as `b` in `bZone`.
+  private static func sameCalendarDay(
+    _ a: Date, _ aZone: TimeZone, _ b: Date, _ bZone: TimeZone
+  ) -> Bool {
+    var aCalendar = Calendar(identifier: .gregorian)
+    aCalendar.timeZone = aZone
+    var bCalendar = Calendar(identifier: .gregorian)
+    bCalendar.timeZone = bZone
+    return aCalendar.dateComponents([.year, .month, .day], from: a)
+      == bCalendar.dateComponents([.year, .month, .day], from: b)
+  }
+
   /// The start a series update leaves a series with: `base` (its current
   /// start) when nothing moves it. Android's counterpart is
   /// `resolveSeriesTimes`.
@@ -95,25 +122,28 @@ enum SeriesDates {
   ///   carries just one across the other zone's midnight). Keep that
   ///   invariant, or read them in the stored frame, when changing either
   ///   input.
-  /// - Unless `changingRule`, that move is first checked against the days
-  ///   `existingRule` pins, reading `reference` in the stored frame and
-  ///   `target` in the edit frame. So an all-day toggle onto a local day that
-  ///   differs from the stored-zone day counts as a day move, as on Android.
-  /// - A new `rule` then walks the anchor, in the edit frame, onto the first
-  ///   day it generates (#140).
+  /// - The new start must be a day the series' rule generates, or EventKit
+  ///   shows it as an extra first occurrence (#140, #189). `ruleEdit`
+  ///   decides how: a kept rule must generate the days the move lands on
+  ///   (`leavesRule`); a replacing rule walks the shifted start, in the edit
+  ///   frame, onto the first day it generates; a cleared rule needs
+  ///   neither. A time-only move leaves a start the kept rule doesn't
+  ///   generate (one anchored off its rule by another app, or in another
+  ///   zone) where it is. A `splitsSeries` (thisAndFollowing) move onto
+  ///   another day is also refused while the kept rule pins days (#194).
   ///
-  /// Fails with `invalidArguments` when the move changes a pinned day or the
-  /// new rule generates nothing within five years of the anchor, and with
-  /// `operationFailed` if the shift can't be computed.
+  /// Fails with `invalidArguments` when a start move lands on a day the kept
+  /// rule doesn't generate or the new rule generates nothing within five
+  /// years of the anchor, and with `operationFailed` if the shift can't be
+  /// computed.
   static func resolveSeriesStart(
     base: Date,
     storedZone: TimeZone?,
-    existingRule: EKRecurrenceRule?,
     target: Date?,
     reference: Date,
     isAllDay: Bool,
-    rule: EKRecurrenceRule?,
-    changingRule: Bool,
+    ruleEdit: SeriesRuleEdit,
+    splitsSeries: Bool,
     deviceZone: TimeZone
   ) -> Result<Date, CalendarError> {
     let storedFrame = storedZone ?? deviceZone
@@ -121,21 +151,6 @@ enum SeriesDates {
     var start = base
 
     if let target = target {
-      if !changingRule,
-         let existingRule = existingRule,
-         dayMoveConflictsWithRule(
-           rule: existingRule,
-           reference: reference, referenceZone: storedFrame,
-           target: target, targetZone: editFrame
-         ) {
-        return .failure(CalendarError(
-          code: PlatformExceptionCodes.invalidArguments,
-          message: "start moves this series to a different day, but its "
-            + "recurrence rule pins specific days. Pass a recurrenceRule to "
-            + "specify the new pattern."
-        ))
-      }
-
       guard let shifted = shiftStart(
         base, reference: reference, to: target,
         isAllDay: isAllDay, timeZone: editFrame
@@ -145,10 +160,35 @@ enum SeriesDates {
           message: "Could not apply the new start to the event"
         ))
       }
+
+      if case .keep(let keptRule?) = ruleEdit {
+        // EventKit can't split a series whose rule pins days at an
+        // occurrence moved to another day: `.futureEvents` detaches it
+        // instead (#194). Refused on both platforms until it can.
+        if splitsSeries, pinsDays(keptRule),
+           !sameCalendarDay(reference, storedFrame, target, editFrame) {
+          return .failure(CalendarError(
+            code: PlatformExceptionCodes.invalidArguments,
+            message: "start moves a thisAndFollowing split onto another day, but "
+              + "the series' recurrence rule pins specific days. Pass a "
+              + "recurrenceRule to specify the new pattern."
+          ))
+        }
+        if leavesRule(
+          keptRule, reference: reference, referenceZone: storedFrame,
+          base: base, target: target, shifted: shifted, timeZone: editFrame
+        ) {
+          return .failure(CalendarError(
+            code: PlatformExceptionCodes.invalidArguments,
+            message: "start moves this series onto a day its recurrence rule "
+              + "doesn't generate. Pass a recurrenceRule to specify the new pattern."
+          ))
+        }
+      }
       start = shifted
     }
 
-    if let rule = rule {
+    if case .replace(let rule) = ruleEdit {
       guard let anchored = RecurrenceAnchor.firstMatch(
         of: rule, onOrAfter: start, timeZone: editFrame
       ) else {
