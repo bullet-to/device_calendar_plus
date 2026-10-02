@@ -2919,6 +2919,62 @@ void main() {
         reason: 'each occurrence must stay on its original calendar day',
       );
     });
+
+    // The toggle alone, with no `start`, must still move the stored start
+    // into the all-day frame. Android once left the timed DTSTART under
+    // ALL_DAY=1, and the provider reads an all-day start as a UTC date, so
+    // a start whose UTC date isn't its local one read back a day off
+    // (#124).
+    test(
+        'toggling a timed series all-day with no start keeps every '
+        'occurrence on its calendar day', () async {
+      // A local time on another UTC date, where the zone allows one: just
+      // after midnight east of UTC, just before it west of UTC.
+      final day = localMidnight(2);
+      final offset = day.timeZoneOffset;
+      final start = offset.isNegative
+          ? day.add(const Duration(hours: 23, minutes: 30))
+          : day.add(const Duration(minutes: 30));
+      final series = await seedSeries(
+        plugin,
+        calendarId,
+        count: 4,
+        minOccurrences: 4,
+        windowDays: 30,
+        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+            plugin, calendarId,
+            title: 'Timed To All-day No Start', count: count, start: start),
+      );
+      final before = series.occurrences;
+
+      await plugin.updateRecurring(
+        series.eventId,
+        EventSpan.allEvents,
+        isAllDay: true,
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 30);
+      expect(after, hasLength(4));
+      expect(after.every((e) => e.isAllDay), isTrue,
+          reason: 'every occurrence must be all-day');
+      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
+      expect(
+        after.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        before.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        reason: 'each occurrence must stay on its original calendar day',
+      );
+      expect(
+        after.map((e) => e.endDate.toLocal()).toList(),
+        before
+            .map((e) => nextLocalMidnight(dayOf(e.endDate
+                .toLocal()
+                .subtract(const Duration(milliseconds: 1)))))
+            .toList(),
+        reason: 'each occurrence must span every day its timed self touched',
+      );
+    });
   });
 
   group('Recurrence Delete Tests', () {

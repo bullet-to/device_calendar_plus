@@ -991,10 +991,26 @@ class EventsService(
             // provider: that would keep FREQ=HOURLY as an hourly series.
             unsupportedRuleFailure(recurrenceRule)?.let { return Result.failure(it) }
 
+            // A toggle to all-day moves the series into the all-day frame
+            // even without a `start` or `duration`: they default to the named
+            // occurrence's own start and the whole days it covers, as
+            // EventKit makes of it. Without that, the timed DTSTART and
+            // DURATION stayed under ALL_DAY=1 and the series read back on
+            // the wrong date, or collapsed (#124).
+            val togglesToAllDay = patch.isAllDay == true && !row.allDay
+            val reference = timestamp ?: row.dtstart
+            val startMillis = newStartMillis ?: reference.takeIf { togglesToAllDay }
+            val effectiveDurationMinutes = durationMinutes
+                ?: if (togglesToAllDay) {
+                    allDayToggleDurationMinutes(reference, eventDurationMillis(row))
+                } else {
+                    null
+                }
+
             // Bring the caller's local `start` into the stored frame (#144).
             // resolveSeriesTimes then refuses a start the kept rule doesn't
             // generate (#189; see updateRecurring docs).
-            val targetStart = resolveTargetStart(newStartMillis, effectiveIsAllDay)
+            val targetStart = resolveTargetStart(startMillis, effectiveIsAllDay)
             val ruleEdit = SeriesRuleEdit.of(
                 recurrenceRule,
                 cleared = "recurrenceRule" in patch.clearedFields,
@@ -1003,10 +1019,10 @@ class EventsService(
 
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    row, timestamp, targetStart, durationMinutes, ruleEdit, patch
+                    row, timestamp, targetStart, effectiveDurationMinutes, ruleEdit, patch
                 )
                 else -> updateRecurringAllEvents(
-                    row, timestamp, targetStart, durationMinutes, ruleEdit, patch
+                    row, timestamp, targetStart, effectiveDurationMinutes, ruleEdit, patch
                 )
             }
         } catch (e: SecurityException) {
