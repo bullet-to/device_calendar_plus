@@ -1171,7 +1171,7 @@ class EventsService(
                 // or the new series would over-generate.
                 val originalCount = RruleString.count(rrule)
                 if (originalCount != null) {
-                    val before = countInstancesBefore(row.id, timestamp)
+                    val before = countInstancesBefore(row, timestamp)
                     RruleString.withCount(rrule, maxOf(1, originalCount - before))
                 } else {
                     rrule
@@ -1580,18 +1580,21 @@ class EventsService(
     private fun eventDurationMillis(row: EventRow): Long =
         storedEndMillis(row.dtstart, row.dtend, row.duration)?.let { it - row.dtstart } ?: 3_600_000L
 
-    /** Number of occurrences of [eventId] that start before [beforeMillis]. */
-    private fun countInstancesBefore(eventId: String, beforeMillis: Long): Int {
-        // Five-year look-back window: covers daily/weekly/monthly easily, and
-        // yearly rules with an interval of up to five.
-        val windowStart = beforeMillis - 5L * 366 * 24 * 3600 * 1000
+    /** Number of occurrences of series [row] that start before [beforeMillis]. */
+    private fun countInstancesBefore(row: EventRow, beforeMillis: Long): Int {
+        // From the series' own DTSTART, so a series of any age is counted
+        // whole: a fixed look-back (five years, once) under-counted an older
+        // COUNT series, and its split's new series over-generated (#124).
+        // A day early, so an all-day first occurrence, whose UTC-midnight
+        // start the provider reads as a local date, can't fall outside it.
+        val windowStart = row.dtstart - AllDayDates.MILLIS_PER_DAY
         val uri = EventColumns.instancesUri(windowStart, beforeMillis)
         var count = 0
         context.contentResolver.query(
             uri,
             arrayOf(CalendarContract.Instances.BEGIN),
             "${CalendarContract.Instances.EVENT_ID} = ?",
-            arrayOf(eventId),
+            arrayOf(row.id),
             null
         )?.use { cursor ->
             while (cursor.moveToNext()) {

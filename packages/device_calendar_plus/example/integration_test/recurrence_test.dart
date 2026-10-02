@@ -2056,6 +2056,53 @@ void main() {
         }
       });
     }
+
+    test(
+        'thisAndFollowing keeps a COUNT series to its total when the series '
+        'started more than five years before the split (#124)', () async {
+      // A rule-keeping split gives the new series the original COUNT less
+      // the occurrences before the split. Android once counted those over a
+      // five-year look-back, so an older series under-counted them and the
+      // new series over-generated past the original end.
+      final calendar = requireCalendar(calendarId);
+      final start = DateTime.utc(DateTime.now().year - 7, 1, 15, 12);
+      final eventId = await plugin.createEvent(
+        calendarId: calendar,
+        title: 'Old Yearly Series',
+        startDate: start,
+        endDate: start.add(const Duration(hours: 1)),
+        recurrenceRule: YearlyRecurrence(end: const CountEnd(10)),
+        timeZone: 'UTC',
+      );
+      const windowDays = 12 * 366;
+      final occurrences = await occurrencesOf(plugin, calendar, eventId, start,
+          windowDays: windowDays);
+      expect(occurrences, hasLength(10),
+          reason: 'the yearly series should expand into all 10 occurrences');
+      // Eight years in: the start of next year, so the split is in the
+      // future and the five-year look-back missed three of the eight.
+      final split = occurrences[8];
+
+      final newSeriesId = await plugin.updateRecurring(
+        split.instanceId,
+        EventSpan.thisAndFollowing,
+        title: 'Old Yearly Tail',
+      );
+
+      expectTruncatedMaster(
+        await occurrencesOf(plugin, calendar, eventId, start,
+            windowDays: windowDays),
+        before: split.startDate,
+        count: 8,
+      );
+      expect(
+        startsOf(await occurrencesOf(plugin, calendar, newSeriesId, start,
+            windowDays: windowDays)),
+        startsOf(occurrences.sublist(8)),
+        reason: 'the new series must carry exactly the occurrences left '
+            'after the split, ending where the original series ended',
+      );
+    });
   });
 
   // Anchor-shift: `start` moves the anchored occurrence to a new instant and
