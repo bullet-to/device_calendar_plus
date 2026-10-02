@@ -796,7 +796,7 @@ class EventsService(
         // Write whichever bounds the edit moves: the provided dates in the
         // effective frame, or the all-day span of a bare toggle.
         val (newStart, newEnd) = resolveEditedBounds(
-            rowStart = row.dtstart,
+            currentStart = row.dtstart,
             durationMillis = eventDurationMillis(row),
             startMillis = startDate?.time,
             endMillis = endDate?.time,
@@ -897,15 +897,16 @@ class EventsService(
 
         val duration = eventDurationMillis(series.row)
         val (resolvedStart, resolvedEnd) = resolveEditedBounds(
-            rowStart = timestamp,
+            currentStart = timestamp,
             durationMillis = duration,
             startMillis = startDate?.time,
             endMillis = endDate?.time,
             newAllDay = patch.isAllDay,
             rowAllDay = series.row.allDay
         )
-        // Without an explicit endDate the occurrence's own end stays put —
-        // matching iOS, where setting startDate leaves endDate untouched.
+        // A bound the edit doesn't move keeps the occurrence's own value
+        // (iOS: setting startDate leaves endDate untouched). A bare all-day
+        // toggle moves both, via resolveEditedBounds.
         val newStart = resolvedStart ?: timestamp
         val newEnd = resolvedEnd ?: (timestamp + duration)
         if (newEnd <= newStart) {

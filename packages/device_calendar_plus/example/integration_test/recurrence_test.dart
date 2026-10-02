@@ -2909,10 +2909,9 @@ void main() {
           windowDays: 30);
       expect(after.every((e) => e.isAllDay), isTrue,
           reason: 'every occurrence must be all-day');
-      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
       expect(
-        after.map((e) => dayOf(e.startDate.toLocal())).toList(),
-        before.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        after.map((e) => localDay(e.startDate.toLocal())).toList(),
+        before.map((e) => localDay(e.startDate.toLocal())).toList(),
         reason: 'each occurrence must stay on its original calendar day',
       );
     });

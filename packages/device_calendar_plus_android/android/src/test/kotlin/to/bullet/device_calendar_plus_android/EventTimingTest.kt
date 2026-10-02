@@ -47,11 +47,30 @@ internal class EventTimingTest {
     // would read back a day off.
     private val lateEvening = instantAt(losAngeles, 2026, 10, 3, 23, 30)
 
+    // Each case names only what it varies; the row starts at lateEvening and
+    // lasts an hour unless a case says otherwise.
+    private fun resolve(
+        start: Long? = null,
+        end: Long? = null,
+        newAllDay: Boolean? = null,
+        rowAllDay: Boolean = false,
+    ) = resolveEditedBounds(
+        currentStart = lateEvening,
+        durationMillis = hour,
+        startMillis = start,
+        endMillis = end,
+        newAllDay = newAllDay,
+        rowAllDay = rowAllDay,
+        zone = losAngeles,
+    )
+
+    // 23:30-00:30 LA crosses midnight, so the all-day span covers both
+    // local dates: Oct 3 through the exclusive end of Oct 4.
     @Test
-    fun resolveEditedBounds_bareToggleOfTimedRow_isItsToggleSpan() {
+    fun resolveEditedBounds_bareToggleOfTimedRow_isItsLocalDaysAsUtcDates() {
         assertEquals(
-            AllDayDates.toggleSpan(lateEvening, hour, losAngeles),
-            resolveEditedBounds(lateEvening, hour, null, null, true, false, losAngeles),
+            instantAt(utc, 2026, 10, 3) to instantAt(utc, 2026, 10, 5),
+            resolve(newAllDay = true),
         )
     }
 
@@ -59,9 +78,9 @@ internal class EventTimingTest {
     @Test
     fun resolveEditedBounds_noDatesAndNoToggle_leavesBothBounds() {
         val none = null to null
-        assertEquals(none, resolveEditedBounds(lateEvening, hour, null, null, true, true, losAngeles))
-        assertEquals(none, resolveEditedBounds(lateEvening, hour, null, null, false, false, losAngeles))
-        assertEquals(none, resolveEditedBounds(lateEvening, hour, null, null, null, false, losAngeles))
+        assertEquals(none, resolve(newAllDay = true, rowAllDay = true))
+        assertEquals(none, resolve(newAllDay = false))
+        assertEquals(none, resolve())
     }
 
     // Provided bounds are stored in the effective frame: the patch's flag,
@@ -69,17 +88,16 @@ internal class EventTimingTest {
     @Test
     fun resolveEditedBounds_providedBounds_storedInEffectiveFrame() {
         val utcDate = instantAt(utc, 2026, 10, 3)
-        assertEquals(
-            utcDate to null,
-            resolveEditedBounds(0L, hour, lateEvening, null, true, false, losAngeles),
-        )
-        assertEquals(
-            null to utcDate,
-            resolveEditedBounds(0L, hour, null, lateEvening, null, true, losAngeles),
-        )
+        assertEquals(utcDate to null, resolve(start = lateEvening, newAllDay = true))
+        assertEquals(null to utcDate, resolve(end = lateEvening, rowAllDay = true))
         assertEquals(
             lateEvening to lateEvening + hour,
-            resolveEditedBounds(0L, hour, lateEvening, lateEvening + hour, false, true, losAngeles),
+            resolve(
+                start = lateEvening,
+                end = lateEvening + hour,
+                newAllDay = false,
+                rowAllDay = true,
+            ),
         )
     }
 }

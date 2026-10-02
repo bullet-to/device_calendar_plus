@@ -36,7 +36,7 @@ internal fun storageMillis(
 
 /**
  * The DTSTART and DTEND an `updateEvent` edit writes for an event starting at
- * [rowStart] and lasting [durationMillis], given the caller's optional
+ * [currentStart] (the row's DTSTART, or an occurrence's own start) and lasting [durationMillis], given the caller's optional
  * [startMillis]/[endMillis], the patch's [newAllDay] and the row's
  * [rowAllDay]. Null means "leave that bound as it is".
  *
@@ -48,7 +48,7 @@ internal fun storageMillis(
  * ([storageMillis]) and a missing one stays null.
  */
 internal fun resolveEditedBounds(
-    rowStart: Long,
+    currentStart: Long,
     durationMillis: Long,
     startMillis: Long?,
     endMillis: Long?,
@@ -57,7 +57,7 @@ internal fun resolveEditedBounds(
     zone: TimeZone = TimeZone.getDefault()
 ): Pair<Long?, Long?> {
     if (newAllDay == true && !rowAllDay && startMillis == null && endMillis == null) {
-        return AllDayDates.toggleSpan(rowStart, durationMillis, zone)
+        return AllDayDates.toggleSpan(currentStart, durationMillis, zone)
     }
     val isAllDay = newAllDay ?: rowAllDay
     return startMillis?.let { storageMillis(it, isAllDay, zone) } to
