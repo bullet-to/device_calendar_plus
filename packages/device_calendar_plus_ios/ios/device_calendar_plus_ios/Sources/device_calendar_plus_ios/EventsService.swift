@@ -1308,11 +1308,11 @@ class EventsService {
       return
     }
 
-    // Resolve the start and/or duration changes, still before touching the
-    // event. A rule that already fits its anchor resolves to the current
-    // start, and skips the time rewrite for a change that moves nothing
-    // (mirrors Android's rewriteTimeColumns).
-    let newTimes: (start: Date, end: Date)?
+    // Resolve the end for the new start, still before touching the event. A
+    // rule that already fits its anchor resolves to the current start, and
+    // skips the time rewrite for a change that moves nothing (mirrors
+    // Android's rewriteTimeColumns).
+    let newEnd: Date?
     if newStartMillis != nil || durationMinutes != nil || newStart != foundEvent.startDate {
       switch SeriesDates.resolveSeriesEnd(
         start: foundEvent.startDate,
@@ -1323,21 +1323,21 @@ class EventsService {
         deviceZone: .current
       ) {
       case .success(let end):
-        newTimes = (newStart, end)
+        newEnd = end
       case .failure(let error):
         completion(.failure(error))
         return
       }
     } else {
-      newTimes = nil
+      newEnd = nil
     }
 
     // Apply field changes.
     patch.apply(to: foundEvent)
 
-    if let times = newTimes {
-      foundEvent.startDate = times.start
-      foundEvent.endDate = times.end
+    if let newEnd = newEnd {
+      foundEvent.startDate = newStart
+      foundEvent.endDate = newEnd
     }
 
     patch.applyTimeZone(to: foundEvent)

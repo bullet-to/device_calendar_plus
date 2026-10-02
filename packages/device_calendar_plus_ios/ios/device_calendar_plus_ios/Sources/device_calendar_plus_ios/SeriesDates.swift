@@ -242,7 +242,13 @@ enum SeriesDates {
   /// falls an hour short or long across a DST change, and the event loses
   /// or gains its last day (#195). A kept span is measured from `start`'s
   /// wall clock to `end`'s, so a timed event toggled all-day carries its
-  /// span from the new day's midnight. Timed spans stay exact intervals.
+  /// span from the new day's midnight; one that runs backwards on the wall
+  /// clock (a DST fall-back) clamps to zero length at `newStart`. Timed spans
+  /// stay exact intervals.
+  ///
+  /// The duration half of Android's `resolveSeriesTimes`. Android adds exact
+  /// milliseconds even for all-day series: its all-day rows are stored in
+  /// UTC, which has no DST.
   ///
   /// Fails with `invalidArguments` when an all-day series is given a
   /// `durationMinutes` that isn't whole days, and with `operationFailed` if
@@ -262,7 +268,7 @@ enum SeriesDates {
     }
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = deviceZone
-    let resolved: Date?
+    let spanSeconds: Int
     if let durationMinutes = durationMinutes {
       // All-day events have no time-of-day and only whole-day durations.
       // The Dart layer can only check this against fields in the same call;
@@ -273,36 +279,35 @@ enum SeriesDates {
           message: "All-day events require whole-day durations"
         ))
       }
-      resolved = wallClock(
-        newStart,
-        plusDays: durationMinutes / minutesPerDay,
-        secondsIntoDay: secondsIntoDay(newStart, calendar),
-        calendar: calendar
-      )
+      spanSeconds = durationMinutes * 60
     } else {
-      let days = calendar.dateComponents(
-        [.day], from: calendar.startOfDay(for: start), to: calendar.startOfDay(for: end)
-      ).day ?? 0
-      let endSeconds = secondsIntoDay(newStart, calendar) + days * secondsPerDay
-        + secondsIntoDay(end, calendar) - secondsIntoDay(start, calendar)
-      // Floored: a same-day span that runs backwards on the wall clock (a
-      // DST fall-back) lands on the previous day, not a negative time.
-      let endDays = endSeconds >= 0
-        ? endSeconds / secondsPerDay
-        : -((secondsPerDay - 1 - endSeconds) / secondsPerDay)
-      resolved = wallClock(
-        newStart,
-        plusDays: endDays,
-        secondsIntoDay: endSeconds - endDays * secondsPerDay,
-        calendar: calendar
-      )
+      // A span that runs backwards on the wall clock (a DST fall-back) would
+      // end before the new start, which EventKit won't save: clamp it.
+      spanSeconds = max(0, wallClockSpan(from: start, to: end, calendar))
     }
-    guard let resolved = resolved else {
+    let endSeconds = secondsIntoDay(newStart, calendar) + spanSeconds
+    guard let resolved = wallClock(
+      newStart,
+      plusDays: endSeconds / secondsPerDay,
+      secondsIntoDay: endSeconds % secondsPerDay,
+      calendar: calendar
+    ) else {
       return .failure(CalendarError(
         code: PlatformExceptionCodes.operationFailed,
         message: "Could not apply the new end to the event"
       ))
     }
     return .success(resolved)
+  }
+
+  /// The wall-clock span from `start` to `end` in `calendar`, in seconds:
+  /// whole calendar days at 86,400 each, plus the difference in time of day.
+  /// Negative when `end`'s wall clock reads earlier than `start`'s (a short
+  /// span across a DST fall-back).
+  private static func wallClockSpan(from start: Date, to end: Date, _ calendar: Calendar) -> Int {
+    let days = calendar.dateComponents(
+      [.day], from: calendar.startOfDay(for: start), to: calendar.startOfDay(for: end)
+    ).day ?? 0
+    return days * secondsPerDay + secondsIntoDay(end, calendar) - secondsIntoDay(start, calendar)
   }
 }

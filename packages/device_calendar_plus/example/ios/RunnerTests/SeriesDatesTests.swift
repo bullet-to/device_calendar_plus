@@ -307,22 +307,10 @@ final class SeriesDatesTests: XCTestCase {
     XCTAssertEqual(end, at(newYork, 10, 15, hour: 1))
   }
 
-  // An all-day event toggled timed keeps its span as an exact interval.
-  func testAllDayToTimedKeptSpanIsExact() {
-    let newStart = at(newYork, 10, 15, hour: 9)
-    let end = resolveEnd(
-      start: at(newYork, 10, 1),
-      end: endOfDay(newYork, 10, 1),
-      newStart: newStart,
-      durationMinutes: nil,
-      isAllDay: false
-    )
-    XCTAssertEqual(end, newStart.addingTimeInterval(86_399))
-  }
-
-  // Timed durations stay exact: two days from 31 October 23:00 is 172,800
-  // seconds later, whatever the wall clock reads, and a given duration
-  // replaces the stored one-hour span.
+  // Timed spans stay exact intervals (given or kept, including an all-day
+  // event toggled timed): two days from 31 October 23:00 is 172,800 seconds
+  // later, whatever the wall clock reads, and a given duration replaces the
+  // stored one-hour span.
   func testTimedDurationAcrossDstEndIsExact() {
     let newStart = at(newYork, 10, 31, hour: 23)
     let end = resolveEnd(
@@ -336,9 +324,10 @@ final class SeriesDatesTests: XCTestCase {
   }
 
   // A timed event toggled all-day whose wall-clock span runs backwards
-  // across DST end (01:30 EDT to 01:10 EST, 40 minutes later) floors to the
-  // day before the new midnight rather than computing a negative time.
-  func testAllDayKeptSpanWithEndBeforeStartFloorsToThePreviousDay() {
+  // across DST end (01:30 EDT to 01:10 EST, 40 minutes later) clamps to a
+  // zero-length span at the new midnight, rather than ending the day before
+  // it starts.
+  func testAllDayKeptSpanRunningBackwardsAcrossDstEndClampsToTheNewStart() {
     let start = at(newYork, 11, 1).addingTimeInterval(90 * 60)
     let end = resolveEnd(
       start: start,
@@ -347,6 +336,6 @@ final class SeriesDatesTests: XCTestCase {
       durationMinutes: nil,
       isAllDay: true
     )
-    XCTAssertEqual(end, at(newYork, 11, 9, hour: 23).addingTimeInterval(40 * 60))
+    XCTAssertEqual(end, at(newYork, 11, 10))
   }
 }

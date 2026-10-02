@@ -119,7 +119,7 @@ internal sealed class SeriesRuleEdit {
 
 /**
  * Resolves the start and duration for a series-level edit; iOS's
- * counterpart is `resolveSeriesStart`.
+ * counterparts are `resolveSeriesStart` and `resolveSeriesEnd`.
  *
  * When [targetStart] is given the start is shifted by the wall-clock
  * delta from [referenceMillis] to [targetStart] (see [SplitShift]).
