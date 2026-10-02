@@ -671,6 +671,16 @@ void main() {
         final result = await DeviceCalendar.instance.hasPermissions();
         expect(result, CalendarPermissionStatus.denied);
       });
+
+      test('throws StateError on an unrecognized status string', () async {
+        // A status added natively but unknown to this Dart version must fail
+        // loudly, not silently read as denied (#127).
+        mockPlatform._permissionStatusCode = 'someFutureStatus';
+        await expectLater(
+          DeviceCalendar.instance.hasPermissions(),
+          throwsA(isA<StateError>()),
+        );
+      });
     });
 
     group('listEvents', () {

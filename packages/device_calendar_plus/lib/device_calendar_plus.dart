@@ -197,22 +197,24 @@ class DeviceCalendar {
     return false;
   }
 
-  /// Converts a status value string to CalendarPermissionStatus
+  /// Converts a status value string to CalendarPermissionStatus.
+  ///
+  /// A null status reads as denied. An unrecognized string means the native
+  /// side reported a status this Dart version doesn't know — a plugin version
+  /// mismatch — so it throws a [StateError] rather than silently reading as
+  /// denied.
   CalendarPermissionStatus _convertStatusValue(String? statusValue) {
-    // Default to denied if status is null or unrecognized
     if (statusValue == null) {
       return CalendarPermissionStatus.denied;
     }
 
-    // Parse the enum value by name
-    try {
-      return CalendarPermissionStatus.values.firstWhere(
-        (e) => e.name == statusValue,
-        orElse: () => CalendarPermissionStatus.denied,
-      );
-    } catch (_) {
-      return CalendarPermissionStatus.denied;
-    }
+    return CalendarPermissionStatus.values.firstWhere(
+      (e) => e.name == statusValue,
+      orElse: () => throw StateError(
+        'Unrecognized calendar permission status "$statusValue" from the '
+        'platform.',
+      ),
+    );
   }
 
   /// Lists all calendars on the device. Requires full access.
