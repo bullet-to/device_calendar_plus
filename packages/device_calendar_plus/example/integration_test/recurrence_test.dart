@@ -1710,6 +1710,50 @@ void main() {
           reason: 'the master event row must keep its original title');
     });
 
+    // The toggle alone, with no dates, must move the detached occurrence into
+    // the all-day frame. Android once wrote the occurrence's timed start and
+    // duration under ALL_DAY=1, and the provider reads an all-day time as a
+    // UTC date, so a time whose UTC date isn't its local one read back a day
+    // off.
+    test(
+        'updateEvent toggling a timed occurrence all-day with no dates keeps '
+        'it on its calendar day', () async {
+      final start = startOnOtherUtcDate(localMidnight(2));
+      final series = await seedSeries(
+        plugin,
+        calendarId,
+        count: 4,
+        minOccurrences: 4,
+        windowDays: 30,
+        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+            plugin, calendarId,
+            title: 'Timed Occurrence To All-day', count: count, start: start),
+      );
+      final target = series.occurrences[1];
+
+      await plugin.updateEvent(
+        instanceId: target.instanceId,
+        title: 'All-day occurrence',
+        isAllDay: true,
+      );
+
+      final lastDay = localDay(target.endDate
+          .toLocal()
+          .subtract(const Duration(milliseconds: 1)));
+      final detached = await eventsTitled(
+          plugin, calendarId!, 'All-day occurrence', series.start,
+          windowDays: 30);
+      expect(detached, hasLength(1),
+          reason: 'the detached occurrence must be listed once');
+      expect(detached.single.isAllDay, isTrue);
+      expect(localDay(detached.single.startDate.toLocal()),
+          localDay(target.startDate.toLocal()),
+          reason: 'the occurrence must stay on its own calendar day');
+      expect(detached.single.endDate.toLocal(), nextLocalMidnight(lastDay),
+          reason: 'the occurrence must span every day its timed self '
+              'touched');
+    });
+
     test(
         'updateEvent with an instance ID rejects a startDate past the '
         'occurrence end', () async {
@@ -2865,10 +2909,9 @@ void main() {
           windowDays: 30);
       expect(after.every((e) => e.isAllDay), isTrue,
           reason: 'every occurrence must be all-day');
-      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
       expect(
-        after.map((e) => dayOf(e.startDate.toLocal())).toList(),
-        before.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        after.map((e) => localDay(e.startDate.toLocal())).toList(),
+        before.map((e) => localDay(e.startDate.toLocal())).toList(),
         reason: 'each occurrence must stay on its original calendar day',
       );
     });

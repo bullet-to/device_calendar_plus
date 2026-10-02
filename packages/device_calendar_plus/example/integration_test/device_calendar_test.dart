@@ -5,6 +5,7 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'test_helpers.dart';
 import 'test_seed.dart';
 
 /// Probes whether the given calendar's source supports event availability.
@@ -1038,31 +1039,32 @@ void main() {
           reason: 'the end must be stored at whole seconds');
     });
 
-    test('Change Timed Event to All-Day', () async {
+    // The toggle alone, with no dates, must still move the stored times into
+    // the all-day frame. Android once left the timed DTSTART/DTEND under
+    // ALL_DAY=1, and the provider reads an all-day time as a UTC date, so a
+    // time whose UTC date isn't its local one read back a day off.
+    test('Change Timed Event to All-Day keeps its calendar days', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
-        name: 'Timed to All-Day Test $timestamp',
+        name: 'Timed to All-Day No Dates Test $timestamp',
       );
       createdCalendarIds.add(calendarId);
 
-      final today = DateTime.now();
-
-      // Create timed event
+      final start = startOnOtherUtcDate(localMidnight(2));
+      final end = start.add(const Duration(hours: 1));
       final eventId = await plugin.createEvent(
         calendarId: calendarId,
-        title: 'Timed to All-Day',
-        startDate: DateTime(today.year, today.month, today.day, 14, 0),
-        endDate: DateTime(today.year, today.month, today.day, 15, 0),
-        isAllDay: false,
+        title: 'Timed to All-Day No Dates',
+        startDate: start,
+        endDate: end,
+        // Not the device zone on purpose: the device-local date decides the
+        // all-day day, not the event's own zone (as on iOS).
+        timeZone: 'UTC',
       );
 
-      // Update to all-day
-      await plugin.updateEvent(
-        instanceId: eventId,
-        isAllDay: true,
-      );
+      await plugin.updateEvent(instanceId: eventId, isAllDay: true);
 
-      // Verify update
+      final lastDay = localDay(end.subtract(const Duration(milliseconds: 1)));
       final event = await plugin.getEvent(eventId);
       expect(event, isNotNull);
       expect(event!.isAllDay, true);
@@ -1070,6 +1072,10 @@ void main() {
       expect(event.startDate.hour, 0);
       expect(event.startDate.minute, 0);
       expect(event.startDate.second, 0);
+      expect(localDay(event.startDate.toLocal()), localDay(start),
+          reason: 'the event must stay on its own calendar day');
+      expect(event.endDate.toLocal(), nextLocalMidnight(lastDay),
+          reason: 'the event must span every day its timed self touched');
     });
 
     test('Extend an All-Day Event to Two Days (#195)', () async {

@@ -1,3 +1,13 @@
+## Unreleased
+
+### Fixed
+- `updateEvent` with `isAllDay: true` and no `startDate` or `endDate` moves
+  a timed one-off event, or a detached occurrence of a timed series, into
+  the all-day frame: its own local date, spanning every day it touched, as
+  on iOS. The timed DTSTART and DTEND (or duration) were left under
+  `ALL_DAY=1`, so the provider read them as a UTC date, a day off where
+  that isn't the local one.
+
 ## 0.9.1 - 2026-10-01
 
 ### Fixed
