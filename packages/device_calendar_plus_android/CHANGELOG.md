@@ -1,3 +1,11 @@
+## Unreleased
+
+### Fixed
+- `hasPermissions` without an Activity (a background context) reports
+  `denied` when the plugin has recorded a denial, instead of a
+  `notDetermined` that promised a dialog `requestPermissions` can't show
+  from there (#127).
+
 ## 0.9.1 - 2026-10-01
 
 ### Fixed
