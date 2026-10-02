@@ -69,9 +69,9 @@ CI (`.github/workflows/ci.yml`) runs on every PR and every push to `main`:
 modes, and the Swift tests on a macOS simulator. Integration tests aren't in
 CI, so run those by hand.
 
-Unit tests (all packages):
+Unit tests (all packages, the same loop CI runs), from the repo root:
 ```bash
-very_good test --recursive
+for d in packages/*/test; do (cd "$(dirname "$d")" && flutter test); done
 ```
 
 Integration tests:
@@ -116,6 +116,7 @@ If you touched `packages/device_calendar_plus_android/android/build.gradle`
 or any Gradle file under `packages/device_calendar_plus/example/android/`, run
 them again under built-in Kotlin (Flutter 3.47+):
 ```bash
+cd packages/device_calendar_plus/example/android
 ./gradlew :device_calendar_plus_android:testDebugUnitTest -Pandroid.builtInKotlin=true
 ```
 

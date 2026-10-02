@@ -39,14 +39,14 @@ jobs:
       # One pub get resolves the whole workspace.
       - run: flutter pub get
 
-      # Warnings and errors fail the job; the example app's existing infos
-      # (avoid_print and friends) don't.
-      - run: flutter analyze --no-fatal-infos
+      # Infos, warnings and errors all fail the job.
+      - run: flutter analyze
 
       - name: Unit tests
         # Every package with a test/ dir, so a new package is picked up
         # without editing this list. Keeps going after a failure so one run
-        # reports every failing package.
+        # reports every failing package. CONTRIBUTING's "Unit tests (all
+        # packages)" is this same loop; keep the two in step.
         run: |
           status=0
           for test_dir in packages/*/test; do
