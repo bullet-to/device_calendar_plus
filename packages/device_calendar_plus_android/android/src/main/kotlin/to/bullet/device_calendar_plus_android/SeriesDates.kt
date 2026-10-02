@@ -147,7 +147,9 @@ internal sealed class SeriesRuleEdit {
  * the kept rule doesn't generate (one anchored off its rule by another app,
  * or in another zone) where it is. A [splitsSeries] (thisAndFollowing) move
  * onto another day is also refused while the kept rule pins days (#194).
- * The duration is overridden when
+ * [startDefaulted] says [targetStart] stands in for a `start` the caller
+ * didn't pass ([seriesTimeEditDefaults]), so a refusal names the all-day
+ * toggle rather than a `start` argument. The duration is overridden when
  * [durationMinutes] is given.
  */
 internal fun resolveSeriesTimes(
@@ -160,7 +162,8 @@ internal fun resolveSeriesTimes(
     splitsSeries: Boolean,
     isAllDay: Boolean,
     timeZoneId: String?,
-    storedZone: TimeZone
+    storedZone: TimeZone,
+    startDefaulted: Boolean = false
 ): Result<Pair<Long, Long>> {
     val editZone = seriesTimeZone(timeZoneId, isAllDay)
     // A slot copies the new start's time of day, already whole seconds.
@@ -174,13 +177,18 @@ internal fun resolveSeriesTimes(
     }
     val keptRule = (ruleEdit as? SeriesRuleEdit.Keep)?.rule
     if (targetStart != null && keptRule != null) {
+        val mover = if (startDefaulted) {
+            "isAllDay without a start (the occurrence's device-local date) moves"
+        } else {
+            "start moves"
+        }
         val refusal = when {
             // iOS can't split a series whose rule pins days at an occurrence
             // moved to another day: EventKit detaches it instead (#194).
             // Refused on both platforms until it can.
             splitsSeries && RruleString.pinsDays(keptRule) &&
                 !sameCalendarDay(referenceMillis, storedZone, targetStart, editZone) ->
-                "start moves a thisAndFollowing split onto another day, but " +
+                "$mover a thisAndFollowing split onto another day, but " +
                     "the series' recurrence rule pins specific days. Pass a " +
                     "recurrenceRule to specify the new pattern."
             leavesRule(
@@ -192,7 +200,7 @@ internal fun resolveSeriesTimes(
                 shiftedStart = shiftedStart,
                 tz = editZone
             ) ->
-                "start moves this series onto a day its recurrence " +
+                "$mover this series onto a day its recurrence " +
                     "rule doesn't generate. Pass a recurrenceRule to " +
                     "specify the new pattern."
             else -> null
@@ -299,4 +307,49 @@ internal fun allDayToggleDurationMinutes(
         startMillis + maxOf(durationMillis, 1L), deviceZone
     )
     return ((endEdge - firstDay) / 60_000L).toInt()
+}
+
+/** The start and duration a series edit writes, after [seriesTimeEditDefaults]. */
+internal data class SeriesTimeEdit(
+    /** The new start, a local instant as the caller's `start`, or null to keep it. */
+    val startMillis: Long?,
+    /** The new duration, or null to keep it. */
+    val durationMinutes: Int?,
+    /** Whether [startMillis] is a default rather than the caller's `start`. */
+    val startDefaulted: Boolean,
+)
+
+/**
+ * The caller's `start` and `duration` for a series edit, with the defaults
+ * an all-day toggle fills in. A toggle of a timed series ([rowAllDay]
+ * false) to all-day ([patchIsAllDay] true) moves it into the all-day frame
+ * even without them: `start` defaults to the named occurrence's own start
+ * ([timestamp], or the series' [seriesStart] when the edit names the
+ * master), and `duration` to the whole [deviceZone] days that occurrence,
+ * lasting [durationMillis], covers ([allDayToggleDurationMinutes]), as
+ * EventKit makes of it. Without them the timed DTSTART and DURATION stayed
+ * under ALL_DAY=1 and the series read back on the wrong date, or collapsed
+ * (#124). Any other edit passes [newStartMillis] and [durationMinutes]
+ * through.
+ */
+internal fun seriesTimeEditDefaults(
+    newStartMillis: Long?,
+    durationMinutes: Int?,
+    rowAllDay: Boolean,
+    patchIsAllDay: Boolean?,
+    timestamp: Long?,
+    seriesStart: Long,
+    durationMillis: Long,
+    deviceZone: TimeZone = TimeZone.getDefault()
+): SeriesTimeEdit {
+    if (patchIsAllDay != true || rowAllDay) {
+        return SeriesTimeEdit(newStartMillis, durationMinutes, startDefaulted = false)
+    }
+    val occurrenceStart = timestamp ?: seriesStart
+    return SeriesTimeEdit(
+        startMillis = newStartMillis ?: occurrenceStart,
+        durationMinutes = durationMinutes
+            ?: allDayToggleDurationMinutes(occurrenceStart, durationMillis, deviceZone),
+        startDefaulted = newStartMillis == null,
+    )
 }
