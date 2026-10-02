@@ -12,6 +12,10 @@
   throw, is now allowed through `EventSpan.allEvents`. With
   `thisAndFollowing` a move to another day still throws while the rule pins
   days (#189, #194).
+- iOS: `updateRecurring` on an all-day series counts `duration` (or the kept
+  span, when only `start` moves) in calendar days, so a multi-day all-day
+  series no longer loses or gains its last day when its span crosses a DST
+  change (#195).
 
 ## 0.10.0 - 2026-09-30
 

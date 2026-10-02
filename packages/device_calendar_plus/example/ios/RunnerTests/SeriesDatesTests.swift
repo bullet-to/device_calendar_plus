@@ -158,13 +158,15 @@ final class SeriesDatesTests: XCTestCase {
     start: Date,
     end: Date,
     newStart: Date,
+    startGiven: Bool = true,
     durationMinutes: Int?,
     isAllDay: Bool
-  ) -> Result<Date, CalendarError> {
+  ) -> Result<Date?, CalendarError> {
     return SeriesDates.resolveSeriesEnd(
       start: start,
       end: end,
       newStart: newStart,
+      startGiven: startGiven,
       durationMinutes: durationMinutes,
       isAllDay: isAllDay,
       deviceZone: newYork
@@ -175,16 +177,47 @@ final class SeriesDatesTests: XCTestCase {
     start: Date,
     end: Date,
     newStart: Date,
+    startGiven: Bool = true,
     durationMinutes: Int?,
     isAllDay: Bool
   ) -> Date? {
-    return try? resolveEndResult(
+    return (try? resolveEndResult(
       start: start,
       end: end,
       newStart: newStart,
+      startGiven: startGiven,
       durationMinutes: durationMinutes,
       isAllDay: isAllDay
-    ).get()
+    ).get()) ?? nil
+  }
+
+  // A change that moves nothing (no start or duration given, and a kept rule
+  // that already fits its anchor) resolves no end, so the event's times
+  // aren't rewritten (Android's rewriteTimeColumns skips the same case).
+  func testNothingMovedResolvesNoEnd() {
+    let start = at(newYork, 10, 1)
+    let end = resolveEnd(
+      start: start,
+      end: endOfDay(newYork, 10, 1),
+      newStart: start,
+      startGiven: false,
+      durationMinutes: nil,
+      isAllDay: true
+    )
+    XCTAssertNil(end)
+  }
+
+  // A given start resolves an end even when it lands on the current start.
+  func testAGivenStartOnTheCurrentStartResolvesAnEnd() {
+    let start = at(newYork, 10, 1)
+    let end = resolveEnd(
+      start: start,
+      end: endOfDay(newYork, 10, 1),
+      newStart: start,
+      durationMinutes: nil,
+      isAllDay: true
+    )
+    XCTAssertEqual(end, endOfDay(newYork, 10, 1))
   }
 
   // An all-day series only takes whole-day durations: the stored event's
@@ -307,10 +340,9 @@ final class SeriesDatesTests: XCTestCase {
     XCTAssertEqual(end, at(newYork, 10, 15, hour: 1))
   }
 
-  // Timed spans stay exact intervals (given or kept, including an all-day
-  // event toggled timed): two days from 31 October 23:00 is 172,800 seconds
-  // later, whatever the wall clock reads, and a given duration replaces the
-  // stored one-hour span.
+  // A given timed duration is an exact interval: two days from 31 October
+  // 23:00 is 172,800 seconds later, whatever the wall clock reads, and it
+  // replaces the stored one-hour span.
   func testTimedDurationAcrossDstEndIsExact() {
     let newStart = at(newYork, 10, 31, hour: 23)
     let end = resolveEnd(
@@ -321,9 +353,13 @@ final class SeriesDatesTests: XCTestCase {
       isAllDay: false
     )
     XCTAssertEqual(end, newStart.addingTimeInterval(2 * 86_400))
+  }
 
-    // Kept: an all-day event toggled timed keeps its stored interval exactly
-    // (one second short of a day), not the wall-clock span.
+  // A kept timed span is the stored interval too: an all-day event toggled
+  // timed and moved across DST end keeps its stored interval exactly (one
+  // second short of a day), not the wall-clock span.
+  func testTimedKeptSpanAcrossDstEndIsTheStoredInterval() {
+    let newStart = at(newYork, 10, 31, hour: 23)
     let storedStart = at(newYork, 10, 24)
     let storedEnd = endOfDay(newYork, 10, 24)
     let keptEnd = resolveEnd(

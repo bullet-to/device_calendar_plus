@@ -236,6 +236,11 @@ enum SeriesDates {
   /// `newStart`: `durationMinutes` after it, or the current `start`–`end`
   /// span when no duration is given.
   ///
+  /// `nil` when the update moves nothing: no start given (`startGiven`), no
+  /// duration, and `newStart` still `start` (a rule that already fits its
+  /// anchor resolves to the current start). The caller then skips the time
+  /// rewrite, mirroring Android's `rewriteTimeColumns`.
+  ///
   /// All-day spans are wall-clock spans in `deviceZone` (the all-day edit
   /// frame): whole calendar days plus a time of day. EventKit keeps an
   /// all-day event at local midnight, so a day carried as 86,400 seconds
@@ -257,10 +262,14 @@ enum SeriesDates {
     start: Date,
     end: Date,
     newStart: Date,
+    startGiven: Bool,
     durationMinutes: Int?,
     isAllDay: Bool,
     deviceZone: TimeZone
-  ) -> Result<Date, CalendarError> {
+  ) -> Result<Date?, CalendarError> {
+    guard startGiven || durationMinutes != nil || newStart != start else {
+      return .success(nil)
+    }
     guard isAllDay else {
       let duration = durationMinutes.map { TimeInterval($0 * 60) }
         ?? end.timeIntervalSince(start)

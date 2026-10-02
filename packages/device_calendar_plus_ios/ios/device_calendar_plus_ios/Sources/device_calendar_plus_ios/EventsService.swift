@@ -1308,28 +1308,23 @@ class EventsService {
       return
     }
 
-    // Resolve the end for the new start, still before touching the event. A
-    // rule that already fits its anchor resolves to the current start, and
-    // skips the time rewrite for a change that moves nothing (mirrors
-    // Android's rewriteTimeColumns).
+    // Resolve the end for the new start, still before touching the event:
+    // `nil` for a change that moves nothing, which skips the time rewrite.
     let newEnd: Date?
-    if newStartMillis != nil || durationMinutes != nil || newStart != foundEvent.startDate {
-      switch SeriesDates.resolveSeriesEnd(
-        start: foundEvent.startDate,
-        end: foundEvent.endDate,
-        newStart: newStart,
-        durationMinutes: durationMinutes,
-        isAllDay: effectiveIsAllDay,
-        deviceZone: .current
-      ) {
-      case .success(let end):
-        newEnd = end
-      case .failure(let error):
-        completion(.failure(error))
-        return
-      }
-    } else {
-      newEnd = nil
+    switch SeriesDates.resolveSeriesEnd(
+      start: foundEvent.startDate,
+      end: foundEvent.endDate,
+      newStart: newStart,
+      startGiven: newStartMillis != nil,
+      durationMinutes: durationMinutes,
+      isAllDay: effectiveIsAllDay,
+      deviceZone: .current
+    ) {
+    case .success(let end):
+      newEnd = end
+    case .failure(let error):
+      completion(.failure(error))
+      return
     }
 
     // Apply field changes.
