@@ -2,7 +2,7 @@
 
 A Flutter plugin for reading and writing calendar events on **Android** and **iOS**.
 
-A maintained replacement for the abandoned [`device_calendar`](https://pub.dev/packages/device_calendar) plugin, built for [Bullet](https://bullet.to): a cleaner Dart API, timezones that behave, and no `timezone` package tagging along. Getting EventKit and Android's Calendar Provider to agree on anything is a slog - this package handles it so your app doesn't have to.
+A replacement for the unmaintained [device calendar](https://pub.dev/packages/device_calendar) plugin, built for [Bullet](https://bullet.to): a cleaner Dart API, timezones that behave, and no `timezone` package tagging along. Getting EventKit and Android's Calendar Provider to agree on anything is a slog - this package handles it so your app doesn't have to.
 
 [![pub package](https://img.shields.io/pub/v/device_calendar_plus.svg)](https://pub.dev/packages/device_calendar_plus)
 [![pub points](https://img.shields.io/pub/points/device_calendar_plus)](https://pub.dev/packages/device_calendar_plus/score)
