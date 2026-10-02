@@ -27,21 +27,38 @@ internal class PermissionServiceTest {
 
     /**
      * A service on a mocked [Context] whose manifest declares both calendar
-     * permissions, none granted, with [denials] as the was-denied store and
-     * [canAskAgain] as the rationale (`null` stands for no Activity).
+     * permissions, none granted, with [denials] as the was-denied store.
+     *
+     * The mocked context isn't an Activity, so leaving [shouldShowRationale]
+     * `null` runs the service's real no-Activity rationale. Passing a value
+     * stands in for the OS's answer on an Activity.
      */
     private fun service(
         denials: PermissionDenialStore,
-        canAskAgain: Boolean? = null,
-    ) = PermissionService(
-        Mockito.mock(Context::class.java),
-        isGranted = { false },
-        denials = denials,
-        canAskAgain = { canAskAgain },
-        declaredPermissions = {
+        shouldShowRationale: Boolean? = null,
+    ): PermissionService {
+        val context = Mockito.mock(Context::class.java)
+        val isGranted = { _: String -> false }
+        val declaredPermissions = {
             listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
-        },
-    )
+        }
+        return if (shouldShowRationale == null) {
+            PermissionService(
+                context,
+                isGranted = isGranted,
+                denials = denials,
+                declaredPermissions = declaredPermissions,
+            )
+        } else {
+            PermissionService(
+                context,
+                isGranted = isGranted,
+                denials = denials,
+                shouldShowRationale = { shouldShowRationale },
+                declaredPermissions = declaredPermissions,
+            )
+        }
+    }
 
     @Test
     fun hasPermissions_withNoActivityAndRecordedDenial_reportsDenied() {
@@ -63,7 +80,7 @@ internal class PermissionServiceTest {
     @Test
     fun hasPermissions_withActivityRationaleAndRecordedDenial_reportsNotDetermined() {
         // Denied once: the OS will still show the dialog, so the app can ask again.
-        val service = service(FakeDenialStore(write), canAskAgain = true)
+        val service = service(FakeDenialStore(write), shouldShowRationale = true)
 
         assertEquals(PermissionService.STATUS_NOT_DETERMINED, service.hasPermissions().getOrThrow())
     }
@@ -71,7 +88,7 @@ internal class PermissionServiceTest {
     @Test
     fun hasPermissions_withActivityNoRationaleAndRecordedDenial_reportsDenied() {
         // Permanently denied: no rationale, and a denial is on record.
-        val service = service(FakeDenialStore(write), canAskAgain = false)
+        val service = service(FakeDenialStore(write), shouldShowRationale = false)
 
         assertEquals(PermissionService.STATUS_DENIED, service.hasPermissions().getOrThrow())
     }

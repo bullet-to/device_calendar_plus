@@ -11,7 +11,7 @@ import androidx.core.content.ContextCompat
  * Where this plugin records that a runtime permission was denied, so a later
  * status check can tell a permanent denial from a never-asked one.
  */
-interface PermissionDenialStore {
+internal interface PermissionDenialStore {
     /** Whether a denial of [permission] has been recorded. */
     fun wasDenied(permission: String): Boolean
 
@@ -23,7 +23,7 @@ interface PermissionDenialStore {
  * The [PermissionDenialStore] backed by [android.content.SharedPreferences]:
  * one prefs file per permission name, holding a single was-denied flag.
  */
-class SharedPrefsDenialStore(private val context: Context) : PermissionDenialStore {
+internal class SharedPrefsDenialStore(private val context: Context) : PermissionDenialStore {
     override fun wasDenied(permission: String): Boolean =
         context.getSharedPreferences(permission, Context.MODE_PRIVATE)
             .getBoolean(PREFS_PERMISSION_WAS_DENIED_BEFORE, false)
@@ -40,27 +40,27 @@ class SharedPrefsDenialStore(private val context: Context) : PermissionDenialSto
 }
 
 /**
- * The OS-shaped facts ([isGranted], [denials], [canAskAgain],
+ * The OS-shaped facts ([isGranted], [denials], [shouldShowRationale],
  * [declaredPermissions]) are seams so unit tests can state them instead of
  * calling into the OS.
  *
  * @param isGranted whether a runtime permission is currently granted.
  * @param denials where this plugin reads and records denials of a runtime
  *   permission.
- * @param canAskAgain the OS's `shouldShowRequestPermissionRationale` for a
- *   runtime permission, or `null` when there's no Activity to ask.
+ * @param shouldShowRationale the OS's `shouldShowRequestPermissionRationale`
+ *   for a runtime permission, or `false` when there's no Activity to ask.
  * @param declaredPermissions the permissions the app's manifest declares.
  */
-class PermissionService(
+class PermissionService internal constructor(
     private val context: Context,
     private val isGranted: (String) -> Boolean = {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     },
     private val denials: PermissionDenialStore = SharedPrefsDenialStore(context),
-    private val canAskAgain: (String) -> Boolean? = { permission ->
+    private val shouldShowRationale: (String) -> Boolean = { permission ->
         (context as? Activity)?.let {
             ActivityCompat.shouldShowRequestPermissionRationale(it, permission)
-        }
+        } ?: false
     },
     private val declaredPermissions: () -> List<String> = {
         context.packageManager
@@ -176,12 +176,9 @@ class PermissionService(
         // write-bearing tier), so the decision keys off WRITE alone.
         val writePermission = Manifest.permission.WRITE_CALENDAR
 
-        // Without an Activity the rationale isn't available, so it reads as
-        // false and the was-denied flag (which needs no Activity) is the only
-        // evidence: a recorded denial reads as DENIED (#127).
-        val rationale = canAskAgain(writePermission) ?: false
-
-        val permanentlyDenied = denials.wasDenied(writePermission) && !rationale
+        // No Activity: see the KDoc above — a recorded denial reads as DENIED (#127).
+        val permanentlyDenied =
+            denials.wasDenied(writePermission) && !shouldShowRationale(writePermission)
 
         return if (permanentlyDenied) STATUS_DENIED else STATUS_NOT_DETERMINED
     }
