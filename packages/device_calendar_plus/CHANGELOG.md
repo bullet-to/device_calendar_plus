@@ -1,4 +1,4 @@
-## Unreleased
+## 0.10.1 - 2026-10-01
 
 ### Fixed
 - `updateRecurring` refuses a `start` move to another day with no new
