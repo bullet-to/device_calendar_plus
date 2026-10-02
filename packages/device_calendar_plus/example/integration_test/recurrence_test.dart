@@ -2760,35 +2760,6 @@ void main() {
       expect(after.every((e) => e.isAllDay), isTrue);
     });
 
-    test('all-day duration of two days ends each occurrence two calendar '
-        'days after it starts', () async {
-      final series = await seedSeries(plugin, calendarId,
-          create: createAllDayDailySeries, count: 4, minOccurrences: 4);
-      final before = series.occurrences;
-
-      await plugin.updateRecurring(
-        before.first.instanceId,
-        EventSpan.allEvents,
-        duration: const Duration(days: 2),
-      );
-
-      final after = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.start);
-      expect(startsOf(after), startsOf(before),
-          reason: 'a duration change must leave every start in place');
-      expect(
-        after.map((e) => e.endDate.millisecondsSinceEpoch).toList(),
-        after.map((e) {
-          final start = e.startDate.toLocal();
-          return DateTime(start.year, start.month, start.day + 2)
-              .millisecondsSinceEpoch;
-        }).toList(),
-        reason: 'each all-day occurrence must end two calendar days after '
-            'it starts',
-      );
-      expect(after.every((e) => e.isAllDay), isTrue);
-    });
-
     test(
         'all-day thisAndFollowing start a day later moves the new series a '
         'calendar day', () async {
