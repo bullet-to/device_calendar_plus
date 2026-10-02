@@ -154,13 +154,13 @@ final class SeriesDatesTests: XCTestCase {
     return at(zone, month, day, hour: 23).addingTimeInterval(59 * 60 + 59)
   }
 
-  private func resolveEnd(
+  private func resolveEndResult(
     start: Date,
     end: Date,
     newStart: Date,
     durationMinutes: Int?,
     isAllDay: Bool
-  ) -> Date? {
+  ) -> Result<Date, CalendarError> {
     return SeriesDates.resolveSeriesEnd(
       start: start,
       end: end,
@@ -169,6 +169,35 @@ final class SeriesDatesTests: XCTestCase {
       isAllDay: isAllDay,
       deviceZone: newYork
     )
+  }
+
+  private func resolveEnd(
+    start: Date,
+    end: Date,
+    newStart: Date,
+    durationMinutes: Int?,
+    isAllDay: Bool
+  ) -> Date? {
+    return try? resolveEndResult(
+      start: start,
+      end: end,
+      newStart: newStart,
+      durationMinutes: durationMinutes,
+      isAllDay: isAllDay
+    ).get()
+  }
+
+  // An all-day series only takes whole-day durations: the stored event's
+  // all-day state is only known natively, so the Dart check can't catch it.
+  func testAllDayPartialDayDurationIsRefused() {
+    let result = resolveEndResult(
+      start: at(newYork, 10, 1),
+      end: endOfDay(newYork, 10, 1),
+      newStart: at(newYork, 10, 15),
+      durationMinutes: 1440 + 60,
+      isAllDay: true
+    )
+    assertRefused(result)
   }
 
   // An all-day duration counts calendar days: two days from 31 October is
@@ -292,16 +321,32 @@ final class SeriesDatesTests: XCTestCase {
   }
 
   // Timed durations stay exact: two days from 31 October 23:00 is 172,800
-  // seconds later, whatever the wall clock reads.
+  // seconds later, whatever the wall clock reads, and a given duration
+  // replaces the stored one-hour span.
   func testTimedDurationAcrossDstEndIsExact() {
     let newStart = at(newYork, 10, 31, hour: 23)
     let end = resolveEnd(
       start: at(newYork, 10, 24, hour: 23),
-      end: at(newYork, 10, 24, hour: 23),
+      end: at(newYork, 10, 25),
       newStart: newStart,
       durationMinutes: 2 * 1440,
       isAllDay: false
     )
     XCTAssertEqual(end, newStart.addingTimeInterval(2 * 86_400))
+  }
+
+  // A timed event toggled all-day whose wall-clock span runs backwards
+  // across DST end (01:30 EDT to 01:10 EST, 40 minutes later) floors to the
+  // day before the new midnight rather than computing a negative time.
+  func testAllDayKeptSpanWithEndBeforeStartFloorsToThePreviousDay() {
+    let start = at(newYork, 11, 1).addingTimeInterval(90 * 60)
+    let end = resolveEnd(
+      start: start,
+      end: start.addingTimeInterval(40 * 60),
+      newStart: at(newYork, 11, 10),
+      durationMinutes: nil,
+      isAllDay: true
+    )
+    XCTAssertEqual(end, at(newYork, 11, 9, hour: 23).addingTimeInterval(40 * 60))
   }
 }

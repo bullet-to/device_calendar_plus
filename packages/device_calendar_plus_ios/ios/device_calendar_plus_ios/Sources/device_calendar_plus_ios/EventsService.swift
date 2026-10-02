@@ -1274,18 +1274,7 @@ class EventsService {
       foundEvent = event
     }
 
-    // All-day events have no time-of-day and only whole-day durations. The
-    // Dart layer can only check these against fields in the same call; the
-    // stored event's state is enforced here.
     let effectiveIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
-    if let durationMinutes = durationMinutes, effectiveIsAllDay,
-       durationMinutes % SeriesDates.minutesPerDay != 0 {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
-        message: "All-day events require whole-day durations"
-      )))
-      return
-    }
 
     // Parse the recurrence rule and compute the new start before touching
     // the event. EventKit keeps the fetched EKEvent live in its cache, so
@@ -1323,31 +1312,32 @@ class EventsService {
     // event. A rule that already fits its anchor resolves to the current
     // start, and skips the time rewrite for a change that moves nothing
     // (mirrors Android's rewriteTimeColumns).
-    var newEnd: Date?
+    let newTimes: (start: Date, end: Date)?
     if newStartMillis != nil || durationMinutes != nil || newStart != foundEvent.startDate {
-      guard let end = SeriesDates.resolveSeriesEnd(
+      switch SeriesDates.resolveSeriesEnd(
         start: foundEvent.startDate,
         end: foundEvent.endDate,
         newStart: newStart,
         durationMinutes: durationMinutes,
         isAllDay: effectiveIsAllDay,
         deviceZone: .current
-      ) else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.operationFailed,
-          message: "Could not apply the new end to the event"
-        )))
+      ) {
+      case .success(let end):
+        newTimes = (newStart, end)
+      case .failure(let error):
+        completion(.failure(error))
         return
       }
-      newEnd = end
+    } else {
+      newTimes = nil
     }
 
     // Apply field changes.
     patch.apply(to: foundEvent)
 
-    if let newEnd = newEnd {
-      foundEvent.startDate = newStart
-      foundEvent.endDate = newEnd
+    if let times = newTimes {
+      foundEvent.startDate = times.start
+      foundEvent.endDate = times.end
     }
 
     patch.applyTimeZone(to: foundEvent)

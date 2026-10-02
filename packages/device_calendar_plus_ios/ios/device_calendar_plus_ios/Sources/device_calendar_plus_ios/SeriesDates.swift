@@ -19,7 +19,7 @@ enum SeriesRuleEdit {
 enum SeriesDates {
   /// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
   /// two platforms must stay in lockstep.
-  static let minutesPerDay = 1440
+  private static let minutesPerDay = 1440
 
   private static let secondsPerDay = 86_400
 
@@ -244,7 +244,9 @@ enum SeriesDates {
   /// wall clock to `end`'s, so a timed event toggled all-day carries its
   /// span from the new day's midnight. Timed spans stay exact intervals.
   ///
-  /// Returns `nil` only if the calendar can't compute the date.
+  /// Fails with `invalidArguments` when an all-day series is given a
+  /// `durationMinutes` that isn't whole days, and with `operationFailed` if
+  /// the calendar can't compute the date.
   static func resolveSeriesEnd(
     start: Date,
     end: Date,
@@ -252,33 +254,55 @@ enum SeriesDates {
     durationMinutes: Int?,
     isAllDay: Bool,
     deviceZone: TimeZone
-  ) -> Date? {
+  ) -> Result<Date, CalendarError> {
     guard isAllDay else {
       let duration = durationMinutes.map { TimeInterval($0 * 60) }
         ?? end.timeIntervalSince(start)
-      return newStart.addingTimeInterval(duration)
+      return .success(newStart.addingTimeInterval(duration))
     }
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = deviceZone
-    let spanSeconds: Int
+    let resolved: Date?
     if let durationMinutes = durationMinutes {
-      spanSeconds = durationMinutes / minutesPerDay * secondsPerDay
+      // All-day events have no time-of-day and only whole-day durations.
+      // The Dart layer can only check this against fields in the same call;
+      // the stored event's all-day state is enforced here.
+      guard durationMinutes % minutesPerDay == 0 else {
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "All-day events require whole-day durations"
+        ))
+      }
+      resolved = wallClock(
+        newStart,
+        plusDays: durationMinutes / minutesPerDay,
+        secondsIntoDay: secondsIntoDay(newStart, calendar),
+        calendar: calendar
+      )
     } else {
       let days = calendar.dateComponents(
         [.day], from: calendar.startOfDay(for: start), to: calendar.startOfDay(for: end)
       ).day ?? 0
-      spanSeconds = days * secondsPerDay
+      let endSeconds = secondsIntoDay(newStart, calendar) + days * secondsPerDay
         + secondsIntoDay(end, calendar) - secondsIntoDay(start, calendar)
+      // Floored: a same-day span that runs backwards on the wall clock (a
+      // DST fall-back) lands on the previous day, not a negative time.
+      let endDays = endSeconds >= 0
+        ? endSeconds / secondsPerDay
+        : -((secondsPerDay - 1 - endSeconds) / secondsPerDay)
+      resolved = wallClock(
+        newStart,
+        plusDays: endDays,
+        secondsIntoDay: endSeconds - endDays * secondsPerDay,
+        calendar: calendar
+      )
     }
-    let endSeconds = secondsIntoDay(newStart, calendar) + spanSeconds
-    let endDays = endSeconds >= 0
-      ? endSeconds / secondsPerDay
-      : -((secondsPerDay - 1 - endSeconds) / secondsPerDay)
-    return wallClock(
-      newStart,
-      plusDays: endDays,
-      secondsIntoDay: endSeconds - endDays * secondsPerDay,
-      calendar: calendar
-    )
+    guard let resolved = resolved else {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "Could not apply the new end to the event"
+      ))
+    }
+    return .success(resolved)
   }
 }
