@@ -25,29 +25,41 @@ internal class PermissionServiceTest {
 
     private val write = Manifest.permission.WRITE_CALENDAR
 
-    /** Not an Activity, so [activityRationale] on it is the no-Activity rationale. */
+    /** Not an Activity, so the service's default rationale is the no-Activity one. */
     private val context = Mockito.mock(Context::class.java)
+
+    private val isGranted: (String) -> Boolean = { false }
+    private val declaredPermissions: () -> List<String> = {
+        listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
+    }
 
     /**
      * A service on [context] whose manifest declares both calendar
      * permissions, none granted, with [denials] as the was-denied store.
      *
-     * The default [shouldShowRationale] is the service's real rationale on a
-     * non-Activity context. Passing `{ true }` / `{ false }` stands in for the
-     * OS's answer on an Activity.
+     * A `null` [shouldShowRationale] leaves the constructor's own default in
+     * place, so the service runs its real no-Activity rationale. Passing
+     * `{ true }` / `{ false }` stands in for the OS's answer on an Activity.
      */
     private fun service(
         denials: PermissionDenialStore,
-        shouldShowRationale: (String) -> Boolean = activityRationale(context),
-    ) = PermissionService(
-        context,
-        isGranted = { false },
-        denials = denials,
-        shouldShowRationale = shouldShowRationale,
-        declaredPermissions = {
-            listOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR)
-        },
-    )
+        shouldShowRationale: ((String) -> Boolean)? = null,
+    ) = if (shouldShowRationale == null) {
+        PermissionService(
+            context,
+            isGranted = isGranted,
+            denials = denials,
+            declaredPermissions = declaredPermissions,
+        )
+    } else {
+        PermissionService(
+            context,
+            isGranted = isGranted,
+            denials = denials,
+            shouldShowRationale = shouldShowRationale,
+            declaredPermissions = declaredPermissions,
+        )
+    }
 
     @Test
     fun hasPermissions_withNoActivityAndRecordedDenial_reportsDenied() {

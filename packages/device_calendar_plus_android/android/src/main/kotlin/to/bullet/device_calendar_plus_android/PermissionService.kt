@@ -41,7 +41,11 @@ internal class SharedPrefsDenialStore(private val context: Context) : Permission
 
 /**
  * The OS's `shouldShowRequestPermissionRationale` for [context], or always
- * `false` when [context] isn't an Activity (there's no dialog to rationalise).
+ * `false` when [context] isn't an Activity.
+ *
+ * Without an Activity the OS rationale can't be read, so `false` makes any
+ * recorded denial count as permanent ([PermissionService] reports denied) —
+ * matching iOS, where a decline is terminal.
  */
 internal fun activityRationale(context: Context): (String) -> Boolean = { permission ->
     (context as? Activity)?.let {
@@ -58,7 +62,8 @@ internal fun activityRationale(context: Context): (String) -> Boolean = { permis
  * @param denials where this plugin reads and records denials of a runtime
  *   permission.
  * @param shouldShowRationale the OS's `shouldShowRequestPermissionRationale`
- *   for a runtime permission, or `false` when there's no Activity to ask.
+ *   for a runtime permission; see [activityRationale] for the no-Activity
+ *   case.
  * @param declaredPermissions the permissions the app's manifest declares.
  */
 class PermissionService internal constructor(
@@ -158,9 +163,9 @@ class PermissionService internal constructor(
      *
      * Decision logic when write access isn't held (keyed off WRITE_CALENDAR
      * alone — the capability that defines whether any tier is reachable):
-     * - `shouldShowRationale` (always false without an Activity) `== false` AND
-     *   SharedPrefs flag set --> [STATUS_DENIED] (permanently denied, or no
-     *   Activity to show the dialog from; must use app settings)
+     * - `shouldShowRationale` `== false` AND SharedPrefs flag set -->
+     *   [STATUS_DENIED] (permanently denied; must use app settings — see
+     *   [activityRationale] for how a no-Activity context reads)
      * - everything else --> [STATUS_NOT_DETERMINED] (permission dialog can still be shown)
      *
      * The flag only records denials made through this plugin. A denial issued
@@ -182,7 +187,7 @@ class PermissionService internal constructor(
         // write-bearing tier), so the decision keys off WRITE alone.
         val writePermission = Manifest.permission.WRITE_CALENDAR
 
-        // Without an Activity the rationale is false, so a recorded denial alone decides.
+        // See [activityRationale] for how this reads without an Activity.
         val permanentlyDenied =
             denials.wasDenied(writePermission) && !shouldShowRationale(writePermission)
 
