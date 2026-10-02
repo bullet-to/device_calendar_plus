@@ -2056,6 +2056,53 @@ void main() {
         }
       });
     }
+
+    test(
+        'thisAndFollowing keeps a COUNT series to its total when the series '
+        'started more than five years before the split (#124)', () async {
+      // A rule-keeping split gives the new series the original COUNT less
+      // the occurrences before the split. Android once counted those over a
+      // five-year look-back, so an older series under-counted them and the
+      // new series over-generated past the original end.
+      final calendar = requireCalendar(calendarId);
+      final start = DateTime.utc(DateTime.now().year - 7, 1, 15, 12);
+      final eventId = await plugin.createEvent(
+        calendarId: calendar,
+        title: 'Old Yearly Series',
+        startDate: start,
+        endDate: start.add(const Duration(hours: 1)),
+        recurrenceRule: YearlyRecurrence(end: const CountEnd(10)),
+        timeZone: 'UTC',
+      );
+      const windowDays = 12 * 366;
+      final occurrences = await occurrencesOf(plugin, calendar, eventId, start,
+          windowDays: windowDays);
+      expect(occurrences, hasLength(10),
+          reason: 'the yearly series should expand into all 10 occurrences');
+      // Eight years in: the start of next year, so the split is in the
+      // future and the five-year look-back missed three of the eight.
+      final split = occurrences[8];
+
+      final newSeriesId = await plugin.updateRecurring(
+        split.instanceId,
+        EventSpan.thisAndFollowing,
+        title: 'Old Yearly Tail',
+      );
+
+      expectTruncatedMaster(
+        await occurrencesOf(plugin, calendar, eventId, start,
+            windowDays: windowDays),
+        before: split.startDate,
+        count: 8,
+      );
+      expect(
+        startsOf(await occurrencesOf(plugin, calendar, newSeriesId, start,
+            windowDays: windowDays)),
+        startsOf(occurrences.sublist(8)),
+        reason: 'the new series must carry exactly the occurrences left '
+            'after the split, ending where the original series ended',
+      );
+    });
   });
 
   // Anchor-shift: `start` moves the anchored occurrence to a new instant and
@@ -2823,6 +2870,8 @@ void main() {
       );
     });
 
+    DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
+
     // Toggling all-day changes the frame a series' days are read in: the
     // series was stored in UTC, but the all-day start is a local midnight.
     // iOS once snapped the new all-day anchor to UTC midnight, a day early
@@ -2865,11 +2914,119 @@ void main() {
           windowDays: 30);
       expect(after.every((e) => e.isAllDay), isTrue,
           reason: 'every occurrence must be all-day');
-      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
       expect(
         after.map((e) => dayOf(e.startDate.toLocal())).toList(),
         before.map((e) => dayOf(e.startDate.toLocal())).toList(),
         reason: 'each occurrence must stay on its original calendar day',
+      );
+    });
+
+    // The toggle alone, with no `start`, must still move the stored start
+    // into the all-day frame. Android once left the timed DTSTART under
+    // ALL_DAY=1, and the provider reads an all-day start as a UTC date, so
+    // a start whose UTC date isn't its local one read back a day off
+    // (#124). Seeds a series at a local time on another UTC date, where the
+    // zone allows one: just after midnight east of UTC, just before it west
+    // of UTC.
+    Future<SeededSeries> seedTimedOffUtcDate(String title) async {
+      final day = localMidnight(2);
+      final start = day.timeZoneOffset.isNegative
+          ? day.add(const Duration(hours: 23, minutes: 30))
+          : day.add(const Duration(minutes: 30));
+      return seedSeries(
+        plugin,
+        calendarId,
+        count: 4,
+        minOccurrences: 4,
+        windowDays: 30,
+        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+            plugin, calendarId,
+            title: title, count: count, start: start),
+      );
+    }
+
+    void expectAllDayOnTheirDays(List<Event> after, List<Event> before) {
+      expect(after, hasLength(before.length));
+      expect(after.every((e) => e.isAllDay), isTrue,
+          reason: 'every occurrence must be all-day');
+      expect(
+        after.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        before.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        reason: 'each occurrence must stay on its original calendar day',
+      );
+      expect(
+        after.map((e) => e.endDate.toLocal()).toList(),
+        before
+            .map((e) => nextLocalMidnight(dayOf(e.endDate
+                .toLocal()
+                .subtract(const Duration(milliseconds: 1)))))
+            .toList(),
+        reason: 'each occurrence must span every day its timed self touched',
+      );
+    }
+
+    test(
+        'toggling a timed series all-day with no start keeps every '
+        'occurrence on its calendar day', () async {
+      final seeded = await seedTimedOffUtcDate('Timed To All-day No Start');
+
+      await plugin.updateRecurring(
+        seeded.eventId,
+        EventSpan.allEvents,
+        isAllDay: true,
+      );
+
+      expectAllDayOnTheirDays(
+        await occurrencesOf(plugin, calendarId!, seeded.eventId, seeded.start,
+            windowDays: 30),
+        seeded.occurrences,
+      );
+    });
+
+    // The same bare toggle named by an occurrence rather than the master:
+    // the default start is that occurrence's own, on either span (#124).
+    test(
+        'toggling a timed series all-day with no start from a later '
+        'occurrence keeps every occurrence on its calendar day', () async {
+      final seeded = await seedTimedOffUtcDate('Timed To All-day Later');
+      final before = seeded.occurrences;
+
+      await plugin.updateRecurring(
+        before[1].instanceId,
+        EventSpan.allEvents,
+        isAllDay: true,
+      );
+
+      expectAllDayOnTheirDays(
+        await occurrencesOf(plugin, calendarId!, seeded.eventId, seeded.start,
+            windowDays: 30),
+        before,
+      );
+    });
+
+    test(
+        'thisAndFollowing toggling a timed series all-day with no start '
+        'keeps every new occurrence on its calendar day', () async {
+      final seeded = await seedTimedOffUtcDate('Timed To All-day Split');
+      final before = seeded.occurrences;
+      final split = before[2];
+
+      final newSeriesId = await plugin.updateRecurring(
+        split.instanceId,
+        EventSpan.thisAndFollowing,
+        isAllDay: true,
+      );
+
+      final from = seeded.start;
+      expectAllDayOnTheirDays(
+        await occurrencesOf(plugin, calendarId!, newSeriesId, from,
+            windowDays: 30),
+        before.sublist(2),
+      );
+      expectTruncatedMaster(
+        await occurrencesOf(plugin, calendarId!, seeded.eventId, from,
+            windowDays: 30),
+        before: split.startDate,
       );
     });
   });

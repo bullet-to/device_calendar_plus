@@ -40,12 +40,15 @@ internal class AllDayStartFrameTest {
         baseMillis = base,
         referenceMillis = base,
         existingDurationMillis = 3_600_000L,
-        targetStart = resolveTargetStart(
-            newStartMillis = newStart,
-            effectiveIsAllDay = effectiveIsAllDay,
-            deviceZone = zone
+        timeEdit = SeriesTimeEdit(
+            resolveTargetStart(
+                newStartMillis = newStart,
+                effectiveIsAllDay = effectiveIsAllDay,
+                deviceZone = zone
+            ),
+            null,
+            false
         ),
-        durationMinutes = null,
         ruleEdit = ruleEdit,
         splitsSeries = false,
         isAllDay = effectiveIsAllDay,

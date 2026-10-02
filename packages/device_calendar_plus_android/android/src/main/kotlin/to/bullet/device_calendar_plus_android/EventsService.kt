@@ -991,10 +991,19 @@ class EventsService(
             // provider: that would keep FREQ=HOURLY as an hourly series.
             unsupportedRuleFailure(recurrenceRule)?.let { return Result.failure(it) }
 
-            // Bring the caller's local `start` into the stored frame (#144).
-            // resolveSeriesTimes then refuses a start the kept rule doesn't
-            // generate (#189; see updateRecurring docs).
-            val targetStart = resolveTargetStart(newStartMillis, effectiveIsAllDay)
+            // A bare all-day toggle defaults `start` and `duration` (#124),
+            // and the caller's local `start` is brought into the stored
+            // frame (#144). resolveSeriesTimes then refuses a start the kept
+            // rule doesn't generate (#189; see updateRecurring docs).
+            val timeEdit = resolveSeriesTimeEdit(
+                newStartMillis = newStartMillis,
+                durationMinutes = durationMinutes,
+                rowAllDay = row.allDay,
+                patchIsAllDay = patch.isAllDay,
+                timestamp = timestamp,
+                seriesStart = row.dtstart,
+                durationMillis = eventDurationMillis(row)
+            )
             val ruleEdit = SeriesRuleEdit.of(
                 recurrenceRule,
                 cleared = "recurrenceRule" in patch.clearedFields,
@@ -1003,10 +1012,10 @@ class EventsService(
 
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    row, timestamp, targetStart, durationMinutes, ruleEdit, patch
+                    row, timestamp, timeEdit, ruleEdit, patch
                 )
                 else -> updateRecurringAllEvents(
-                    row, timestamp, targetStart, durationMinutes, ruleEdit, patch
+                    row, timestamp, timeEdit, ruleEdit, patch
                 )
             }
         } catch (e: SecurityException) {
@@ -1029,9 +1038,7 @@ class EventsService(
     private fun updateRecurringAllEvents(
         row: EventRow,
         timestamp: Long?,
-        // Already in the stored frame (see resolveTargetStart).
-        targetStart: Long?,
-        durationMinutes: Int?,
+        timeEdit: SeriesTimeEdit,
         ruleEdit: SeriesRuleEdit,
         patch: EventFieldPatch
     ): Result<String> {
@@ -1062,8 +1069,7 @@ class EventsService(
             baseMillis = row.dtstart,
             referenceMillis = timestamp ?: row.dtstart,
             existingDurationMillis = eventDurationMillis(row),
-            targetStart = targetStart,
-            durationMinutes = durationMinutes,
+            timeEdit = timeEdit,
             ruleEdit = ruleEdit,
             splitsSeries = false,
             isAllDay = effectiveIsAllDay,
@@ -1073,8 +1079,8 @@ class EventsService(
         // A `start` equal to the current anchor is still a rewrite: the
         // DTSTART/DURATION (and RRULE, below) re-put is what makes the
         // provider re-expand the series.
-        val rewriteTimeColumns = targetStart != null || durationMinutes != null ||
-            newStart != row.dtstart
+        val rewriteTimeColumns = timeEdit.targetStart != null ||
+            timeEdit.durationMinutes != null || newStart != row.dtstart
         if (rewriteTimeColumns || wasRecurring != willBeRecurring) {
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
@@ -1127,9 +1133,7 @@ class EventsService(
     private fun updateRecurringThisAndFollowing(
         row: EventRow,
         timestamp: Long?,
-        // Already in the stored frame (see resolveTargetStart).
-        targetStart: Long?,
-        durationMinutes: Int?,
+        timeEdit: SeriesTimeEdit,
         ruleEdit: SeriesRuleEdit,
         patch: EventFieldPatch
     ): Result<String> {
@@ -1171,7 +1175,7 @@ class EventsService(
                 // or the new series would over-generate.
                 val originalCount = RruleString.count(rrule)
                 if (originalCount != null) {
-                    val before = countInstancesBefore(row.id, timestamp)
+                    val before = countInstancesBefore(row, timestamp)
                     RruleString.withCount(rrule, maxOf(1, originalCount - before))
                 } else {
                     rrule
@@ -1189,8 +1193,7 @@ class EventsService(
             baseMillis = timestamp,
             referenceMillis = timestamp,
             existingDurationMillis = eventDurationMillis(row),
-            targetStart = targetStart,
-            durationMinutes = durationMinutes,
+            timeEdit = timeEdit,
             ruleEdit = ruleEdit,
             splitsSeries = true,
             isAllDay = effectiveIsAllDay,
@@ -1235,16 +1238,18 @@ class EventsService(
         val truncatedRows =
             store.rewriteSeriesForReexpand(row, truncatedRrule)
         if (truncatedRows == 0) {
-            // Roll back the new series so the calendar is left unchanged.
-            context.contentResolver.delete(
-                CalendarContract.Events.CONTENT_URI,
-                "${CalendarContract.Events._ID} = ?",
-                arrayOf(newEventId)
-            )
+            // Roll back the new series so the calendar is left unchanged; it
+            // shares the master's calendar, so the master's account is its own.
+            // A failed rollback leaves a stray new series behind; say so,
+            // so it can be told apart from a clean no-op failure.
+            val rollback = deleteEventWithExceptions(newEventId, row.account)
+            val rollbackNote = rollback.exceptionOrNull()?.let {
+                "; rolling back new series $newEventId also failed: ${it.message}"
+            } ?: ""
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
-                    "Failed to truncate original series for event ${row.id}"
+                    "Failed to truncate original series for event ${row.id}$rollbackNote"
                 )
             )
         }
@@ -1580,18 +1585,21 @@ class EventsService(
     private fun eventDurationMillis(row: EventRow): Long =
         storedEndMillis(row.dtstart, row.dtend, row.duration)?.let { it - row.dtstart } ?: 3_600_000L
 
-    /** Number of occurrences of [eventId] that start before [beforeMillis]. */
-    private fun countInstancesBefore(eventId: String, beforeMillis: Long): Int {
-        // Five-year look-back window: covers daily/weekly/monthly easily, and
-        // yearly rules with an interval of up to five.
-        val windowStart = beforeMillis - 5L * 366 * 24 * 3600 * 1000
+    /** Number of occurrences of series [row] that start before [beforeMillis]. */
+    private fun countInstancesBefore(row: EventRow, beforeMillis: Long): Int {
+        // From the series' own DTSTART, so a series of any age is counted
+        // whole: a fixed look-back (five years, once) under-counted an older
+        // COUNT series, and its split's new series over-generated (#124).
+        // A day early, so an all-day first occurrence, whose UTC-midnight
+        // start the provider reads as a local date, can't fall outside it.
+        val windowStart = row.dtstart - AllDayDates.MILLIS_PER_DAY
         val uri = EventColumns.instancesUri(windowStart, beforeMillis)
         var count = 0
         context.contentResolver.query(
             uri,
             arrayOf(CalendarContract.Instances.BEGIN),
             "${CalendarContract.Instances.EVENT_ID} = ?",
-            arrayOf(eventId),
+            arrayOf(row.id),
             null
         )?.use { cursor ->
             while (cursor.moveToNext()) {
