@@ -12,6 +12,10 @@ enum CalendarPermissionStatus {
   /// reports a just-declined prompt as [denied] on both platforms; on Android
   /// that first decline is still re-askable, so a later [DeviceCalendar.hasPermissions]
   /// there reports [notDetermined] rather than [denied].
+  ///
+  /// On Android without an Activity (a background context), any denial
+  /// recorded by this plugin reports [denied], since no dialog can be shown
+  /// from there.
   denied,
 
   /// Write-only access — add events without reading existing data. Request it
@@ -34,6 +38,10 @@ enum CalendarPermissionStatus {
   /// [DeviceCalendar.requestPermissions] in this state shows the system dialog.
   ///
   /// On Android this covers both "never asked" and "denied once but can still
-  /// ask again"; a permanent denial returns [denied] instead.
+  /// ask again"; a permanent denial returns [denied] instead. Android tells
+  /// the two apart using denials made through this plugin, so a permanent
+  /// denial made via another library (e.g. permission_handler) reads as
+  /// [notDetermined] until one [DeviceCalendar.requestPermissions] call
+  /// (which returns [denied] without showing a dialog) records it.
   notDetermined,
 }

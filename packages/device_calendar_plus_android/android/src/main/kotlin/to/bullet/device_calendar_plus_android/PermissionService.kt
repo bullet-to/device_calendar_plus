@@ -7,7 +7,16 @@ import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
-class PermissionService(private val context: Context) {
+/**
+ * @param isGranted whether a runtime permission is currently granted. A seam
+ *   so unit tests can state the grant facts instead of calling into the OS.
+ */
+class PermissionService(
+    private val context: Context,
+    private val isGranted: (String) -> Boolean = {
+        ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+    },
+) {
 
     private val activity: Activity?
         get() = context as? Activity
@@ -70,15 +79,8 @@ class PermissionService(private val context: Context) {
      * caller decides whether that reads as denied or not-yet-determined.
      */
     private fun grantedTier(): String? {
-        val readGranted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.READ_CALENDAR
-        ) == PackageManager.PERMISSION_GRANTED
-
-        val writeGranted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.WRITE_CALENDAR
-        ) == PackageManager.PERMISSION_GRANTED
+        val readGranted = isGranted(Manifest.permission.READ_CALENDAR)
+        val writeGranted = isGranted(Manifest.permission.WRITE_CALENDAR)
 
         return when {
             readGranted && writeGranted -> STATUS_GRANTED
@@ -110,6 +112,15 @@ class PermissionService(private val context: Context) {
      * - `shouldShowRationale == false` AND SharedPrefs flag set --> [STATUS_DENIED] (permanently denied, must use app settings)
      * - everything else --> [STATUS_NOT_DETERMINED] (permission dialog can still be shown)
      *
+     * Without an Activity (a background context) the rationale can't be read,
+     * so the SharedPrefs flag alone decides: set --> [STATUS_DENIED], unset -->
+     * [STATUS_NOT_DETERMINED].
+     *
+     * The flag only records denials made through this plugin. A denial issued
+     * via another library (e.g. permission_handler) leaves it unset, so that
+     * app reads [STATUS_NOT_DETERMINED] until one request through this plugin
+     * (which returns denied without a dialog) records it.
+     *
      * Based on the approach from Baseflow's flutter-permission-handler:
      * https://github.com/Baseflow/flutter-permission-handler/blob/39fba431428e5d82d35f4999663461468fe3a728/permission_handler_android/android/src/main/java/com/baseflow/permissionhandler/PermissionUtils.java#L400-L536
      */
@@ -124,11 +135,17 @@ class PermissionService(private val context: Context) {
         // write-bearing tier), so the decision keys off WRITE alone.
         val writePermission = Manifest.permission.WRITE_CALENDAR
 
-        // Without an Activity we can't check shouldShowRequestPermissionRationale,
-        // so fall back to NOT_DETERMINED (safe default — caller can still request).
-        val currentActivity = activity ?: return STATUS_NOT_DETERMINED
+        val wasDenied = wasPermissionDeniedBefore(writePermission)
 
-        val permanentlyDenied = wasPermissionDeniedBefore(writePermission) &&
+        // Without an Activity we can't check shouldShowRequestPermissionRationale,
+        // and requestPermissions can't show a dialog from here either. The
+        // was-denied flag needs no Activity, so a recorded denial reads as
+        // DENIED rather than a NOT_DETERMINED that promises a dialog we can't
+        // show (#127). Without a recorded denial, fall back to NOT_DETERMINED.
+        val currentActivity = activity
+            ?: return if (wasDenied) STATUS_DENIED else STATUS_NOT_DETERMINED
+
+        val permanentlyDenied = wasDenied &&
             !ActivityCompat.shouldShowRequestPermissionRationale(currentActivity, writePermission)
 
         return if (permanentlyDenied) STATUS_DENIED else STATUS_NOT_DETERMINED
