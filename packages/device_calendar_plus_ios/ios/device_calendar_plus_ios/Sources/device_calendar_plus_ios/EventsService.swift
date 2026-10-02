@@ -1,9 +1,5 @@
 import EventKit
 
-/// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
-/// two platforms must stay in lockstep.
-let minutesPerDay = 1440
-
 extension EKEventAvailability {
   var stringValue: String {
     switch self {
@@ -1283,7 +1279,7 @@ class EventsService {
     // stored event's state is enforced here.
     let effectiveIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
     if let durationMinutes = durationMinutes, effectiveIsAllDay,
-       durationMinutes % minutesPerDay != 0 {
+       durationMinutes % SeriesDates.minutesPerDay != 0 {
       completion(.failure(CalendarError(
         code: PlatformExceptionCodes.invalidArguments,
         message: "All-day events require whole-day durations"
@@ -1323,21 +1319,33 @@ class EventsService {
       return
     }
 
-    // Apply field changes.
-    patch.apply(to: foundEvent)
-
-    // Apply start and/or duration changes. A rule that already fits its
-    // anchor resolves to the current start, and skips the time rewrite for a
-    // change that moves nothing (mirrors Android's rewriteTimeColumns).
+    // Resolve the start and/or duration changes, still before touching the
+    // event. A rule that already fits its anchor resolves to the current
+    // start, and skips the time rewrite for a change that moves nothing
+    // (mirrors Android's rewriteTimeColumns).
+    var newEnd: Date?
     if newStartMillis != nil || durationMinutes != nil || newStart != foundEvent.startDate {
-      let newEnd = SeriesDates.resolveSeriesEnd(
+      guard let end = SeriesDates.resolveSeriesEnd(
         start: foundEvent.startDate,
         end: foundEvent.endDate,
         newStart: newStart,
         durationMinutes: durationMinutes,
         isAllDay: effectiveIsAllDay,
         deviceZone: .current
-      )
+      ) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "Could not apply the new end to the event"
+        )))
+        return
+      }
+      newEnd = end
+    }
+
+    // Apply field changes.
+    patch.apply(to: foundEvent)
+
+    if let newEnd = newEnd {
       foundEvent.startDate = newStart
       foundEvent.endDate = newEnd
     }

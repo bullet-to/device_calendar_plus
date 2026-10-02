@@ -17,6 +17,43 @@ enum SeriesRuleEdit {
 /// tests can drive the zones the integration harness can't set on iOS.
 /// Android's counterpart is `SeriesDates.kt`.
 enum SeriesDates {
+  /// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
+  /// two platforms must stay in lockstep.
+  static let minutesPerDay = 1440
+
+  private static let secondsPerDay = 86_400
+
+  /// `base` moved `days` calendar days, then set to the wall-clock time
+  /// `secondsIntoDay` seconds after midnight (`nil` for the start of the
+  /// day). The one piece of DST-safe arithmetic here: it counts calendar
+  /// days and sets a wall-clock time, so a 23- or 25-hour day can't carry
+  /// the result an hour off.
+  private static func wallClock(
+    _ base: Date,
+    plusDays days: Int,
+    secondsIntoDay: Int?,
+    calendar: Calendar
+  ) -> Date? {
+    guard let shiftedDay = calendar.date(byAdding: .day, value: days, to: base) else {
+      return nil
+    }
+    guard let seconds = secondsIntoDay else {
+      return calendar.startOfDay(for: shiftedDay)
+    }
+    return calendar.date(
+      bySettingHour: seconds / 3600,
+      minute: seconds % 3600 / 60,
+      second: seconds % 60,
+      of: shiftedDay
+    )
+  }
+
+  /// `date`'s wall-clock time in `calendar`, in seconds after midnight.
+  private static func secondsIntoDay(_ date: Date, _ calendar: Calendar) -> Int {
+    let tod = calendar.dateComponents([.hour, .minute, .second], from: date)
+    return (tod.hour ?? 0) * 3600 + (tod.minute ?? 0) * 60 + (tod.second ?? 0)
+  }
+
   /// Translates `base` by the wall-clock delta from `reference` to `target`,
   /// computed in `timeZone`: shifts by the whole-day difference and sets the
   /// time-of-day to `target`'s. DST-safe — it counts calendar days and sets a
@@ -38,18 +75,11 @@ enum SeriesDates {
     let refDay = calendar.startOfDay(for: reference)
     let targetDay = calendar.startOfDay(for: target)
     let dayDelta = calendar.dateComponents([.day], from: refDay, to: targetDay).day ?? 0
-    guard let shiftedDay = calendar.date(byAdding: .day, value: dayDelta, to: base) else {
-      return nil
-    }
-    if isAllDay {
-      return calendar.startOfDay(for: shiftedDay)
-    }
-    let tod = calendar.dateComponents([.hour, .minute, .second], from: target)
-    return calendar.date(
-      bySettingHour: tod.hour ?? 0,
-      minute: tod.minute ?? 0,
-      second: tod.second ?? 0,
-      of: shiftedDay
+    return wallClock(
+      base,
+      plusDays: dayDelta,
+      secondsIntoDay: isAllDay ? nil : secondsIntoDay(target, calendar),
+      calendar: calendar
     )
   }
 
@@ -206,11 +236,15 @@ enum SeriesDates {
   /// `newStart`: `durationMinutes` after it, or the current `start`–`end`
   /// span when no duration is given.
   ///
-  /// All-day spans count calendar days in `deviceZone` (the all-day edit
-  /// frame): EventKit keeps an all-day event at local midnight, so a day
-  /// added as 86,400 seconds falls an hour short or long across a DST
-  /// change, and the event loses or gains its last day (#195). Timed spans
-  /// stay exact intervals.
+  /// All-day spans are wall-clock spans in `deviceZone` (the all-day edit
+  /// frame): whole calendar days plus a time of day. EventKit keeps an
+  /// all-day event at local midnight, so a day carried as 86,400 seconds
+  /// falls an hour short or long across a DST change, and the event loses
+  /// or gains its last day (#195). A kept span is measured from `start`'s
+  /// wall clock to `end`'s, so a timed event toggled all-day carries its
+  /// span from the new day's midnight. Timed spans stay exact intervals.
+  ///
+  /// Returns `nil` only if the calendar can't compute the date.
   static func resolveSeriesEnd(
     start: Date,
     end: Date,
@@ -218,18 +252,33 @@ enum SeriesDates {
     durationMinutes: Int?,
     isAllDay: Bool,
     deviceZone: TimeZone
-  ) -> Date {
-    if isAllDay {
-      var calendar = Calendar(identifier: .gregorian)
-      calendar.timeZone = deviceZone
-      let span = durationMinutes.map { DateComponents(day: $0 / minutesPerDay) }
-        ?? calendar.dateComponents([.day, .hour, .minute, .second], from: start, to: end)
-      if let newEnd = calendar.date(byAdding: span, to: newStart) {
-        return newEnd
-      }
+  ) -> Date? {
+    guard isAllDay else {
+      let duration = durationMinutes.map { TimeInterval($0 * 60) }
+        ?? end.timeIntervalSince(start)
+      return newStart.addingTimeInterval(duration)
     }
-    let duration = durationMinutes.map { TimeInterval($0 * 60) }
-      ?? end.timeIntervalSince(start)
-    return newStart.addingTimeInterval(duration)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = deviceZone
+    let spanSeconds: Int
+    if let durationMinutes = durationMinutes {
+      spanSeconds = durationMinutes / minutesPerDay * secondsPerDay
+    } else {
+      let days = calendar.dateComponents(
+        [.day], from: calendar.startOfDay(for: start), to: calendar.startOfDay(for: end)
+      ).day ?? 0
+      spanSeconds = days * secondsPerDay
+        + secondsIntoDay(end, calendar) - secondsIntoDay(start, calendar)
+    }
+    let endSeconds = secondsIntoDay(newStart, calendar) + spanSeconds
+    let endDays = endSeconds >= 0
+      ? endSeconds / secondsPerDay
+      : -((secondsPerDay - 1 - endSeconds) / secondsPerDay)
+    return wallClock(
+      newStart,
+      plusDays: endDays,
+      secondsIntoDay: endSeconds - endDays * secondsPerDay,
+      calendar: calendar
+    )
   }
 }
