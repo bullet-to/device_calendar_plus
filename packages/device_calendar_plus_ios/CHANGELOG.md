@@ -14,6 +14,10 @@
   existing span, when only `start` moves) in calendar days rather than
   86,400-second days, so a multi-day all-day series no longer loses or gains
   its last day when its span crosses a DST change (#195).
+- `updateEvent` and `updateRecurring` write an all-day event's end as the
+  last second of its last day, the way EventKit stores it. An exclusive
+  midnight end written onto an existing all-day event read back as one more
+  day, so a two-day `duration` or end gave three (#195).
 
 ## 0.9.0 - 2026-09-30
 

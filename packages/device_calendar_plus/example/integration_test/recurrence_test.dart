@@ -2761,6 +2761,42 @@ void main() {
     });
 
     test(
+        'all-day duration of two days ends each occurrence two calendar days '
+        'after its start (#195)', () async {
+      // The shape #195 reported: allEvents with start and a whole-day
+      // duration. iOS wrote the end as an exclusive midnight onto an event
+      // that was already all-day, and EventKit read it as one more day.
+      final series = await seedSeries(plugin, calendarId,
+          create: (p, c, {count = 3}) =>
+              createWeeklySeries(p, c, count: count, isAllDay: true),
+          count: 3,
+          minOccurrences: 3,
+          windowDays: 30);
+      final before = series.occurrences;
+
+      await plugin.updateRecurring(
+        before.first.instanceId,
+        EventSpan.allEvents,
+        start: before.first.startDate,
+        duration: const Duration(days: 2),
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 30);
+      expect(startsOf(after), startsOf(before),
+          reason: 'the start was given unchanged');
+      expect(
+        after.map((e) => e.endDate.millisecondsSinceEpoch).toList(),
+        before
+            .map((e) => nextLocalMidnight(nextLocalMidnight(e.startDate))
+                .millisecondsSinceEpoch)
+            .toList(),
+        reason: 'each occurrence must run two calendar days, not three',
+      );
+    });
+
+    test(
         'all-day thisAndFollowing start a day later moves the new series a '
         'calendar day', () async {
       final series = await seedSeries(plugin, calendarId,

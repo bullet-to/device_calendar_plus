@@ -1074,7 +1074,9 @@ class EventsService {
     // Get new data into event
     patch.apply(to: foundEvent)
     if let startDate = startDate { foundEvent.startDate = startDate }
-    if let endDate = endDate { foundEvent.endDate = endDate }
+    if let endDate = endDate {
+      foundEvent.endDate = SeriesDates.allDayStoredEnd(endDate, isAllDay: foundEvent.isAllDay)
+    }
     patch.applyTimeZone(to: foundEvent)
 
     // One thing only: an occurrence edit detaches it as an exception, and a

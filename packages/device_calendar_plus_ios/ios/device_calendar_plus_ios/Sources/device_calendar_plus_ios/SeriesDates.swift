@@ -255,6 +255,9 @@ enum SeriesDates {
   /// milliseconds even for all-day series: its all-day rows are stored in
   /// UTC, which has no DST.
   ///
+  /// An all-day end comes back in EventKit's stored form, the last second of
+  /// the last day (`allDayStoredEnd`).
+  ///
   /// Fails with `invalidArguments` when an all-day series is given a
   /// `durationMinutes` that isn't whole days, and with `operationFailed` if
   /// the calendar can't compute the date.
@@ -288,7 +291,10 @@ enum SeriesDates {
           message: "All-day events require whole-day durations"
         ))
       }
-      spanSeconds = durationMinutes * 60
+      // End on the last day's 23:59:59, where EventKit keeps an all-day
+      // event's end (see `allDayStoredEnd`): an exclusive midnight on an
+      // existing all-day event reads as one more day.
+      spanSeconds = max(0, durationMinutes * 60 - 1)
     } else {
       // A span that runs backwards on the wall clock (a DST fall-back) would
       // end before the new start, which EventKit won't save: clamp it.
@@ -307,6 +313,15 @@ enum SeriesDates {
       ))
     }
     return .success(resolved)
+  }
+
+  /// The end to write for an all-day event whose end is `end`, exclusive
+  /// (the plugin's form: midnight after the last day). EventKit keeps an
+  /// all-day event's end at the last second of its last day, and reads an
+  /// exclusive midnight written onto an existing all-day event as one more
+  /// day; the read path adds the second back. Timed ends pass through.
+  static func allDayStoredEnd(_ end: Date, isAllDay: Bool) -> Date {
+    return isAllDay ? end.addingTimeInterval(-1) : end
   }
 
   /// The wall-clock span from `start` to `end` in `calendar`, in seconds:

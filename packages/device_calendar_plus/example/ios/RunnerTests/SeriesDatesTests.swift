@@ -233,9 +233,11 @@ final class SeriesDatesTests: XCTestCase {
     assertRefused(result)
   }
 
-  // An all-day duration counts calendar days: two days from 31 October is
-  // 2 November, even though 1 November (DST end) is 25 hours long. Adding
-  // 172,800 seconds stopped at 1 November 23:00, a day short.
+  // An all-day duration counts calendar days: two days from 31 October run
+  // through 1 November, even though 1 November (DST end) is 25 hours long.
+  // Adding 172,800 seconds stopped at 1 November 23:00, a day short. The end
+  // is that last day's 23:59:59, where EventKit keeps an all-day end; an
+  // exclusive midnight reads as one more day.
   func testAllDayDurationAcrossDstEndCountsCalendarDays() {
     let end = resolveEnd(
       start: at(newYork, 10, 24),
@@ -244,7 +246,7 @@ final class SeriesDatesTests: XCTestCase {
       durationMinutes: 2 * 1440,
       isAllDay: true
     )
-    XCTAssertEqual(end, at(newYork, 11, 2))
+    XCTAssertEqual(end, endOfDay(newYork, 11, 1))
   }
 
   // And across DST start (8 March, 23 hours long) it doesn't overshoot into
@@ -257,7 +259,7 @@ final class SeriesDatesTests: XCTestCase {
       durationMinutes: 2 * 1440,
       isAllDay: true
     )
-    XCTAssertEqual(end, at(newYork, 3, 9))
+    XCTAssertEqual(end, endOfDay(newYork, 3, 8))
   }
 
   // With no duration, a moved all-day series keeps its span in calendar
