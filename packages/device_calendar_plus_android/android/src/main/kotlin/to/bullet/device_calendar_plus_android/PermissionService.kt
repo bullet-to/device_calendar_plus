@@ -40,6 +40,16 @@ internal class SharedPrefsDenialStore(private val context: Context) : Permission
 }
 
 /**
+ * The OS's `shouldShowRequestPermissionRationale` for [context], or always
+ * `false` when [context] isn't an Activity (there's no dialog to rationalise).
+ */
+internal fun activityRationale(context: Context): (String) -> Boolean = { permission ->
+    (context as? Activity)?.let {
+        ActivityCompat.shouldShowRequestPermissionRationale(it, permission)
+    } ?: false
+}
+
+/**
  * The OS-shaped facts ([isGranted], [denials], [shouldShowRationale],
  * [declaredPermissions]) are seams so unit tests can state them instead of
  * calling into the OS.
@@ -57,11 +67,7 @@ class PermissionService internal constructor(
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     },
     private val denials: PermissionDenialStore = SharedPrefsDenialStore(context),
-    private val shouldShowRationale: (String) -> Boolean = { permission ->
-        (context as? Activity)?.let {
-            ActivityCompat.shouldShowRequestPermissionRationale(it, permission)
-        } ?: false
-    },
+    private val shouldShowRationale: (String) -> Boolean = activityRationale(context),
     private val declaredPermissions: () -> List<String> = {
         context.packageManager
             .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
@@ -152,10 +158,10 @@ class PermissionService internal constructor(
      *
      * Decision logic when write access isn't held (keyed off WRITE_CALENDAR
      * alone — the capability that defines whether any tier is reachable):
-     * - `shouldShowRationale == false` AND SharedPrefs flag set --> [STATUS_DENIED] (permanently denied, must use app settings)
+     * - `shouldShowRationale` (always false without an Activity) `== false` AND
+     *   SharedPrefs flag set --> [STATUS_DENIED] (permanently denied, or no
+     *   Activity to show the dialog from; must use app settings)
      * - everything else --> [STATUS_NOT_DETERMINED] (permission dialog can still be shown)
-     *
-     * No Activity (a background context): the rationale reads as false.
      *
      * The flag only records denials made through this plugin. A denial issued
      * via another library (e.g. permission_handler) leaves it unset, so that
@@ -176,7 +182,7 @@ class PermissionService internal constructor(
         // write-bearing tier), so the decision keys off WRITE alone.
         val writePermission = Manifest.permission.WRITE_CALENDAR
 
-        // No Activity: see the KDoc above — a recorded denial reads as DENIED (#127).
+        // Without an Activity the rationale is false, so a recorded denial alone decides.
         val permanentlyDenied =
             denials.wasDenied(writePermission) && !shouldShowRationale(writePermission)
 

@@ -1,9 +1,11 @@
 ## Unreleased
 
+### Changed
+- **Breaking:** `hasPermissions` and `requestPermissions` throw a
+  `StateError` on a null status or a status string this version doesn't
+  recognise, instead of silently reading it as `denied` (#127).
+
 ### Fixed
-- `hasPermissions` and `requestPermissions` throw a `StateError` on a null
-  status or a status string this version doesn't recognise, instead of
-  silently reading it as `denied` (#127).
 - Android: `hasPermissions` without an Activity (a background context)
   reports `denied` when the plugin has recorded a denial, instead of
   `notDetermined` (#127). `CalendarPermissionStatus.notDetermined` now also
