@@ -8,12 +8,47 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 /**
- * The OS-shaped facts ([isGranted], [wasDeniedBefore], [declaredPermissions])
- * are seams so unit tests can state them instead of calling into the OS.
+ * Where this plugin records that a runtime permission was denied, so a later
+ * status check can tell a permanent denial from a never-asked one.
+ */
+interface PermissionDenialStore {
+    /** Whether a denial of [permission] has been recorded. */
+    fun wasDenied(permission: String): Boolean
+
+    /** Records that [permission] was denied. */
+    fun recordDenied(permission: String)
+}
+
+/**
+ * The [PermissionDenialStore] backed by [android.content.SharedPreferences]:
+ * one prefs file per permission name, holding a single was-denied flag.
+ */
+class SharedPrefsDenialStore(private val context: Context) : PermissionDenialStore {
+    override fun wasDenied(permission: String): Boolean =
+        context.getSharedPreferences(permission, Context.MODE_PRIVATE)
+            .getBoolean(PREFS_PERMISSION_WAS_DENIED_BEFORE, false)
+
+    override fun recordDenied(permission: String) {
+        context.getSharedPreferences(permission, Context.MODE_PRIVATE)
+            .edit().putBoolean(PREFS_PERMISSION_WAS_DENIED_BEFORE, true).apply()
+    }
+
+    private companion object {
+        const val PREFS_PERMISSION_WAS_DENIED_BEFORE =
+            "device_calendar_plus_permission_was_denied_before"
+    }
+}
+
+/**
+ * The OS-shaped facts ([isGranted], [denials], [canAskAgain],
+ * [declaredPermissions]) are seams so unit tests can state them instead of
+ * calling into the OS.
  *
  * @param isGranted whether a runtime permission is currently granted.
- * @param wasDeniedBefore whether this plugin has recorded a denial of a
- *   runtime permission.
+ * @param denials where this plugin reads and records denials of a runtime
+ *   permission.
+ * @param canAskAgain the OS's `shouldShowRequestPermissionRationale` for a
+ *   runtime permission, or `null` when there's no Activity to ask.
  * @param declaredPermissions the permissions the app's manifest declares.
  */
 class PermissionService(
@@ -21,9 +56,11 @@ class PermissionService(
     private val isGranted: (String) -> Boolean = {
         ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
     },
-    private val wasDeniedBefore: (String) -> Boolean = {
-        context.getSharedPreferences(it, Context.MODE_PRIVATE)
-            .getBoolean(PREFS_PERMISSION_WAS_DENIED_BEFORE, false)
+    private val denials: PermissionDenialStore = SharedPrefsDenialStore(context),
+    private val canAskAgain: (String) -> Boolean? = { permission ->
+        (context as? Activity)?.let {
+            ActivityCompat.shouldShowRequestPermissionRationale(it, permission)
+        }
     },
     private val declaredPermissions: () -> List<String> = {
         context.packageManager
@@ -43,9 +80,6 @@ class PermissionService(
         const val STATUS_WRITE_ONLY = "writeOnly"
         const val STATUS_DENIED = "denied"
         const val STATUS_NOT_DETERMINED = "notDetermined"
-
-        private const val PREFS_PERMISSION_WAS_DENIED_BEFORE =
-            "device_calendar_plus_permission_was_denied_before"
     }
     
     private var pendingCallback: ((Result<String>) -> Unit)? = null
@@ -145,20 +179,13 @@ class PermissionService(
         // Without an Activity the rationale isn't available, so it reads as
         // false and the was-denied flag (which needs no Activity) is the only
         // evidence: a recorded denial reads as DENIED (#127).
-        val canAskAgain = activity?.let {
-            ActivityCompat.shouldShowRequestPermissionRationale(it, writePermission)
-        } ?: false
+        val rationale = canAskAgain(writePermission) ?: false
 
-        val permanentlyDenied = wasDeniedBefore(writePermission) && !canAskAgain
+        val permanentlyDenied = denials.wasDenied(writePermission) && !rationale
 
         return if (permanentlyDenied) STATUS_DENIED else STATUS_NOT_DETERMINED
     }
 
-    private fun setPermissionDenied(permissionName: String) {
-        val prefs = context.getSharedPreferences(permissionName, Context.MODE_PRIVATE)
-        prefs.edit().putBoolean(PREFS_PERMISSION_WAS_DENIED_BEFORE, true).apply()
-    }
-    
     fun hasPermissions(): Result<String> {
         // A status check triggers no request, so only the minimal calendar
         // permission (WRITE) need be declared — an add-only app that omits
@@ -250,7 +277,7 @@ class PermissionService(
         // denial from a can-ask-again one.
         permissions.forEachIndexed { index, permission ->
             if (grantResults.getOrNull(index) != PackageManager.PERMISSION_GRANTED) {
-                setPermissionDenied(permission)
+                denials.recordDenied(permission)
             }
         }
 

@@ -199,15 +199,11 @@ class DeviceCalendar {
 
   /// Converts a status value string to CalendarPermissionStatus.
   ///
-  /// A null status reads as denied. An unrecognized string means the native
-  /// side reported a status this Dart version doesn't know — a plugin version
-  /// mismatch — so it throws a [StateError] rather than silently reading as
-  /// denied.
+  /// Both native sides always reply with one of the known status strings, so
+  /// anything else — a null, or a status this Dart version doesn't know (a
+  /// plugin version mismatch) — breaks the channel contract. It throws a
+  /// [StateError] rather than silently reading as denied.
   CalendarPermissionStatus _convertStatusValue(String? statusValue) {
-    if (statusValue == null) {
-      return CalendarPermissionStatus.denied;
-    }
-
     return CalendarPermissionStatus.values.firstWhere(
       (e) => e.name == statusValue,
       orElse: () => throw StateError(
