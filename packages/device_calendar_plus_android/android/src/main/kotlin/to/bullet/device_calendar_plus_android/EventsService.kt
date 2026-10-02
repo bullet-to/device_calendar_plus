@@ -1250,11 +1250,16 @@ class EventsService(
         if (truncatedRows == 0) {
             // Roll back the new series so the calendar is left unchanged; it
             // shares the master's calendar, so the master's account is its own.
-            deleteEventWithExceptions(newEventId, row.account)
+            // A failed rollback leaves a stray new series behind; say so,
+            // so it can be told apart from a clean no-op failure.
+            val rollback = deleteEventWithExceptions(newEventId, row.account)
+            val rollbackNote = rollback.exceptionOrNull()?.let {
+                "; rolling back new series $newEventId also failed: ${it.message}"
+            } ?: ""
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
-                    "Failed to truncate original series for event ${row.id}"
+                    "Failed to truncate original series for event ${row.id}$rollbackNote"
                 )
             )
         }
