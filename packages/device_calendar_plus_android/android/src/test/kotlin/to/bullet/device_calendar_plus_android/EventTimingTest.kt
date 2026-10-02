@@ -85,11 +85,20 @@ internal class EventTimingTest {
 
     // Provided bounds are stored in the effective frame: the patch's flag,
     // else the row's. A missing bound stays null.
+    private val lateEveningUtcDate = instantAt(utc, 2026, 10, 3)
+
     @Test
-    fun resolveEditedBounds_providedBounds_storedInEffectiveFrame() {
-        val utcDate = instantAt(utc, 2026, 10, 3)
-        assertEquals(utcDate to null, resolve(start = lateEvening, newAllDay = true))
-        assertEquals(null to utcDate, resolve(end = lateEvening, rowAllDay = true))
+    fun resolveEditedBounds_providedStart_patchAllDay_storedAsUtcDate() {
+        assertEquals(lateEveningUtcDate to null, resolve(start = lateEvening, newAllDay = true))
+    }
+
+    @Test
+    fun resolveEditedBounds_providedEnd_rowAllDayFallback_storedAsUtcDate() {
+        assertEquals(null to lateEveningUtcDate, resolve(end = lateEvening, rowAllDay = true))
+    }
+
+    @Test
+    fun resolveEditedBounds_patchFalseOverRowAllDay_storedTimed() {
         assertEquals(
             lateEvening to lateEvening + hour,
             resolve(
