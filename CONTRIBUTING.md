@@ -64,9 +64,14 @@ The thin shims that call the OS permission APIs directly (`EventKitAuthorization
 
 ### Running tests
 
-Unit tests (all packages):
+CI (`.github/workflows/ci.yml`) runs on every PR and every push to `main`:
+`flutter analyze` plus the Dart unit tests, the Kotlin tests in both Kotlin
+modes, and the Swift tests on a macOS simulator. Integration tests aren't in
+CI, so run those by hand.
+
+Unit tests (all packages, the same script CI runs):
 ```bash
-very_good test --recursive
+./run_unit_tests.sh
 ```
 
 Integration tests:
@@ -95,25 +100,24 @@ destination to pick another — list what you have with
 ./run_swift_tests.sh 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-Kotlin unit tests (the Gradle wrapper is generated, not committed — run any
-Flutter Android build once first):
+Kotlin unit tests (the same commands CI runs). The Gradle wrapper is
+generated, not committed, so generate the Android config once first; it
+doesn't build an APK. Run them on JDK 17: the plugin's Mockito 5.0.0 can't
+mock on JDK 21.
 ```bash
 cd packages/device_calendar_plus/example
-flutter build apk --debug
+flutter build apk --config-only
 
 cd android
-./gradlew :device_calendar_plus_android:test
+./gradlew :device_calendar_plus_android:testDebugUnitTest
 ```
 
 If you touched `packages/device_calendar_plus_android/android/build.gradle`
 or any Gradle file under `packages/device_calendar_plus/example/android/`, run
-both again under built-in Kotlin (Flutter 3.47+):
+them again under built-in Kotlin (Flutter 3.47+):
 ```bash
-cd packages/device_calendar_plus/example
-flutter build apk --debug -Pandroid.builtInKotlin=true
-
-cd android
-./gradlew :device_calendar_plus_android:test -Pandroid.builtInKotlin=true
+cd packages/device_calendar_plus/example/android
+./gradlew :device_calendar_plus_android:testDebugUnitTest -Pandroid.builtInKotlin=true
 ```
 
 The example keeps the template's `android.builtInKotlin=false` (see its

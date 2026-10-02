@@ -451,10 +451,10 @@ class _MyHomePageState extends State<MyHomePage> {
             TextButton(
               onPressed: () async {
                 try {
-                  print('opened');
+                  debugPrint('opened');
                   await DeviceCalendar.instance
                       .showEventModal(fetchedEvent.instanceId);
-                  print('closed');
+                  debugPrint('closed');
                 } on DeviceCalendarException catch (e) {
                   if (!context.mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -947,17 +947,17 @@ class _MyHomePageState extends State<MyHomePage> {
         description: 'Testing showCreateEventModal',
       );
 
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Create modal dismissed')),
       );
     } on DeviceCalendarException catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ${e.message}')),
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed: $e')),
       );
