@@ -148,7 +148,7 @@ internal sealed class SeriesRuleEdit {
  * or in another zone) where it is. A [splitsSeries] (thisAndFollowing) move
  * onto another day is also refused while the kept rule pins days (#194).
  * [startDefaulted] says [targetStart] stands in for a `start` the caller
- * didn't pass ([seriesTimeEditDefaults]), so a refusal names the all-day
+ * didn't pass ([resolveSeriesTimeEdit]), so a refusal names the all-day
  * toggle rather than a `start` argument. The duration is overridden when
  * [durationMinutes] is given.
  */
@@ -309,21 +309,23 @@ internal fun allDayToggleDurationMinutes(
     return ((endEdge - firstDay) / 60_000L).toInt()
 }
 
-/** The start and duration a series edit writes, after [seriesTimeEditDefaults]. */
+/** The start and duration a series edit writes, after [resolveSeriesTimeEdit]. */
 internal data class SeriesTimeEdit(
-    /** The new start, a local instant as the caller's `start`, or null to keep it. */
-    val startMillis: Long?,
+    /** The new start in the stored frame ([resolveTargetStart]), or null to keep it. */
+    val targetStart: Long?,
     /** The new duration, or null to keep it. */
     val durationMinutes: Int?,
-    /** Whether [startMillis] is a default rather than the caller's `start`. */
+    /** Whether [targetStart] is a default rather than the caller's `start`. */
     val startDefaulted: Boolean,
 )
 
 /**
  * The caller's `start` and `duration` for a series edit, with the defaults
- * an all-day toggle fills in. A toggle of a timed series ([rowAllDay]
- * false) to all-day ([patchIsAllDay] true) moves it into the all-day frame
- * even without them: `start` defaults to the named occurrence's own start
+ * an all-day toggle fills in, and the start brought into the stored frame
+ * ([resolveTargetStart]) of the series after the edit ([patchIsAllDay],
+ * else [rowAllDay]). A toggle of a timed series ([rowAllDay] false) to
+ * all-day ([patchIsAllDay] true) moves it into the all-day frame even
+ * without them: `start` defaults to the named occurrence's own start
  * ([timestamp], or the series' [seriesStart] when the edit names the
  * master), and `duration` to the whole [deviceZone] days that occurrence,
  * lasting [durationMillis], covers ([allDayToggleDurationMinutes]), as
@@ -332,7 +334,7 @@ internal data class SeriesTimeEdit(
  * (#124). Any other edit passes [newStartMillis] and [durationMinutes]
  * through.
  */
-internal fun seriesTimeEditDefaults(
+internal fun resolveSeriesTimeEdit(
     newStartMillis: Long?,
     durationMinutes: Int?,
     rowAllDay: Boolean,
@@ -342,12 +344,19 @@ internal fun seriesTimeEditDefaults(
     durationMillis: Long,
     deviceZone: TimeZone = TimeZone.getDefault()
 ): SeriesTimeEdit {
+    val effectiveIsAllDay = patchIsAllDay ?: rowAllDay
     if (patchIsAllDay != true || rowAllDay) {
-        return SeriesTimeEdit(newStartMillis, durationMinutes, startDefaulted = false)
+        return SeriesTimeEdit(
+            targetStart = resolveTargetStart(newStartMillis, effectiveIsAllDay, deviceZone),
+            durationMinutes = durationMinutes,
+            startDefaulted = false
+        )
     }
     val occurrenceStart = timestamp ?: seriesStart
     return SeriesTimeEdit(
-        startMillis = newStartMillis ?: occurrenceStart,
+        targetStart = resolveTargetStart(
+            newStartMillis ?: occurrenceStart, effectiveIsAllDay, deviceZone
+        ),
         durationMinutes = durationMinutes
             ?: allDayToggleDurationMinutes(occurrenceStart, durationMillis, deviceZone),
         startDefaulted = newStartMillis == null,

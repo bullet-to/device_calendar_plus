@@ -7,8 +7,8 @@ import kotlin.test.assertTrue
 
 /**
  * updateRecurring toggling a timed series all-day with no `start` or
- * `duration` (#124): [seriesTimeEditDefaults] stands the named occurrence's
- * own start in for `start`, and [allDayToggleDurationMinutes] for
+ * `duration` (#124): [resolveSeriesTimeEdit] stands the named occurrence's
+ * own start, brought into the stored frame, in for `start`, and [allDayToggleDurationMinutes] for
  * `duration`, so the series lands on the occurrence's device-local date,
  * stored as UTC midnight, spanning every local date it touched. The
  * integration test runs on a device in one zone; these cover both sides of
@@ -32,7 +32,7 @@ internal class AllDayToggleTest {
         seriesStart: Long,
         durationMillis: Long = hour,
         zone: TimeZone = la,
-    ) = seriesTimeEditDefaults(
+    ) = resolveSeriesTimeEdit(
         newStartMillis = newStartMillis,
         durationMinutes = durationMinutes,
         rowAllDay = rowAllDay,
@@ -62,9 +62,7 @@ internal class AllDayToggleTest {
             baseMillis = start,
             referenceMillis = start,
             existingDurationMillis = duration,
-            targetStart = resolveTargetStart(
-                edit.startMillis, effectiveIsAllDay = true, deviceZone = zone
-            ),
+            targetStart = edit.targetStart,
             durationMinutes = edit.durationMinutes,
             ruleEdit = SeriesRuleEdit.Keep(rule),
             splitsSeries = false,
@@ -76,7 +74,7 @@ internal class AllDayToggleTest {
     }
 
     @Test
-    fun seriesTimeEditDefaults_noAllDayChange_passesStartAndDurationThrough() {
+    fun resolveSeriesTimeEdit_noAllDayChange_passesStartAndDurationThrough() {
         val start = instantAt(la, 2026, 6, 6, 23, 30)
 
         val edit = defaults(patchIsAllDay = null, seriesStart = start)
@@ -85,7 +83,7 @@ internal class AllDayToggleTest {
     }
 
     @Test
-    fun seriesTimeEditDefaults_alreadyAllDay_defaultsNothing() {
+    fun resolveSeriesTimeEdit_alreadyAllDay_defaultsNothing() {
         val start = instantAt(utc, 2026, 6, 6)
 
         val edit = defaults(rowAllDay = true, seriesStart = start)
@@ -94,7 +92,7 @@ internal class AllDayToggleTest {
     }
 
     @Test
-    fun seriesTimeEditDefaults_toggleWithStartAndDuration_keepsTheCallers() {
+    fun resolveSeriesTimeEdit_toggleWithStartAndDuration_keepsTheCallers() {
         val start = instantAt(la, 2026, 6, 6, 23, 30)
         val given = instantAt(la, 2026, 6, 10)
 
@@ -102,11 +100,14 @@ internal class AllDayToggleTest {
             newStartMillis = given, durationMinutes = 3 * 24 * 60, seriesStart = start
         )
 
-        assertEquals(SeriesTimeEdit(given, 3 * 24 * 60, startDefaulted = false), edit)
+        assertEquals(
+            SeriesTimeEdit(instantAt(utc, 2026, 6, 10), 3 * 24 * 60, startDefaulted = false),
+            edit
+        )
     }
 
     @Test
-    fun seriesTimeEditDefaults_toggleWithStartOnly_defaultsTheDuration() {
+    fun resolveSeriesTimeEdit_toggleWithStartOnly_defaultsTheDuration() {
         val start = instantAt(la, 2026, 6, 6, 23, 30)
         val given = instantAt(la, 2026, 6, 10)
 
@@ -114,27 +115,36 @@ internal class AllDayToggleTest {
 
         // The duration still comes from the occurrence: 23:30 to 00:30
         // touches two local dates.
-        assertEquals(SeriesTimeEdit(given, 2 * 24 * 60, startDefaulted = false), edit)
+        assertEquals(
+            SeriesTimeEdit(instantAt(utc, 2026, 6, 10), 2 * 24 * 60, startDefaulted = false),
+            edit
+        )
     }
 
     @Test
-    fun seriesTimeEditDefaults_toggleNamedByLaterOccurrence_defaultsFromThatOccurrence() {
+    fun resolveSeriesTimeEdit_toggleNamedByLaterOccurrence_defaultsFromThatOccurrence() {
         val seriesStart = instantAt(la, 2026, 6, 6, 12)
         // A later occurrence: its own start, not the series', is the default.
         val occurrence = instantAt(la, 2026, 6, 13, 23, 30)
 
         val edit = defaults(timestamp = occurrence, seriesStart = seriesStart)
 
-        assertEquals(SeriesTimeEdit(occurrence, 2 * 24 * 60, startDefaulted = true), edit)
+        assertEquals(
+            SeriesTimeEdit(instantAt(utc, 2026, 6, 13), 2 * 24 * 60, startDefaulted = true),
+            edit
+        )
     }
 
     @Test
-    fun seriesTimeEditDefaults_toggleNamedByMaster_defaultsFromTheSeriesStart() {
+    fun resolveSeriesTimeEdit_toggleNamedByMaster_defaultsFromTheSeriesStart() {
         val seriesStart = instantAt(la, 2026, 6, 6, 12)
 
         val edit = defaults(seriesStart = seriesStart)
 
-        assertEquals(SeriesTimeEdit(seriesStart, 24 * 60, startDefaulted = true), edit)
+        assertEquals(
+            SeriesTimeEdit(instantAt(utc, 2026, 6, 6), 24 * 60, startDefaulted = true),
+            edit
+        )
     }
 
     @Test

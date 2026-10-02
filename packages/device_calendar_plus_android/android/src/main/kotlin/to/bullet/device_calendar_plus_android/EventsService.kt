@@ -991,8 +991,11 @@ class EventsService(
             // provider: that would keep FREQ=HOURLY as an hourly series.
             unsupportedRuleFailure(recurrenceRule)?.let { return Result.failure(it) }
 
-            // A bare all-day toggle defaults `start` and `duration` (#124).
-            val timeEdit = seriesTimeEditDefaults(
+            // A bare all-day toggle defaults `start` and `duration` (#124),
+            // and the caller's local `start` is brought into the stored
+            // frame (#144). resolveSeriesTimes then refuses a start the kept
+            // rule doesn't generate (#189; see updateRecurring docs).
+            val timeEdit = resolveSeriesTimeEdit(
                 newStartMillis = newStartMillis,
                 durationMinutes = durationMinutes,
                 rowAllDay = row.allDay,
@@ -1001,11 +1004,6 @@ class EventsService(
                 seriesStart = row.dtstart,
                 durationMillis = eventDurationMillis(row)
             )
-
-            // Bring the caller's local `start` into the stored frame (#144).
-            // resolveSeriesTimes then refuses a start the kept rule doesn't
-            // generate (#189; see updateRecurring docs).
-            val targetStart = resolveTargetStart(timeEdit.startMillis, effectiveIsAllDay)
             val ruleEdit = SeriesRuleEdit.of(
                 recurrenceRule,
                 cleared = "recurrenceRule" in patch.clearedFields,
@@ -1014,10 +1012,10 @@ class EventsService(
 
             when (span) {
                 "thisAndFollowing" -> updateRecurringThisAndFollowing(
-                    row, timestamp, targetStart, timeEdit, ruleEdit, patch
+                    row, timestamp, timeEdit, ruleEdit, patch
                 )
                 else -> updateRecurringAllEvents(
-                    row, timestamp, targetStart, timeEdit, ruleEdit, patch
+                    row, timestamp, timeEdit, ruleEdit, patch
                 )
             }
         } catch (e: SecurityException) {
@@ -1040,8 +1038,6 @@ class EventsService(
     private fun updateRecurringAllEvents(
         row: EventRow,
         timestamp: Long?,
-        // Already in the stored frame (see resolveTargetStart).
-        targetStart: Long?,
         timeEdit: SeriesTimeEdit,
         ruleEdit: SeriesRuleEdit,
         patch: EventFieldPatch
@@ -1073,7 +1069,7 @@ class EventsService(
             baseMillis = row.dtstart,
             referenceMillis = timestamp ?: row.dtstart,
             existingDurationMillis = eventDurationMillis(row),
-            targetStart = targetStart,
+            targetStart = timeEdit.targetStart,
             durationMinutes = timeEdit.durationMinutes,
             ruleEdit = ruleEdit,
             splitsSeries = false,
@@ -1085,8 +1081,8 @@ class EventsService(
         // A `start` equal to the current anchor is still a rewrite: the
         // DTSTART/DURATION (and RRULE, below) re-put is what makes the
         // provider re-expand the series.
-        val rewriteTimeColumns = targetStart != null || timeEdit.durationMinutes != null ||
-            newStart != row.dtstart
+        val rewriteTimeColumns = timeEdit.targetStart != null ||
+            timeEdit.durationMinutes != null || newStart != row.dtstart
         if (rewriteTimeColumns || wasRecurring != willBeRecurring) {
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
@@ -1139,8 +1135,6 @@ class EventsService(
     private fun updateRecurringThisAndFollowing(
         row: EventRow,
         timestamp: Long?,
-        // Already in the stored frame (see resolveTargetStart).
-        targetStart: Long?,
         timeEdit: SeriesTimeEdit,
         ruleEdit: SeriesRuleEdit,
         patch: EventFieldPatch
@@ -1201,7 +1195,7 @@ class EventsService(
             baseMillis = timestamp,
             referenceMillis = timestamp,
             existingDurationMillis = eventDurationMillis(row),
-            targetStart = targetStart,
+            targetStart = timeEdit.targetStart,
             durationMinutes = timeEdit.durationMinutes,
             ruleEdit = ruleEdit,
             splitsSeries = true,
