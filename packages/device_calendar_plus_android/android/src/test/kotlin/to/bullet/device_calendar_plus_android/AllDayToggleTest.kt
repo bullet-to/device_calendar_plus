@@ -7,10 +7,10 @@ import kotlin.test.assertTrue
 
 /**
  * updateRecurring toggling a timed series all-day with no `start` or
- * `duration` (#124): [resolveSeriesTimeEdit] stands the named occurrence's
- * own start, brought into the stored frame, in for `start`, and [allDayToggleDurationMinutes] for
- * `duration`, so the series lands on the occurrence's device-local date,
- * stored as UTC midnight, spanning every local date it touched. The
+ * `duration` (#124): [resolveSeriesTimeEdit] defaults them to the named
+ * occurrence's own start and [allDayToggleDurationMinutes], so the series
+ * lands on the occurrence's device-local date, stored as UTC midnight,
+ * spanning every local date it touched. The
  * integration test runs on a device in one zone; these cover both sides of
  * UTC, where a timed start's UTC date isn't its local one. The series is
  * stored in UTC, as the integration fixtures store it.
@@ -23,7 +23,7 @@ internal class AllDayToggleTest {
 
     private val hour = 3_600_000L
 
-    private fun defaults(
+    private fun timeEdit(
         newStartMillis: Long? = null,
         durationMinutes: Int? = null,
         rowAllDay: Boolean = false,
@@ -57,19 +57,16 @@ internal class AllDayToggleTest {
         seriesZoneId: String = "UTC",
         storedZone: TimeZone = utc,
     ): Result<Pair<Long, Long>> {
-        val edit = defaults(seriesStart = start, durationMillis = duration, zone = zone)
         return resolveSeriesTimes(
             baseMillis = start,
             referenceMillis = start,
             existingDurationMillis = duration,
-            targetStart = edit.targetStart,
-            durationMinutes = edit.durationMinutes,
+            timeEdit = timeEdit(seriesStart = start, durationMillis = duration, zone = zone),
             ruleEdit = SeriesRuleEdit.Keep(rule),
             splitsSeries = false,
             isAllDay = true,
             timeZoneId = seriesZoneId,
-            storedZone = storedZone,
-            startDefaulted = edit.startDefaulted
+            storedZone = storedZone
         )
     }
 
@@ -77,7 +74,7 @@ internal class AllDayToggleTest {
     fun resolveSeriesTimeEdit_noAllDayChange_passesStartAndDurationThrough() {
         val start = instantAt(la, 2026, 6, 6, 23, 30)
 
-        val edit = defaults(patchIsAllDay = null, seriesStart = start)
+        val edit = timeEdit(patchIsAllDay = null, seriesStart = start)
 
         assertEquals(SeriesTimeEdit(null, null, startDefaulted = false), edit)
     }
@@ -86,7 +83,7 @@ internal class AllDayToggleTest {
     fun resolveSeriesTimeEdit_alreadyAllDay_defaultsNothing() {
         val start = instantAt(utc, 2026, 6, 6)
 
-        val edit = defaults(rowAllDay = true, seriesStart = start)
+        val edit = timeEdit(rowAllDay = true, seriesStart = start)
 
         assertEquals(SeriesTimeEdit(null, null, startDefaulted = false), edit)
     }
@@ -96,7 +93,7 @@ internal class AllDayToggleTest {
         val start = instantAt(la, 2026, 6, 6, 23, 30)
         val given = instantAt(la, 2026, 6, 10)
 
-        val edit = defaults(
+        val edit = timeEdit(
             newStartMillis = given, durationMinutes = 3 * 24 * 60, seriesStart = start
         )
 
@@ -111,7 +108,7 @@ internal class AllDayToggleTest {
         val start = instantAt(la, 2026, 6, 6, 23, 30)
         val given = instantAt(la, 2026, 6, 10)
 
-        val edit = defaults(newStartMillis = given, seriesStart = start)
+        val edit = timeEdit(newStartMillis = given, seriesStart = start)
 
         // The duration still comes from the occurrence: 23:30 to 00:30
         // touches two local dates.
@@ -127,7 +124,7 @@ internal class AllDayToggleTest {
         // A later occurrence: its own start, not the series', is the default.
         val occurrence = instantAt(la, 2026, 6, 13, 23, 30)
 
-        val edit = defaults(timestamp = occurrence, seriesStart = seriesStart)
+        val edit = timeEdit(timestamp = occurrence, seriesStart = seriesStart)
 
         assertEquals(
             SeriesTimeEdit(instantAt(utc, 2026, 6, 13), 2 * 24 * 60, startDefaulted = true),
@@ -139,7 +136,7 @@ internal class AllDayToggleTest {
     fun resolveSeriesTimeEdit_toggleNamedByMaster_defaultsFromTheSeriesStart() {
         val seriesStart = instantAt(la, 2026, 6, 6, 12)
 
-        val edit = defaults(seriesStart = seriesStart)
+        val edit = timeEdit(seriesStart = seriesStart)
 
         assertEquals(
             SeriesTimeEdit(instantAt(utc, 2026, 6, 6), 24 * 60, startDefaulted = true),
@@ -183,6 +180,7 @@ internal class AllDayToggleTest {
             storedZone = ny,
         )
 
+        result.assertRefused()
         val message = result.exceptionOrNull()?.message.orEmpty()
         assertTrue(message.startsWith("isAllDay without a start"), message)
     }

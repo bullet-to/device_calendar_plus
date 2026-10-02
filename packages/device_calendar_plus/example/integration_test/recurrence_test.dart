@@ -2870,6 +2870,8 @@ void main() {
       );
     });
 
+    DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
+
     // Toggling all-day changes the frame a series' days are read in: the
     // series was stored in UTC, but the all-day start is a local midnight.
     // iOS once snapped the new all-day anchor to UTC midnight, a day early
@@ -2912,7 +2914,6 @@ void main() {
           windowDays: 30);
       expect(after.every((e) => e.isAllDay), isTrue,
           reason: 'every occurrence must be all-day');
-      DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
       expect(
         after.map((e) => dayOf(e.startDate.toLocal())).toList(),
         before.map((e) => dayOf(e.startDate.toLocal())).toList(),
@@ -2927,14 +2928,12 @@ void main() {
     // (#124). Seeds a series at a local time on another UTC date, where the
     // zone allows one: just after midnight east of UTC, just before it west
     // of UTC.
-    Future<({String eventId, DateTime start, List<Event> before})>
-        seedTimedOffUtcDate(
-        String title) async {
+    Future<SeededSeries> seedTimedOffUtcDate(String title) async {
       final day = localMidnight(2);
       final start = day.timeZoneOffset.isNegative
           ? day.add(const Duration(hours: 23, minutes: 30))
           : day.add(const Duration(minutes: 30));
-      final series = await seedSeries(
+      return seedSeries(
         plugin,
         calendarId,
         count: 4,
@@ -2944,14 +2943,7 @@ void main() {
             plugin, calendarId,
             title: title, count: count, start: start),
       );
-      return (
-        eventId: series.eventId,
-        start: series.start,
-        before: series.occurrences,
-      );
     }
-
-    DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
 
     void expectAllDayOnTheirDays(List<Event> after, List<Event> before) {
       expect(after, hasLength(before.length));
@@ -2987,7 +2979,7 @@ void main() {
       expectAllDayOnTheirDays(
         await occurrencesOf(plugin, calendarId!, seeded.eventId, seeded.start,
             windowDays: 30),
-        seeded.before,
+        seeded.occurrences,
       );
     });
 
@@ -2997,7 +2989,7 @@ void main() {
         'toggling a timed series all-day with no start from a later '
         'occurrence keeps every occurrence on its calendar day', () async {
       final seeded = await seedTimedOffUtcDate('Timed To All-day Later');
-      final before = seeded.before;
+      final before = seeded.occurrences;
 
       await plugin.updateRecurring(
         before[1].instanceId,
@@ -3016,7 +3008,7 @@ void main() {
         'thisAndFollowing toggling a timed series all-day with no start '
         'keeps every new occurrence on its calendar day', () async {
       final seeded = await seedTimedOffUtcDate('Timed To All-day Split');
-      final before = seeded.before;
+      final before = seeded.occurrences;
       final split = before[2];
 
       final newSeriesId = await plugin.updateRecurring(

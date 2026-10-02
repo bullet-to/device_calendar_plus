@@ -147,24 +147,22 @@ internal sealed class SeriesRuleEdit {
  * the kept rule doesn't generate (one anchored off its rule by another app,
  * or in another zone) where it is. A [splitsSeries] (thisAndFollowing) move
  * onto another day is also refused while the kept rule pins days (#194).
- * [startDefaulted] says [targetStart] stands in for a `start` the caller
- * didn't pass ([resolveSeriesTimeEdit]), so a refusal names the all-day
- * toggle rather than a `start` argument. The duration is overridden when
- * [durationMinutes] is given.
+ * A refusal names what moved the start ([SeriesTimeEdit.mover]). The
+ * duration is overridden when [timeEdit] carries one.
  */
 internal fun resolveSeriesTimes(
     baseMillis: Long,
     referenceMillis: Long,
     existingDurationMillis: Long,
-    targetStart: Long?,
-    durationMinutes: Int?,
+    timeEdit: SeriesTimeEdit,
     ruleEdit: SeriesRuleEdit,
     splitsSeries: Boolean,
     isAllDay: Boolean,
     timeZoneId: String?,
-    storedZone: TimeZone,
-    startDefaulted: Boolean = false
+    storedZone: TimeZone
 ): Result<Pair<Long, Long>> {
+    val targetStart = timeEdit.targetStart
+    val durationMinutes = timeEdit.durationMinutes
     val editZone = seriesTimeZone(timeZoneId, isAllDay)
     // A slot copies the new start's time of day, already whole seconds.
     // With no new start the stored start is kept as is, even with millis
@@ -177,11 +175,7 @@ internal fun resolveSeriesTimes(
     }
     val keptRule = (ruleEdit as? SeriesRuleEdit.Keep)?.rule
     if (targetStart != null && keptRule != null) {
-        val mover = if (startDefaulted) {
-            "isAllDay without a start (the occurrence's device-local date) moves"
-        } else {
-            "start moves"
-        }
+        val mover = timeEdit.mover
         val refusal = when {
             // iOS can't split a series whose rule pins days at an occurrence
             // moved to another day: EventKit detaches it instead (#194).
@@ -317,22 +311,31 @@ internal data class SeriesTimeEdit(
     val durationMinutes: Int?,
     /** Whether [targetStart] is a default rather than the caller's `start`. */
     val startDefaulted: Boolean,
-)
+) {
+    /** What moved the start, as a refusal of the move names it. */
+    val mover: String
+        get() = if (startDefaulted) {
+            "isAllDay without a start (the occurrence's device-local date) moves"
+        } else {
+            "start moves"
+        }
+}
 
 /**
- * The caller's `start` and `duration` for a series edit, with the defaults
- * an all-day toggle fills in, and the start brought into the stored frame
- * ([resolveTargetStart]) of the series after the edit ([patchIsAllDay],
- * else [rowAllDay]). A toggle of a timed series ([rowAllDay] false) to
- * all-day ([patchIsAllDay] true) moves it into the all-day frame even
- * without them: `start` defaults to the named occurrence's own start
- * ([timestamp], or the series' [seriesStart] when the edit names the
- * master), and `duration` to the whole [deviceZone] days that occurrence,
- * lasting [durationMillis], covers ([allDayToggleDurationMinutes]), as
- * EventKit makes of it. Without them the timed DTSTART and DURATION stayed
- * under ALL_DAY=1 and the series read back on the wrong date, or collapsed
- * (#124). Any other edit passes [newStartMillis] and [durationMinutes]
- * through.
+ * The start and duration a series edit writes, with the start brought into
+ * the stored frame ([resolveTargetStart]) of the series after the edit.
+ *
+ * Most edits pass the caller's [newStartMillis] and [durationMinutes]
+ * through. A toggle of a timed series to all-day ([rowAllDay] false,
+ * [patchIsAllDay] true) fills in what the caller left out:
+ * - `start` defaults to the named occurrence's own start: [timestamp], or
+ *   [seriesStart] when the edit names the master.
+ * - `duration` defaults to the whole [deviceZone] days that occurrence,
+ *   lasting [durationMillis], covers ([allDayToggleDurationMinutes]).
+ *
+ * That's what EventKit makes of the same toggle. Without these defaults the
+ * timed DTSTART and DURATION stayed under ALL_DAY=1, and the series read
+ * back on the wrong date or collapsed (#124).
  */
 internal fun resolveSeriesTimeEdit(
     newStartMillis: Long?,
