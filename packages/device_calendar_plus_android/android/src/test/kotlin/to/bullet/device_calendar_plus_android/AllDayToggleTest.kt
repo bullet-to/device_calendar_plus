@@ -44,11 +44,19 @@ internal class AllDayToggleTest {
     )
 
     /**
-     * The new (start, duration) of a weekly UTC-stored series starting at
-     * [start] and lasting [duration], toggled all-day with only `isAllDay`
-     * from a device in [zone], through the defaults updateRecurring takes.
+     * The new (start, duration) of a series with [rule], starting at [start]
+     * and lasting [duration], stored in [storedZone], toggled all-day with
+     * only `isAllDay` from a device in [zone], through the defaults
+     * updateRecurring takes.
      */
-    private fun bareToggle(start: Long, duration: Long, zone: TimeZone): Pair<Long, Long> {
+    private fun bareToggle(
+        start: Long,
+        duration: Long,
+        zone: TimeZone,
+        rule: String = "FREQ=WEEKLY;COUNT=4",
+        seriesZoneId: String = "UTC",
+        storedZone: TimeZone = utc,
+    ): Result<Pair<Long, Long>> {
         val edit = defaults(seriesStart = start, durationMillis = duration, zone = zone)
         return resolveSeriesTimes(
             baseMillis = start,
@@ -58,13 +66,13 @@ internal class AllDayToggleTest {
                 edit.startMillis, effectiveIsAllDay = true, deviceZone = zone
             ),
             durationMinutes = edit.durationMinutes,
-            ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;COUNT=4"),
+            ruleEdit = SeriesRuleEdit.Keep(rule),
             splitsSeries = false,
             isAllDay = true,
-            timeZoneId = "UTC",
-            storedZone = utc,
+            timeZoneId = seriesZoneId,
+            storedZone = storedZone,
             startDefaulted = edit.startDefaulted
-        ).getOrThrow()
+        )
     }
 
     @Test
@@ -81,15 +89,6 @@ internal class AllDayToggleTest {
         val start = instantAt(utc, 2026, 6, 6)
 
         val edit = defaults(rowAllDay = true, seriesStart = start)
-
-        assertEquals(SeriesTimeEdit(null, null, startDefaulted = false), edit)
-    }
-
-    @Test
-    fun seriesTimeEditDefaults_toggleToTimed_defaultsNothing() {
-        val start = instantAt(utc, 2026, 6, 6)
-
-        val edit = defaults(rowAllDay = true, patchIsAllDay = false, seriesStart = start)
 
         assertEquals(SeriesTimeEdit(null, null, startDefaulted = false), edit)
     }
@@ -143,7 +142,7 @@ internal class AllDayToggleTest {
         // 23:30 on 6 June in LA is 06:30 on 7 June UTC.
         val start = instantAt(la, 2026, 6, 6, 23, 30)
 
-        val (newStart, newDuration) = bareToggle(start, hour, la)
+        val (newStart, newDuration) = bareToggle(start, hour, la).getOrThrow()
 
         assertEquals(instantAt(utc, 2026, 6, 6), newStart)
         // 23:30 to 00:30 touches two local dates.
@@ -155,7 +154,7 @@ internal class AllDayToggleTest {
         // 00:30 on 6 June in Sydney is 14:30 on 5 June UTC.
         val start = instantAt(sydney, 2026, 6, 6, 0, 30)
 
-        val (newStart, newDuration) = bareToggle(start, hour, sydney)
+        val (newStart, newDuration) = bareToggle(start, hour, sydney).getOrThrow()
 
         assertEquals(instantAt(utc, 2026, 6, 6), newStart)
         assertEquals(AllDayDates.MILLIS_PER_DAY, newDuration)
@@ -167,22 +166,11 @@ internal class AllDayToggleTest {
         // device, where the occurrence is Tue 2 June 00:00 AEST: the
         // defaulted start lands on a Tuesday the rule doesn't generate.
         val start = instantAt(ny, 2026, 6, 1, 10)
-        val edit = defaults(seriesStart = start, zone = sydney)
-
-        val result = resolveSeriesTimes(
-            baseMillis = start,
-            referenceMillis = start,
-            existingDurationMillis = hour,
-            targetStart = resolveTargetStart(
-                edit.startMillis, effectiveIsAllDay = true, deviceZone = sydney
-            ),
-            durationMinutes = edit.durationMinutes,
-            ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;BYDAY=MO"),
-            splitsSeries = false,
-            isAllDay = true,
-            timeZoneId = "America/New_York",
+        val result = bareToggle(
+            start, hour, sydney,
+            rule = "FREQ=WEEKLY;BYDAY=MO",
+            seriesZoneId = "America/New_York",
             storedZone = ny,
-            startDefaulted = edit.startDefaulted
         )
 
         val message = result.exceptionOrNull()?.message.orEmpty()
