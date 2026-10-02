@@ -1,5 +1,6 @@
 package to.bullet.device_calendar_plus_android
 
+import java.util.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -7,6 +8,10 @@ import kotlin.test.assertNull
 /**
  * `storedEndMillis` derives a row's end from DTEND, else DTSTART + DURATION:
  * a recurring master stores DURATION with a NULL DTEND (#122).
+ *
+ * `resolveEditedBounds` decides the DTSTART/DTEND an updateEvent edit writes:
+ * a bare all-day toggle takes the row's toggleSpan, anything else stores the
+ * provided bounds in the effective frame.
  */
 internal class EventTimingTest {
     // "P{n}S" is the form the plugin writes (the timed-master integration
@@ -32,5 +37,49 @@ internal class EventTimingTest {
         assertNull(storedEndMillis(0L, null, "garbage"))
         assertNull(storedEndMillis(0L, null, "3600"))
         assertNull(storedEndMillis(0L, null, null))
+    }
+
+    private val losAngeles = TimeZone.getTimeZone("America/Los_Angeles")
+    private val utc = TimeZone.getTimeZone("UTC")
+    private val hour = 3_600_000L
+
+    // 23:30 LA is the next UTC date, so a timed bound left under ALL_DAY=1
+    // would read back a day off.
+    private val lateEvening = instantAt(losAngeles, 2026, 10, 3, 23, 30)
+
+    @Test
+    fun resolveEditedBounds_bareToggleOfTimedRow_isItsToggleSpan() {
+        assertEquals(
+            AllDayDates.toggleSpan(lateEvening, hour, losAngeles),
+            resolveEditedBounds(lateEvening, hour, null, null, true, false, losAngeles),
+        )
+    }
+
+    // Already all-day, or not toggling: nothing to move.
+    @Test
+    fun resolveEditedBounds_noDatesAndNoToggle_leavesBothBounds() {
+        val none = null to null
+        assertEquals(none, resolveEditedBounds(lateEvening, hour, null, null, true, true, losAngeles))
+        assertEquals(none, resolveEditedBounds(lateEvening, hour, null, null, false, false, losAngeles))
+        assertEquals(none, resolveEditedBounds(lateEvening, hour, null, null, null, false, losAngeles))
+    }
+
+    // Provided bounds are stored in the effective frame: the patch's flag,
+    // else the row's. A missing bound stays null.
+    @Test
+    fun resolveEditedBounds_providedBounds_storedInEffectiveFrame() {
+        val utcDate = instantAt(utc, 2026, 10, 3)
+        assertEquals(
+            utcDate to null,
+            resolveEditedBounds(0L, hour, lateEvening, null, true, false, losAngeles),
+        )
+        assertEquals(
+            null to utcDate,
+            resolveEditedBounds(0L, hour, null, lateEvening, null, true, losAngeles),
+        )
+        assertEquals(
+            lateEvening to lateEvening + hour,
+            resolveEditedBounds(0L, hour, lateEvening, lateEvening + hour, false, true, losAngeles),
+        )
     }
 }

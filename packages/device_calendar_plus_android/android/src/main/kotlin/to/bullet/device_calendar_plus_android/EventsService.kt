@@ -793,23 +793,21 @@ class EventsService(
         val values = android.content.ContentValues()
         applyEventFieldValues(values, patch)
 
-        // Update dates if provided
-        // If event is/becomes all-day, need to normalize to UTC midnight
-        val effectiveIsAllDay = patch.isAllDay ?: row.allDay
-        if (startDate != null || endDate != null) {
-            val startMillis = startDate?.let { storageMillis(it.time, effectiveIsAllDay) }
-            val endMillis = endDate?.let { storageMillis(it.time, effectiveIsAllDay) }
-
-            if (startMillis != null) {
-                values.put(CalendarContract.Events.DTSTART, startMillis)
-            }
-            if (endMillis != null) {
-                values.put(CalendarContract.Events.DTEND, endMillis)
-            }
-        } else if (patch.isBareAllDayToggle(row.allDay, startDate, endDate)) {
-            val (start, end) = AllDayDates.toggleSpan(row.dtstart, eventDurationMillis(row))
-            values.put(CalendarContract.Events.DTSTART, start)
-            values.put(CalendarContract.Events.DTEND, end)
+        // Write whichever bounds the edit moves: the provided dates in the
+        // effective frame, or the all-day span of a bare toggle.
+        val (newStart, newEnd) = resolveEditedBounds(
+            rowStart = row.dtstart,
+            durationMillis = eventDurationMillis(row),
+            startMillis = startDate?.time,
+            endMillis = endDate?.time,
+            newAllDay = patch.isAllDay,
+            rowAllDay = row.allDay
+        )
+        if (newStart != null) {
+            values.put(CalendarContract.Events.DTSTART, newStart)
+        }
+        if (newEnd != null) {
+            values.put(CalendarContract.Events.DTEND, newEnd)
         }
 
         // Update timezone if provided
@@ -897,20 +895,19 @@ class EventsService(
     ): Result<Unit> {
         val series = store.readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
-        val effectiveIsAllDay = patch.isAllDay ?: series.row.allDay
-        val (newStart, newEnd) =
-            if (patch.isBareAllDayToggle(series.row.allDay, startDate, endDate)) {
-                AllDayDates.toggleSpan(timestamp, eventDurationMillis(series.row))
-            } else {
-                // Without an explicit endDate the occurrence's own end stays
-                // put — matching iOS, where setting startDate leaves endDate
-                // untouched.
-                Pair(
-                    startDate?.let { storageMillis(it.time, effectiveIsAllDay) } ?: timestamp,
-                    endDate?.let { storageMillis(it.time, effectiveIsAllDay) }
-                        ?: (timestamp + eventDurationMillis(series.row))
-                )
-            }
+        val duration = eventDurationMillis(series.row)
+        val (resolvedStart, resolvedEnd) = resolveEditedBounds(
+            rowStart = timestamp,
+            durationMillis = duration,
+            startMillis = startDate?.time,
+            endMillis = endDate?.time,
+            newAllDay = patch.isAllDay,
+            rowAllDay = series.row.allDay
+        )
+        // Without an explicit endDate the occurrence's own end stays put —
+        // matching iOS, where setting startDate leaves endDate untouched.
+        val newStart = resolvedStart ?: timestamp
+        val newEnd = resolvedEnd ?: (timestamp + duration)
         if (newEnd <= newStart) {
             return Result.failure(
                 CalendarException(
@@ -1580,20 +1577,6 @@ class EventsService(
                 "Invalid recurrence rule: $it"
             )
         }
-
-    /**
-     * Whether this edit is a bare all-day toggle of a timed event: `isAllDay
-     * = true` with no new dates, on a row that isn't all-day yet. EventKit
-     * moves such an event into the all-day frame — its own local date,
-     * spanning every day it touched ([AllDayDates.toggleSpan]). Left timed
-     * under ALL_DAY=1, the provider read it as a UTC date, a day off where
-     * that isn't the local one.
-     */
-    private fun EventFieldPatch.isBareAllDayToggle(
-        rowAllDay: Boolean,
-        startDate: java.util.Date?,
-        endDate: java.util.Date?
-    ): Boolean = startDate == null && endDate == null && isAllDay == true && !rowAllDay
 
     /** Resolves an event's duration, falling back to one hour when unknown. */
     private fun eventDurationMillis(row: EventRow): Long =

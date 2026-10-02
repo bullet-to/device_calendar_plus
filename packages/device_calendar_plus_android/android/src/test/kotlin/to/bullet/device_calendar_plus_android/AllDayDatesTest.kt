@@ -8,6 +8,10 @@ import kotlin.test.assertEquals
  * `AllDayDates.windowEndUtcMidnight` is the exclusive all-day edge of a
  * listEvents window: the UTC midnight after the local date of `end - 1`, so
  * a sub-day window still covers its whole date (#20).
+ *
+ * `AllDayDates.toggleSpan` is the all-day span a timed event takes when an
+ * edit toggles it all-day without new dates: UTC midnight of its local date,
+ * through one day for every local date it touches, and at least one.
  */
 internal class AllDayDatesTest {
     // One zone each side of UTC: Sydney's local midnight lands on the previous
@@ -17,6 +21,7 @@ internal class AllDayDatesTest {
     private val losAngeles = TimeZone.getTimeZone("America/Los_Angeles")
     private val zones = listOf(sydney, losAngeles)
     private val utc = TimeZone.getTimeZone("UTC")
+    private val hour = 3_600_000L
 
     // End on a local midnight keeps the boundary (exclusive end).
     @Test
@@ -44,9 +49,6 @@ internal class AllDayDatesTest {
             assertEquals(instantAt(utc, 2026, 9, 27), end, zone.id)
         }
     }
-
-    private val hour = 3_600_000L
-    private val day = 24 * hour
 
     // A timed event inside one local date toggles to that one day.
     @Test
@@ -83,9 +85,8 @@ internal class AllDayDatesTest {
     fun toggleSpan_zeroLength_isOneDay() {
         for (zone in zones) {
             val start = instantAt(zone, 2026, 9, 26)
-            val (spanStart, spanEnd) = AllDayDates.toggleSpan(start, 0L, zone)
-            assertEquals(instantAt(utc, 2026, 9, 26), spanStart, zone.id)
-            assertEquals(day, spanEnd - spanStart, zone.id)
+            val expected = instantAt(utc, 2026, 9, 26) to instantAt(utc, 2026, 9, 27)
+            assertEquals(expected, AllDayDates.toggleSpan(start, 0L, zone), zone.id)
         }
     }
 }
