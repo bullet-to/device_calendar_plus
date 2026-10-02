@@ -1,9 +1,5 @@
 import EventKit
 
-/// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
-/// two platforms must stay in lockstep.
-private let minutesPerDay = 1440
-
 extension EKEventAvailability {
   var stringValue: String {
     switch self {
@@ -1078,7 +1074,9 @@ class EventsService {
     // Get new data into event
     patch.apply(to: foundEvent)
     if let startDate = startDate { foundEvent.startDate = startDate }
-    if let endDate = endDate { foundEvent.endDate = endDate }
+    if let endDate = endDate {
+      foundEvent.endDate = SeriesDates.allDayStoredEnd(endDate, isAllDay: foundEvent.isAllDay)
+    }
     patch.applyTimeZone(to: foundEvent)
 
     // One thing only: an occurrence edit detaches it as an exception, and a
@@ -1278,18 +1276,7 @@ class EventsService {
       foundEvent = event
     }
 
-    // All-day events have no time-of-day and only whole-day durations. The
-    // Dart layer can only check these against fields in the same call; the
-    // stored event's state is enforced here.
     let effectiveIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
-    if let durationMinutes = durationMinutes, effectiveIsAllDay,
-       durationMinutes % minutesPerDay != 0 {
-      completion(.failure(CalendarError(
-        code: PlatformExceptionCodes.invalidArguments,
-        message: "All-day events require whole-day durations"
-      )))
-      return
-    }
 
     // Parse the recurrence rule and compute the new start before touching
     // the event. EventKit keeps the fetched EKEvent live in its cache, so
@@ -1323,17 +1310,31 @@ class EventsService {
       return
     }
 
+    // Resolve the end for the new start, still before touching the event:
+    // `nil` for a change that moves nothing, which skips the time rewrite.
+    let newEnd: Date?
+    switch SeriesDates.resolveSeriesEnd(
+      start: foundEvent.startDate,
+      end: foundEvent.endDate,
+      newStart: newStart,
+      startGiven: newStartMillis != nil,
+      durationMinutes: durationMinutes,
+      isAllDay: effectiveIsAllDay,
+      deviceZone: .current
+    ) {
+    case .success(let end):
+      newEnd = end
+    case .failure(let error):
+      completion(.failure(error))
+      return
+    }
+
     // Apply field changes.
     patch.apply(to: foundEvent)
 
-    // Apply start and/or duration changes. A rule that already fits its
-    // anchor resolves to the current start, and skips the time rewrite for a
-    // change that moves nothing (mirrors Android's rewriteTimeColumns).
-    if newStartMillis != nil || durationMinutes != nil || newStart != foundEvent.startDate {
-      let duration = durationMinutes.map { TimeInterval($0 * 60) }
-        ?? foundEvent.endDate.timeIntervalSince(foundEvent.startDate)
+    if let newEnd = newEnd {
       foundEvent.startDate = newStart
-      foundEvent.endDate = newStart.addingTimeInterval(duration)
+      foundEvent.endDate = newEnd
     }
 
     patch.applyTimeZone(to: foundEvent)

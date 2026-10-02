@@ -17,6 +17,43 @@ enum SeriesRuleEdit {
 /// tests can drive the zones the integration harness can't set on iOS.
 /// Android's counterpart is `SeriesDates.kt`.
 enum SeriesDates {
+  /// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
+  /// two platforms must stay in lockstep.
+  private static let minutesPerDay = 1440
+
+  private static let secondsPerDay = 86_400
+
+  /// `base` moved `days` calendar days, then set to the wall-clock time
+  /// `secondsIntoDay` seconds after midnight (`nil` for the start of the
+  /// day). The one piece of DST-safe arithmetic here: it counts calendar
+  /// days and sets a wall-clock time, so a 23- or 25-hour day can't carry
+  /// the result an hour off.
+  private static func wallClock(
+    _ base: Date,
+    plusDays days: Int,
+    secondsIntoDay: Int?,
+    calendar: Calendar
+  ) -> Date? {
+    guard let shiftedDay = calendar.date(byAdding: .day, value: days, to: base) else {
+      return nil
+    }
+    guard let seconds = secondsIntoDay else {
+      return calendar.startOfDay(for: shiftedDay)
+    }
+    return calendar.date(
+      bySettingHour: seconds / 3600,
+      minute: seconds % 3600 / 60,
+      second: seconds % 60,
+      of: shiftedDay
+    )
+  }
+
+  /// `date`'s wall-clock time in `calendar`, in seconds after midnight.
+  private static func secondsIntoDay(_ date: Date, _ calendar: Calendar) -> Int {
+    let tod = calendar.dateComponents([.hour, .minute, .second], from: date)
+    return (tod.hour ?? 0) * 3600 + (tod.minute ?? 0) * 60 + (tod.second ?? 0)
+  }
+
   /// Translates `base` by the wall-clock delta from `reference` to `target`,
   /// computed in `timeZone`: shifts by the whole-day difference and sets the
   /// time-of-day to `target`'s. DST-safe — it counts calendar days and sets a
@@ -38,18 +75,11 @@ enum SeriesDates {
     let refDay = calendar.startOfDay(for: reference)
     let targetDay = calendar.startOfDay(for: target)
     let dayDelta = calendar.dateComponents([.day], from: refDay, to: targetDay).day ?? 0
-    guard let shiftedDay = calendar.date(byAdding: .day, value: dayDelta, to: base) else {
-      return nil
-    }
-    if isAllDay {
-      return calendar.startOfDay(for: shiftedDay)
-    }
-    let tod = calendar.dateComponents([.hour, .minute, .second], from: target)
-    return calendar.date(
-      bySettingHour: tod.hour ?? 0,
-      minute: tod.minute ?? 0,
-      second: tod.second ?? 0,
-      of: shiftedDay
+    return wallClock(
+      base,
+      plusDays: dayDelta,
+      secondsIntoDay: isAllDay ? nil : secondsIntoDay(target, calendar),
+      calendar: calendar
     )
   }
 
@@ -200,5 +230,108 @@ enum SeriesDates {
       start = anchored
     }
     return .success(start)
+  }
+
+  /// The end a series update leaves a series with, once its start moves to
+  /// `newStart`: `durationMinutes` after it, or the current `start`–`end`
+  /// span when no duration is given.
+  ///
+  /// `nil` when the update moves nothing: no start given (`startGiven`), no
+  /// duration, and `newStart` still `start` (a rule that already fits its
+  /// anchor resolves to the current start). The caller then skips the time
+  /// rewrite, mirroring Android's `rewriteTimeColumns`.
+  ///
+  /// All-day spans are wall-clock spans in `deviceZone` (the all-day edit
+  /// frame): whole calendar days plus a time of day. EventKit keeps an
+  /// all-day event at local midnight, so a day carried as 86,400 seconds
+  /// falls an hour short or long across a DST change, and the event loses
+  /// or gains its last day (#195). A kept span is measured from `start`'s
+  /// wall clock to `end`'s, so a timed event toggled all-day carries its
+  /// span from the new day's midnight; one that runs backwards on the wall
+  /// clock (a DST fall-back) clamps to zero length at `newStart`. Timed spans
+  /// stay exact intervals.
+  ///
+  /// The duration half of Android's `resolveSeriesTimes`. Android adds exact
+  /// milliseconds even for all-day series: its all-day rows are stored in
+  /// UTC, which has no DST.
+  ///
+  /// An all-day end comes back in EventKit's stored form, the last second of
+  /// the last day (`allDayStoredEnd`).
+  ///
+  /// Fails with `invalidArguments` when an all-day series is given a
+  /// `durationMinutes` that isn't whole days, and with `operationFailed` if
+  /// the calendar can't compute the date.
+  static func resolveSeriesEnd(
+    start: Date,
+    end: Date,
+    newStart: Date,
+    startGiven: Bool,
+    durationMinutes: Int?,
+    isAllDay: Bool,
+    deviceZone: TimeZone
+  ) -> Result<Date?, CalendarError> {
+    guard startGiven || durationMinutes != nil || newStart != start else {
+      return .success(nil)
+    }
+    guard isAllDay else {
+      let duration = durationMinutes.map { TimeInterval($0 * 60) }
+        ?? end.timeIntervalSince(start)
+      return .success(newStart.addingTimeInterval(duration))
+    }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = deviceZone
+    let spanSeconds: Int
+    if let durationMinutes = durationMinutes {
+      // All-day events have no time-of-day and only whole-day durations.
+      // The Dart layer can only check this against fields in the same call;
+      // the stored event's all-day state is enforced here.
+      guard durationMinutes % minutesPerDay == 0 else {
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "All-day events require whole-day durations"
+        ))
+      }
+      // End on the last day's 23:59:59, where EventKit keeps an all-day
+      // event's end (see `allDayStoredEnd`): an exclusive midnight on an
+      // existing all-day event reads as one more day.
+      spanSeconds = max(0, durationMinutes * 60 - 1)
+    } else {
+      // A span that runs backwards on the wall clock (a DST fall-back) would
+      // end before the new start, which EventKit won't save: clamp it.
+      spanSeconds = max(0, wallClockSpan(from: start, to: end, calendar))
+    }
+    let endSeconds = secondsIntoDay(newStart, calendar) + spanSeconds
+    guard let resolved = wallClock(
+      newStart,
+      plusDays: endSeconds / secondsPerDay,
+      secondsIntoDay: endSeconds % secondsPerDay,
+      calendar: calendar
+    ) else {
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "Could not apply the new end to the event"
+      ))
+    }
+    return .success(resolved)
+  }
+
+  /// The end to write for an all-day event whose end is `end`, exclusive
+  /// (the plugin's form: midnight after the last day). EventKit keeps an
+  /// all-day event's end at the last second of its last day, and reads an
+  /// exclusive midnight written onto an existing all-day event as one more
+  /// day; the read path adds the second back. Timed ends pass through.
+  static func allDayStoredEnd(_ end: Date, isAllDay: Bool) -> Date {
+    return isAllDay ? end.addingTimeInterval(-1) : end
+  }
+
+  /// The wall-clock span from `start` to `end` in `calendar`, in seconds:
+  /// whole calendar days at 86,400 each, plus the difference in time of day.
+  /// Negative when `end`'s wall clock reads earlier than `start`'s (a short
+  /// span across a DST fall-back).
+  private static func wallClockSpan(from start: Date, to end: Date, _ calendar: Calendar) -> Int {
+    let days = calendar.dateComponents(
+      [.day], from: calendar.startOfDay(for: start), to: calendar.startOfDay(for: end)
+    ).day ?? 0
+    return days * secondsPerDay + secondsIntoDay(end, calendar) - secondsIntoDay(start, calendar)
   }
 }

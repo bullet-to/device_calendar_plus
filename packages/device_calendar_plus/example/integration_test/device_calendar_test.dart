@@ -1072,6 +1072,36 @@ void main() {
       expect(event.startDate.second, 0);
     });
 
+    test('Extend an All-Day Event to Two Days (#195)', () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'All-Day Extend Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final today = DateTime.now();
+      final start = DateTime(today.year, today.month, today.day + 3);
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'All-Day Extend',
+        startDate: start,
+        endDate: DateTime(start.year, start.month, start.day + 1),
+        isAllDay: true,
+      );
+
+      // iOS wrote an exclusive midnight end onto the existing all-day event,
+      // which EventKit read as one more day: three days, not two.
+      final newEnd = DateTime(start.year, start.month, start.day + 2);
+      await plugin.updateEvent(instanceId: eventId, endDate: newEnd);
+
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.isAllDay, true);
+      expect(event.startDate, start);
+      expect(event.endDate, newEnd,
+          reason: 'the event must run two calendar days, not three');
+    });
+
     test('Change All-Day Event to Timed', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
