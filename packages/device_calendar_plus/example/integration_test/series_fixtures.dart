@@ -159,6 +159,10 @@ Future<List<Event>> eventsTitled(
 List<int> startsOf(Iterable<Event> events) =>
     events.map((e) => e.startDate.millisecondsSinceEpoch).toList();
 
+/// The end instants of [events], the counterpart of [startsOf].
+List<int> endsOf(Iterable<Event> events) =>
+    events.map((e) => e.endDate.millisecondsSinceEpoch).toList();
+
 /// The start instants of [events], each moved to the next local midnight:
 /// what an all-day listing reads after its series moves a calendar day later.
 List<int> startsOneDayLater(Iterable<Event> events) => events

@@ -2970,26 +2970,22 @@ void main() {
       final firstDay = dayOf(start);
       final lastDay = dayOf(
           start.add(seedDuration).subtract(const Duration(milliseconds: 1)));
-      DateTime weeksOn(DateTime day, int n) =>
-          DateTime(day.year, day.month, day.day + 7 * n);
-      final weeks = [
-        for (var n = fromIndex; n < seeded.occurrences.length; n++) n,
+      final expected = [
+        for (var i = fromIndex; i < seeded.occurrences.length; i++)
+          (start: daysOn(firstDay, 7 * i), end: daysOn(lastDay, 7 * i + 1)),
       ];
 
       expect(after.every((e) => e.isAllDay), isTrue,
           reason: 'every occurrence must be all-day');
       expect(
         startsOf(after),
-        [for (final n in weeks) weeksOn(firstDay, n).millisecondsSinceEpoch],
+        [for (final s in expected) s.start.millisecondsSinceEpoch],
         reason: "each occurrence must sit on the seed start's local date, a "
             'week on each time',
       );
       expect(
-        after.map((e) => e.endDate.millisecondsSinceEpoch).toList(),
-        [
-          for (final n in weeks)
-            nextLocalMidnight(weeksOn(lastDay, n)).millisecondsSinceEpoch,
-        ],
+        endsOf(after),
+        [for (final s in expected) s.end.millisecondsSinceEpoch],
         reason: 'each occurrence must run through the last local day the '
             "seed's timed hour touched",
       );
