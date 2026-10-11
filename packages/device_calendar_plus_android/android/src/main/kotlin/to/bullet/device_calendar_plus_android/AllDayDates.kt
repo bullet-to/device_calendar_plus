@@ -54,6 +54,21 @@ internal object AllDayDates {
         localDateToUtcMidnight(endMillis - 1, zone) + MILLIS_PER_DAY
 
     /**
+     * The all-day DTSTART and DTEND a timed event at [startMillis] lasting
+     * [durationMillis] takes once an edit toggles it all-day without new
+     * dates: UTC midnight of its [zone] date, through whole days, one for
+     * every [zone] date it touches from its start to its last moment, and at
+     * least one. EventKit makes the same span of it on iOS.
+     */
+    fun toggleSpan(
+        startMillis: Long,
+        durationMillis: Long,
+        zone: TimeZone = TimeZone.getDefault()
+    ): Pair<Long, Long> =
+        localDateToUtcMidnight(startMillis, zone) to
+            windowEndUtcMidnight(startMillis + maxOf(durationMillis, 1L), zone)
+
+    /**
      * Midnight, in [zone], of the calendar date that [millis] falls on in
      * [zone]: the start of that instant's local day. Not an all-day
      * conversion; the recurrence anchor shift uses it to count whole

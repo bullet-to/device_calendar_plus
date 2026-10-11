@@ -20,6 +20,11 @@
   occurrence, or on the wrong date (#124).
 - Android: a `thisAndFollowing` split that fails part-way no longer leaves a
   `DELETED=1` tombstone of the new series on a local calendar (#124).
+- Android: `updateEvent` with `isAllDay: true` and no `startDate` or
+  `endDate` on a timed event, or on one occurrence of a timed series, keeps
+  it on its own calendar day, spanning every day it touched, as on iOS. It
+  used to read back on the wrong date where the event's UTC date isn't its
+  local one.
 
 ## 0.10.1 - 2026-10-01
 

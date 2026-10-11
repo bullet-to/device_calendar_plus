@@ -40,3 +40,15 @@ DateTime localMidnight(int daysFromNow) {
 /// can name its end without reading the clock again.
 DateTime nextLocalMidnight(DateTime day) =>
     DateTime(day.year, day.month, day.day + 1);
+
+/// Local midnight of the calendar day [d] falls on, DST-safe: built from the
+/// date rather than by truncating hours.
+DateTime localDay(DateTime d) => DateTime(d.year, d.month, d.day);
+
+/// A local time on [day] whose UTC date isn't [day], where the zone allows
+/// one: just after midnight east of UTC, just before it west of UTC (where
+/// an hour-long event also runs into the next day). An all-day time read as
+/// a UTC date lands a day off here, so it catches that mix-up.
+DateTime startOnOtherUtcDate(DateTime day) => day.timeZoneOffset.isNegative
+    ? day.add(const Duration(hours: 23, minutes: 30))
+    : day.add(const Duration(minutes: 30));

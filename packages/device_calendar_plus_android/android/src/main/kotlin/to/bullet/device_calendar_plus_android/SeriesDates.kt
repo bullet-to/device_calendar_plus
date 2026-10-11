@@ -287,19 +287,15 @@ internal fun resolveTargetStart(
 /**
  * The duration, in minutes, an occurrence at [startMillis] lasting
  * [durationMillis] takes once an edit toggles its timed series all-day
- * without a `duration`: whole days, one for every [deviceZone] date it
- * touches from its start to its last moment, and at least one. EventKit
- * makes the same span of it on iOS (#124).
+ * without a `duration`: the [AllDayDates.toggleSpan] of the occurrence, as
+ * a series duration (#124).
  */
 internal fun allDayToggleDurationMinutes(
     startMillis: Long,
     durationMillis: Long,
     deviceZone: TimeZone = TimeZone.getDefault()
 ): Int {
-    val firstDay = AllDayDates.localDateToUtcMidnight(startMillis, deviceZone)
-    val endEdge = AllDayDates.windowEndUtcMidnight(
-        startMillis + maxOf(durationMillis, 1L), deviceZone
-    )
+    val (firstDay, endEdge) = AllDayDates.toggleSpan(startMillis, durationMillis, deviceZone)
     return ((endEdge - firstDay) / 60_000L).toInt()
 }
 
