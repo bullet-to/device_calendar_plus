@@ -78,5 +78,5 @@ dependencies {
     // JUnit flavour behind it is a KGP feature; under built-in Kotlin the suite
     // doesn't compile unless the JUnit 5 artifact is named directly.
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
-    testImplementation("org.mockito:mockito-core:5.0.0")
+    testImplementation("org.mockito:mockito-core:5.24.0")
 }

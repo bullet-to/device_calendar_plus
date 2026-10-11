@@ -1,6 +1,10 @@
 ## Unreleased
 
 ### Fixed
+- `hasPermissions` without an Activity (a background context) reports
+  `denied` when the plugin has recorded a denial, instead of a
+  `notDetermined` that promised a dialog `requestPermissions` can't show
+  from there (#127).
 - `updateRecurring` `thisAndFollowing` on a `COUNT` series counts the
   occurrences before the split from the series' own start. It looked back
   only five years, so an older series under-counted them and the new series
