@@ -1,6 +1,25 @@
 ## Unreleased
 
+### Changed
+- **Breaking:** `hasPermissions` and `requestPermissions` throw a
+  `StateError` on a null status or a status string this version doesn't
+  recognise, instead of silently reading it as `denied` (#127).
+
 ### Fixed
+- Android: `hasPermissions` without an Activity (a background context)
+  reports `denied` when the plugin has recorded a denial, instead of
+  `notDetermined` (#127). `CalendarPermissionStatus.notDetermined` now also
+  documents that a denial made via another library isn't seen until one
+  request goes through this plugin.
+- Android: `updateRecurring` with `EventSpan.thisAndFollowing` on a
+  `CountEnd` series that started more than five years before the split no
+  longer gives the new series too many occurrences (#124).
+- Android: `updateRecurring` with `isAllDay: true` and no `start` or
+  `duration` keeps each occurrence on its own calendar day, spanning every
+  day it touched, as on iOS. The series used to read back as a single
+  occurrence, or on the wrong date (#124).
+- Android: a `thisAndFollowing` split that fails part-way no longer leaves a
+  `DELETED=1` tombstone of the new series on a local calendar (#124).
 - Android: `updateEvent` with `isAllDay: true` and no `startDate` or
   `endDate` on a timed event, or on one occurrence of a timed series, keeps
   it on its own calendar day, spanning every day it touched, as on iOS. It

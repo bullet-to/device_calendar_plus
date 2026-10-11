@@ -447,10 +447,12 @@ void main() {
         expect(result, CalendarPermissionStatus.writeOnly);
       });
 
-      test('defaults to denied when status is null', () async {
+      test('throws StateError when status is null', () async {
         mockPlatform._permissionStatusCode = null;
-        final result = await DeviceCalendar.instance.requestPermissions();
-        expect(result, CalendarPermissionStatus.denied);
+        await expectLater(
+          DeviceCalendar.instance.requestPermissions(),
+          throwsA(isA<StateError>()),
+        );
       });
 
       test('throws DeviceCalendarException when permissions not declared',
@@ -666,10 +668,24 @@ void main() {
     });
 
     group('hasPermissions', () {
-      test('defaults to denied when status is null', () async {
+      test('throws StateError when status is null', () async {
+        // Neither native side ever replies null, so a null breaks the channel
+        // contract just like an unrecognized string.
         mockPlatform._permissionStatusCode = null;
-        final result = await DeviceCalendar.instance.hasPermissions();
-        expect(result, CalendarPermissionStatus.denied);
+        await expectLater(
+          DeviceCalendar.instance.hasPermissions(),
+          throwsA(isA<StateError>()),
+        );
+      });
+
+      test('throws StateError on an unrecognized status string', () async {
+        // A status added natively but unknown to this Dart version must fail
+        // loudly, not silently read as denied (#127).
+        mockPlatform._permissionStatusCode = 'someFutureStatus';
+        await expectLater(
+          DeviceCalendar.instance.hasPermissions(),
+          throwsA(isA<StateError>()),
+        );
       });
     });
 
