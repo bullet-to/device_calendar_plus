@@ -41,6 +41,11 @@ DateTime localMidnight(int daysFromNow) {
 DateTime daysOn(DateTime day, int days) =>
     DateTime(day.year, day.month, day.day + days);
 
+/// Local midnight of [d]'s calendar day, DST-safe: built from the date rather
+/// than by subtracting [d]'s clock time, which lands an hour off on the day
+/// of a DST transition.
+DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
+
 /// Local midnight of the calendar day after [day], DST-safe: built from the
 /// date rather than by adding 24 hours, so a test that already holds a day
 /// can name its end without reading the clock again.

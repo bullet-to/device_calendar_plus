@@ -2796,7 +2796,7 @@ void main() {
         reason: 'each all-day occurrence must move to the next calendar day',
       );
       expect(
-        after.map((e) => e.endDate.millisecondsSinceEpoch).toList(),
+        endsOf(after),
         before
             .map((e) =>
                 nextLocalMidnight(e.endDate.toLocal()).millisecondsSinceEpoch)
@@ -2834,7 +2834,7 @@ void main() {
       expect(startsOf(after), startsOf(before),
           reason: 'the start was given unchanged');
       expect(
-        after.map((e) => e.endDate.millisecondsSinceEpoch).toList(),
+        endsOf(after),
         before
             .map((e) => nextLocalMidnight(nextLocalMidnight(e.startDate))
                 .millisecondsSinceEpoch)
@@ -2869,8 +2869,6 @@ void main() {
         before: split.startDate,
       );
     });
-
-    DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
 
     // Toggling all-day changes the frame a series' days are read in: the
     // series was stored in UTC, but the all-day start is a local midnight.
@@ -2970,9 +2968,10 @@ void main() {
       final firstDay = dayOf(start);
       final lastDay = dayOf(
           start.add(seedDuration).subtract(const Duration(milliseconds: 1)));
+      final endDay = nextLocalMidnight(lastDay);
       final expected = [
         for (var i = fromIndex; i < seeded.occurrences.length; i++)
-          (start: daysOn(firstDay, 7 * i), end: daysOn(lastDay, 7 * i + 1)),
+          (start: daysOn(firstDay, 7 * i), end: daysOn(endDay, 7 * i)),
       ];
 
       expect(after.every((e) => e.isAllDay), isTrue,
