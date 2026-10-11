@@ -2938,6 +2938,7 @@ void main() {
     // The year is arbitrary; nothing here needs the seed in the future.
     final seedDay = DateTime(2027, 6, 7);
     const seedDuration = Duration(hours: 1);
+    const seedCount = 4;
     Future<SeededSeries> seedTimedOffUtcDate(String title) async {
       final start = seedDay.timeZoneOffset.isNegative
           ? seedDay.add(const Duration(hours: 23, minutes: 30))
@@ -2945,12 +2946,15 @@ void main() {
       return seedSeries(
         plugin,
         calendarId,
-        count: 4,
-        minOccurrences: 4,
+        count: seedCount,
+        minOccurrences: seedCount,
         windowDays: 30,
-        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
-            plugin, calendarId,
-            title: title, count: count, start: start, duration: seedDuration),
+        create: (plugin, calendarId, {int count = seedCount}) =>
+            createWeeklySeries(plugin, calendarId,
+                title: title,
+                count: count,
+                start: start,
+                duration: seedDuration),
       );
     }
 
@@ -2970,7 +2974,7 @@ void main() {
           start.add(seedDuration).subtract(const Duration(milliseconds: 1)));
       final endDay = nextLocalMidnight(lastDay);
       final expected = [
-        for (var i = fromIndex; i < seeded.occurrences.length; i++)
+        for (var i = fromIndex; i < seedCount; i++)
           (start: daysOn(firstDay, 7 * i), end: daysOn(endDay, 7 * i)),
       ];
 
