@@ -2927,8 +2927,8 @@ void main() {
     // a start whose UTC date isn't its local one read back a day off
     // (#124). Seeds a weekly series at a local time on another UTC date,
     // where the zone allows one: just after midnight east of UTC, just
-    // before it west of UTC. It runs the hour createWeeklySeries gives it,
-    // so west of UTC it straddles its local midnight.
+    // before it west of UTC. It runs for seedDuration, so west of UTC it
+    // straddles its local midnight.
     //
     // The seed is pinned to a window no harness zone changes clocks in: in
     // June, Los Angeles, UTC and Sydney are all between transitions. The
@@ -2952,48 +2952,45 @@ void main() {
         windowDays: 30,
         create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
             plugin, calendarId,
-            title: title, count: count, start: start),
+            title: title, count: count, start: start, duration: seedDuration),
       );
     }
 
     /// Asserts [after] is the all-day series a bare toggle leaves of a
-    /// [seedTimedOffUtcDate] series [seeded]: its occurrences from [from]
-    /// on, each on the seed's weekly calendar day — the start's local date,
-    /// a week on each time — and each spanning the whole local days the
-    /// seed's hour touched, one span for the series as it has one DURATION.
-    /// Pinned to the rule rather than derived from the timed occurrences
-    /// read back before the toggle, which drift across a DST change.
+    /// [seedTimedOffUtcDate] series [seeded]: its occurrences from index
+    /// [fromIndex] on, each on the seed's weekly calendar day — the start's
+    /// local date, a week on each time — and each running through the last
+    /// local day the seed's hour touched, one span for the series as it has
+    /// one DURATION. Pinned to the rule rather than derived from the timed
+    /// occurrences read back before the toggle, which drift across a DST
+    /// change.
     void expectAllDaySeries(List<Event> after, SeededSeries seeded,
-        {int from = 0}) {
+        {int fromIndex = 0}) {
       final start = seeded.start;
       final firstDay = dayOf(start);
       final lastDay = dayOf(
           start.add(seedDuration).subtract(const Duration(milliseconds: 1)));
-      final spanDays = DateTime.utc(lastDay.year, lastDay.month, lastDay.day)
-              .difference(
-                  DateTime.utc(firstDay.year, firstDay.month, firstDay.day))
-              .inDays +
-          1;
-      final days = [
-        for (var n = from; n < seeded.occurrences.length; n++)
-          DateTime(firstDay.year, firstDay.month, firstDay.day + 7 * n),
+      DateTime weeksOn(DateTime day, int n) =>
+          DateTime(day.year, day.month, day.day + 7 * n);
+      final weeks = [
+        for (var n = fromIndex; n < seeded.occurrences.length; n++) n,
       ];
 
       expect(after.every((e) => e.isAllDay), isTrue,
           reason: 'every occurrence must be all-day');
       expect(
         startsOf(after),
-        days.map((d) => d.millisecondsSinceEpoch).toList(),
+        [for (final n in weeks) weeksOn(firstDay, n).millisecondsSinceEpoch],
         reason: "each occurrence must sit on the seed start's local date, a "
             'week on each time',
       );
       expect(
         after.map((e) => e.endDate.millisecondsSinceEpoch).toList(),
-        days
-            .map((d) => DateTime(d.year, d.month, d.day + spanDays)
-                .millisecondsSinceEpoch)
-            .toList(),
-        reason: 'each occurrence must span the $spanDays local day(s) the '
+        [
+          for (final n in weeks)
+            nextLocalMidnight(weeksOn(lastDay, n)).millisecondsSinceEpoch,
+        ],
+        reason: 'each occurrence must run through the last local day the '
             "seed's timed hour touched",
       );
     }
@@ -3050,15 +3047,14 @@ void main() {
         isAllDay: true,
       );
 
-      final from = seeded.start;
       expectAllDaySeries(
-        await occurrencesOf(plugin, calendarId!, newSeriesId, from,
+        await occurrencesOf(plugin, calendarId!, newSeriesId, seeded.start,
             windowDays: 30),
         seeded,
-        from: 2,
+        fromIndex: 2,
       );
       expectTruncatedMaster(
-        await occurrencesOf(plugin, calendarId!, seeded.eventId, from,
+        await occurrencesOf(plugin, calendarId!, seeded.eventId, seeded.start,
             windowDays: 30),
         before: split.startDate,
       );
