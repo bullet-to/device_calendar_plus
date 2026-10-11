@@ -27,26 +27,19 @@ Matcher throwsInvalidArguments({String? mentioning}) {
   return throwsA(matcher);
 }
 
-/// Local midnight [daysFromNow] days from today. Built via the constructor
-/// rather than `DateTime.add`, so the result is a calendar day rather than
-/// 24 hours (which lands an hour off across a DST transition).
-DateTime localMidnight(int daysFromNow) {
-  final now = DateTime.now();
-  return DateTime(now.year, now.month, now.day + daysFromNow);
-}
-
 /// Local midnight [days] calendar days after [day], DST-safe: built from the
-/// date rather than by adding 24-hour multiples, which land an hour off
-/// across a DST transition.
+/// date rather than by adding 24-hour multiples (or subtracting [day]'s clock
+/// time), which land an hour off across a DST transition. The one place that
+/// knows how a day offset is built; the helpers below go through it.
 DateTime daysOn(DateTime day, int days) =>
     DateTime(day.year, day.month, day.day + days);
 
-/// Local midnight of [d]'s calendar day, DST-safe: built from the date rather
-/// than by subtracting [d]'s clock time, which lands an hour off on the day
-/// of a DST transition.
-DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
+/// Local midnight [daysFromNow] days from today, via [daysOn].
+DateTime localMidnight(int daysFromNow) => daysOn(DateTime.now(), daysFromNow);
 
-/// Local midnight of the calendar day after [day], DST-safe: built from the
-/// date rather than by adding 24 hours, so a test that already holds a day
-/// can name its end without reading the clock again.
+/// Local midnight of [d]'s calendar day, via [daysOn].
+DateTime dayOf(DateTime d) => daysOn(d, 0);
+
+/// Local midnight of the calendar day after [day], via [daysOn], so a test
+/// that already holds a day can name its end without reading the clock again.
 DateTime nextLocalMidnight(DateTime day) => daysOn(day, 1);

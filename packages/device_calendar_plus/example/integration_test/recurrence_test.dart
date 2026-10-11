@@ -2757,8 +2757,7 @@ void main() {
           plugin, calendarId,
           title: 'All-day Day Earlier');
       final first = series.occurrences.first;
-      final dayBefore = DateTime(first.startDate.year, first.startDate.month,
-          first.startDate.day - 1);
+      final dayBefore = daysOn(first.startDate, -1);
 
       await expectLater(
         plugin.updateRecurring(
@@ -2903,7 +2902,7 @@ void main() {
         before.first.instanceId,
         EventSpan.allEvents,
         isAllDay: true,
-        start: DateTime(first.year, first.month, first.day),
+        start: dayOf(first),
         duration: const Duration(days: 1),
       );
 
@@ -2932,10 +2931,11 @@ void main() {
     // June, Los Angeles, UTC and Sydney are all between transitions. The
     // series is stored in UTC, so a device DST change inside the window
     // moves its later occurrences an hour on the local clock, where the
-    // platforms disagree on a toggle named at one of them (Android spans
-    // the named occurrence's local days, EventKit the master's) and a
+    // platforms disagree on a toggle named at one of them (#208: Android
+    // spans the named occurrence's local days, EventKit the master's) and a
     // 23:30 occurrence can stop touching the next day at all. The all-day
     // series the toggle leaves is expanded as whole dates and never moves.
+    // The year is arbitrary; nothing here needs the seed in the future.
     final seedDay = DateTime(2027, 6, 7);
     const seedDuration = Duration(hours: 1);
     Future<SeededSeries> seedTimedOffUtcDate(String title) async {
