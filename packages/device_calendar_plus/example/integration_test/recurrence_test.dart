@@ -2925,14 +2925,25 @@ void main() {
     // into the all-day frame. Android once left the timed DTSTART under
     // ALL_DAY=1, and the provider reads an all-day start as a UTC date, so
     // a start whose UTC date isn't its local one read back a day off
-    // (#124). Seeds a series at a local time on another UTC date, where the
-    // zone allows one: just after midnight east of UTC, just before it west
-    // of UTC.
+    // (#124). Seeds a weekly series at a local time on another UTC date,
+    // where the zone allows one: just after midnight east of UTC, just
+    // before it west of UTC. It runs the hour createWeeklySeries gives it,
+    // so west of UTC it straddles its local midnight.
+    //
+    // The seed is pinned to a window no harness zone changes clocks in: in
+    // June, Los Angeles, UTC and Sydney are all between transitions. The
+    // series is stored in UTC, so a device DST change inside the window
+    // moves its later occurrences an hour on the local clock, where the
+    // platforms disagree on a toggle named at one of them (Android spans
+    // the named occurrence's local days, EventKit the master's) and a
+    // 23:30 occurrence can stop touching the next day at all. The all-day
+    // series the toggle leaves is expanded as whole dates and never moves.
+    final seedDay = DateTime(2027, 6, 7);
+    const seedDuration = Duration(hours: 1);
     Future<SeededSeries> seedTimedOffUtcDate(String title) async {
-      final day = localMidnight(2);
-      final start = day.timeZoneOffset.isNegative
-          ? day.add(const Duration(hours: 23, minutes: 30))
-          : day.add(const Duration(minutes: 30));
+      final start = seedDay.timeZoneOffset.isNegative
+          ? seedDay.add(const Duration(hours: 23, minutes: 30))
+          : seedDay.add(const Duration(minutes: 30));
       return seedSeries(
         plugin,
         calendarId,
@@ -2945,23 +2956,45 @@ void main() {
       );
     }
 
-    void expectAllDayOnTheirDays(List<Event> after, List<Event> before) {
-      expect(after, hasLength(before.length));
+    /// Asserts [after] is the all-day series a bare toggle leaves of a
+    /// [seedTimedOffUtcDate] series [seeded]: its occurrences from [from]
+    /// on, each on the seed's weekly calendar day — the start's local date,
+    /// a week on each time — and each spanning the whole local days the
+    /// seed's hour touched, one span for the series as it has one DURATION.
+    /// Pinned to the rule rather than derived from the timed occurrences
+    /// read back before the toggle, which drift across a DST change.
+    void expectAllDaySeries(List<Event> after, SeededSeries seeded,
+        {int from = 0}) {
+      final start = seeded.start;
+      final firstDay = dayOf(start);
+      final lastDay = dayOf(
+          start.add(seedDuration).subtract(const Duration(milliseconds: 1)));
+      final spanDays = DateTime.utc(lastDay.year, lastDay.month, lastDay.day)
+              .difference(
+                  DateTime.utc(firstDay.year, firstDay.month, firstDay.day))
+              .inDays +
+          1;
+      final days = [
+        for (var n = from; n < seeded.occurrences.length; n++)
+          DateTime(firstDay.year, firstDay.month, firstDay.day + 7 * n),
+      ];
+
       expect(after.every((e) => e.isAllDay), isTrue,
           reason: 'every occurrence must be all-day');
       expect(
-        after.map((e) => dayOf(e.startDate.toLocal())).toList(),
-        before.map((e) => dayOf(e.startDate.toLocal())).toList(),
-        reason: 'each occurrence must stay on its original calendar day',
+        startsOf(after),
+        days.map((d) => d.millisecondsSinceEpoch).toList(),
+        reason: "each occurrence must sit on the seed start's local date, a "
+            'week on each time',
       );
       expect(
-        after.map((e) => e.endDate.toLocal()).toList(),
-        before
-            .map((e) => nextLocalMidnight(dayOf(e.endDate
-                .toLocal()
-                .subtract(const Duration(milliseconds: 1)))))
+        after.map((e) => e.endDate.millisecondsSinceEpoch).toList(),
+        days
+            .map((d) => DateTime(d.year, d.month, d.day + spanDays)
+                .millisecondsSinceEpoch)
             .toList(),
-        reason: 'each occurrence must span every day its timed self touched',
+        reason: 'each occurrence must span the $spanDays local day(s) the '
+            "seed's timed hour touched",
       );
     }
 
@@ -2976,10 +3009,10 @@ void main() {
         isAllDay: true,
       );
 
-      expectAllDayOnTheirDays(
+      expectAllDaySeries(
         await occurrencesOf(plugin, calendarId!, seeded.eventId, seeded.start,
             windowDays: 30),
-        seeded.occurrences,
+        seeded,
       );
     });
 
@@ -2997,10 +3030,10 @@ void main() {
         isAllDay: true,
       );
 
-      expectAllDayOnTheirDays(
+      expectAllDaySeries(
         await occurrencesOf(plugin, calendarId!, seeded.eventId, seeded.start,
             windowDays: 30),
-        before,
+        seeded,
       );
     });
 
@@ -3018,10 +3051,11 @@ void main() {
       );
 
       final from = seeded.start;
-      expectAllDayOnTheirDays(
+      expectAllDaySeries(
         await occurrencesOf(plugin, calendarId!, newSeriesId, from,
             windowDays: 30),
-        before.sublist(2),
+        seeded,
+        from: 2,
       );
       expectTruncatedMaster(
         await occurrencesOf(plugin, calendarId!, seeded.eventId, from,
