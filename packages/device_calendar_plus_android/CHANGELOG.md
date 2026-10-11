@@ -5,6 +5,19 @@
   `denied` when the plugin has recorded a denial, instead of a
   `notDetermined` that promised a dialog `requestPermissions` can't show
   from there (#127).
+- `updateRecurring` `thisAndFollowing` on a `COUNT` series counts the
+  occurrences before the split from the series' own start. It looked back
+  only five years, so an older series under-counted them and the new series
+  ran past the original end (#124).
+- `updateRecurring` with `isAllDay: true` and no `start` or `duration` moves
+  a timed series into the all-day frame: each occurrence lands on its own
+  local date, spanning every day it touched, as on iOS. The timed start and
+  duration were left in place, and the series read back as one occurrence or
+  on the wrong date (#124).
+- A `thisAndFollowing` split that fails part-way removes the new series it
+  created through the same sync-adapter-aware delete as every other plugin
+  delete, rather than leaving a `DELETED=1` tombstone on a local calendar
+  (#132, #124).
 
 ## 0.9.1 - 2026-10-01
 
