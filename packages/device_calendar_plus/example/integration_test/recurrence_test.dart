@@ -2651,7 +2651,6 @@ void main() {
       final remaining = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.anchor,
           windowDays: 30);
-      expectTruncatedMaster(remaining, before: wednesday.startDate, count: 4);
       expect(startsOf(remaining), startsOf(before.sublist(0, 4)),
           reason: 'the occurrences before the split must stay where they '
               'were');

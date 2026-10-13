@@ -18,10 +18,15 @@ final class SeriesDatesTests: XCTestCase {
 
   /// FREQ=WEEKLY;BYDAY=<day>.
   private static func weekly(on day: EKWeekday) -> EKRecurrenceRule {
+    return weekly(on: [day])
+  }
+
+  /// FREQ=WEEKLY;BYDAY=<days>.
+  private static func weekly(on days: [EKWeekday]) -> EKRecurrenceRule {
     return EKRecurrenceRule(
       recurrenceWith: .weekly,
       interval: 1,
-      daysOfTheWeek: [EKRecurrenceDayOfWeek(day)],
+      daysOfTheWeek: days.map { EKRecurrenceDayOfWeek($0) },
       daysOfTheMonth: nil,
       monthsOfTheYear: nil,
       weeksOfTheYear: nil,
@@ -141,6 +146,38 @@ final class SeriesDatesTests: XCTestCase {
       deviceZone: sydney
     )
     assertRefused(result)
+  }
+
+  /// FREQ=WEEKLY;BYDAY=MO,TU.
+  private let mondaysAndTuesdays = SeriesDatesTests.weekly(on: [.monday, .tuesday])
+
+  // The kept rule is set on the event again (`SeriesRuleWrite.set`) when the
+  // toggle is a day move across the two frames: the reference is read in the
+  // stored frame and the target in the edit frame. A UTC series at Mon 2 Nov
+  // 2026 23:00, already Tuesday in Sydney, toggled all-day onto Sydney's Tue
+  // 3 Nov goes Monday to Tuesday, so it is a day move.
+  func testAllDayToggleOntoAnotherLocalDaySetsTheKeptRuleAgain() throws {
+    let result = resolve(
+      base: at(utc, 11, 2, hour: 23),
+      target: at(sydney, 11, 3),
+      isAllDay: true,
+      ruleEdit: .keep(mondaysAndTuesdays),
+      deviceZone: sydney
+    )
+    XCTAssertTrue(try setsRule(result))
+  }
+
+  // The same series at Mon 2 Nov 10:00 UTC toggled all-day onto Sydney's
+  // Mon 2 Nov: the same day in both frames, so the rule is left as loaded.
+  func testAllDayToggleOnTheSameLocalDayLeavesTheKeptRuleAsLoaded() throws {
+    let result = resolve(
+      base: at(utc, 11, 2, hour: 10),
+      target: at(sydney, 11, 2),
+      isAllDay: true,
+      ruleEdit: .keep(mondaysAndTuesdays),
+      deviceZone: sydney
+    )
+    XCTAssertFalse(try setsRule(result))
   }
 
   // MARK: - resolveSeriesEnd(...) (#195)

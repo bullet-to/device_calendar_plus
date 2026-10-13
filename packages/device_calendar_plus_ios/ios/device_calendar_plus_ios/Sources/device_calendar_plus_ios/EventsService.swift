@@ -1126,31 +1126,14 @@ class EventsService {
     _ rule: EKRecurrenceRule,
     endingBefore date: Date
   ) -> EKRecurrenceRule {
-    return ruleCopy(rule, replacingEnd: EKRecurrenceEnd(end: date.addingTimeInterval(-1)))
-  }
-
-  /// A fresh `EKRecurrenceRule` with `rule`'s pattern, and its end unless
-  /// `replacingEnd` gives another.
-  private func ruleCopy(
-    _ rule: EKRecurrenceRule,
-    replacingEnd end: EKRecurrenceEnd? = nil
-  ) -> EKRecurrenceRule {
-    return EKRecurrenceRule(
-      recurrenceWith: rule.frequency,
-      interval: rule.interval,
-      daysOfTheWeek: rule.daysOfTheWeek,
-      daysOfTheMonth: rule.daysOfTheMonth,
-      monthsOfTheYear: rule.monthsOfTheYear,
-      weeksOfTheYear: rule.weeksOfTheYear,
-      daysOfTheYear: rule.daysOfTheYear,
-      setPositions: rule.setPositions,
-      end: end ?? rule.recurrenceEnd
+    return SeriesDates.ruleCopy(
+      rule, replacingEnd: EKRecurrenceEnd(end: date.addingTimeInterval(-1))
     )
   }
 
-  /// The start a series update leaves `event` with, and whether its kept
-  /// rule needs setting again — see `SeriesDates.resolveSeriesStart`, which
-  /// this feeds the event's stored start and zone, and the device's zone.
+  /// The start a series update leaves `event` with, and the rule it writes
+  /// — see `SeriesDates.resolveSeriesStart`, which this feeds the event's
+  /// stored start and zone, and the device's zone.
   /// `newStartMillis` is the target start; `timestamp` picks the reference
   /// occurrence (the series anchor when nil).
   private func resolveSeriesStart(
@@ -1298,8 +1281,8 @@ class EventsService {
       ruleEdit = .keep(foundEvent.recurrenceRules?.first)
     }
 
-    // Resolve the start, and whether the kept rule needs setting again,
-    // before touching the event: both read its stored start.
+    // Resolve the start, and the rule to write, before touching the event:
+    // both read its stored start.
     let resolved: SeriesStart
     switch resolveSeriesStart(
       for: foundEvent,
@@ -1361,15 +1344,11 @@ class EventsService {
       return
     }
 
-    // Apply the recurrence-rule patch. A kept rule is set again when
-    // SeriesDates says so, or EventKit detaches the occurrence instead of
-    // moving or splitting the series (#194, #206).
-    switch ruleEdit {
+    // Apply the recurrence-rule patch — see SeriesRuleWrite.set (#194, #206).
+    switch resolved.rule {
+    case .leaveAsLoaded: break
+    case .set(let rule): foundEvent.recurrenceRules = [rule]
     case .clear: foundEvent.recurrenceRules = nil
-    case .replace(let rule): foundEvent.recurrenceRules = [rule]
-    case .keep(let rule?) where resolved.resetsKeptRule:
-      foundEvent.recurrenceRules = [ruleCopy(rule)]
-    case .keep: break
     }
 
     // Both series spans save with .futureEvents: from the master that is the

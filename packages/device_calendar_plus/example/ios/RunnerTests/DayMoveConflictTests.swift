@@ -7,8 +7,8 @@ import XCTest
 /// the series' new start must be a day its existing rule generates (#189).
 /// Timed series in one zone, so only the rule decides. Mirrors the Kotlin
 /// `DayMoveConflictTest` case for case — the platforms must agree. The
-/// `resetsKeptRule` section at the end has no Kotlin twin: only EventKit
-/// needs the kept rule set again to move or split a day-pinning series.
+/// `rule` section at the end has no Kotlin twin: only EventKit needs the kept
+/// rule set again to move or split a day-pinning series.
 ///
 /// The new start is the base (the series start) shifted by the move from the
 /// reference occurrence to the target, so the cases where the two differ
@@ -21,23 +21,16 @@ import XCTest
 /// another app, which an integration test can't set up.
 final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   /// Moves the occurrence at `reference` (the series start when nil) of a
-  /// `rule` series that starts at `from` to `to`, keeping the rule. The
-  /// series is timed and stored in Stockholm, the device zone, unless
-  /// `isAllDay` or `storedZone` say otherwise.
+  /// timed `rule` series that starts at `from` to `to`, keeping the rule.
   private func move(
-    _ rule: EKRecurrenceRule,
-    from: Date,
-    to: Date,
-    reference: Date? = nil,
-    storedZone: TimeZone? = nil,
-    isAllDay: Bool = false
+    _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil
   ) -> Result<SeriesStart, CalendarError> {
     return SeriesDates.resolveSeriesStart(
       base: from,
-      storedZone: storedZone ?? stockholm,
+      storedZone: stockholm,
       target: to,
       reference: reference ?? from,
-      isAllDay: isAllDay,
+      isAllDay: false,
       ruleEdit: .keep(rule),
       deviceZone: stockholm
     )
@@ -180,26 +173,14 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
     ))
   }
 
-  // MARK: - resolveSeriesStart(...).resetsKeptRule
+  // MARK: - resolveSeriesStart(...).rule
 
-  // Whether the move needs the kept rule set again on the event (iOS-only,
-  // so no Kotlin twin): EventKit reads a move onto another day of a
-  // day-pinning rule as an occurrence move unless it is (#194, #206).
+  // Whether the move sets the kept rule on the event again (iOS-only, so no
+  // Kotlin twin) — see SeriesRuleWrite.set (#194, #206).
   private func resets(
-    _ rule: EKRecurrenceRule, from: Date, to: Date,
-    storedZone: TimeZone? = nil, isAllDay: Bool = false
+    _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil
   ) throws -> Bool {
-    return try move(rule, from: from, to: to, storedZone: storedZone, isAllDay: isAllDay)
-      .get().resetsKeptRule
-  }
-
-  private var utc: TimeZone { TimeZone(identifier: "UTC")! }
-
-  /// 2026-`month`-`day` at `hour` in UTC (`at` builds Stockholm dates).
-  private func utcAt(_ month: Int, _ day: Int, hour: Int) -> Date {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = utc
-    return calendar.date(from: DateComponents(year: 2026, month: month, day: day, hour: hour))!
+    return try setsRule(move(rule, from: from, to: to, reference: reference))
   }
 
   /// Weekly on Monday and Tuesday.
@@ -210,6 +191,15 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   // Mon 2 Nov 2026 -> Wed 4 Nov, another day the rule lists.
   func testADayMoveOfAPinnedRuleResetsTheRule() throws {
     XCTAssertTrue(try resets(mondayWednesdayFriday, from: at(2026, 11, 2), to: at(2026, 11, 4)))
+  }
+
+  // The Wed 4 Nov occurrence of a series starting Mon 2 Nov moves to Fri 6
+  // Nov: the thisAndFollowing shape, where the reference isn't the start.
+  func testALaterOccurrenceDayMoveOfAPinnedRuleResetsTheRule() throws {
+    XCTAssertTrue(try resets(
+      mondayWednesdayFriday, from: at(2026, 11, 2), to: at(2026, 11, 6),
+      reference: at(2026, 11, 4)
+    ))
   }
 
   // An ordinal rule pins days too: Thu 26 Nov 2026 -> Thu 24 Dec, both 4th
@@ -236,25 +226,5 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
     XCTAssertTrue(
       try resets(mondayTuesday, from: at(2026, 11, 2, hour: 23), to: at(2026, 11, 3, hour: 1))
     )
-  }
-
-  // The reference is read in the stored frame and the target in the edit
-  // frame. A UTC series at Mon 2 Nov 2026 23:00, already Tuesday in
-  // Stockholm, toggled all-day onto Stockholm's Tue 3 Nov: Monday to Tuesday
-  // across the two frames, so a day move.
-  func testAnAllDayToggleOntoAnotherLocalDayResetsTheRule() throws {
-    XCTAssertTrue(try resets(
-      mondayTuesday, from: utcAt(11, 2, hour: 23), to: at(2026, 11, 3, hour: 0),
-      storedZone: utc, isAllDay: true
-    ))
-  }
-
-  // The same series at Mon 2 Nov 10:00 UTC toggled all-day onto Stockholm's
-  // Mon 2 Nov: the same day in both frames, so not a day move.
-  func testAnAllDayToggleOnTheSameLocalDayKeepsTheRuleAsLoaded() throws {
-    XCTAssertFalse(try resets(
-      mondayTuesday, from: utcAt(11, 2, hour: 10), to: at(2026, 11, 2, hour: 0),
-      storedZone: utc, isAllDay: true
-    ))
   }
 }

@@ -48,3 +48,10 @@ func assertRefused<T>(
   }
   XCTAssertEqual(error.code, PlatformExceptionCodes.invalidArguments, file: file, line: line)
 }
+
+/// Whether the series update `result` resolves sets its rule on the event
+/// again (`SeriesRuleWrite.set`) rather than leaving the loaded one.
+func setsRule(_ result: Result<SeriesStart, CalendarError>) throws -> Bool {
+  if case .set = try result.get().rule { return true }
+  return false
+}

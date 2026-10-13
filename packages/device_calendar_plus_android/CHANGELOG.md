@@ -2,7 +2,7 @@
 
 ### Fixed
 - `updateRecurring` with `thisAndFollowing` and a start on another day the
-  kept rule generates splits the series there while the rule pins days,
+  kept rule generates splits the series there even when the rule pins days,
   instead of refusing the move with `INVALID_ARGUMENTS`. The refusal only
   stood in for iOS, which couldn't split such a series; the split itself was
   always right here (#194).
