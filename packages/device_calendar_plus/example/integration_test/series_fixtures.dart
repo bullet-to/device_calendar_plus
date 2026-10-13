@@ -163,6 +163,11 @@ List<int> startsOf(Iterable<Event> events) =>
 List<int> endsOf(Iterable<Event> events) =>
     events.map((e) => e.endDate.millisecondsSinceEpoch).toList();
 
+/// The instants of [days]: [startsOf] for the dates a test expects, so the
+/// two compare as lists.
+List<int> millisOf(Iterable<DateTime> days) =>
+    days.map((d) => d.millisecondsSinceEpoch).toList();
+
 /// The start instants of [events], each moved to the next local midnight:
 /// what an all-day listing reads after its series moves a calendar day later.
 List<int> startsOneDayLater(Iterable<Event> events) => events
@@ -205,12 +210,9 @@ void expectMasterSplit(
   required DateTime before,
   required Iterable<DateTime> keeps,
 }) {
-  final starts = remaining
-      .map((e) => e.startDate.millisecondsSinceEpoch)
-      .toSet();
   expect(
-    starts,
-    containsAll(keeps.map((d) => d.millisecondsSinceEpoch)),
+    startsOf(remaining).toSet(),
+    containsAll(millisOf(keeps)),
     reason: 'the occurrences before the split must survive on the master',
   );
   expect(

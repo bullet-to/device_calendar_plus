@@ -300,7 +300,7 @@ class EventsService {
     
     if let timestampMillis = timestamp {
       // Recurring event with timestamp
-      let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
+      let occurrenceDate = Date(millis: timestampMillis)
       
       // Query ±1 second around the exact occurrence time
       // We use a small window since we have the precise timestamp
@@ -355,7 +355,7 @@ class EventsService {
     
     let occurrenceDate: Date?
     if let timestampMillis = timestamp {
-      occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
+      occurrenceDate = Date(millis: timestampMillis)
     } else {
       occurrenceDate = nil
     }
@@ -594,10 +594,10 @@ class EventsService {
 
     if let title = title { event.title = title }
     if let startMillis = startDate {
-      event.startDate = Date(timeIntervalSince1970: TimeInterval(startMillis) / 1000.0)
+      event.startDate = Date(millis: startMillis)
     }
     if let endMillis = endDate {
-      event.endDate = Date(timeIntervalSince1970: TimeInterval(endMillis) / 1000.0)
+      event.endDate = Date(millis: endMillis)
     }
     if let description = description { event.notes = description }
     if let location = location { event.location = location }
@@ -1101,7 +1101,7 @@ class EventsService {
   /// Shared by `updateEvent` and `deleteEvent` (instance edits) and
   /// `updateRecurring` and `deleteRecurring` (`thisAndFollowing`).
   private func findOccurrence(eventId: String, timestamp: Int64) -> EKEvent? {
-    let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
+    let occurrenceDate = Date(millis: timestamp)
     let predicate = eventStore.predicateForEvents(
       withStart: occurrenceDate.addingTimeInterval(-1),
       end: occurrenceDate.addingTimeInterval(1),

@@ -2188,11 +2188,19 @@ void main() {
       }
     }
 
+    /// The start of a 2026 series occurrence on [dayOfMonth] of [month]: its
+    /// local midnight when [allDay], 15:00 UTC otherwise — the convention the
+    /// group's pinned-rule series share.
+    DateTime seriesDay(int month, int dayOfMonth, {required bool allDay}) =>
+        allDay
+            ? DateTime(2026, month, dayOfMonth)
+            : DateTime.utc(2026, month, dayOfMonth, 15);
+
     /// A 6-count weekly Mon/Wed/Fri series starting at [start] (Mon 2 Nov
-    /// 2026 unless given: 15:00 UTC, stored in UTC, or local midnight when
-    /// [isAllDay]), and its occurrences. Titled uniquely, so a test can list
-    /// everything of the series by title: the group's other series share its
-    /// calendar and its weeks.
+    /// 2026 unless given, per [seriesDay], stored in UTC when timed), and its
+    /// occurrences. Titled uniquely, so a test can list everything of the
+    /// series by title: the group's other series share its calendar and its
+    /// weeks.
     Future<
         ({
           String eventId,
@@ -2203,8 +2211,7 @@ void main() {
       DateTime? start,
       bool isAllDay = false,
     }) async {
-      final anchor = start ??
-          (isAllDay ? DateTime(2026, 11, 2) : DateTime.utc(2026, 11, 2, 15));
+      final anchor = start ?? seriesDay(11, 2, allDay: isAllDay);
       final title = 'MWF Series ${DateTime.now().microsecondsSinceEpoch}';
       final series = await createWeeklySeries(plugin, calendarId!,
           title: title,
@@ -2456,11 +2463,13 @@ void main() {
       final before = series.occurrences;
       expect(before.length, 6);
 
-      await plugin.updateRecurring(
+      final returned = await plugin.updateRecurring(
         before.first.instanceId,
         EventSpan.allEvents,
         start: before.first.startDate.add(const Duration(days: 2)),
       );
+      expect(returned, series.eventId,
+          reason: 'an allEvents edit must return the series ID');
 
       // The series re-anchors on the Wednesday and runs its six occurrences
       // from there on the kept rule.
@@ -2497,9 +2506,8 @@ void main() {
         final tag = DateTime.now().microsecondsSinceEpoch;
         final seriesTitle = 'series $tag';
         final movedTitle = 'moved $tag';
-        DateTime day(int month, int dayOfMonth) => allDay
-            ? DateTime(2026, month, dayOfMonth)
-            : DateTime.utc(2026, month, dayOfMonth, 15);
+        DateTime day(int month, int dayOfMonth) =>
+            seriesDay(month, dayOfMonth, allDay: allDay);
         final monday = day(10, 19);
         final wednesday = day(10, 21);
         final series = await createWeeklySeries(plugin, calendarId!,
@@ -2515,8 +2523,6 @@ void main() {
             monday,
             21,
             (e) => e.title == seriesTitle || e.title == movedTitle);
-        List<int> millisOf(Iterable<DateTime> days) =>
-            days.map((d) => d.millisecondsSinceEpoch).toList();
         expect(
           startsOf(await listed()),
           millisOf([monday, wednesday, day(10, 26), day(10, 28)]),
@@ -2633,11 +2639,8 @@ void main() {
         // event again, which makes EventKit split it (see
         // SeriesRuleWrite.set, #194). The all-day series takes that path in
         // the device-zone frame, at local midnights.
-        DateTime day(int dayOfMonth) => allDay
-            ? DateTime(2026, 11, dayOfMonth)
-            : DateTime.utc(2026, 11, dayOfMonth, 15);
-        List<int> millisOf(Iterable<DateTime> days) =>
-            days.map((d) => d.millisecondsSinceEpoch).toList();
+        DateTime day(int dayOfMonth) =>
+            seriesDay(11, dayOfMonth, allDay: allDay);
         final series = await createMwfSeries(isAllDay: allDay);
         final before = series.occurrences;
         expect(startsOf(before), millisOf([2, 4, 6, 9, 11, 13].map(day)),

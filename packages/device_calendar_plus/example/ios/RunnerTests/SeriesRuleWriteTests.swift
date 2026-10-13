@@ -11,9 +11,6 @@ import XCTest
 /// `DayMoveConflictTests` (the day-move check) and `SeriesDatesTests` (the
 /// frames).
 final class SeriesRuleWriteTests: XCTestCase, RecurrenceFixtures {
-  private let utc = TimeZone(identifier: "UTC")!
-  private let sydney = TimeZone(identifier: "Australia/Sydney")!
-
   /// Whether the series update `result` resolves sets its rule on the event
   /// again rather than leaving the loaded one.
   private func setsRule(_ result: Result<SeriesWrite, CalendarError>) throws -> Bool {
@@ -21,26 +18,11 @@ final class SeriesRuleWriteTests: XCTestCase, RecurrenceFixtures {
     return false
   }
 
-  /// Whether moving the occurrence at `reference` (the series start when nil)
-  /// of a timed `rule` series that starts at `from` to `to`, keeping the
-  /// rule, sets the rule again.
+  /// Whether `resolveTimedMove` sets the rule again.
   private func resets(
     _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil
   ) throws -> Bool {
-    return try setsRule(SeriesDates.resolveSeriesStart(
-      base: from,
-      storedZone: stockholm,
-      target: to,
-      reference: reference ?? from,
-      isAllDay: false,
-      ruleEdit: .keep(rule),
-      deviceZone: stockholm
-    ))
-  }
-
-  /// Weekly on Monday, Wednesday and Friday.
-  private var mondayWednesdayFriday: EKRecurrenceRule {
-    rule(.weekly, days: [EKWeekday.monday, .wednesday, .friday].map { EKRecurrenceDayOfWeek($0) })
+    return try setsRule(resolveTimedMove(rule, from: from, to: to, reference: reference))
   }
 
   /// Weekly on Monday and Tuesday.
@@ -95,13 +77,6 @@ final class SeriesRuleWriteTests: XCTestCase, RecurrenceFixtures {
   // A toggle is a day move when the two frames disagree: the reference is
   // read in the stored frame and the target in the edit frame (the device
   // zone, for an all-day edit).
-
-  /// A date in `zone` in 2026, at midnight unless `hour` is given.
-  private func at(_ zone: TimeZone, _ month: Int, _ day: Int, hour: Int = 0) -> Date {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = zone
-    return calendar.date(from: DateComponents(year: 2026, month: month, day: day, hour: hour))!
-  }
 
   /// Whether toggling a UTC-stored Mon/Tue series anchored at `base` all-day
   /// onto `target`, a Sydney midnight, with the rule kept, sets it again.

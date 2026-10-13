@@ -5,28 +5,15 @@ import XCTest
 
 /// SeriesDates' start/end resolution under device zones the iOS integration
 /// harness can't set (it runs the simulator suite once, in the host's zone).
-final class SeriesDatesTests: XCTestCase {
-  private let utc = TimeZone(identifier: "UTC")!
+final class SeriesDatesTests: XCTestCase, RecurrenceFixtures {
   private let losAngeles = TimeZone(identifier: "America/Los_Angeles")!
-  private let sydney = TimeZone(identifier: "Australia/Sydney")!
-
-  private func at(_ zone: TimeZone, _ month: Int, _ day: Int, hour: Int = 0) -> Date {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = zone
-    return calendar.date(from: DateComponents(year: 2026, month: month, day: day, hour: hour))!
-  }
 
   /// FREQ=WEEKLY;BYDAY=<day>.
   private static func weekly(on day: EKWeekday) -> EKRecurrenceRule {
-    return weekly(on: [day])
-  }
-
-  /// FREQ=WEEKLY;BYDAY=<days>.
-  private static func weekly(on days: [EKWeekday]) -> EKRecurrenceRule {
     return EKRecurrenceRule(
       recurrenceWith: .weekly,
       interval: 1,
-      daysOfTheWeek: days.map { EKRecurrenceDayOfWeek($0) },
+      daysOfTheWeek: [EKRecurrenceDayOfWeek(day)],
       daysOfTheMonth: nil,
       monthsOfTheYear: nil,
       weeksOfTheYear: nil,

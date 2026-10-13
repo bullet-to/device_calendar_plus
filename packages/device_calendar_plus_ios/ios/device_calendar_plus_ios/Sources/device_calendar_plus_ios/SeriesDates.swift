@@ -56,10 +56,12 @@ struct SeriesWrite {
 
 /// The date arithmetic behind a series update: which zone frames a series'
 /// calendar days, whether an anchor move lands on a day the rule generates,
-/// and the start the update leaves the series with. Pure — the device
-/// zone is passed in rather than read from `TimeZone.current`, so native
-/// tests can drive the zones the integration harness can't set on iOS.
-/// Android's counterpart is `SeriesDates.kt`.
+/// the start the update leaves the series with, and the rule the save writes
+/// to get there (`SeriesRuleWrite` — a day move of a day-pinning rule needs
+/// the kept rule set again, so `ruleCopy` builds the fresh one). Pure — the
+/// device zone is passed in rather than read from `TimeZone.current`, so
+/// native tests can drive the zones the integration harness can't set on
+/// iOS. Android's counterpart is `SeriesDates.kt`.
 enum SeriesDates {
   /// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
   /// two platforms must stay in lockstep.
