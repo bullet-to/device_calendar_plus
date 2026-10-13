@@ -6,9 +6,8 @@ import XCTest
 /// The day-move check in `SeriesDates.resolveSeriesStart`: with no new rule,
 /// the series' new start must be a day its existing rule generates (#189).
 /// Timed series in one zone, so only the rule decides. Mirrors the Kotlin
-/// `DayMoveConflictTest` case for case — the platforms must agree. The
-/// `rule` section at the end has no Kotlin twin: only EventKit needs the kept
-/// rule set again to move or split a day-pinning series.
+/// `DayMoveConflictTest` case for case — the platforms must agree. The rule
+/// the same call resolves is `SeriesRuleWriteTests`' subject.
 ///
 /// The new start is the base (the series start) shifted by the move from the
 /// reference occurrence to the target, so the cases where the two differ
@@ -24,7 +23,7 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   /// timed `rule` series that starts at `from` to `to`, keeping the rule.
   private func move(
     _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil
-  ) -> Result<SeriesStart, CalendarError> {
+  ) -> Result<SeriesWrite, CalendarError> {
     return SeriesDates.resolveSeriesStart(
       base: from,
       storedZone: stockholm,
@@ -74,13 +73,13 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
 
   func testAllowsATimeOnlyMove() {
     let target = at(2026, 11, 26, hour: 15)
-    XCTAssertEqual(try move(thanksgiving, from: at(2026, 11, 26), to: target).get().date, target)
+    XCTAssertEqual(try move(thanksgiving, from: at(2026, 11, 26), to: target).get().start, target)
   }
 
   // A rule that pins no day follows its anchor anywhere.
   func testAllowsADayMoveOnARuleThatPinsNoDay() {
     let target = at(2026, 11, 19)
-    XCTAssertEqual(try move(rule(.monthly), from: at(2026, 11, 26), to: target).get().date, target)
+    XCTAssertEqual(try move(rule(.monthly), from: at(2026, 11, 26), to: target).get().start, target)
   }
 
   /// Weekly on Monday, Wednesday and Friday.
@@ -95,7 +94,7 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   func testAllowsAMoveOntoAnotherDayTheRuleGenerates() {
     let target = at(2026, 11, 4)
     XCTAssertEqual(
-      try move(mondayWednesdayFriday, from: at(2026, 11, 2), to: target).get().date, target
+      try move(mondayWednesdayFriday, from: at(2026, 11, 2), to: target).get().start, target
     )
   }
 
@@ -111,7 +110,7 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
       try move(
         mondayWednesdayFriday, from: at(2026, 11, 2), to: at(2026, 11, 6),
         reference: at(2026, 11, 4)
-      ).get().date,
+      ).get().start,
       at(2026, 11, 4)
     )
   }
@@ -147,7 +146,7 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
       try move(
         mondayWednesdayFriday, from: at(2026, 11, 3), to: at(2026, 11, 4, hour: 15),
         reference: at(2026, 11, 4)
-      ).get().date,
+      ).get().start,
       at(2026, 11, 3, hour: 15)
     )
   }
@@ -158,7 +157,7 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   func testAllowsATimeOnlyMoveOfAnOffRuleFirstOccurrence() {
     let target = at(2026, 11, 3, hour: 15)
     XCTAssertEqual(
-      try move(mondayWednesdayFriday, from: at(2026, 11, 3), to: target).get().date, target
+      try move(mondayWednesdayFriday, from: at(2026, 11, 3), to: target).get().start, target
     )
   }
 
@@ -171,60 +170,5 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
       fourthThursday, from: at(2026, 10, 22), to: at(2026, 12, 24),
       reference: at(2026, 11, 26)
     ))
-  }
-
-  // MARK: - resolveSeriesStart(...).rule
-
-  // Whether the move sets the kept rule on the event again (iOS-only, so no
-  // Kotlin twin) — see SeriesRuleWrite.set (#194, #206).
-  private func resets(
-    _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil
-  ) throws -> Bool {
-    return try setsRule(move(rule, from: from, to: to, reference: reference))
-  }
-
-  /// Weekly on Monday and Tuesday.
-  private var mondayTuesday: EKRecurrenceRule {
-    rule(.weekly, days: [EKWeekday.monday, .tuesday].map { EKRecurrenceDayOfWeek($0) })
-  }
-
-  // Mon 2 Nov 2026 -> Wed 4 Nov, another day the rule lists.
-  func testADayMoveOfAPinnedRuleResetsTheRule() throws {
-    XCTAssertTrue(try resets(mondayWednesdayFriday, from: at(2026, 11, 2), to: at(2026, 11, 4)))
-  }
-
-  // The Wed 4 Nov occurrence of a series starting Mon 2 Nov moves to Fri 6
-  // Nov: the thisAndFollowing shape, where the reference isn't the start.
-  func testALaterOccurrenceDayMoveOfAPinnedRuleResetsTheRule() throws {
-    XCTAssertTrue(try resets(
-      mondayWednesdayFriday, from: at(2026, 11, 2), to: at(2026, 11, 6),
-      reference: at(2026, 11, 4)
-    ))
-  }
-
-  // An ordinal rule pins days too: Thu 26 Nov 2026 -> Thu 24 Dec, both 4th
-  // Thursdays.
-  func testADayMoveOfAnOrdinalRuleResetsTheRule() throws {
-    let fourthThursday = rule(.monthly, days: [EKRecurrenceDayOfWeek(.thursday, weekNumber: 4)])
-    XCTAssertTrue(try resets(fourthThursday, from: at(2026, 11, 26), to: at(2026, 12, 24)))
-  }
-
-  // A time-only move of a pinned rule moves natively.
-  func testATimeOnlyMoveOfAPinnedRuleKeepsTheRuleAsLoaded() throws {
-    XCTAssertFalse(
-      try resets(mondayWednesdayFriday, from: at(2026, 11, 4), to: at(2026, 11, 4, hour: 15))
-    )
-  }
-
-  // A rule that takes its day from the start moves natively.
-  func testADayMoveOfAnImplicitRuleKeepsTheRuleAsLoaded() throws {
-    XCTAssertFalse(try resets(rule(.weekly), from: at(2026, 11, 4), to: at(2026, 11, 6)))
-  }
-
-  // A cross-midnight retime changes the day, so it is a day move.
-  func testACrossMidnightRetimeOfAPinnedRuleResetsTheRule() throws {
-    XCTAssertTrue(
-      try resets(mondayTuesday, from: at(2026, 11, 2, hour: 23), to: at(2026, 11, 3, hour: 1))
-    )
   }
 }

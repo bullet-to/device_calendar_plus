@@ -47,7 +47,7 @@ final class SeriesDatesTests: XCTestCase {
     isAllDay: Bool,
     ruleEdit: SeriesRuleEdit? = nil,
     deviceZone: TimeZone
-  ) -> Result<SeriesStart, CalendarError> {
+  ) -> Result<SeriesWrite, CalendarError> {
     return SeriesDates.resolveSeriesStart(
       base: base,
       storedZone: utc,
@@ -75,7 +75,7 @@ final class SeriesDatesTests: XCTestCase {
       isAllDay: true,
       deviceZone: losAngeles
     )
-    XCTAssertEqual(try result.get().date, at(losAngeles, 10, 1))
+    XCTAssertEqual(try result.get().start, at(losAngeles, 10, 1))
   }
 
   // East of UTC: Thursday's local midnight is still Wednesday in UTC, but
@@ -87,7 +87,7 @@ final class SeriesDatesTests: XCTestCase {
       isAllDay: true,
       deviceZone: sydney
     )
-    XCTAssertEqual(try result.get().date, at(sydney, 10, 1))
+    XCTAssertEqual(try result.get().start, at(sydney, 10, 1))
   }
 
   // A timed edit keeps the stored frame: 01:00 UTC Friday is Thursday
@@ -114,7 +114,7 @@ final class SeriesDatesTests: XCTestCase {
       ruleEdit: .replace(thursdays),
       deviceZone: sydney
     )
-    XCTAssertEqual(try result.get().date, at(sydney, 10, 1))
+    XCTAssertEqual(try result.get().start, at(sydney, 10, 1))
   }
 
   // A new rule that doesn't generate the target's day walks to the first
@@ -128,7 +128,7 @@ final class SeriesDatesTests: XCTestCase {
       ruleEdit: .replace(SeriesDatesTests.weekly(on: .friday)),
       deviceZone: sydney
     )
-    XCTAssertEqual(try result.get().date, at(sydney, 10, 2))
+    XCTAssertEqual(try result.get().start, at(sydney, 10, 2))
   }
 
   // The flip side of the east-of-UTC case, mirrored by Android's
@@ -146,38 +146,6 @@ final class SeriesDatesTests: XCTestCase {
       deviceZone: sydney
     )
     assertRefused(result)
-  }
-
-  /// FREQ=WEEKLY;BYDAY=MO,TU.
-  private let mondaysAndTuesdays = SeriesDatesTests.weekly(on: [.monday, .tuesday])
-
-  // The kept rule is set on the event again (`SeriesRuleWrite.set`) when the
-  // toggle is a day move across the two frames: the reference is read in the
-  // stored frame and the target in the edit frame. A UTC series at Mon 2 Nov
-  // 2026 23:00, already Tuesday in Sydney, toggled all-day onto Sydney's Tue
-  // 3 Nov goes Monday to Tuesday, so it is a day move.
-  func testAllDayToggleOntoAnotherLocalDaySetsTheKeptRuleAgain() throws {
-    let result = resolve(
-      base: at(utc, 11, 2, hour: 23),
-      target: at(sydney, 11, 3),
-      isAllDay: true,
-      ruleEdit: .keep(mondaysAndTuesdays),
-      deviceZone: sydney
-    )
-    XCTAssertTrue(try setsRule(result))
-  }
-
-  // The same series at Mon 2 Nov 10:00 UTC toggled all-day onto Sydney's
-  // Mon 2 Nov: the same day in both frames, so the rule is left as loaded.
-  func testAllDayToggleOnTheSameLocalDayLeavesTheKeptRuleAsLoaded() throws {
-    let result = resolve(
-      base: at(utc, 11, 2, hour: 10),
-      target: at(sydney, 11, 2),
-      isAllDay: true,
-      ruleEdit: .keep(mondaysAndTuesdays),
-      deviceZone: sydney
-    )
-    XCTAssertFalse(try setsRule(result))
   }
 
   // MARK: - resolveSeriesEnd(...) (#195)

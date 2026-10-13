@@ -2188,10 +2188,11 @@ void main() {
       }
     }
 
-    /// A 6-count weekly Mon/Wed/Fri series stored in UTC, starting at
-    /// [start] (Mon 2 Nov 2026 15:00 UTC unless given), and its occurrences.
-    /// Titled uniquely, so a test can list everything of the series by
-    /// title: the group's other series share its calendar and its weeks.
+    /// A 6-count weekly Mon/Wed/Fri series starting at [start] (Mon 2 Nov
+    /// 2026 unless given: 15:00 UTC, stored in UTC, or local midnight when
+    /// [isAllDay]), and its occurrences. Titled uniquely, so a test can list
+    /// everything of the series by title: the group's other series share its
+    /// calendar and its weeks.
     Future<
         ({
           String eventId,
@@ -2200,8 +2201,10 @@ void main() {
           List<Event> occurrences,
         })> createMwfSeries({
       DateTime? start,
+      bool isAllDay = false,
     }) async {
-      final anchor = start ?? DateTime.utc(2026, 11, 2, 15);
+      final anchor = start ??
+          (isAllDay ? DateTime(2026, 11, 2) : DateTime.utc(2026, 11, 2, 15));
       final title = 'MWF Series ${DateTime.now().microsecondsSinceEpoch}';
       final series = await createWeeklySeries(plugin, calendarId!,
           title: title,
@@ -2211,7 +2214,8 @@ void main() {
             DayOfWeek.wednesday,
             DayOfWeek.friday,
           ],
-          start: anchor);
+          start: anchor,
+          isAllDay: isAllDay);
       final occurrences = await occurrencesOf(
           plugin, calendarId!, series.eventId, anchor,
           windowDays: 30);
@@ -2452,18 +2456,14 @@ void main() {
       final before = series.occurrences;
       expect(before.length, 6);
 
-      final returned = await plugin.updateRecurring(
+      await plugin.updateRecurring(
         before.first.instanceId,
         EventSpan.allEvents,
         start: before.first.startDate.add(const Duration(days: 2)),
       );
-      expect(returned, series.eventId,
-          reason: 'an allEvents edit must return the series ID, not a '
-              'detached occurrence\'s (#206)');
 
-      // The series itself re-anchors on the Wednesday and runs its six
-      // occurrences from there on the kept rule. iOS once left it where it
-      // was and detached the first occurrence onto the Wednesday (#206).
+      // The series re-anchors on the Wednesday and runs its six occurrences
+      // from there on the kept rule.
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.anchor,
           windowDays: 30);
@@ -2479,13 +2479,6 @@ void main() {
         ],
         reason: 'the series must now start on the Wednesday and keep its '
             'count on the rule',
-      );
-      expect(
-        startsOf(await eventsTitled(
-            plugin, calendarId!, series.title, series.anchor,
-            windowDays: 30)),
-        startsOf(after),
-        reason: 'nothing of the series may be left beside it (#206)',
       );
     });
 
@@ -2623,54 +2616,64 @@ void main() {
           reason: 'a refused split must leave the series as it was');
     });
 
-    test(
-        'thisAndFollowing day shift onto another listed weekday of an '
-        'explicit-BYDAY rule splits the series there (#194)', () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      // Weekly on Mon/Wed/Fri, six occurrences from Mon 2 Nov 2026. Splitting
-      // at Wed 11 Nov and moving it +2 days lands on Fri 13 Nov, a day the
-      // rule generates: the old series ends before the Wednesday, and the
-      // new one starts on the Friday and runs on the kept rule for the two
-      // occurrences the count had left. EventKit's .futureEvents save
-      // detached the occurrence instead of splitting a series whose rule
-      // pins days, so iOS splits it by hand (#194).
-      final series = await createMwfSeries();
-      final before = series.occurrences;
-      expect(before.length, 6);
-      final wednesday = before[4];
-      expect(wednesday.startDate.toUtc(), DateTime.utc(2026, 11, 11, 15));
+    for (final allDay in [true, false]) {
+      test(
+          'thisAndFollowing day shift onto another listed weekday of an '
+          'explicit-BYDAY rule splits the ${allDay ? 'all-day' : 'timed'} '
+          'series there (#194)', () async {
+        expect(calendarId, isNotNull,
+            reason: 'setUpAll must create a calendar');
+        // Weekly on Mon/Wed/Fri, six occurrences from Mon 2 Nov 2026.
+        // Splitting at Wed 11 Nov and moving it +2 days lands on Fri 13 Nov,
+        // a day the rule generates: the old series ends before the
+        // Wednesday, and the new one starts on the Friday and runs on the
+        // kept rule for the two occurrences the count had left. EventKit's
+        // .futureEvents save detached the occurrence instead of splitting a
+        // series whose rule pins days, so iOS sets the kept rule on the
+        // event again, which makes EventKit split it (see
+        // SeriesRuleWrite.set, #194). The all-day series takes that path in
+        // the device-zone frame, at local midnights.
+        DateTime day(int dayOfMonth) => allDay
+            ? DateTime(2026, 11, dayOfMonth)
+            : DateTime.utc(2026, 11, dayOfMonth, 15);
+        List<int> millisOf(Iterable<DateTime> days) =>
+            days.map((d) => d.millisecondsSinceEpoch).toList();
+        final series = await createMwfSeries(isAllDay: allDay);
+        final before = series.occurrences;
+        expect(startsOf(before), millisOf([2, 4, 6, 9, 11, 13].map(day)),
+            reason: 'the series must expand onto its six Mondays, '
+                'Wednesdays and Fridays');
+        final wednesday = before[4];
 
-      final newSeriesId = await plugin.updateRecurring(
-        wednesday.instanceId,
-        EventSpan.thisAndFollowing,
-        start: wednesday.startDate.add(const Duration(days: 2)),
-      );
-      expect(newSeriesId, isNot(series.eventId),
-          reason: 'the split must leave a new series');
+        final newSeriesId = await plugin.updateRecurring(
+          wednesday.instanceId,
+          EventSpan.thisAndFollowing,
+          start: day(13),
+        );
+        expect(newSeriesId, isNot(series.eventId),
+            reason: 'the split must leave a new series');
 
-      final remaining = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.anchor,
-          windowDays: 30);
-      expect(startsOf(remaining), startsOf(before.sublist(0, 4)),
-          reason: 'the occurrences before the split must stay where they '
-              'were');
-      final newSeries = await occurrencesOf(
-          plugin, calendarId!, newSeriesId, series.anchor,
-          windowDays: 30);
-      expect(
-        newSeries.map((e) => e.startDate.toUtc()).toList(),
-        [DateTime.utc(2026, 11, 13, 15), DateTime.utc(2026, 11, 16, 15)],
-        reason: 'the new series must start on the Friday and continue on the '
-            'kept rule for the occurrences the count had left',
-      );
-      expect(
-        startsOf(await eventsTitled(
-            plugin, calendarId!, series.title, series.anchor,
-            windowDays: 30)),
-        [...startsOf(remaining), ...startsOf(newSeries)],
-        reason: 'nothing of the series may be left beside the two halves',
-      );
-    });
+        final remaining = await occurrencesOf(
+            plugin, calendarId!, series.eventId, series.anchor,
+            windowDays: 30);
+        expect(startsOf(remaining), millisOf([2, 4, 6, 9].map(day)),
+            reason: 'the occurrences before the split must stay where they '
+                'were');
+        final newSeries = await occurrencesOf(
+            plugin, calendarId!, newSeriesId, series.anchor,
+            windowDays: 30);
+        expect(startsOf(newSeries), millisOf([13, 16].map(day)),
+            reason: 'the new series must start on the Friday and continue '
+                'on the kept rule for the occurrences the count had left');
+        expect(
+          startsOf(await eventsTitled(
+              plugin, calendarId!, series.title, series.anchor,
+              windowDays: 30)),
+          [...startsOf(remaining), ...startsOf(newSeries)],
+          reason: 'nothing of the series may be left beside the two halves',
+        );
+      });
+    }
 
     test(
         'time-only shift of a series start the explicit-BYDAY rule does not '

@@ -44,11 +44,11 @@ enum SeriesRuleWrite {
   case clear
 }
 
-/// What `SeriesDates.resolveSeriesStart` leaves a series with: its new start
-/// and the rule the save writes.
-struct SeriesStart {
+/// What a series update writes, as `SeriesDates.resolveSeriesStart` resolves
+/// it: the series' new start and the rule the save writes.
+struct SeriesWrite {
   /// The series' new start (its current one when nothing moves it).
-  let date: Date
+  let start: Date
 
   /// The rule the save writes (`SeriesRuleWrite`).
   let rule: SeriesRuleWrite
@@ -204,7 +204,7 @@ enum SeriesDates {
   ///   neither. A time-only move leaves a start the kept rule doesn't
   ///   generate (one anchored off its rule by another app, or in another
   ///   zone) where it is.
-  /// - The rule to write (`SeriesStart.rule`) is decided here too, from the
+  /// - The rule to write (`SeriesWrite.rule`) is decided here too, from the
   ///   same reference and target, so the caller never has to read the start
   ///   again once the event has moved — see `SeriesRuleWrite.set`.
   ///
@@ -220,7 +220,7 @@ enum SeriesDates {
     isAllDay: Bool,
     ruleEdit: SeriesRuleEdit,
     deviceZone: TimeZone
-  ) -> Result<SeriesStart, CalendarError> {
+  ) -> Result<SeriesWrite, CalendarError> {
     let storedFrame = storedZone ?? deviceZone
     let editFrame = isAllDay ? deviceZone : storedFrame
     var start = base
@@ -271,11 +271,20 @@ enum SeriesDates {
       }
       start = anchored
     }
-    return .success(SeriesStart(date: start, rule: rule))
+    return .success(SeriesWrite(start: start, rule: rule))
   }
 
   /// A fresh `EKRecurrenceRule` with `rule`'s pattern, and its end unless
   /// `replacingEnd` gives another.
+  ///
+  /// Built through the convenience initialiser, which has no parameter for
+  /// the first day of the week, so a WKST another app set is not carried:
+  /// the copy falls back to the locale's. `rule.copy()` would keep it, but
+  /// EventKit treats an `NSCopying` copy as the rule it loaded: set on the
+  /// event, it no longer makes a day move a series edit, and the
+  /// `.futureEvents` save detaches the occurrence again (the #194 and #206
+  /// integration tests fail with it). Only a rule built afresh flips the
+  /// save into the series-edit path.
   static func ruleCopy(
     _ rule: EKRecurrenceRule,
     replacingEnd end: EKRecurrenceEnd? = nil

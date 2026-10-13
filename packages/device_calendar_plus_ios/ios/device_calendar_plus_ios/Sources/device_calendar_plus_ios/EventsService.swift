@@ -1142,15 +1142,12 @@ class EventsService {
     timestamp: Int64?,
     isAllDay: Bool,
     ruleEdit: SeriesRuleEdit
-  ) -> Result<SeriesStart, CalendarError> {
-    func date(_ millis: Int64) -> Date {
-      return Date(timeIntervalSince1970: TimeInterval(millis) / 1000.0)
-    }
+  ) -> Result<SeriesWrite, CalendarError> {
     return SeriesDates.resolveSeriesStart(
       base: event.startDate,
       storedZone: event.timeZone,
-      target: newStartMillis.map(date),
-      reference: timestamp.map(date) ?? event.startDate,
+      target: newStartMillis.map { Date(millis: $0) },
+      reference: timestamp.map { Date(millis: $0) } ?? event.startDate,
       isAllDay: isAllDay,
       ruleEdit: ruleEdit,
       deviceZone: .current
@@ -1283,7 +1280,7 @@ class EventsService {
 
     // Resolve the start, and the rule to write, before touching the event:
     // both read its stored start.
-    let resolved: SeriesStart
+    let resolved: SeriesWrite
     switch resolveSeriesStart(
       for: foundEvent,
       newStartMillis: newStartMillis,
@@ -1291,13 +1288,13 @@ class EventsService {
       isAllDay: effectiveIsAllDay,
       ruleEdit: ruleEdit
     ) {
-    case .success(let start):
-      resolved = start
+    case .success(let write):
+      resolved = write
     case .failure(let error):
       completion(.failure(error))
       return
     }
-    let newStart = resolved.date
+    let newStart = resolved.start
 
     // Resolve the end for the new start, still before touching the event:
     // `nil` for a change that moves nothing, which skips the time rewrite.
@@ -1333,12 +1330,12 @@ class EventsService {
     // series by hand rather than through the shared save below — mirror
     // Android's dedicated `updateRecurringThisAndFollowing` (#93).
     if span == "thisAndFollowing",
-       case .clear = ruleEdit,
+       case .clear = resolved.rule,
        let timestamp = timestamp {
       detachThisAndFollowing(
         occurrence: foundEvent,
         eventId: eventId,
-        occurrenceDate: Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0),
+        occurrenceDate: Date(millis: timestamp),
         completion: completion
       )
       return

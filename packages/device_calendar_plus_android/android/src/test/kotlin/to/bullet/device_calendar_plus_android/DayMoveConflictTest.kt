@@ -9,9 +9,7 @@ import kotlin.test.assertEquals
  * rule, the series' new start must be a day its kept rule generates (#189).
  * Timed series in UTC, so only the rule decides. Named after the Swift
  * `DayMoveConflictTests`, which it mirrors case for case — the platforms
- * must agree. The Swift file's closing `rule` section is the one exception:
- * only EventKit needs the kept rule set again to move or split a day-pinning
- * series.
+ * must agree.
  *
  * The new start is the base (the series start) shifted by the move from the
  * reference occurrence to the target, so the cases where the two differ
