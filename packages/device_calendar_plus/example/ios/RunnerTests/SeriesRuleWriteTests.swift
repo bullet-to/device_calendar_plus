@@ -96,12 +96,12 @@ final class SeriesRuleWriteTests: XCTestCase, RecurrenceFixtures {
   // all-day onto Sydney's Tue 3 Nov goes Monday to Tuesday, so it is a day
   // move.
   func testAllDayToggleOntoAnotherLocalDayResetsTheRule() throws {
-    XCTAssertTrue(try toggleAllDayResets(base: at(utc, 11, 2, hour: 23), target: at(sydney, 11, 3)))
+    XCTAssertTrue(try toggleAllDayResets(base: at(utc, 2026, 11, 2, hour: 23), target: at(sydney, 2026, 11, 3)))
   }
 
   // The same series at Mon 2 Nov 10:00 UTC toggled all-day onto Sydney's
   // Mon 2 Nov: the same day in both frames, so the rule is left as loaded.
   func testAllDayToggleOnTheSameLocalDayKeepsTheRuleAsLoaded() throws {
-    XCTAssertFalse(try toggleAllDayResets(base: at(utc, 11, 2, hour: 10), target: at(sydney, 11, 2)))
+    XCTAssertFalse(try toggleAllDayResets(base: at(utc, 2026, 11, 2, hour: 10), target: at(sydney, 2026, 11, 2)))
   }
 }

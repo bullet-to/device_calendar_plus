@@ -14,18 +14,18 @@ extension RecurrenceFixtures {
   var utc: TimeZone { TimeZone(identifier: "UTC")! }
   var sydney: TimeZone { TimeZone(identifier: "Australia/Sydney")! }
 
-  /// A date in Stockholm, at 10:00 unless `hour` is given.
-  func at(_ year: Int, _ month: Int, _ day: Int, hour: Int = 10) -> Date {
+  /// The wall-clock date `year`-`month`-`day` at `hour` o'clock in `zone`:
+  /// midnight unless `hour` is given.
+  func at(_ zone: TimeZone, _ year: Int, _ month: Int, _ day: Int, hour: Int = 0) -> Date {
     var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = stockholm
+    calendar.timeZone = zone
     return calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
   }
 
-  /// A date in `zone` in 2026, at midnight unless `hour` is given.
-  func at(_ zone: TimeZone, _ month: Int, _ day: Int, hour: Int = 0) -> Date {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = zone
-    return calendar.date(from: DateComponents(year: 2026, month: month, day: day, hour: hour))!
+  /// `at(stockholm, …)` for the timed Stockholm series most moves drive, at
+  /// 10:00 unless `hour` is given.
+  func at(_ year: Int, _ month: Int, _ day: Int, hour: Int = 10) -> Date {
+    return at(stockholm, year, month, day, hour: hour)
   }
 
   /// Weekly on Monday, Wednesday and Friday.

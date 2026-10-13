@@ -226,12 +226,6 @@ enum SeriesDates {
     let storedFrame = storedZone ?? deviceZone
     let editFrame = isAllDay ? deviceZone : storedFrame
     var start = base
-    var rule: SeriesRuleWrite
-    switch ruleEdit {
-    case .clear: rule = .clear
-    case .replace(let newRule): rule = .set(newRule)
-    case .keep: rule = .leaveAsLoaded
-    }
 
     if let target = target {
       guard let shifted = shiftStart(
@@ -244,20 +238,16 @@ enum SeriesDates {
         ))
       }
 
-      if case .keep(let keptRule?) = ruleEdit {
-        if leavesRule(
-          keptRule, reference: reference, referenceZone: storedFrame,
-          base: base, target: target, shifted: shifted, timeZone: editFrame
-        ) {
-          return .failure(CalendarError(
-            code: PlatformExceptionCodes.invalidArguments,
-            message: "start moves this series onto a day its recurrence rule "
-              + "doesn't generate. Pass a recurrenceRule to specify the new pattern."
-          ))
-        }
-        if pinsDays(keptRule) && !sameCalendarDay(reference, storedFrame, target, editFrame) {
-          rule = .set(ruleCopy(keptRule))
-        }
+      if case .keep(let keptRule?) = ruleEdit,
+         leavesRule(
+           keptRule, reference: reference, referenceZone: storedFrame,
+           base: base, target: target, shifted: shifted, timeZone: editFrame
+         ) {
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "start moves this series onto a day its recurrence rule "
+            + "doesn't generate. Pass a recurrenceRule to specify the new pattern."
+        ))
       }
       start = shifted
     }
@@ -272,6 +262,18 @@ enum SeriesDates {
         ))
       }
       start = anchored
+    }
+
+    // The rule to write, decided from the same reference and target as the
+    // start. A kept rule is set again only when the move changes the
+    // calendar day and the rule pins days (`SeriesRuleWrite.set`).
+    let movesDay = target.map { !sameCalendarDay(reference, storedFrame, $0, editFrame) } ?? false
+    let rule: SeriesRuleWrite
+    switch ruleEdit {
+    case .clear: rule = .clear
+    case .replace(let newRule): rule = .set(newRule)
+    case .keep(let keptRule?) where movesDay && pinsDays(keptRule): rule = .set(ruleCopy(keptRule))
+    case .keep: rule = .leaveAsLoaded
     }
     return .success(SeriesWrite(start: start, rule: rule))
   }
