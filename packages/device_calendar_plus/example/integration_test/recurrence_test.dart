@@ -1710,6 +1710,50 @@ void main() {
           reason: 'the master event row must keep its original title');
     });
 
+    // The toggle alone, with no dates, must move the detached occurrence into
+    // the all-day frame. Android once wrote the occurrence's timed start and
+    // duration under ALL_DAY=1, and the provider reads an all-day time as a
+    // UTC date, so a time whose UTC date isn't its local one read back a day
+    // off.
+    test(
+        'updateEvent toggling a timed occurrence all-day with no dates keeps '
+        'it on its calendar day', () async {
+      final start = startOnOtherUtcDate(localMidnight(2));
+      final series = await seedSeries(
+        plugin,
+        calendarId,
+        count: 4,
+        minOccurrences: 4,
+        windowDays: 30,
+        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+            plugin, calendarId,
+            title: 'Timed Occurrence To All-day', count: count, start: start),
+      );
+      final target = series.occurrences[1];
+
+      await plugin.updateEvent(
+        instanceId: target.instanceId,
+        title: 'All-day occurrence',
+        isAllDay: true,
+      );
+
+      final lastDay = localDay(target.endDate
+          .toLocal()
+          .subtract(const Duration(milliseconds: 1)));
+      final detached = await eventsTitled(
+          plugin, calendarId!, 'All-day occurrence', series.start,
+          windowDays: 30);
+      expect(detached, hasLength(1),
+          reason: 'the detached occurrence must be listed once');
+      expect(detached.single.isAllDay, isTrue);
+      expect(localDay(detached.single.startDate.toLocal()),
+          localDay(target.startDate.toLocal()),
+          reason: 'the occurrence must stay on its own calendar day');
+      expect(detached.single.endDate.toLocal(), nextLocalMidnight(lastDay),
+          reason: 'the occurrence must span every day its timed self '
+              'touched');
+    });
+
     test(
         'updateEvent with an instance ID rejects a startDate past the '
         'occurrence end', () async {
@@ -2902,7 +2946,7 @@ void main() {
         before.first.instanceId,
         EventSpan.allEvents,
         isAllDay: true,
-        start: dayOf(first),
+        start: localDay(first),
         duration: const Duration(days: 1),
       );
 
@@ -2912,8 +2956,8 @@ void main() {
       expect(after.every((e) => e.isAllDay), isTrue,
           reason: 'every occurrence must be all-day');
       expect(
-        after.map((e) => dayOf(e.startDate.toLocal())).toList(),
-        before.map((e) => dayOf(e.startDate.toLocal())).toList(),
+        after.map((e) => localDay(e.startDate.toLocal())).toList(),
+        before.map((e) => localDay(e.startDate.toLocal())).toList(),
         reason: 'each occurrence must stay on its original calendar day',
       );
     });
@@ -2940,9 +2984,7 @@ void main() {
     const seedDuration = Duration(hours: 1);
     const seedCount = 4;
     Future<SeededSeries> seedTimedOffUtcDate(String title) async {
-      final start = seedDay.timeZoneOffset.isNegative
-          ? seedDay.add(const Duration(hours: 23, minutes: 30))
-          : seedDay.add(const Duration(minutes: 30));
+      final start = startOnOtherUtcDate(seedDay);
       return seedSeries(
         plugin,
         calendarId,
@@ -2969,8 +3011,8 @@ void main() {
     void expectAllDaySeries(List<Event> after, SeededSeries seeded,
         {int fromIndex = 0}) {
       final start = seeded.start;
-      final firstDay = dayOf(start);
-      final lastDay = dayOf(
+      final firstDay = localDay(start);
+      final lastDay = localDay(
           start.add(seedDuration).subtract(const Duration(milliseconds: 1)));
       final endDay = nextLocalMidnight(lastDay);
       final expected = [

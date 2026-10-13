@@ -793,19 +793,21 @@ class EventsService(
         val values = android.content.ContentValues()
         applyEventFieldValues(values, patch)
 
-        // Update dates if provided
-        // If event is/becomes all-day, need to normalize to UTC midnight
-        val effectiveIsAllDay = patch.isAllDay ?: row.allDay
-        if (startDate != null || endDate != null) {
-            val startMillis = startDate?.let { storageMillis(it.time, effectiveIsAllDay) }
-            val endMillis = endDate?.let { storageMillis(it.time, effectiveIsAllDay) }
-
-            if (startMillis != null) {
-                values.put(CalendarContract.Events.DTSTART, startMillis)
-            }
-            if (endMillis != null) {
-                values.put(CalendarContract.Events.DTEND, endMillis)
-            }
+        // Write whichever bounds the edit moves: the provided dates in the
+        // effective frame, or the all-day span of a bare toggle.
+        val (newStart, newEnd) = resolveEditedBounds(
+            currentStart = row.dtstart,
+            durationMillis = eventDurationMillis(row),
+            startMillis = startDate?.time,
+            endMillis = endDate?.time,
+            newAllDay = patch.isAllDay,
+            rowAllDay = row.allDay
+        )
+        if (newStart != null) {
+            values.put(CalendarContract.Events.DTSTART, newStart)
+        }
+        if (newEnd != null) {
+            values.put(CalendarContract.Events.DTEND, newEnd)
         }
 
         // Update timezone if provided
@@ -893,19 +895,20 @@ class EventsService(
     ): Result<Unit> {
         val series = store.readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
-        val effectiveIsAllDay = patch.isAllDay ?: series.row.allDay
-        val newStart = if (startDate != null) {
-            storageMillis(startDate.time, effectiveIsAllDay)
-        } else {
-            timestamp
-        }
-        // Without an explicit endDate the occurrence's own end stays put —
-        // matching iOS, where setting startDate leaves endDate untouched.
-        val newEnd = if (endDate != null) {
-            storageMillis(endDate.time, effectiveIsAllDay)
-        } else {
-            timestamp + eventDurationMillis(series.row)
-        }
+        val duration = eventDurationMillis(series.row)
+        val (resolvedStart, resolvedEnd) = resolveEditedBounds(
+            currentStart = timestamp,
+            durationMillis = duration,
+            startMillis = startDate?.time,
+            endMillis = endDate?.time,
+            newAllDay = patch.isAllDay,
+            rowAllDay = series.row.allDay
+        )
+        // A bound the edit doesn't move keeps the occurrence's own value
+        // (iOS: setting startDate leaves endDate untouched). A bare all-day
+        // toggle moves both, via resolveEditedBounds.
+        val newStart = resolvedStart ?: timestamp
+        val newEnd = resolvedEnd ?: (timestamp + duration)
         if (newEnd <= newStart) {
             return Result.failure(
                 CalendarException(

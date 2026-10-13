@@ -34,6 +34,37 @@ internal fun storageMillis(
 ): Long =
     if (isAllDay) AllDayDates.localDateToUtcMidnight(millis, zone) else millis
 
+/**
+ * The DTSTART and DTEND an `updateEvent` edit writes for an event starting at
+ * [currentStart] (the row's DTSTART, or an occurrence's own start) and
+ * lasting [durationMillis], given the caller's optional
+ * [startMillis]/[endMillis], the patch's [newAllDay] and the row's
+ * [rowAllDay]. Null means "leave that bound as it is".
+ *
+ * A bare all-day toggle — [newAllDay] true with no new dates, on a row that
+ * isn't all-day yet — moves the event into the all-day frame the way EventKit
+ * does: [AllDayDates.toggleSpan] of the row. Left timed under ALL_DAY=1, the
+ * provider read it as a UTC date, a day off where that isn't the local one.
+ * Otherwise each provided bound is stored in the effective frame
+ * ([storageMillis]) and a missing one stays null.
+ */
+internal fun resolveEditedBounds(
+    currentStart: Long,
+    durationMillis: Long,
+    startMillis: Long?,
+    endMillis: Long?,
+    newAllDay: Boolean?,
+    rowAllDay: Boolean,
+    zone: TimeZone = TimeZone.getDefault()
+): Pair<Long?, Long?> {
+    if (newAllDay == true && !rowAllDay && startMillis == null && endMillis == null) {
+        return AllDayDates.toggleSpan(currentStart, durationMillis, zone)
+    }
+    val isAllDay = newAllDay ?: rowAllDay
+    return startMillis?.let { storageMillis(it, isAllDay, zone) } to
+        endMillis?.let { storageMillis(it, isAllDay, zone) }
+}
+
 /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */
 internal fun storedEndMillis(dtstart: Long, dtend: Long?, duration: String?): Long? =
     dtend ?: duration?.let(::parseDurationMillis)?.let { dtstart + it }
