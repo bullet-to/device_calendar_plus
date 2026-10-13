@@ -134,13 +134,56 @@ enum SeriesDates {
       == bCalendar.dateComponents([.year, .month, .day], from: b)
   }
 
+  /// The frames a series update reads its days in: stored = `storedZone ??
+  /// deviceZone`; edit = `deviceZone` when `isAllDay`, else stored. All-day
+  /// edits run locally because EventKit floats an all-day start onto its
+  /// local date.
+  private static func frames(
+    storedZone: TimeZone?, isAllDay: Bool, deviceZone: TimeZone
+  ) -> (stored: TimeZone, edit: TimeZone) {
+    let stored = storedZone ?? deviceZone
+    return (stored, isAllDay ? deviceZone : stored)
+  }
+
+  /// Whether a series update that keeps `rule` and moves `reference` (the
+  /// occurrence being edited, or the series anchor) to `target` must set
+  /// the rule on the event again, as a fresh copy, for EventKit to move the
+  /// series: the move lands on another calendar day and the rule pins days.
+  ///
+  /// With the rule it loaded left untouched, EventKit reads a
+  /// `.futureEvents` save that moves the start onto another day of a
+  /// day-pinning rule as moving that one occurrence: it leaves the master
+  /// as it was and detaches the occurrence, with no rule, onto the new day
+  /// (a `thisEvent` edit). From the anchor that loses the whole move and
+  /// returns the detached occurrence's `/RID=` ID (#206); from a later
+  /// occurrence it never splits the series (#194). A rule set again on the
+  /// event, even one equal to the old, makes the save a series edit: the
+  /// master moves, or the series splits at the occurrence with the kept
+  /// rule's count carried over. Time-only moves and rules that take their
+  /// day from the start move natively.
+  ///
+  /// `reference` is read in the stored frame and `target` in the edit frame,
+  /// as `resolveSeriesStart` reads them, so an all-day toggle onto another
+  /// local day counts as a day move.
+  static func keptRuleNeedsReset(
+    _ rule: EKRecurrenceRule,
+    reference: Date,
+    target: Date,
+    storedZone: TimeZone?,
+    isAllDay: Bool,
+    deviceZone: TimeZone
+  ) -> Bool {
+    let (storedFrame, editFrame) = frames(
+      storedZone: storedZone, isAllDay: isAllDay, deviceZone: deviceZone
+    )
+    return pinsDays(rule) && !sameCalendarDay(reference, storedFrame, target, editFrame)
+  }
+
   /// The start a series update leaves a series with: `base` (its current
   /// start) when nothing moves it. Android's counterpart is
   /// `resolveSeriesTimes`.
   ///
-  /// Frames: stored = `storedZone ?? deviceZone`; edit = `deviceZone` when
-  /// `isAllDay`, else stored. All-day edits run locally because EventKit
-  /// floats an all-day start onto its local date.
+  /// Frames: `frames` — stored and edit.
   ///
   /// - `target` shifts `base` by the wall-clock delta from `reference` (the
   ///   occurrence being edited, or the series anchor) to `target`, in the
@@ -159,8 +202,7 @@ enum SeriesDates {
   ///   frame, onto the first day it generates; a cleared rule needs
   ///   neither. A time-only move leaves a start the kept rule doesn't
   ///   generate (one anchored off its rule by another app, or in another
-  ///   zone) where it is. A `splitsSeries` (thisAndFollowing) move onto
-  ///   another day is also refused while the kept rule pins days (#194).
+  ///   zone) where it is.
   ///
   /// Fails with `invalidArguments` when a start move lands on a day the kept
   /// rule doesn't generate or the new rule generates nothing within five
@@ -173,11 +215,11 @@ enum SeriesDates {
     reference: Date,
     isAllDay: Bool,
     ruleEdit: SeriesRuleEdit,
-    splitsSeries: Bool,
     deviceZone: TimeZone
   ) -> Result<Date, CalendarError> {
-    let storedFrame = storedZone ?? deviceZone
-    let editFrame = isAllDay ? deviceZone : storedFrame
+    let (storedFrame, editFrame) = frames(
+      storedZone: storedZone, isAllDay: isAllDay, deviceZone: deviceZone
+    )
     var start = base
 
     if let target = target {
@@ -192,18 +234,6 @@ enum SeriesDates {
       }
 
       if case .keep(let keptRule?) = ruleEdit {
-        // EventKit can't split a series whose rule pins days at an
-        // occurrence moved to another day: `.futureEvents` detaches it
-        // instead (#194). Refused on both platforms until it can.
-        if splitsSeries, pinsDays(keptRule),
-           !sameCalendarDay(reference, storedFrame, target, editFrame) {
-          return .failure(CalendarError(
-            code: PlatformExceptionCodes.invalidArguments,
-            message: "start moves a thisAndFollowing split onto another day, but "
-              + "the series' recurrence rule pins specific days. Pass a "
-              + "recurrenceRule to specify the new pattern."
-          ))
-        }
         if leavesRule(
           keptRule, reference: reference, referenceZone: storedFrame,
           base: base, target: target, shifted: shifted, timeZone: editFrame

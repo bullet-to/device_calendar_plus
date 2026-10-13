@@ -21,8 +21,7 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
   /// Moves the occurrence at `reference` (the series start when nil) of a
   /// timed `rule` series that starts at `from` to `to`, keeping the rule.
   private func move(
-    _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil,
-    splitsSeries: Bool = false
+    _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil
   ) -> Result<Date, CalendarError> {
     return SeriesDates.resolveSeriesStart(
       base: from,
@@ -31,7 +30,15 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
       reference: reference ?? from,
       isAllDay: false,
       ruleEdit: .keep(rule),
-      splitsSeries: splitsSeries,
+      deviceZone: stockholm
+    )
+  }
+
+  /// Whether moving the occurrence at `from` of a timed `rule` series to
+  /// `to`, keeping the rule, needs the rule set again on the event.
+  private func needsReset(_ rule: EKRecurrenceRule, from: Date, to: Date) -> Bool {
+    return SeriesDates.keptRuleNeedsReset(
+      rule, reference: from, target: to, storedZone: stockholm, isAllDay: false,
       deviceZone: stockholm
     )
   }
@@ -170,32 +177,50 @@ final class DayMoveConflictTests: XCTestCase, RecurrenceFixtures {
     ))
   }
 
-  // A thisAndFollowing split onto another day the rule lists: Wed 4 Nov
-  // 2026 -> Fri 6 Nov. EventKit can't split a series whose rule pins days at
-  // a moved occurrence (#194), so both platforms refuse it for now; the same
-  // move through allEvents is allowed above.
-  func testRefusesASplitOntoAnotherListedDayOfAPinnedRule() {
-    assertRefused(
-      move(mondayWednesdayFriday, from: at(2026, 11, 4), to: at(2026, 11, 6), splitsSeries: true)
-    )
-  }
-
-  func testAllowsATimeOnlySplitOfAPinnedRule() {
-    let target = at(2026, 11, 4, hour: 15)
-    XCTAssertEqual(
-      try move(
-        mondayWednesdayFriday, from: at(2026, 11, 4), to: target, splitsSeries: true
-      ).get(),
-      target
-    )
-  }
-
-  // A rule that pins no day follows the split's new start.
-  func testAllowsASplitDayMoveOfAnImplicitRule() {
+  // A thisAndFollowing split onto another day the rule lists: the Wed 4 Nov
+  // 2026 occurrence (base and reference alike, for a split) -> Fri 6 Nov.
+  // Once refused while EventKit detached the occurrence instead (#194).
+  func testAllowsASplitOntoAnotherListedDayOfAPinnedRule() {
     let target = at(2026, 11, 6)
     XCTAssertEqual(
-      try move(rule(.weekly), from: at(2026, 11, 4), to: target, splitsSeries: true).get(),
-      target
+      try move(mondayWednesdayFriday, from: at(2026, 11, 4), to: target).get(), target
+    )
+  }
+
+  // MARK: - keptRuleNeedsReset(...)
+
+  // The move EventKit reads as an occurrence move unless the rule is set
+  // again: onto another day a day-pinning rule lists (#194, #206).
+  func testADayMoveOfAPinnedRuleNeedsTheRuleReset() {
+    XCTAssertTrue(needsReset(mondayWednesdayFriday, from: at(2026, 11, 2), to: at(2026, 11, 4)))
+  }
+
+  // An ordinal rule pins days too: Thu 26 Nov 2026 -> Thu 24 Dec, both 4th
+  // Thursdays.
+  func testADayMoveOfAnOrdinalRuleNeedsTheRuleReset() {
+    let fourthThursday = rule(.monthly, days: [EKRecurrenceDayOfWeek(.thursday, weekNumber: 4)])
+    XCTAssertTrue(needsReset(fourthThursday, from: at(2026, 11, 26), to: at(2026, 12, 24)))
+  }
+
+  // A time-only move of a pinned rule moves natively.
+  func testATimeOnlyMoveOfAPinnedRuleNeedsNoReset() {
+    XCTAssertFalse(
+      needsReset(mondayWednesdayFriday, from: at(2026, 11, 4), to: at(2026, 11, 4, hour: 15))
+    )
+  }
+
+  // A rule that takes its day from the start moves natively.
+  func testADayMoveOfAnImplicitRuleNeedsNoReset() {
+    XCTAssertFalse(needsReset(rule(.weekly), from: at(2026, 11, 4), to: at(2026, 11, 6)))
+  }
+
+  // A cross-midnight retime changes the day, so it is a day move.
+  func testACrossMidnightRetimeOfAPinnedRuleNeedsTheRuleReset() {
+    let mondayTuesday = rule(
+      .weekly, days: [EKWeekday.monday, .tuesday].map { EKRecurrenceDayOfWeek($0) }
+    )
+    XCTAssertTrue(
+      needsReset(mondayTuesday, from: at(2026, 11, 2, hour: 23), to: at(2026, 11, 3, hour: 1))
     )
   }
 }

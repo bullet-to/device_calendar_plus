@@ -145,10 +145,9 @@ internal sealed class SeriesRuleEdit {
  * time, and fails with INVALID_ARGUMENTS when it generates nothing within
  * five years; a cleared rule needs neither. A time-only move leaves a start
  * the kept rule doesn't generate (one anchored off its rule by another app,
- * or in another zone) where it is. A [splitsSeries] (thisAndFollowing) move
- * onto another day is also refused while the kept rule pins days (#194).
- * A refusal names what moved the start ([SeriesTimeEdit.mover]). The
- * duration is overridden when [timeEdit] carries one.
+ * or in another zone) where it is. A refusal names what moved the start
+ * ([SeriesTimeEdit.mover]). The duration is overridden when [timeEdit]
+ * carries one.
  */
 internal fun resolveSeriesTimes(
     baseMillis: Long,
@@ -156,7 +155,6 @@ internal fun resolveSeriesTimes(
     existingDurationMillis: Long,
     timeEdit: SeriesTimeEdit,
     ruleEdit: SeriesRuleEdit,
-    splitsSeries: Boolean,
     isAllDay: Boolean,
     timeZoneId: String?,
     storedZone: TimeZone
@@ -174,36 +172,25 @@ internal fun resolveSeriesTimes(
         baseMillis
     }
     val keptRule = (ruleEdit as? SeriesRuleEdit.Keep)?.rule
-    if (targetStart != null && keptRule != null) {
-        val mover = timeEdit.mover
-        val refusal = when {
-            // iOS can't split a series whose rule pins days at an occurrence
-            // moved to another day: EventKit detaches it instead (#194).
-            // Refused on both platforms until it can.
-            splitsSeries && RruleString.pinsDays(keptRule) &&
-                !sameCalendarDay(referenceMillis, storedZone, targetStart, editZone) ->
-                "$mover a thisAndFollowing split onto another day, but " +
-                    "the series' recurrence rule pins specific days. Pass a " +
-                    "recurrenceRule to specify the new pattern."
-            leavesRule(
-                keptRule,
-                referenceMillis = referenceMillis,
-                referenceZone = storedZone,
-                baseMillis = baseMillis,
-                targetStart = targetStart,
-                shiftedStart = shiftedStart,
-                tz = editZone
-            ) ->
-                "$mover this series onto a day its recurrence " +
+    if (targetStart != null && keptRule != null &&
+        leavesRule(
+            keptRule,
+            referenceMillis = referenceMillis,
+            referenceZone = storedZone,
+            baseMillis = baseMillis,
+            targetStart = targetStart,
+            shiftedStart = shiftedStart,
+            tz = editZone
+        )
+    ) {
+        return Result.failure(
+            CalendarException(
+                PlatformExceptionCodes.INVALID_ARGUMENTS,
+                "${timeEdit.mover} this series onto a day its recurrence " +
                     "rule doesn't generate. Pass a recurrenceRule to " +
                     "specify the new pattern."
-            else -> null
-        }
-        if (refusal != null) {
-            return Result.failure(
-                CalendarException(PlatformExceptionCodes.INVALID_ARGUMENTS, refusal)
             )
-        }
+        )
     }
     val newStart = when (ruleEdit) {
         is SeriesRuleEdit.Keep, SeriesRuleEdit.Clear -> shiftedStart
