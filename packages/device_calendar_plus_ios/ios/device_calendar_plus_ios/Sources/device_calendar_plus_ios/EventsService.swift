@@ -1126,14 +1126,14 @@ class EventsService {
     _ rule: EKRecurrenceRule,
     endingBefore date: Date
   ) -> EKRecurrenceRule {
-    return ruleCopy(rule, end: EKRecurrenceEnd(end: date.addingTimeInterval(-1)))
+    return ruleCopy(rule, replacingEnd: EKRecurrenceEnd(end: date.addingTimeInterval(-1)))
   }
 
-  /// A fresh `EKRecurrenceRule` with `rule`'s pattern and `end` (the rule's
-  /// own when nil).
+  /// A fresh `EKRecurrenceRule` with `rule`'s pattern, and its end unless
+  /// `replacingEnd` gives another.
   private func ruleCopy(
     _ rule: EKRecurrenceRule,
-    end: EKRecurrenceEnd?
+    replacingEnd end: EKRecurrenceEnd? = nil
   ) -> EKRecurrenceRule {
     return EKRecurrenceRule(
       recurrenceWith: rule.frequency,
@@ -1148,59 +1148,28 @@ class EventsService {
     )
   }
 
-  /// The start a series update leaves `event` with — see
-  /// `SeriesDates.resolveSeriesStart`, which this feeds the event's stored
-  /// start and zone, and the device's zone. `newStartMillis` is the target
-  /// start; `timestamp` picks the reference occurrence (the series anchor
-  /// when nil).
+  /// The start a series update leaves `event` with, and whether its kept
+  /// rule needs setting again — see `SeriesDates.resolveSeriesStart`, which
+  /// this feeds the event's stored start and zone, and the device's zone.
+  /// `newStartMillis` is the target start; `timestamp` picks the reference
+  /// occurrence (the series anchor when nil).
   private func resolveSeriesStart(
     for event: EKEvent,
     newStartMillis: Int64?,
     timestamp: Int64?,
     isAllDay: Bool,
     ruleEdit: SeriesRuleEdit
-  ) -> Result<Date, CalendarError> {
-    let target = newStartMillis.map {
-      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
+  ) -> Result<SeriesStart, CalendarError> {
+    func date(_ millis: Int64) -> Date {
+      return Date(timeIntervalSince1970: TimeInterval(millis) / 1000.0)
     }
     return SeriesDates.resolveSeriesStart(
       base: event.startDate,
       storedZone: event.timeZone,
-      target: target,
-      reference: referenceDate(for: event, timestamp: timestamp),
+      target: newStartMillis.map(date),
+      reference: timestamp.map(date) ?? event.startDate,
       isAllDay: isAllDay,
       ruleEdit: ruleEdit,
-      deviceZone: .current
-    )
-  }
-
-  /// The occurrence a series update measures its start move from: the one
-  /// at `timestamp`, or the series anchor when nil.
-  private func referenceDate(for event: EKEvent, timestamp: Int64?) -> Date {
-    return timestamp.map {
-      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
-    } ?? event.startDate
-  }
-
-  /// Whether a series update that keeps `rule` and moves the start of
-  /// `event` to `newStartMillis` must set the rule on the event again for
-  /// EventKit to move the series rather than detach the occurrence — see
-  /// `SeriesDates.keptRuleNeedsReset` (#194, #206). Never without a new
-  /// start.
-  private func keptRuleNeedsReset(
-    _ rule: EKRecurrenceRule,
-    for event: EKEvent,
-    newStartMillis: Int64?,
-    timestamp: Int64?,
-    isAllDay: Bool
-  ) -> Bool {
-    guard let newStartMillis = newStartMillis else { return false }
-    return SeriesDates.keptRuleNeedsReset(
-      rule,
-      reference: referenceDate(for: event, timestamp: timestamp),
-      target: Date(timeIntervalSince1970: TimeInterval(newStartMillis) / 1000.0),
-      storedZone: event.timeZone,
-      isAllDay: isAllDay,
       deviceZone: .current
     )
   }
@@ -1329,7 +1298,9 @@ class EventsService {
       ruleEdit = .keep(foundEvent.recurrenceRules?.first)
     }
 
-    let newStart: Date
+    // Resolve the start, and whether the kept rule needs setting again,
+    // before touching the event: both read its stored start.
+    let resolved: SeriesStart
     switch resolveSeriesStart(
       for: foundEvent,
       newStartMillis: newStartMillis,
@@ -1338,11 +1309,12 @@ class EventsService {
       ruleEdit: ruleEdit
     ) {
     case .success(let start):
-      newStart = start
+      resolved = start
     case .failure(let error):
       completion(.failure(error))
       return
     }
+    let newStart = resolved.date
 
     // Resolve the end for the new start, still before touching the event:
     // `nil` for a change that moves nothing, which skips the time rewrite.
@@ -1361,19 +1333,6 @@ class EventsService {
     case .failure(let error):
       completion(.failure(error))
       return
-    }
-
-    // Whether a kept rule must be set on the event again for the save to
-    // move the series (#194, #206): decided from the stored start, before
-    // the rewrite below moves it onto the target.
-    let resetsKeptRule: Bool
-    if case .keep(let rule?) = ruleEdit {
-      resetsKeptRule = keptRuleNeedsReset(
-        rule, for: foundEvent, newStartMillis: newStartMillis,
-        timestamp: timestamp, isAllDay: effectiveIsAllDay
-      )
-    } else {
-      resetsKeptRule = false
     }
 
     // Apply field changes.
@@ -1402,17 +1361,14 @@ class EventsService {
       return
     }
 
-    // Apply the recurrence-rule patch. A kept rule is set again, as a fresh
-    // copy, when the start moves onto another day the rule pins: left as it
-    // was, EventKit reads the save below as moving one occurrence and
-    // detaches it instead of moving (allEvents, #206) or splitting
-    // (thisAndFollowing, #194) the series. See
-    // `SeriesDates.keptRuleNeedsReset`.
+    // Apply the recurrence-rule patch. A kept rule is set again when
+    // SeriesDates says so, or EventKit detaches the occurrence instead of
+    // moving or splitting the series (#194, #206).
     switch ruleEdit {
     case .clear: foundEvent.recurrenceRules = nil
     case .replace(let rule): foundEvent.recurrenceRules = [rule]
-    case .keep(let rule?) where resetsKeptRule:
-      foundEvent.recurrenceRules = [ruleCopy(rule, end: nil)]
+    case .keep(let rule?) where resolved.resetsKeptRule:
+      foundEvent.recurrenceRules = [ruleCopy(rule)]
     case .keep: break
     }
 

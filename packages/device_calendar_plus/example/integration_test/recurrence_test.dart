@@ -2509,20 +2509,13 @@ void main() {
             : DateTime.utc(2026, month, dayOfMonth, 15);
         final monday = day(10, 19);
         final wednesday = day(10, 21);
-        final eventId = await plugin.createEvent(
-          calendarId: calendarId!,
-          title: seriesTitle,
-          startDate: monday,
-          endDate: allDay
-              ? nextLocalMidnight(monday)
-              : monday.add(const Duration(hours: 1)),
-          isAllDay: allDay,
-          recurrenceRule: const WeeklyRecurrence(
+        final series = await createWeeklySeries(plugin, calendarId!,
+            title: seriesTitle,
             daysOfWeek: [DayOfWeek.monday, DayOfWeek.wednesday],
-            end: CountEnd(4),
-          ),
-          timeZone: allDay ? null : 'UTC',
-        );
+            end: const CountEnd(4),
+            start: monday,
+            isAllDay: allDay);
+        final eventId = series.eventId;
         Future<List<Event>> listed() => eventsInWindow(
             plugin,
             calendarId!,

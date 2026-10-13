@@ -42,7 +42,7 @@ final class SeriesDatesTests: XCTestCase {
     isAllDay: Bool,
     ruleEdit: SeriesRuleEdit? = nil,
     deviceZone: TimeZone
-  ) -> Result<Date, CalendarError> {
+  ) -> Result<SeriesStart, CalendarError> {
     return SeriesDates.resolveSeriesStart(
       base: base,
       storedZone: utc,
@@ -70,7 +70,7 @@ final class SeriesDatesTests: XCTestCase {
       isAllDay: true,
       deviceZone: losAngeles
     )
-    XCTAssertEqual(try result.get(), at(losAngeles, 10, 1))
+    XCTAssertEqual(try result.get().date, at(losAngeles, 10, 1))
   }
 
   // East of UTC: Thursday's local midnight is still Wednesday in UTC, but
@@ -82,7 +82,7 @@ final class SeriesDatesTests: XCTestCase {
       isAllDay: true,
       deviceZone: sydney
     )
-    XCTAssertEqual(try result.get(), at(sydney, 10, 1))
+    XCTAssertEqual(try result.get().date, at(sydney, 10, 1))
   }
 
   // A timed edit keeps the stored frame: 01:00 UTC Friday is Thursday
@@ -109,7 +109,7 @@ final class SeriesDatesTests: XCTestCase {
       ruleEdit: .replace(thursdays),
       deviceZone: sydney
     )
-    XCTAssertEqual(try result.get(), at(sydney, 10, 1))
+    XCTAssertEqual(try result.get().date, at(sydney, 10, 1))
   }
 
   // A new rule that doesn't generate the target's day walks to the first
@@ -123,7 +123,7 @@ final class SeriesDatesTests: XCTestCase {
       ruleEdit: .replace(SeriesDatesTests.weekly(on: .friday)),
       deviceZone: sydney
     )
-    XCTAssertEqual(try result.get(), at(sydney, 10, 2))
+    XCTAssertEqual(try result.get().date, at(sydney, 10, 2))
   }
 
   // The flip side of the east-of-UTC case, mirrored by Android's
