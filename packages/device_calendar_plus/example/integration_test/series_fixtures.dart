@@ -76,9 +76,9 @@ Future<({String eventId, DateTime start})> createAllDayDailySeries(
 /// Creates a weekly recurring event titled [title], starting at [start] and
 /// ending per [end] (`count` weekly occurrences by default). The recurring
 /// weekday is the start's weekday unless [daysOfWeek] is given. Timed by
-/// default: an hour long, starting one hour from now, stored in UTC. With
-/// [isAllDay] it spans its day instead, and [start] defaults to tomorrow's
-/// local midnight. Returns the event ID and the start time.
+/// default: [duration] long (an hour), starting one hour from now, stored in
+/// UTC. With [isAllDay] it spans its day instead, and [start] defaults to
+/// tomorrow's local midnight. Returns the event ID and the start time.
 Future<({String eventId, DateTime start})> createWeeklySeries(
   DeviceCalendar plugin,
   String calendarId, {
@@ -87,6 +87,7 @@ Future<({String eventId, DateTime start})> createWeeklySeries(
   RecurrenceEnd? end,
   List<DayOfWeek>? daysOfWeek,
   DateTime? start,
+  Duration duration = const Duration(hours: 1),
   bool isAllDay = false,
 }) async {
   start ??= isAllDay
@@ -96,9 +97,7 @@ Future<({String eventId, DateTime start})> createWeeklySeries(
     calendarId: calendarId,
     title: title,
     startDate: start,
-    endDate: isAllDay
-        ? nextLocalMidnight(start)
-        : start.add(const Duration(hours: 1)),
+    endDate: isAllDay ? nextLocalMidnight(start) : start.add(duration),
     isAllDay: isAllDay,
     recurrenceRule:
         WeeklyRecurrence(daysOfWeek: daysOfWeek, end: end ?? CountEnd(count)),
@@ -159,6 +158,10 @@ Future<List<Event>> eventsTitled(
 /// occurrence.
 List<int> startsOf(Iterable<Event> events) =>
     events.map((e) => e.startDate.millisecondsSinceEpoch).toList();
+
+/// The end instants of [events], the counterpart of [startsOf].
+List<int> endsOf(Iterable<Event> events) =>
+    events.map((e) => e.endDate.millisecondsSinceEpoch).toList();
 
 /// The start instants of [events], each moved to the next local midnight:
 /// what an all-day listing reads after its series moves a calendar day later.
