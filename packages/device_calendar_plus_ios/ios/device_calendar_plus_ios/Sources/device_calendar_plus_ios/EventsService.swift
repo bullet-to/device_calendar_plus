@@ -1072,6 +1072,7 @@ class EventsService {
     }
 
     let newIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
+    let becomesAllDay = newIsAllDay && !foundEvent.isAllDay
 
     // Resolve the dates to write while the live EKEvent is still unmodified
     // (the rule updateRecurring states): a bare all-day toggle writes the
@@ -1097,7 +1098,7 @@ class EventsService {
 
     // An occurrence edit that makes a timed occurrence all-day saves in two
     // steps (detachThenFlipAllDay); every other edit saves once.
-    if timestamp != nil && newIsAllDay && !foundEvent.isAllDay {
+    if timestamp != nil && becomesAllDay {
       completion(detachThenFlipAllDay(foundEvent, patch: patch, dates: dates))
       return
     }
