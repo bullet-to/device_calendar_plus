@@ -62,6 +62,21 @@ The thin shims that call the OS permission APIs directly (`EventKitAuthorization
 - `requestPermissions()` — the OS shows the full-access prompt. On iOS 18 it offers three choices; check **Allow Full Access** and **Add Events Only** separately, and confirm the status that comes back matches what you tapped (`granted` / `writeOnly`) and that creating an event works without restarting the app.
 - `requestPermissions(writeOnly: true)` — the OS shows the *add-only* prompt, and the status comes back `writeOnly`.
 
+### The iCloud two-step save needs a signed-in iPhone
+
+`EventsService.detachThenFlipAllDay` (iOS) is the same class of code. `updateEvent` on a timed occurrence that becomes all-day saves twice — detach first, flip second — because EventKit's iCloud (CalDAV) store persists a detached occurrence's all-day end a day late when the detach and the flip land in one save. Nothing automated can see that: the simulator has no iCloud source, so `createCalendar` puts the test calendar in the local store, which gets the one-step save right, and `EventsService` has no store seam for a Swift test. Collapse the two saves into one and the whole simulator suite and CI stay green while the bug comes straight back. Anything that touches it needs a run on a physical iPhone signed into iCloud, where the two integration tests in `recurrence_test.dart` that cover it go red on the one-step shape:
+
+- `updateEvent toggling a timed occurrence all-day with no dates keeps it on its calendar day`
+- `updateEvent toggling a timed occurrence all-day with a two-day span detaches it onto exactly those days`
+
+```bash
+cd packages/device_calendar_plus/example
+flutter build ios --config-only --debug
+flutter test integration_test/recurrence_test.dart -d <iphone-udid> --no-uninstall
+```
+
+`--no-uninstall` matters on a physical device: a plain `flutter test` uninstalls the app afterwards and iOS drops the calendar grant with it, so every run would re-prompt. Tap **Allow Full Access** once on the first run and later runs keep it.
+
 ### Running tests
 
 CI (`.github/workflows/ci.yml`) runs on every PR and every push to `main`:

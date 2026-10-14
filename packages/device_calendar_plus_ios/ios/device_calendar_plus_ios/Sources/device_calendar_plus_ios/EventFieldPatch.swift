@@ -49,17 +49,22 @@ struct EventFieldPatch {
     }
   }
 
-  /// Applies the patch to `event`, with the all-day flag and the dates to
-  /// write (`nil` leaves each as it is), in the one order that reads back
-  /// right: the fields, the all-day flag, the dates, then the time zone. The
-  /// flag changes what the dates read back as, so it goes on before them; an
-  /// all-day event carries no time zone, so that goes on last. Applying it
-  /// twice is harmless — every field is an assignment and alarms are
-  /// replaced whole.
+  /// Applies the patch to `event` with the dates to write (`nil` leaves a
+  /// bound as it is), in the one order that reads back right: the fields,
+  /// the all-day flag, the dates, then the time zone. The flag changes what
+  /// the dates read back as, so it goes on before them; an all-day event
+  /// carries no time zone, so that goes on last.
   ///
-  /// The flag and the dates come from the caller rather than off the patch
-  /// so `EventsService.updateEvent` can write the resolved dates, and leave
-  /// the flag alone for the first of its two saves (pass `nil`).
+  /// The dates come from the caller rather than off the patch so
+  /// `EventsService.updateEvent` can write the dates it resolved.
+  func apply(to event: EKEvent, start: Date?, end: Date?) {
+    apply(to: event, isAllDay: isAllDay, start: start, end: end)
+  }
+
+  /// `apply(to:start:end:)` with the all-day flag from the caller in place of
+  /// the patch's own (`nil` leaves the event's), for the first of
+  /// `EventsService.updateEvent`'s two saves, which detaches a timed
+  /// occurrence before the flip.
   func apply(to event: EKEvent, isAllDay: Bool?, start: Date?, end: Date?) {
     applyFields(to: event)
     if let isAllDay = isAllDay { event.isAllDay = isAllDay }
@@ -73,7 +78,7 @@ struct EventFieldPatch {
   }
 
   /// The field edits alone: everything but the all-day flag, the dates and
-  /// the time zone, which `apply(to:isAllDay:start:end:)` orders.
+  /// the time zone, which `apply(to:start:end:)` orders.
   private func applyFields(to event: EKEvent) {
     if let title = title { event.title = title }
     if clearedFields.contains("description") {

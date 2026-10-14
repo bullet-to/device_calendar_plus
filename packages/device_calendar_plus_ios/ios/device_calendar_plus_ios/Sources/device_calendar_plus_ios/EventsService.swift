@@ -1102,7 +1102,7 @@ class EventsService {
       completion(detachThenFlipAllDay(foundEvent, patch: patch, dates: dates))
       return
     }
-    patch.apply(to: foundEvent, isAllDay: patch.isAllDay, start: dates.start, end: dates.end)
+    patch.apply(to: foundEvent, start: dates.start, end: dates.end)
 
     // One thing only: an occurrence edit detaches it as an exception, and a
     // one-off saves as itself (a bare series ID was refused above).
@@ -1133,7 +1133,12 @@ class EventsService {
     if case .failure(let error) = saveThisEvent(event) {
       return .failure(error)
     }
-    patch.apply(to: event, isAllDay: patch.isAllDay, start: dates.start, end: dates.end)
+    // The flip alone, in apply's order (flag, dates, zone): the fields are
+    // saved, and the dates go on again under the flag they were resolved for.
+    event.isAllDay = true
+    if let start = dates.start { event.startDate = start }
+    if let end = dates.end { event.endDate = end }
+    event.timeZone = nil
     return saveThisEvent(
       event,
       orFail: "Failed to flip the detached occurrence all-day (it is detached but still timed)"
@@ -1396,12 +1401,7 @@ class EventsService {
     }
 
     // Apply the field changes, and the new times when the change moves them.
-    patch.apply(
-      to: foundEvent,
-      isAllDay: patch.isAllDay,
-      start: newEnd == nil ? nil : newStart,
-      end: newEnd
-    )
+    patch.apply(to: foundEvent, start: newEnd == nil ? nil : newStart, end: newEnd)
 
     // Clearing the rule on a `thisAndFollowing` split is the one case EventKit
     // gets wrong natively (it collapses the whole series), so it splits the
