@@ -25,6 +25,11 @@
   it on its own calendar day, spanning every day it touched, as on iOS. It
   used to read back on the wrong date where the event's UTC date isn't its
   local one.
+- iOS: `updateEvent` with `isAllDay: true` on one occurrence of a timed
+  series no longer reads back a day too long on an iCloud calendar. EventKit's
+  iCloud store put the detached occurrence's end a day late when it detached
+  and flipped the occurrence in one save, so the plugin now detaches first
+  and flips second; the local store, and so the simulator, got it right.
 
 ## 0.10.1 - 2026-10-01
 

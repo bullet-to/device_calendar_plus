@@ -50,8 +50,10 @@ struct EventFieldPatch {
   }
 
   /// Applies the patch to `event`, except the time zone — each write path
-  /// applies it after its date changes (see `applyTimeZone(to:)`).
-  func apply(to event: EKEvent) {
+  /// applies it after its date changes (see `applyTimeZone(to:)`) — and,
+  /// with `allDay` false, except the all-day flag, which
+  /// `EventsService.updateEvent` flips in a save of its own.
+  func apply(to event: EKEvent, allDay: Bool = true) {
     if let title = title { event.title = title }
     if clearedFields.contains("description") {
       event.notes = nil
@@ -76,7 +78,7 @@ struct EventFieldPatch {
     case .set(let minutes):
       EventFieldPatch.applyReminders(minutes, to: event)
     }
-    if let isAllDay = isAllDay { event.isAllDay = isAllDay }
+    if allDay, let isAllDay = isAllDay { event.isAllDay = isAllDay }
     if let availability = availability {
       switch availability {
       case "free": event.availability = .free

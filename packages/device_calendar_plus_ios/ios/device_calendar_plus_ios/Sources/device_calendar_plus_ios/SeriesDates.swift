@@ -315,6 +315,35 @@ enum SeriesDates {
     return .success(resolved)
   }
 
+  /// The dates a bare all-day toggle — `isAllDay` set true with no new dates
+  /// — leaves a timed event with: midnight of the `deviceZone` day it starts
+  /// on, through the last second of the last day it touches (its end's day,
+  /// or the day before when it ends on a midnight; its own day when it has no
+  /// span). `nil` only when the calendar can't compute the day after.
+  ///
+  /// Left with its raw timed dates under `isAllDay`, EventKit derives this
+  /// span itself on a local calendar, but an iCloud (CalDAV) calendar
+  /// persisted a detached occurrence's end a day late — a 23:30-00:30
+  /// occurrence read back as three days, not two — so the write path sets
+  /// the span explicitly. Android's counterpart is `AllDayDates.toggleSpan`.
+  static func allDayToggleSpan(
+    start: Date,
+    end: Date,
+    deviceZone: TimeZone
+  ) -> (start: Date, end: Date)? {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = deviceZone
+    let firstDay = calendar.startOfDay(for: start)
+    // The last moment the event occupies: an end on a midnight is exclusive,
+    // so it doesn't reach that day; an empty span still occupies its start.
+    let lastMoment = max(end.addingTimeInterval(-1), start)
+    let lastDay = calendar.startOfDay(for: lastMoment)
+    guard let dayAfter = calendar.date(byAdding: .day, value: 1, to: lastDay) else {
+      return nil
+    }
+    return (start: firstDay, end: allDayStoredEnd(dayAfter, isAllDay: true))
+  }
+
   /// The end to write for an all-day event whose end is `end`, exclusive
   /// (the plugin's form: midnight after the last day). EventKit keeps an
   /// all-day event's end at the last second of its last day, and reads an

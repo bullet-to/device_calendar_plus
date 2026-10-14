@@ -392,4 +392,78 @@ final class SeriesDatesTests: XCTestCase {
     )
     XCTAssertEqual(end, at(newYork, 11, 10))
   }
+
+  // MARK: - allDayToggleSpan(...)
+
+  // A bare all-day toggle of a timed event (isAllDay true, no new dates)
+  // writes the all-day span itself rather than leaving the raw timed dates
+  // for EventKit to interpret: on an iCloud calendar EventKit read a
+  // 23:30-00:30 occurrence's end a day late (three days, not two), where the
+  // local store got it right.
+
+  // An event inside one day spans that day: local midnight through its
+  // last second, where EventKit keeps an all-day end.
+  func testToggleSpanOfAnEventWithinOneDayIsThatDay() {
+    let span = SeriesDates.allDayToggleSpan(
+      start: at(losAngeles, 10, 22, hour: 9),
+      end: at(losAngeles, 10, 22, hour: 10),
+      deviceZone: losAngeles
+    )
+    XCTAssertEqual(span?.start, at(losAngeles, 10, 22))
+    XCTAssertEqual(span?.end, endOfDay(losAngeles, 10, 22))
+  }
+
+  // An event that runs over midnight touches two days and spans both.
+  func testToggleSpanOfAnEventOverMidnightSpansBothDays() {
+    let span = SeriesDates.allDayToggleSpan(
+      start: at(losAngeles, 10, 22, hour: 23).addingTimeInterval(30 * 60),
+      end: at(losAngeles, 10, 23).addingTimeInterval(30 * 60),
+      deviceZone: losAngeles
+    )
+    XCTAssertEqual(span?.start, at(losAngeles, 10, 22))
+    XCTAssertEqual(span?.end, endOfDay(losAngeles, 10, 23))
+  }
+
+  // An end on a midnight is exclusive: the event never touches that day.
+  func testToggleSpanOfAnEventEndingOnMidnightStopsTheDayBefore() {
+    let span = SeriesDates.allDayToggleSpan(
+      start: at(losAngeles, 10, 22, hour: 23),
+      end: at(losAngeles, 10, 23),
+      deviceZone: losAngeles
+    )
+    XCTAssertEqual(span?.start, at(losAngeles, 10, 22))
+    XCTAssertEqual(span?.end, endOfDay(losAngeles, 10, 22))
+  }
+
+  // A zero-length event still gets its one day.
+  func testToggleSpanOfAZeroLengthEventIsItsDay() {
+    let start = at(losAngeles, 10, 22, hour: 23)
+    let span = SeriesDates.allDayToggleSpan(start: start, end: start, deviceZone: losAngeles)
+    XCTAssertEqual(span?.start, at(losAngeles, 10, 22))
+    XCTAssertEqual(span?.end, endOfDay(losAngeles, 10, 22))
+  }
+
+  // The days are the device zone's, not UTC's: 23:30 in Los Angeles is
+  // already the next UTC date, and the event must stay on its local day.
+  func testToggleSpanReadsTheDaysInTheDeviceZone() {
+    let span = SeriesDates.allDayToggleSpan(
+      start: at(losAngeles, 10, 22, hour: 23).addingTimeInterval(30 * 60),
+      end: at(losAngeles, 10, 23),
+      deviceZone: losAngeles
+    )
+    XCTAssertEqual(span?.start, at(losAngeles, 10, 22))
+    XCTAssertEqual(span?.end, endOfDay(losAngeles, 10, 22))
+  }
+
+  // Across DST end (1 November, 25 hours long) the last second of the day
+  // is still 23:59:59 on the wall clock, not 24 hours after midnight.
+  func testToggleSpanAcrossDstEndEndsOnTheWallClock() {
+    let span = SeriesDates.allDayToggleSpan(
+      start: at(newYork, 10, 31, hour: 22),
+      end: at(newYork, 11, 1, hour: 3),
+      deviceZone: newYork
+    )
+    XCTAssertEqual(span?.start, at(newYork, 10, 31))
+    XCTAssertEqual(span?.end, endOfDay(newYork, 11, 1))
+  }
 }

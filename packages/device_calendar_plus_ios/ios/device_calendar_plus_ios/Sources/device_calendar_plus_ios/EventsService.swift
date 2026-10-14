@@ -1071,16 +1071,70 @@ class EventsService {
       }
     }
 
-    // Get new data into event
-    patch.apply(to: foundEvent)
-    if let startDate = startDate { foundEvent.startDate = startDate }
-    if let endDate = endDate {
-      foundEvent.endDate = SeriesDates.allDayStoredEnd(endDate, isAllDay: foundEvent.isAllDay)
+    let newIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
+
+    // A bare all-day toggle — isAllDay true with no new dates, on a timed
+    // event — writes the all-day span itself, from the dates the event still
+    // has here (setting isAllDay changes what they read back as), so the
+    // event spans exactly the local days its timed self touched. Android's
+    // resolveEditedBounds does the same (#203).
+    var toggleSpan: (start: Date, end: Date)?
+    if newIsAllDay, !foundEvent.isAllDay, startDate == nil, endDate == nil {
+      guard let span = SeriesDates.allDayToggleSpan(
+        start: foundEvent.startDate, end: foundEvent.endDate, deviceZone: .current
+      ) else {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "Could not compute the event's all-day span"
+        )))
+        return
+      }
+      toggleSpan = span
+    }
+
+    // An occurrence edit that makes a timed occurrence all-day saves in two
+    // steps: every other change and the dates first, which detaches the
+    // occurrence, then the flip. EventKit's iCloud store gets a detach and
+    // the flip in one save wrong — the detached occurrence's end persisted a
+    // day late whatever end was written, so a 9-10am occurrence read back as
+    // two days and a 23:30-00:30 one as three — while the same flip on an
+    // already-detached occurrence, as on a one-off, persists right. The local
+    // store, and so the simulator, gets the one-step save right too.
+    let flipsAllDay = timestamp != nil && newIsAllDay && !foundEvent.isAllDay
+
+    func applyDates() {
+      if let toggleSpan = toggleSpan {
+        foundEvent.startDate = toggleSpan.start
+        foundEvent.endDate = toggleSpan.end
+      }
+      if let startDate = startDate { foundEvent.startDate = startDate }
+      if let endDate = endDate {
+        foundEvent.endDate = SeriesDates.allDayStoredEnd(endDate, isAllDay: newIsAllDay)
+      }
+    }
+
+    patch.apply(to: foundEvent, allDay: !flipsAllDay)
+    applyDates()
+    if flipsAllDay {
+      do {
+        try eventStore.save(foundEvent, span: .thisEvent, commit: true)
+      } catch {
+        completion(.failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "Failed to update event: \(error.localizedDescription)"
+        )))
+        return
+      }
+      foundEvent.isAllDay = newIsAllDay
+      // The flip changes what the dates read back as, so set them again
+      // under it.
+      applyDates()
     }
     patch.applyTimeZone(to: foundEvent)
 
-    // One thing only: an occurrence edit detaches it as an exception, and a
-    // one-off saves as itself (a bare series ID was refused above).
+    // One thing only: an occurrence edit detaches it as an exception (above,
+    // when it also flips all-day), and a one-off saves as itself (a bare
+    // series ID was refused above).
     do {
       try eventStore.save(foundEvent, span: .thisEvent, commit: true)
       completion(.success(()))
