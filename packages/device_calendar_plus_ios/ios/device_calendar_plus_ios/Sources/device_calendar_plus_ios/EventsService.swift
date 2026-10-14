@@ -1079,7 +1079,7 @@ class EventsService {
     // resolveEditedBounds does (#203); otherwise the given bounds in the
     // effective all-day frame.
     let dates: (start: Date?, end: Date?)
-    switch SeriesDates.resolveEditedDates(
+    switch EventDates.resolveEditedDates(
       start: foundEvent.startDate,
       end: foundEvent.endDate,
       newStart: startDate,
@@ -1093,11 +1093,6 @@ class EventsService {
     case .failure(let error):
       completion(.failure(error))
       return
-    }
-
-    func applyDates() {
-      if let start = dates.start { foundEvent.startDate = start }
-      if let end = dates.end { foundEvent.endDate = end }
     }
 
     // An occurrence edit that makes a timed occurrence all-day saves in two
@@ -1117,29 +1112,24 @@ class EventsService {
     // the all-day span as timed dates; its error names that.
     let flipsAllDay = timestamp != nil && newIsAllDay && !foundEvent.isAllDay
 
-    patch.apply(to: foundEvent)
     if flipsAllDay {
-      applyDates()
+      patch.withoutAllDayChange().apply(to: foundEvent, start: dates.start, end: dates.end)
       if case .failure(let error) = saveThisEvent(foundEvent) {
         completion(.failure(error))
         return
       }
     }
-    patch.applyAllDay(to: foundEvent)
-    // The flag changes what the dates read back as, so they go on under it
-    // (again, after the flip).
-    applyDates()
-    patch.applyTimeZone(to: foundEvent)
+    patch.apply(to: foundEvent, start: dates.start, end: dates.end)
 
     // One thing only: an occurrence edit detaches it as an exception (above,
     // when it also flips all-day), and a one-off saves as itself (a bare
     // series ID was refused above).
-    completion(saveThisEvent(
-      foundEvent,
-      orFail: flipsAllDay
-        ? "Failed to flip the detached occurrence all-day (it is detached but still timed)"
-        : "Failed to update event"
-    ))
+    completion(flipsAllDay
+      ? saveThisEvent(
+          foundEvent,
+          orFail: "Failed to flip the detached occurrence all-day (it is detached but still timed)"
+        )
+      : saveThisEvent(foundEvent))
   }
 
   /// Saves `event` alone — `.thisEvent`, committed: a one-off as itself, an
@@ -1397,16 +1387,8 @@ class EventsService {
       return
     }
 
-    // Apply field changes, the all-day flag before the dates it reframes.
-    patch.apply(to: foundEvent)
-    patch.applyAllDay(to: foundEvent)
-
-    if let newEnd = newEnd {
-      foundEvent.startDate = newStart
-      foundEvent.endDate = newEnd
-    }
-
-    patch.applyTimeZone(to: foundEvent)
+    // Apply the field changes, and the new times when the change moves them.
+    patch.apply(to: foundEvent, start: newEnd == nil ? nil : newStart, end: newEnd)
 
     // Clearing the rule on a `thisAndFollowing` split is the one case EventKit
     // gets wrong natively (it collapses the whole series), so it splits the

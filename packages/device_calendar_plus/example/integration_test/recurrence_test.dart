@@ -1714,11 +1714,8 @@ void main() {
     // the all-day frame. Android once wrote the occurrence's timed start and
     // duration under ALL_DAY=1, and the provider reads an all-day time as a
     // UTC date, so a time whose UTC date isn't its local one read back a day
-    // off. On iOS, EventKit's iCloud store put the detached occurrence's end
-    // a day late when the detach and the all-day flip happened in one save:
-    // this test is red on an iCloud calendar (a physical device) without the
-    // two-step save in EventsService.updateEvent, and green on the local
-    // store (the simulator) either way.
+    // off. iOS: red on an iCloud calendar without the two-step save in
+    // EventsService.updateEvent, green on the simulator either way.
     test(
         'updateEvent toggling a timed occurrence all-day with no dates keeps '
         'it on its calendar day', () async {
@@ -1759,10 +1756,8 @@ void main() {
     });
 
     // The same flip with explicit dates: the occurrence detaches onto the
-    // caller's all-day span, no more. On iOS the iCloud store put this end a
-    // day late too when the detach and the flip shared one save (two days
-    // read back as three), so it takes the same two-step save; the simulator
-    // can't show that.
+    // caller's all-day span, no more. iOS: the same two-step save as the test
+    // above.
     test(
         'updateEvent toggling a timed occurrence all-day with a two-day span '
         'detaches it onto exactly those days', () async {

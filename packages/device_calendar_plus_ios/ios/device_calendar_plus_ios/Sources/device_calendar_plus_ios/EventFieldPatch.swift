@@ -49,10 +49,66 @@ struct EventFieldPatch {
     }
   }
 
-  /// Applies the patch to `event`, except the all-day flag and the time zone
-  /// — each write path applies those in order after it (see
-  /// `applyAllDay(to:)` and `applyTimeZone(to:)`).
-  func apply(to event: EKEvent) {
+  private init(
+    title: String?,
+    description: String?,
+    location: String?,
+    url: String?,
+    isAllDay: Bool?,
+    timeZone: String?,
+    availability: String?,
+    reminders: RemindersPatch,
+    clearedFields: [String]
+  ) {
+    self.title = title
+    self.description = description
+    self.location = location
+    self.url = url
+    self.isAllDay = isAllDay
+    self.timeZone = timeZone
+    self.availability = availability
+    self.reminders = reminders
+    self.clearedFields = clearedFields
+  }
+
+  /// This patch with the all-day flag left as the event has it. Lets
+  /// `EventsService.updateEvent` save every other change first and the flip
+  /// in a save of its own.
+  func withoutAllDayChange() -> EventFieldPatch {
+    return EventFieldPatch(
+      title: title,
+      description: description,
+      location: location,
+      url: url,
+      isAllDay: nil,
+      timeZone: timeZone,
+      availability: availability,
+      reminders: reminders,
+      clearedFields: clearedFields
+    )
+  }
+
+  /// Applies the patch to `event`, with the dates to write (`nil` leaves that
+  /// bound as it is), in the one order that reads back right: the fields,
+  /// the all-day flag, the dates, then the time zone. The flag changes what
+  /// the dates read back as, so it goes on before them; an all-day event
+  /// carries no time zone, so that goes on last. Applying it twice is
+  /// harmless — every field is an assignment and alarms are replaced whole.
+  func apply(to event: EKEvent, start: Date?, end: Date?) {
+    applyFields(to: event)
+    if let isAllDay = isAllDay { event.isAllDay = isAllDay }
+    if let start = start { event.startDate = start }
+    if let end = end { event.endDate = end }
+    if event.isAllDay {
+      event.timeZone = nil
+    } else if let identifier = timeZone {
+      event.timeZone = TimeZone(identifier: identifier)
+    }
+  }
+
+  /// The field edits alone: everything but the all-day flag, the dates and
+  /// the time zone, which `apply(to:start:end:)` orders.
+  private func applyFields(to event: EKEvent) {
     if let title = title { event.title = title }
     if clearedFields.contains("description") {
       event.notes = nil
@@ -100,23 +156,4 @@ struct EventFieldPatch {
     event.alarms = minutes.map { EKAlarm(relativeOffset: -Double($0) * 60) }
   }
 
-  /// Sets the all-day flag, when the patch changes it. Kept out of
-  /// `apply(to:)` because it is ordered: the flag changes what the dates
-  /// read back as, so each write path sets it right after `apply(to:)` and
-  /// before its date changes — and `EventsService.updateEvent` flips it in a
-  /// save of its own when it detaches a timed occurrence.
-  func applyAllDay(to event: EKEvent) {
-    if let isAllDay = isAllDay { event.isAllDay = isAllDay }
-  }
-
-  /// Normalizes the event's time zone: all-day events carry none; otherwise
-  /// the patch's time zone applies when given. Call after `applyAllDay(to:)`
-  /// and any date changes, since the all-day flag may have just changed.
-  func applyTimeZone(to event: EKEvent) {
-    if event.isAllDay {
-      event.timeZone = nil
-    } else if let identifier = timeZone {
-      event.timeZone = TimeZone(identifier: identifier)
-    }
-  }
 }
