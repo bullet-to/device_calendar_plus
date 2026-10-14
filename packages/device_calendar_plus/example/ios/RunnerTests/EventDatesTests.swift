@@ -9,27 +9,7 @@ import XCTest
 /// Android writes (#203) in #195's end convention — instead of leaving the
 /// derivation to EventKit; explicit bounds pass through, an all-day end in
 /// its stored form.
-final class EventDatesTests: XCTestCase {
-  private let utc = TimeZone(identifier: "UTC")!
-  private let losAngeles = TimeZone(identifier: "America/Los_Angeles")!
-  private let newYork = TimeZone(identifier: "America/New_York")!
-
-  private func at(
-    _ zone: TimeZone, _ month: Int, _ day: Int, hour: Int = 0, minute: Int = 0
-  ) -> Date {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = zone
-    return calendar.date(
-      from: DateComponents(year: 2026, month: month, day: day, hour: hour, minute: minute)
-    )!
-  }
-
-  /// The last second of a calendar day in `zone`: where EventKit puts an
-  /// all-day event's end.
-  private func endOfDay(_ zone: TimeZone, _ month: Int, _ day: Int) -> Date {
-    return at(zone, month, day, hour: 23, minute: 59).addingTimeInterval(59)
-  }
-
+final class EventDatesTests: XCTestCase, DateFixtures {
   private func editedDates(
     start: Date,
     end: Date,
@@ -145,6 +125,39 @@ final class EventDatesTests: XCTestCase {
     )
     XCTAssertEqual(dates.start, at(losAngeles, 10, 22))
     XCTAssertEqual(dates.end, endOfDay(losAngeles, 10, 23))
+  }
+
+  // A timed edit writes the given bounds as they are. It's the flag the edit
+  // leaves the event with, not the one it had, that decides the end's form:
+  // an all-day event made timed must not lose a second off its new end.
+  func testTimedEditPassesTheGivenBoundsThrough() throws {
+    let newStart = at(losAngeles, 10, 22, hour: 10)
+    let newEnd = at(losAngeles, 10, 22, hour: 11)
+    let dates = try editedDates(
+      start: at(losAngeles, 10, 22),
+      end: endOfDay(losAngeles, 10, 22),
+      newStart: newStart,
+      newEnd: newEnd,
+      newIsAllDay: false,
+      wasAllDay: true,
+      deviceZone: losAngeles
+    )
+    XCTAssertEqual(dates.start, newStart)
+    XCTAssertEqual(dates.end, newEnd)
+  }
+
+  // A timed start alone leaves the end to the event.
+  func testTimedStartAloneLeavesTheEndAlone() throws {
+    let newStart = at(losAngeles, 10, 22, hour: 10)
+    let dates = try editedDates(
+      start: at(losAngeles, 10, 22, hour: 9),
+      end: at(losAngeles, 10, 22, hour: 12),
+      newStart: newStart,
+      newIsAllDay: false,
+      deviceZone: losAngeles
+    )
+    XCTAssertEqual(dates.start, newStart)
+    XCTAssertNil(dates.end)
   }
 
   // isAllDay true on an event that already is all-day is not a toggle: with

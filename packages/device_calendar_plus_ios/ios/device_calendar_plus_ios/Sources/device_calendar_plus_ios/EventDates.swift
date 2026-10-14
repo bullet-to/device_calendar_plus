@@ -2,11 +2,12 @@ import Foundation
 
 /// The date arithmetic behind a one-thing (`updateEvent`) write: the dates
 /// the edit writes, the all-day span a bare toggle gives a timed event, and
-/// the all-day end convention EventKit stores. Pure — the device zone is
-/// passed in rather than read from `TimeZone.current`, so native tests can
-/// drive the zones the integration harness can't set on iOS. Android keeps
-/// the same split: `EventTiming.kt` for the edited bounds, `AllDayDates.kt`
-/// for the toggle span.
+/// the all-day end convention EventKit stores, which `SeriesDates` (series
+/// edits) borrows for its own all-day ends. Pure — the device zone is passed
+/// in rather than read from `TimeZone.current`, so native tests can drive
+/// the zones the integration harness can't set on iOS. Android's counterpart
+/// is `EventTiming.kt` for the edited bounds; it keeps the all-day arithmetic
+/// (the toggle span, the UTC-midnight conversions) in `AllDayDates.kt`.
 enum EventDates {
   /// The dates an `updateEvent` edit writes for an event now at
   /// `start`–`end`, given the caller's optional `newStart`/`newEnd`, the
