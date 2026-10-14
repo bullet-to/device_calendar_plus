@@ -1073,23 +1073,31 @@ class EventsService {
 
     let newIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
 
-    // A bare all-day toggle — isAllDay true with no new dates, on a timed
-    // event — writes the all-day span itself, from the dates the event still
-    // has here (setting isAllDay changes what they read back as), so the
-    // event spans exactly the local days its timed self touched. Android's
-    // resolveEditedBounds does the same (#203).
-    var toggleSpan: (start: Date, end: Date)?
-    if newIsAllDay, !foundEvent.isAllDay, startDate == nil, endDate == nil {
-      guard let span = SeriesDates.allDayToggleSpan(
-        start: foundEvent.startDate, end: foundEvent.endDate, deviceZone: .current
-      ) else {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.operationFailed,
-          message: "Could not compute the event's all-day span"
-        )))
-        return
-      }
-      toggleSpan = span
+    // Resolve the dates to write while the live EKEvent is still unmodified
+    // (the rule updateRecurring states): a bare all-day toggle writes the
+    // span of the local days the timed event touched, as Android's
+    // resolveEditedBounds does (#203); otherwise the given bounds in the
+    // effective all-day frame.
+    let dates: (start: Date?, end: Date?)
+    switch SeriesDates.resolveEditedDates(
+      start: foundEvent.startDate,
+      end: foundEvent.endDate,
+      newStart: startDate,
+      newEnd: endDate,
+      newIsAllDay: newIsAllDay,
+      wasAllDay: foundEvent.isAllDay,
+      deviceZone: .current
+    ) {
+    case .success(let resolved):
+      dates = resolved
+    case .failure(let error):
+      completion(.failure(error))
+      return
+    }
+
+    func applyDates() {
+      if let start = dates.start { foundEvent.startDate = start }
+      if let end = dates.end { foundEvent.endDate = end }
     }
 
     // An occurrence edit that makes a timed occurrence all-day saves in two
@@ -1100,49 +1108,55 @@ class EventsService {
     // two days and a 23:30-00:30 one as three — while the same flip on an
     // already-detached occurrence, as on a one-off, persists right. The local
     // store, and so the simulator, gets the one-step save right too.
+    //
+    // Both saves commit. Whether the iCloud bug trips at the save or at the
+    // commit is unknown — only a committed first step has been seen right on
+    // the device — so staging it with `commit: false` and resetting on
+    // failure (as detachThisAndFollowing does) is untried. The price is a
+    // half-state when the second save fails: the occurrence is detached, with
+    // the all-day span as timed dates; its error names that.
     let flipsAllDay = timestamp != nil && newIsAllDay && !foundEvent.isAllDay
 
-    func applyDates() {
-      if let toggleSpan = toggleSpan {
-        foundEvent.startDate = toggleSpan.start
-        foundEvent.endDate = toggleSpan.end
-      }
-      if let startDate = startDate { foundEvent.startDate = startDate }
-      if let endDate = endDate {
-        foundEvent.endDate = SeriesDates.allDayStoredEnd(endDate, isAllDay: newIsAllDay)
-      }
-    }
-
-    patch.apply(to: foundEvent, allDay: !flipsAllDay)
-    applyDates()
+    patch.apply(to: foundEvent)
     if flipsAllDay {
-      do {
-        try eventStore.save(foundEvent, span: .thisEvent, commit: true)
-      } catch {
-        completion(.failure(CalendarError(
-          code: PlatformExceptionCodes.operationFailed,
-          message: "Failed to update event: \(error.localizedDescription)"
-        )))
+      applyDates()
+      if case .failure(let error) = saveThisEvent(foundEvent) {
+        completion(.failure(error))
         return
       }
-      foundEvent.isAllDay = newIsAllDay
-      // The flip changes what the dates read back as, so set them again
-      // under it.
-      applyDates()
     }
+    patch.applyAllDay(to: foundEvent)
+    // The flag changes what the dates read back as, so they go on under it
+    // (again, after the flip).
+    applyDates()
     patch.applyTimeZone(to: foundEvent)
 
     // One thing only: an occurrence edit detaches it as an exception (above,
     // when it also flips all-day), and a one-off saves as itself (a bare
     // series ID was refused above).
+    completion(saveThisEvent(
+      foundEvent,
+      orFail: flipsAllDay
+        ? "Failed to flip the detached occurrence all-day (it is detached but still timed)"
+        : "Failed to update event"
+    ))
+  }
+
+  /// Saves `event` alone — `.thisEvent`, committed: a one-off as itself, an
+  /// occurrence as a detached exception. A throw becomes `operationFailed`,
+  /// its message led by `failure`.
+  private func saveThisEvent(
+    _ event: EKEvent,
+    orFail failure: String = "Failed to update event"
+  ) -> Result<Void, CalendarError> {
     do {
-      try eventStore.save(foundEvent, span: .thisEvent, commit: true)
-      completion(.success(()))
+      try eventStore.save(event, span: .thisEvent, commit: true)
+      return .success(())
     } catch {
-      completion(.failure(CalendarError(
+      return .failure(CalendarError(
         code: PlatformExceptionCodes.operationFailed,
-        message: "Failed to update event: \(error.localizedDescription)"
-      )))
+        message: "\(failure): \(error.localizedDescription)"
+      ))
     }
   }
 
@@ -1383,8 +1397,9 @@ class EventsService {
       return
     }
 
-    // Apply field changes.
+    // Apply field changes, the all-day flag before the dates it reframes.
     patch.apply(to: foundEvent)
+    patch.applyAllDay(to: foundEvent)
 
     if let newEnd = newEnd {
       foundEvent.startDate = newStart

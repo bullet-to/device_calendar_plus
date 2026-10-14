@@ -10,12 +10,15 @@ enum SeriesRuleEdit {
   case clear
 }
 
-/// The date arithmetic behind a series update: which zone frames a series'
-/// calendar days, whether an anchor move lands on a day the rule generates,
-/// and the start the update leaves the series with. Pure — the device
-/// zone is passed in rather than read from `TimeZone.current`, so native
-/// tests can drive the zones the integration harness can't set on iOS.
-/// Android's counterpart is `SeriesDates.kt`.
+/// The date arithmetic behind event and series writes: which zone frames a
+/// series' calendar days, whether an anchor move lands on a day the rule
+/// generates, the start the update leaves the series with, and the dates a
+/// one-thing edit writes. The all-day storage conventions live here because
+/// both write paths (`updateEvent`, `updateRecurring`) share them. Pure —
+/// the device zone is passed in rather than read from `TimeZone.current`, so
+/// native tests can drive the zones the integration harness can't set on iOS.
+/// Android's counterpart is `SeriesDates.kt` (and `EventTiming.kt` for the
+/// one-thing edit).
 enum SeriesDates {
   /// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
   /// two platforms must stay in lockstep.
@@ -315,18 +318,54 @@ enum SeriesDates {
     return .success(resolved)
   }
 
+  /// The dates an `updateEvent` edit writes for an event now at
+  /// `start`–`end`, given the caller's optional `newStart`/`newEnd`, the
+  /// all-day flag the edit leaves it with (`newIsAllDay`) and the one it has
+  /// (`wasAllDay`). `nil` means "leave that bound as it is".
+  ///
+  /// A bare all-day toggle — `newIsAllDay` with no new dates, on a timed
+  /// event — writes `allDayToggleSpan`, the span Android writes (#203), so
+  /// the event covers exactly the local days its timed self touched.
+  /// Otherwise each given bound is written as is, an all-day end in its
+  /// stored form (`allDayStoredEnd`). Fails with `operationFailed` only when
+  /// the calendar can't compute the toggle span. Android's counterpart is
+  /// `resolveEditedBounds` in `EventTiming.kt`.
+  static func resolveEditedDates(
+    start: Date,
+    end: Date,
+    newStart: Date?,
+    newEnd: Date?,
+    newIsAllDay: Bool,
+    wasAllDay: Bool,
+    deviceZone: TimeZone
+  ) -> Result<(start: Date?, end: Date?), CalendarError> {
+    if newIsAllDay, !wasAllDay, newStart == nil, newEnd == nil {
+      guard let span = allDayToggleSpan(start: start, end: end, deviceZone: deviceZone) else {
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "Could not compute the event's all-day span"
+        ))
+      }
+      return .success((start: span.start, end: span.end))
+    }
+    return .success((
+      start: newStart,
+      end: newEnd.map { allDayStoredEnd($0, isAllDay: newIsAllDay) }
+    ))
+  }
+
   /// The dates a bare all-day toggle — `isAllDay` set true with no new dates
   /// — leaves a timed event with: midnight of the `deviceZone` day it starts
   /// on, through the last second of the last day it touches (its end's day,
   /// or the day before when it ends on a midnight; its own day when it has no
   /// span). `nil` only when the calendar can't compute the day after.
   ///
-  /// Left with its raw timed dates under `isAllDay`, EventKit derives this
-  /// span itself on a local calendar, but an iCloud (CalDAV) calendar
-  /// persisted a detached occurrence's end a day late — a 23:30-00:30
-  /// occurrence read back as three days, not two — so the write path sets
-  /// the span explicitly. Android's counterpart is `AllDayDates.toggleSpan`.
-  static func allDayToggleSpan(
+  /// Written explicitly so iOS conforms to the span Android writes
+  /// (`AllDayDates.toggleSpan`, #203) in #195's end convention, instead of
+  /// leaving the derivation to EventKit. It is not what cures the iCloud
+  /// store's day-late end on a detach-plus-flip — that is the two-step save
+  /// (see `flipsAllDay` in `EventsService.updateEvent`).
+  private static func allDayToggleSpan(
     start: Date,
     end: Date,
     deviceZone: TimeZone

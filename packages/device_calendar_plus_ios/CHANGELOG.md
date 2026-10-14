@@ -8,10 +8,10 @@
   happened in one save, whatever end was written: a 9–10am occurrence read
   back as two days and a 23:30–00:30 one as three. The local store, and so
   the simulator, got the one-step save right. Without `startDate` or
-  `endDate` the all-day span is now also written explicitly — local midnight
-  of the start day through the last second of the last day the timed event
-  touched, the span Android writes (#203) in #195's end convention — rather
-  than left to EventKit.
+  `endDate`, on a one-off as well as an occurrence, the all-day span is now
+  also written explicitly — local midnight of the start day through the last
+  second of the last day the timed event touched, the span Android writes
+  (#203) in #195's end convention — rather than left to EventKit.
 
 ## 0.9.1 - 2026-10-01
 
