@@ -300,7 +300,7 @@ class EventsService {
     
     if let timestampMillis = timestamp {
       // Recurring event with timestamp
-      let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
+      let occurrenceDate = Date(millis: timestampMillis)
       
       // Query ±1 second around the exact occurrence time
       // We use a small window since we have the precise timestamp
@@ -355,7 +355,7 @@ class EventsService {
     
     let occurrenceDate: Date?
     if let timestampMillis = timestamp {
-      occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestampMillis) / 1000.0)
+      occurrenceDate = Date(millis: timestampMillis)
     } else {
       occurrenceDate = nil
     }
@@ -594,10 +594,10 @@ class EventsService {
 
     if let title = title { event.title = title }
     if let startMillis = startDate {
-      event.startDate = Date(timeIntervalSince1970: TimeInterval(startMillis) / 1000.0)
+      event.startDate = Date(millis: startMillis)
     }
     if let endMillis = endDate {
-      event.endDate = Date(timeIntervalSince1970: TimeInterval(endMillis) / 1000.0)
+      event.endDate = Date(millis: endMillis)
     }
     if let description = description { event.notes = description }
     if let location = location { event.location = location }
@@ -1101,7 +1101,7 @@ class EventsService {
   /// Shared by `updateEvent` and `deleteEvent` (instance edits) and
   /// `updateRecurring` and `deleteRecurring` (`thisAndFollowing`).
   private func findOccurrence(eventId: String, timestamp: Int64) -> EKEvent? {
-    let occurrenceDate = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0)
+    let occurrenceDate = Date(millis: timestamp)
     let predicate = eventStore.predicateForEvents(
       withStart: occurrenceDate.addingTimeInterval(-1),
       end: occurrenceDate.addingTimeInterval(1),
@@ -1126,46 +1126,30 @@ class EventsService {
     _ rule: EKRecurrenceRule,
     endingBefore date: Date
   ) -> EKRecurrenceRule {
-    return EKRecurrenceRule(
-      recurrenceWith: rule.frequency,
-      interval: rule.interval,
-      daysOfTheWeek: rule.daysOfTheWeek,
-      daysOfTheMonth: rule.daysOfTheMonth,
-      monthsOfTheYear: rule.monthsOfTheYear,
-      weeksOfTheYear: rule.weeksOfTheYear,
-      daysOfTheYear: rule.daysOfTheYear,
-      setPositions: rule.setPositions,
-      end: EKRecurrenceEnd(end: date.addingTimeInterval(-1))
+    return SeriesDates.ruleCopy(
+      rule, replacingEnd: EKRecurrenceEnd(end: date.addingTimeInterval(-1))
     )
   }
 
-  /// The start a series update leaves `event` with — see
-  /// `SeriesDates.resolveSeriesStart`, which this feeds the event's stored
-  /// start and zone, and the device's zone. `newStartMillis` is the target
-  /// start; `timestamp` picks the reference occurrence (the series anchor
-  /// when nil).
+  /// The start a series update leaves `event` with, and the rule it writes
+  /// — see `SeriesDates.resolveSeriesStart`, which this feeds the event's
+  /// stored start and zone, and the device's zone.
+  /// `newStartMillis` is the target start; `timestamp` picks the reference
+  /// occurrence (the series anchor when nil).
   private func resolveSeriesStart(
     for event: EKEvent,
     newStartMillis: Int64?,
     timestamp: Int64?,
     isAllDay: Bool,
-    ruleEdit: SeriesRuleEdit,
-    splitsSeries: Bool
-  ) -> Result<Date, CalendarError> {
-    let target = newStartMillis.map {
-      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
-    }
-    let reference: Date = timestamp.map {
-      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
-    } ?? event.startDate
+    ruleEdit: SeriesRuleEdit
+  ) -> Result<SeriesWrite, CalendarError> {
     return SeriesDates.resolveSeriesStart(
       base: event.startDate,
       storedZone: event.timeZone,
-      target: target,
-      reference: reference,
+      target: newStartMillis.map { Date(millis: $0) },
+      reference: timestamp.map { Date(millis: $0) } ?? event.startDate,
       isAllDay: isAllDay,
       ruleEdit: ruleEdit,
-      splitsSeries: splitsSeries,
       deviceZone: .current
     )
   }
@@ -1294,21 +1278,23 @@ class EventsService {
       ruleEdit = .keep(foundEvent.recurrenceRules?.first)
     }
 
-    let newStart: Date
+    // Resolve the start, and the rule to write, before touching the event:
+    // both read its stored start.
+    let resolved: SeriesWrite
     switch resolveSeriesStart(
       for: foundEvent,
       newStartMillis: newStartMillis,
       timestamp: timestamp,
       isAllDay: effectiveIsAllDay,
-      ruleEdit: ruleEdit,
-      splitsSeries: span == "thisAndFollowing"
+      ruleEdit: ruleEdit
     ) {
-    case .success(let start):
-      newStart = start
+    case .success(let write):
+      resolved = write
     case .failure(let error):
       completion(.failure(error))
       return
     }
+    let newStart = resolved.start
 
     // Resolve the end for the new start, still before touching the event:
     // `nil` for a change that moves nothing, which skips the time rewrite.
@@ -1344,22 +1330,22 @@ class EventsService {
     // series by hand rather than through the shared save below — mirror
     // Android's dedicated `updateRecurringThisAndFollowing` (#93).
     if span == "thisAndFollowing",
-       case .clear = ruleEdit,
+       case .clear = resolved.rule,
        let timestamp = timestamp {
       detachThisAndFollowing(
         occurrence: foundEvent,
         eventId: eventId,
-        occurrenceDate: Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000.0),
+        occurrenceDate: Date(millis: timestamp),
         completion: completion
       )
       return
     }
 
-    // Apply the recurrence-rule patch.
-    switch ruleEdit {
+    // Apply the recurrence-rule patch — see SeriesRuleWrite.set (#194, #206).
+    switch resolved.rule {
+    case .leaveAsLoaded: break
+    case .set(let rule): foundEvent.recurrenceRules = [rule]
     case .clear: foundEvent.recurrenceRules = nil
-    case .replace(let rule): foundEvent.recurrenceRules = [rule]
-    case .keep: break
     }
 
     // Both series spans save with .futureEvents: from the master that is the

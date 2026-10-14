@@ -4,17 +4,50 @@ import XCTest
 
 @testable import device_calendar_plus_ios
 
-/// Shared fixtures for the recurrence tests: a fixed zone, dates built in it,
-/// and a terse `EKRecurrenceRule` builder. Conform a test case to pick them up.
+/// Shared fixtures for the recurrence tests: the zones they frame series in,
+/// dates built in them, a terse `EKRecurrenceRule` builder and the rules and
+/// moves more than one case drives. Conform a test case to pick them up.
 protocol RecurrenceFixtures {}
 
 extension RecurrenceFixtures {
   var stockholm: TimeZone { TimeZone(identifier: "Europe/Stockholm")! }
+  var utc: TimeZone { TimeZone(identifier: "UTC")! }
+  var sydney: TimeZone { TimeZone(identifier: "Australia/Sydney")! }
 
-  func at(_ year: Int, _ month: Int, _ day: Int, hour: Int = 10) -> Date {
+  /// The wall-clock date `year`-`month`-`day` at `hour` o'clock in `zone`:
+  /// midnight unless `hour` is given.
+  func at(_ zone: TimeZone, _ year: Int, _ month: Int, _ day: Int, hour: Int = 0) -> Date {
     var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = stockholm
+    calendar.timeZone = zone
     return calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+  }
+
+  /// `at(stockholm, …)` for the timed Stockholm series most moves drive, at
+  /// 10:00 unless `hour` is given.
+  func at(_ year: Int, _ month: Int, _ day: Int, hour: Int = 10) -> Date {
+    return at(stockholm, year, month, day, hour: hour)
+  }
+
+  /// Weekly on Monday, Wednesday and Friday.
+  var mondayWednesdayFriday: EKRecurrenceRule {
+    rule(.weekly, days: [EKWeekday.monday, .wednesday, .friday].map { EKRecurrenceDayOfWeek($0) })
+  }
+
+  /// Moves the occurrence at `reference` (the series start when nil) of a
+  /// timed `rule` series in Stockholm that starts at `from` to `to`, keeping
+  /// the rule: what `SeriesDates.resolveSeriesStart` writes for it.
+  func resolveTimedMove(
+    _ rule: EKRecurrenceRule, from: Date, to: Date, reference: Date? = nil
+  ) -> Result<SeriesWrite, CalendarError> {
+    return SeriesDates.resolveSeriesStart(
+      base: from,
+      storedZone: stockholm,
+      target: to,
+      reference: reference ?? from,
+      isAllDay: false,
+      ruleEdit: .keep(rule),
+      deviceZone: stockholm
+    )
   }
 
   func rule(

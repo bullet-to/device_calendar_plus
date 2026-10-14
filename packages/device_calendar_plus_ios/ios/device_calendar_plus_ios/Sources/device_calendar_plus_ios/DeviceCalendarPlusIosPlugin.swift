@@ -305,8 +305,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     }
     
     // Convert milliseconds to Date
-    let startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
-    let endDate = Date(timeIntervalSince1970: TimeInterval(endDateMillis) / 1000.0)
+    let startDate = Date(millis: startDateMillis)
+    let endDate = Date(millis: endDateMillis)
     
     // Parse calendar IDs (optional)
     let calendarIds = args["calendarIds"] as? [String]
@@ -529,8 +529,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     let reminders = args["reminders"] as? [Int]
 
     // Convert dates
-    let startDate = Date(timeIntervalSince1970: TimeInterval(startDateMillis) / 1000.0)
-    let endDate = Date(timeIntervalSince1970: TimeInterval(endDateMillis) / 1000.0)
+    let startDate = Date(millis: startDateMillis)
+    let endDate = Date(millis: endDateMillis)
 
     runOnProvider(result) {
       self.eventsService.createEvent(
@@ -599,12 +599,8 @@ public class DeviceCalendarPlusIosPlugin: NSObject, FlutterPlugin, EKEventViewDe
     
     // Parse optional parameters
     let timestamp = args["timestamp"] as? Int64
-    let startDate = (args["startDate"] as? Int64).map {
-      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
-    }
-    let endDate = (args["endDate"] as? Int64).map {
-      Date(timeIntervalSince1970: TimeInterval($0) / 1000.0)
-    }
+    let startDate = (args["startDate"] as? Int64).map { Date(millis: $0) }
+    let endDate = (args["endDate"] as? Int64).map { Date(millis: $0) }
 
     let patch = EventFieldPatch(args: args)
     runOnProvider(result) {

@@ -6,6 +6,18 @@
   recognise, instead of silently reading it as `denied` (#127).
 
 ### Fixed
+- `updateRecurring` with `EventSpan.thisAndFollowing` and a `start` on
+  another day the kept rule generates (the Wednesday of a Mon/Wed/Fri series
+  moved to its Friday) now splits the series there: the old series ends
+  before that occurrence, and the new one starts on the new day and
+  continues on the rule. It used to throw
+  `DeviceCalendarException(invalidArguments)` whenever the rule pins days
+  (#194).
+- iOS: `updateRecurring` with `EventSpan.allEvents` and a `start` on another
+  day of a rule that pins days (the Monday of a Mon/Wed series moved to its
+  Wednesday) moves the series itself and returns its ID. It left the series
+  where it was, detached the first occurrence onto the new day beside it,
+  and returned that occurrence's `/RID=` ID (#206).
 - Android: `hasPermissions` without an Activity (a background context)
   reports `denied` when the plugin has recorded a denial, instead of
   `notDetermined` (#127). `CalendarPermissionStatus.notDetermined` now also

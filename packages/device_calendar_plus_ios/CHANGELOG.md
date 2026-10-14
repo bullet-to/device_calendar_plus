@@ -1,3 +1,20 @@
+## Unreleased
+
+### Fixed
+- `updateRecurring` with `allEvents` and a start on another day of a rule
+  that pins days (Monday of a Mon/Wed rule to its Wednesday) moves the
+  series. EventKit read the `.futureEvents` save, with the loaded rule left
+  untouched, as moving one occurrence: it left the master where it was,
+  detached the first occurrence onto the new day with no rule, and the
+  plugin returned that occurrence's `/RID=` ID. The kept rule is now set on
+  the event again for such a move, which makes the save a series edit
+  (#206).
+- `updateRecurring` with `thisAndFollowing` and a start on another day the
+  kept rule generates splits the series at the occurrence, with the rule's
+  remaining count carried over, instead of refusing the move while the rule
+  pins days. The same re-set of the kept rule makes EventKit split the
+  series rather than detach the occurrence (#194).
+
 ## 0.9.1 - 2026-10-01
 
 ### Fixed
