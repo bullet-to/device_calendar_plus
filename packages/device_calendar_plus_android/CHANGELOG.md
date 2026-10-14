@@ -1,6 +1,11 @@
 ## Unreleased
 
 ### Fixed
+- `updateRecurring` with `thisAndFollowing` and a start on another day the
+  kept rule generates splits the series there even when the rule pins days,
+  instead of refusing the move with `INVALID_ARGUMENTS`. The refusal only
+  stood in for iOS, which couldn't split such a series; the split itself was
+  always right here (#194).
 - `hasPermissions` without an Activity (a background context) reports
   `denied` when the plugin has recorded a denial, instead of a
   `notDetermined` that promised a dialog `requestPermissions` can't show

@@ -50,7 +50,6 @@ internal class AllDayStartFrameTest {
             false
         ),
         ruleEdit = ruleEdit,
-        splitsSeries = false,
         isAllDay = effectiveIsAllDay,
         timeZoneId = zone.id,
         storedZone = storedZone

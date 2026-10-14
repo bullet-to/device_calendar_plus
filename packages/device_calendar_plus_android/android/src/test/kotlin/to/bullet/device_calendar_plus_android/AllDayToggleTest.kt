@@ -63,7 +63,6 @@ internal class AllDayToggleTest {
             existingDurationMillis = duration,
             timeEdit = timeEdit(seriesStart = start, durationMillis = duration, zone = zone),
             ruleEdit = SeriesRuleEdit.Keep(rule),
-            splitsSeries = false,
             isAllDay = true,
             timeZoneId = seriesZoneId,
             storedZone = storedZone

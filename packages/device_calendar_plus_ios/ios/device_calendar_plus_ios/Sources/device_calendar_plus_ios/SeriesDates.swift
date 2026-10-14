@@ -10,12 +10,58 @@ enum SeriesRuleEdit {
   case clear
 }
 
+/// The recurrence rule a series update writes, decided by
+/// `SeriesDates.resolveSeriesStart` alongside the start.
+enum SeriesRuleWrite {
+  /// A kept rule that EventKit moves natively: leave the loaded rule alone.
+  case leaveAsLoaded
+
+  /// Set this rule on the event: a replacing rule, or a kept rule set again
+  /// as a fresh copy (#194, #206).
+  ///
+  /// A kept rule needs setting again, as a fresh copy, for EventKit to move
+  /// the series when the start moves onto another calendar day and the rule
+  /// pins days (BYDAY, BYMONTHDAY, BYMONTH or BYSETPOS). With the rule it
+  /// loaded left untouched, EventKit reads a `.futureEvents` save that
+  /// moves the start onto another day of a day-pinning rule as moving that
+  /// one occurrence: it leaves the master as it was and detaches the
+  /// occurrence, with no rule, onto the new day (a `thisEvent` edit). From
+  /// the anchor that loses the whole move and returns the detached
+  /// occurrence's `/RID=` ID (#206); from a later occurrence it never splits
+  /// the series (#194). A rule set again on the event, even one equal to
+  /// the old, makes the save a series edit: the master moves, or the series
+  /// splits at the occurrence with the kept rule's count carried over.
+  /// Time-only moves and rules that take their day from the start move
+  /// natively, as do replaced and cleared rules.
+  ///
+  /// The reference is read in the stored frame and the target in the edit
+  /// frame, as the start is resolved, so an all-day toggle onto another
+  /// local day counts as a day move. iOS-only: Android's provider moves and
+  /// splits such a series natively.
+  case set(EKRecurrenceRule)
+
+  /// Clear the event's rule.
+  case clear
+}
+
+/// What a series update writes, as `SeriesDates.resolveSeriesStart` resolves
+/// it: the series' new start and the rule the save writes.
+struct SeriesWrite {
+  /// The series' new start (its current one when nothing moves it).
+  let start: Date
+
+  /// The rule the save writes (`SeriesRuleWrite`).
+  let rule: SeriesRuleWrite
+}
+
 /// The date arithmetic behind a series update: which zone frames a series'
 /// calendar days, whether an anchor move lands on a day the rule generates,
-/// and the start the update leaves the series with. Pure — the device
-/// zone is passed in rather than read from `TimeZone.current`, so native
-/// tests can drive the zones the integration harness can't set on iOS.
-/// Android's counterpart is `SeriesDates.kt`.
+/// the start the update leaves the series with, and the rule the save writes
+/// to get there (`SeriesRuleWrite` — a day move of a day-pinning rule needs
+/// the kept rule set again, so `ruleCopy` builds the fresh one). Pure — the
+/// device zone is passed in rather than read from `TimeZone.current`, so
+/// native tests can drive the zones the integration harness can't set on
+/// iOS. Android's counterpart is `SeriesDates.kt`.
 enum SeriesDates {
   /// Mirrors Android's MINUTES_PER_DAY — the whole-day duration checks on the
   /// two platforms must stay in lockstep.
@@ -113,8 +159,8 @@ enum SeriesDates {
   }
 
   /// Whether `rule` pins the days it falls on (BYDAY, BYMONTHDAY, BYMONTH or
-  /// BYSETPOS) rather than taking them from its start. Android's
-  /// counterpart is `RruleString.pinsDays`.
+  /// BYSETPOS) rather than taking them from its start — see
+  /// `SeriesRuleWrite.set` (#194, #206).
   private static func pinsDays(_ rule: EKRecurrenceRule) -> Bool {
     return !(rule.daysOfTheWeek ?? []).isEmpty
       || !(rule.daysOfTheMonth ?? []).isEmpty
@@ -134,9 +180,9 @@ enum SeriesDates {
       == bCalendar.dateComponents([.year, .month, .day], from: b)
   }
 
-  /// The start a series update leaves a series with: `base` (its current
-  /// start) when nothing moves it. Android's counterpart is
-  /// `resolveSeriesTimes`.
+  /// The start a series update leaves a series with, `base` (its current
+  /// start) when nothing moves it, and the rule it writes. Android's
+  /// counterpart is `resolveSeriesTimes`.
   ///
   /// Frames: stored = `storedZone ?? deviceZone`; edit = `deviceZone` when
   /// `isAllDay`, else stored. All-day edits run locally because EventKit
@@ -159,8 +205,10 @@ enum SeriesDates {
   ///   frame, onto the first day it generates; a cleared rule needs
   ///   neither. A time-only move leaves a start the kept rule doesn't
   ///   generate (one anchored off its rule by another app, or in another
-  ///   zone) where it is. A `splitsSeries` (thisAndFollowing) move onto
-  ///   another day is also refused while the kept rule pins days (#194).
+  ///   zone) where it is.
+  /// - The rule to write (`SeriesWrite.rule`) is decided here too, from the
+  ///   same reference and target, so the caller never has to read the start
+  ///   again once the event has moved — see `SeriesRuleWrite.set`.
   ///
   /// Fails with `invalidArguments` when a start move lands on a day the kept
   /// rule doesn't generate or the new rule generates nothing within five
@@ -173,9 +221,8 @@ enum SeriesDates {
     reference: Date,
     isAllDay: Bool,
     ruleEdit: SeriesRuleEdit,
-    splitsSeries: Bool,
     deviceZone: TimeZone
-  ) -> Result<Date, CalendarError> {
+  ) -> Result<SeriesWrite, CalendarError> {
     let storedFrame = storedZone ?? deviceZone
     let editFrame = isAllDay ? deviceZone : storedFrame
     var start = base
@@ -191,36 +238,23 @@ enum SeriesDates {
         ))
       }
 
-      if case .keep(let keptRule?) = ruleEdit {
-        // EventKit can't split a series whose rule pins days at an
-        // occurrence moved to another day: `.futureEvents` detaches it
-        // instead (#194). Refused on both platforms until it can.
-        if splitsSeries, pinsDays(keptRule),
-           !sameCalendarDay(reference, storedFrame, target, editFrame) {
-          return .failure(CalendarError(
-            code: PlatformExceptionCodes.invalidArguments,
-            message: "start moves a thisAndFollowing split onto another day, but "
-              + "the series' recurrence rule pins specific days. Pass a "
-              + "recurrenceRule to specify the new pattern."
-          ))
-        }
-        if leavesRule(
-          keptRule, reference: reference, referenceZone: storedFrame,
-          base: base, target: target, shifted: shifted, timeZone: editFrame
-        ) {
-          return .failure(CalendarError(
-            code: PlatformExceptionCodes.invalidArguments,
-            message: "start moves this series onto a day its recurrence rule "
-              + "doesn't generate. Pass a recurrenceRule to specify the new pattern."
-          ))
-        }
+      if case .keep(let keptRule?) = ruleEdit,
+         leavesRule(
+           keptRule, reference: reference, referenceZone: storedFrame,
+           base: base, target: target, shifted: shifted, timeZone: editFrame
+         ) {
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.invalidArguments,
+          message: "start moves this series onto a day its recurrence rule "
+            + "doesn't generate. Pass a recurrenceRule to specify the new pattern."
+        ))
       }
       start = shifted
     }
 
-    if case .replace(let rule) = ruleEdit {
+    if case .replace(let newRule) = ruleEdit {
       guard let anchored = RecurrenceAnchor.firstMatch(
-        of: rule, onOrAfter: start, timeZone: editFrame
+        of: newRule, onOrAfter: start, timeZone: editFrame
       ) else {
         return .failure(CalendarError(
           code: PlatformExceptionCodes.invalidArguments,
@@ -229,7 +263,47 @@ enum SeriesDates {
       }
       start = anchored
     }
-    return .success(start)
+
+    // The rule to write, decided from the same reference and target as the
+    // start. A kept rule is set again only when the move changes the
+    // calendar day and the rule pins days (`SeriesRuleWrite.set`).
+    let movesDay = target.map { !sameCalendarDay(reference, storedFrame, $0, editFrame) } ?? false
+    let rule: SeriesRuleWrite
+    switch ruleEdit {
+    case .clear: rule = .clear
+    case .replace(let newRule): rule = .set(newRule)
+    case .keep(let keptRule?) where movesDay && pinsDays(keptRule): rule = .set(ruleCopy(keptRule))
+    case .keep: rule = .leaveAsLoaded
+    }
+    return .success(SeriesWrite(start: start, rule: rule))
+  }
+
+  /// A fresh `EKRecurrenceRule` with `rule`'s pattern, and its end unless
+  /// `replacingEnd` gives another.
+  ///
+  /// Built through the convenience initialiser, which has no parameter for
+  /// the first day of the week, so a WKST another app set is not carried:
+  /// the copy falls back to the locale's. `rule.copy()` would keep it, but
+  /// EventKit treats an `NSCopying` copy as the rule it loaded: set on the
+  /// event, it no longer makes a day move a series edit, and the
+  /// `.futureEvents` save detaches the occurrence again (the #194 and #206
+  /// integration tests fail with it). Only a rule built afresh flips the
+  /// save into the series-edit path.
+  static func ruleCopy(
+    _ rule: EKRecurrenceRule,
+    replacingEnd end: EKRecurrenceEnd? = nil
+  ) -> EKRecurrenceRule {
+    return EKRecurrenceRule(
+      recurrenceWith: rule.frequency,
+      interval: rule.interval,
+      daysOfTheWeek: rule.daysOfTheWeek,
+      daysOfTheMonth: rule.daysOfTheMonth,
+      monthsOfTheYear: rule.monthsOfTheYear,
+      weeksOfTheYear: rule.weeksOfTheYear,
+      daysOfTheYear: rule.daysOfTheYear,
+      setPositions: rule.setPositions,
+      end: end ?? rule.recurrenceEnd
+    )
   }
 
   /// The end a series update leaves a series with, once its start moves to

@@ -17,6 +17,7 @@
 		3A1C4F0B29B100E100134001 /* SeriesDatesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1C4F0A29B100E100134001 /* SeriesDatesTests.swift */; };
 		3A1C4F2129B100E100134001 /* DayMoveConflictTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1C4F2029B100E100134001 /* DayMoveConflictTests.swift */; };
 		3A1C4F2329B100E100134001 /* RecurrenceFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1C4F2229B100E100134001 /* RecurrenceFixtures.swift */; };
+		3A1C4F2529B100E100134001 /* SeriesRuleWriteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1C4F2429B100E100134001 /* SeriesRuleWriteTests.swift */; };
 		3A1C4F2629B100E100134001 /* EventDatesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1C4F2729B100E100134001 /* EventDatesTests.swift */; };
 		3A1C4F2829B100E100134001 /* DateFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1C4F2929B100E100134001 /* DateFixtures.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
@@ -62,6 +63,7 @@
 		3A1C4F0A29B100E100134001 /* SeriesDatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesDatesTests.swift; sourceTree = "<group>"; };
 		3A1C4F2029B100E100134001 /* DayMoveConflictTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayMoveConflictTests.swift; sourceTree = "<group>"; };
 		3A1C4F2229B100E100134001 /* RecurrenceFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecurrenceFixtures.swift; sourceTree = "<group>"; };
+		3A1C4F2429B100E100134001 /* SeriesRuleWriteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SeriesRuleWriteTests.swift; sourceTree = "<group>"; };
 		3A1C4F2729B100E100134001 /* EventDatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDatesTests.swift; sourceTree = "<group>"; };
 		3A1C4F2929B100E100134001 /* DateFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFixtures.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -110,6 +112,7 @@
 				3A1C4F0A29B100E100134001 /* SeriesDatesTests.swift */,
 				3A1C4F2029B100E100134001 /* DayMoveConflictTests.swift */,
 				3A1C4F2229B100E100134001 /* RecurrenceFixtures.swift */,
+				3A1C4F2429B100E100134001 /* SeriesRuleWriteTests.swift */,
 				3A1C4F2729B100E100134001 /* EventDatesTests.swift */,
 				3A1C4F2929B100E100134001 /* DateFixtures.swift */,
 			);
@@ -317,6 +320,7 @@
 				3A1C4F0B29B100E100134001 /* SeriesDatesTests.swift in Sources */,
 				3A1C4F2129B100E100134001 /* DayMoveConflictTests.swift in Sources */,
 				3A1C4F2329B100E100134001 /* RecurrenceFixtures.swift in Sources */,
+				3A1C4F2529B100E100134001 /* SeriesRuleWriteTests.swift in Sources */,
 				3A1C4F2629B100E100134001 /* EventDatesTests.swift in Sources */,
 				3A1C4F2829B100E100134001 /* DateFixtures.swift in Sources */,
 			);
