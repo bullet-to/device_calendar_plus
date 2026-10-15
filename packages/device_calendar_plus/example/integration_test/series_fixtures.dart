@@ -200,6 +200,35 @@ Future<void> expectDetachedOnce(
   );
 }
 
+/// Asserts the occurrence of [series] at [index] came off it under [title]
+/// after an edit flipped its all-day flag, and returns it: the one event
+/// listed under [title], over the window [seedWeeklySeries] listed the
+/// series in, with every other occurrence still on the series. [title] may
+/// be the series' own, as it is when the edit leaves the title alone: the
+/// master is filtered out by its event ID.
+Future<Event> expectDetachedOffSeries(
+  DeviceCalendar plugin,
+  String calendarId,
+  SeededSeries series,
+  int index,
+  String title,
+) async {
+  final detached = (await eventsTitled(plugin, calendarId, title, series.start,
+          windowDays: 30))
+      .where((e) => e.eventId != series.eventId)
+      .toList();
+  expect(detached, hasLength(1),
+      reason: 'the detached occurrence must be listed once');
+  expect(
+    startsOf(await occurrencesOf(
+        plugin, calendarId, series.eventId, series.start,
+        windowDays: 30)),
+    startsExcept(series.occurrences, {index}),
+    reason: 'every other occurrence must stay on the series',
+  );
+  return detached.single;
+}
+
 /// Asserts a `thisAndFollowing` split at [before] left the master's earlier
 /// occurrences ([keeps], by start) and nothing of it on or after the split.
 /// Pins no count on purpose: what the master lists in a detached
@@ -250,6 +279,42 @@ Future<SeededSeries> seedSeries(
     occurrences: occurrences,
   );
 }
+
+/// A weekly series titled [title] with [count] occurrences, seeded with them
+/// listed over 30 days — all of them, unless [minOccurrences] asks for fewer.
+/// The arrange of the occurrence all-day flip tests (#203, #210, #212),
+/// whose bodies are then the one `updateEvent` call under test and its
+/// assertions, and of the all-day duration and series toggle tests (#144,
+/// #195, #208). Timed from [start] (an hour from now by default) for
+/// [duration], or all-day from the next local midnight when [isAllDay]; on
+/// the start's weekday unless [daysOfWeek] pins others. Checks the group's
+/// calendar exists first.
+Future<SeededSeries> seedWeeklySeries(
+  DeviceCalendar plugin,
+  String? calendarId, {
+  String title = 'Weekly Series',
+  bool isAllDay = false,
+  DateTime? start,
+  Duration duration = const Duration(hours: 1),
+  List<DayOfWeek>? daysOfWeek,
+  int count = 4,
+  int? minOccurrences,
+}) =>
+    seedSeries(
+      plugin,
+      calendarId,
+      count: count,
+      minOccurrences: minOccurrences ?? count,
+      windowDays: 30,
+      create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+          plugin, calendarId,
+          title: title,
+          count: count,
+          daysOfWeek: daysOfWeek,
+          start: start,
+          duration: duration,
+          isAllDay: isAllDay),
+    );
 
 /// The other arrange step the per-occurrence tests share: edits [series]'
 /// occurrence at [index] through its instance ID, detaching it under
