@@ -6,6 +6,16 @@
   recognise, instead of silently reading it as `denied` (#127).
 
 ### Fixed
+- iOS: `updateEvent` with `isAllDay: false` and new dates on one occurrence
+  of an all-day series no longer reads back hours off on an iCloud calendar
+  (09:00–10:00 in Los Angeles came back as 02:00–03:00: the hours taken as
+  UTC). EventKit's iCloud store got the hours wrong when it detached and
+  flipped the occurrence in one save, so the plugin now detaches first and
+  flips second, as it already did for the all-day flip (#210); the local
+  store, and so the simulator, got it right (#212). Either flip now checks
+  that its first save detached the occurrence and throws
+  `DeviceCalendarException(operationFailed)`, the occurrence unchanged, when
+  it did not, rather than flipping an attached occurrence in one save.
 - `updateRecurring` with `EventSpan.thisAndFollowing` and a `start` on
   another day the kept rule generates (the Wednesday of a Mon/Wed/Fri series
   moved to its Friday) now splits the series there: the old series ends

@@ -46,20 +46,13 @@ Future<SeededSeries> createAllDayWeeklySeriesOnOwnWeekday(
   int count = 4,
 }) {
   final start = localMidnight(2);
-  return seedSeries(
-    plugin,
-    calendarId,
-    count: count,
-    minOccurrences: 1,
-    windowDays: 30,
-    create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
-        plugin, calendarId,
-        title: title,
-        count: count,
-        daysOfWeek: [weekdayOf(start)],
-        start: start,
-        isAllDay: true),
-  );
+  return seedWeeklySeries(plugin, calendarId,
+      title: title,
+      isAllDay: true,
+      start: start,
+      daysOfWeek: [weekdayOf(start)],
+      count: count,
+      minOccurrences: 1);
 }
 
 /// Asserts [occurrences] is the series a rule switch to weekday [on] leaves
@@ -1711,25 +1704,17 @@ void main() {
     });
 
     // The toggle alone, with no dates, must move the detached occurrence into
-    // the all-day frame. Android once wrote the occurrence's timed start and
-    // duration under ALL_DAY=1, and the provider reads an all-day time as a
-    // UTC date, so a time whose UTC date isn't its local one read back a day
-    // off. iOS: red on an iCloud calendar without the two-step save in
-    // EventsService.updateEvent, green on the simulator either way.
+    // the all-day frame (#203). Android once wrote the occurrence's timed
+    // start and duration under ALL_DAY=1, and the provider reads an all-day
+    // time as a UTC date, so a time whose UTC date isn't its local one read
+    // back a day off. iOS: red on an iCloud calendar without the two-step
+    // save in EventsService.updateEvent, green on the simulator either way.
     test(
         'updateEvent toggling a timed occurrence all-day with no dates keeps '
         'it on its calendar day', () async {
       final start = startOnOtherUtcDate(localMidnight(2));
-      final series = await seedSeries(
-        plugin,
-        calendarId,
-        count: 4,
-        minOccurrences: 4,
-        windowDays: 30,
-        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
-            plugin, calendarId,
-            title: 'Timed Occurrence To All-day', count: count, start: start),
-      );
+      final series = await seedWeeklySeries(plugin, calendarId,
+          title: 'Timed Occurrence To All-day', start: start);
       final target = series.occurrences[1];
 
       await plugin.updateEvent(
@@ -1741,16 +1726,13 @@ void main() {
       final lastDay = localDay(target.endDate
           .toLocal()
           .subtract(const Duration(milliseconds: 1)));
-      final detached = await eventsTitled(
-          plugin, calendarId!, 'All-day occurrence', series.start,
-          windowDays: 30);
-      expect(detached, hasLength(1),
-          reason: 'the detached occurrence must be listed once');
-      expect(detached.single.isAllDay, isTrue);
-      expect(localDay(detached.single.startDate.toLocal()),
+      final detached = await expectDetachedOffSeries(
+          plugin, calendarId!, series, 1, 'All-day occurrence');
+      expect(detached.isAllDay, isTrue);
+      expect(localDay(detached.startDate.toLocal()),
           localDay(target.startDate.toLocal()),
           reason: 'the occurrence must stay on its own calendar day');
-      expect(detached.single.endDate.toLocal(), nextLocalMidnight(lastDay),
+      expect(detached.endDate.toLocal(), nextLocalMidnight(lastDay),
           reason: 'the occurrence must span every day its timed self '
               'touched');
     });
@@ -1761,16 +1743,8 @@ void main() {
     test(
         'updateEvent toggling a timed occurrence all-day with a two-day span '
         'detaches it onto exactly those days', () async {
-      final series = await seedSeries(
-        plugin,
-        calendarId,
-        count: 4,
-        minOccurrences: 4,
-        windowDays: 30,
-        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
-            plugin, calendarId,
-            title: 'Timed Occurrence To Two Days', count: count),
-      );
+      final series = await seedWeeklySeries(plugin, calendarId,
+          title: 'Timed Occurrence To Two Days');
       final target = series.occurrences[1];
       final firstDay = localDay(target.startDate.toLocal());
       final dayAfterLast = daysOn(firstDay, 2);
@@ -1783,23 +1757,83 @@ void main() {
         endDate: dayAfterLast,
       );
 
-      final detached = await eventsTitled(
-          plugin, calendarId!, 'Two-day occurrence', series.start,
-          windowDays: 30);
-      expect(detached, hasLength(1),
-          reason: 'the detached occurrence must be listed once');
-      expect(detached.single.isAllDay, isTrue);
-      expect(detached.single.startDate.toLocal(), firstDay,
+      final detached = await expectDetachedOffSeries(
+          plugin, calendarId!, series, 1, 'Two-day occurrence');
+      expect(detached.isAllDay, isTrue);
+      expect(detached.startDate.toLocal(), firstDay,
           reason: 'the occurrence must start on the day asked for');
-      expect(detached.single.endDate.toLocal(), dayAfterLast,
+      expect(detached.endDate.toLocal(), dayAfterLast,
           reason: 'the occurrence must run two calendar days, not three');
-      expect(
-        startsOf(await occurrencesOf(
-            plugin, calendarId!, series.eventId, series.start,
-            windowDays: 30)),
-        startsExcept(series.occurrences, {1}),
-        reason: 'every other occurrence must stay on the series',
+    });
+
+    // The reverse flip (#212): an all-day occurrence made timed, with the
+    // hours to run. The dates are wall-clock hours of the occurrence's own
+    // day; the detached occurrence must read back at exactly those hours.
+    // iOS: red on an iCloud calendar, where the detached occurrence read
+    // back seven hours early (09:00-10:00 in Los Angeles as 02:00-03:00),
+    // green on the simulator's local store either way. The bug persists the
+    // written wall clock as UTC, so it only trips when the device zone's UTC
+    // offset is non-zero; in UTC the written wall clock already is UTC and
+    // the test stays green on the one-step shape too.
+    test(
+        'updateEvent making an all-day occurrence timed with dates detaches '
+        'it onto those hours', () async {
+      final series = await seedWeeklySeries(plugin, calendarId,
+          title: 'All-day Occurrence To Timed', isAllDay: true);
+      final target = series.occurrences[1];
+      final day = localDay(target.startDate.toLocal());
+      final newStart = DateTime(day.year, day.month, day.day, 9);
+      final newEnd = DateTime(day.year, day.month, day.day, 10);
+
+      // The flip and the hours alone, as #212 called it: nothing else
+      // changes, so the detached occurrence keeps the series title.
+      await plugin.updateEvent(
+        instanceId: target.instanceId,
+        isAllDay: false,
+        startDate: newStart,
+        endDate: newEnd,
       );
+
+      final detached = await expectDetachedOffSeries(
+          plugin, calendarId!, series, 1, 'All-day Occurrence To Timed');
+      expect(detached.isAllDay, isFalse);
+      expect(detached.startDate.toLocal(), newStart,
+          reason: 'the occurrence must start at the hour asked for');
+      expect(detached.endDate.toLocal(), newEnd,
+          reason: 'the occurrence must end at the hour asked for');
+    });
+
+    // The same flip with no dates, and a title, the mirror of the two-day
+    // test above: the toggle alone detaches the occurrence as a timed event.
+    // iOS: the same two-step save as the test above, with the first save
+    // carrying the title as well as the zone write (the test above carries
+    // the zone write alone); a first save that leaves the occurrence on the
+    // series fails with operationFailed instead of flipping it in one save.
+    // The day is asserted, not the hours: what hours a bare flip resolves to
+    // is not yet pinned across platforms.
+    test(
+        'updateEvent toggling an all-day occurrence timed with no dates '
+        'detaches it as a timed event', () async {
+      final series = await seedWeeklySeries(plugin, calendarId,
+          title: 'All-day Occurrence To Timed Bare', isAllDay: true);
+      final target = series.occurrences[1];
+
+      await plugin.updateEvent(
+        instanceId: target.instanceId,
+        title: 'Timed occurrence',
+        isAllDay: false,
+      );
+
+      final detached = await expectDetachedOffSeries(
+          plugin, calendarId!, series, 1, 'Timed occurrence');
+      expect(detached.isAllDay, isFalse);
+      expect(localDay(detached.startDate.toLocal()),
+          localDay(target.startDate.toLocal()),
+          reason: 'the occurrence must stay on its own calendar day',
+          skip: Platform.isAndroid
+              ? 'Android writes the all-day UTC midnight as the timed start, '
+                  'a day early west of UTC (#216)'
+              : false);
     });
 
     test(
@@ -3027,12 +3061,8 @@ void main() {
       // The shape #195 reported: allEvents with start and a whole-day
       // duration. iOS wrote the end as an exclusive midnight onto an event
       // that was already all-day, and EventKit read it as one more day.
-      final series = await seedSeries(plugin, calendarId,
-          create: (p, c, {count = 3}) =>
-              createWeeklySeries(p, c, count: count, isAllDay: true),
-          count: 3,
-          minOccurrences: 3,
-          windowDays: 30);
+      final series =
+          await seedWeeklySeries(plugin, calendarId, isAllDay: true, count: 3);
       final before = series.occurrences;
 
       await plugin.updateRecurring(
@@ -3097,19 +3127,10 @@ void main() {
       // hours, so the weekday the UTC-stored series pins is the local one too.
       final today = localMidnight(2);
       final start = DateTime(today.year, today.month, today.day, 12);
-      final series = await seedSeries(
-        plugin,
-        calendarId,
-        count: 4,
-        minOccurrences: 4,
-        windowDays: 30,
-        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
-            plugin, calendarId,
-            title: 'Timed To All-day',
-            count: count,
-            daysOfWeek: [weekdayOf(start)],
-            start: start),
-      );
+      final series = await seedWeeklySeries(plugin, calendarId,
+          title: 'Timed To All-day',
+          start: start,
+          daysOfWeek: [weekdayOf(start)]);
       final before = series.occurrences;
       final first = before.first.startDate.toLocal();
 
@@ -3154,22 +3175,12 @@ void main() {
     final seedDay = DateTime(2027, 6, 7);
     const seedDuration = Duration(hours: 1);
     const seedCount = 4;
-    Future<SeededSeries> seedTimedOffUtcDate(String title) async {
-      final start = startOnOtherUtcDate(seedDay);
-      return seedSeries(
-        plugin,
-        calendarId,
-        count: seedCount,
-        minOccurrences: seedCount,
-        windowDays: 30,
-        create: (plugin, calendarId, {int count = seedCount}) =>
-            createWeeklySeries(plugin, calendarId,
-                title: title,
-                count: count,
-                start: start,
-                duration: seedDuration),
-      );
-    }
+    Future<SeededSeries> seedTimedOffUtcDate(String title) =>
+        seedWeeklySeries(plugin, calendarId,
+            title: title,
+            start: startOnOtherUtcDate(seedDay),
+            duration: seedDuration,
+            count: seedCount);
 
     /// Asserts [after] is the all-day series a bare toggle leaves of a
     /// [seedTimedOffUtcDate] series [seeded]: its occurrences from index

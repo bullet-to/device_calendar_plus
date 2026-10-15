@@ -58,15 +58,19 @@ struct EventFieldPatch {
   /// The dates come from the caller rather than off the patch so
   /// `EventsService.updateEvent` can write the dates it resolved.
   func apply(to event: EKEvent, start: Date?, end: Date?) {
-    apply(to: event, isAllDay: isAllDay, start: start, end: end)
+    applyFields(to: event)
+    applyTiming(to: event, isAllDay: isAllDay, start: start, end: end)
   }
 
-  /// `apply(to:start:end:)` with the all-day flag from the caller in place of
-  /// the patch's own (`nil` leaves the event's), for the first of
-  /// `EventsService.updateEvent`'s two saves, which detaches a timed
-  /// occurrence before the flip.
-  func apply(to event: EKEvent, isAllDay: Bool?, start: Date?, end: Date?) {
-    applyFields(to: event)
+  /// The timing alone, in the order `apply(to:start:end:)` describes: the
+  /// all-day flag (`nil` leaves the event's), the dates (`nil` leaves a
+  /// bound), then the time zone — cleared on an all-day event, the patch's
+  /// (if any) on a timed one. `EventsService.detachThenFlipAllDay` writes
+  /// this alone in its second save: the fields are already saved with the
+  /// detach.
+  func applyTiming(
+    to event: EKEvent, isAllDay: Bool?, start: Date?, end: Date?
+  ) {
     if let isAllDay = isAllDay { event.isAllDay = isAllDay }
     if let start = start { event.startDate = start }
     if let end = end { event.endDate = end }
@@ -78,8 +82,10 @@ struct EventFieldPatch {
   }
 
   /// The field edits alone: everything but the all-day flag, the dates and
-  /// the time zone, which `apply(to:start:end:)` orders.
-  private func applyFields(to event: EKEvent) {
+  /// the time zone, which `applyTiming(to:isAllDay:start:end:)` orders.
+  /// `EventsService.detachThenFlipAllDay` writes these in its first save,
+  /// with the timing its direction allows.
+  func applyFields(to event: EKEvent) {
     if let title = title { event.title = title }
     if clearedFields.contains("description") {
       event.notes = nil

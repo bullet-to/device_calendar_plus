@@ -1072,7 +1072,6 @@ class EventsService {
     }
 
     let newIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
-    let becomesAllDay = newIsAllDay && !foundEvent.isAllDay
 
     // Resolve the dates to write while the live EKEvent is still unmodified
     // (the rule updateRecurring states): a bare all-day toggle writes the
@@ -1096,10 +1095,11 @@ class EventsService {
       return
     }
 
-    // An occurrence edit that makes a timed occurrence all-day saves in two
+    // An occurrence edit that flips the all-day flag either way saves in two
     // steps (detachThenFlipAllDay); every other edit saves once.
-    if timestamp != nil && becomesAllDay {
-      completion(detachThenFlipAllDay(foundEvent, patch: patch, dates: dates))
+    if timestamp != nil && newIsAllDay != foundEvent.isAllDay {
+      completion(detachThenFlipAllDay(
+        foundEvent, to: newIsAllDay, patch: patch, dates: dates))
       return
     }
     patch.apply(to: foundEvent, start: dates.start, end: dates.end)
@@ -1109,39 +1109,61 @@ class EventsService {
     completion(saveThisEvent(foundEvent))
   }
 
-  /// Makes the timed occurrence `event` all-day in two saves: every other
-  /// change and the dates first, which detaches the occurrence, then the
-  /// flip. EventKit's iCloud store gets a detach and the flip in one save
-  /// wrong — the detached occurrence's end persisted a day late whatever end
-  /// was written, so a 9-10am occurrence read back as two days and a
-  /// 23:30-00:30 one as three — while the same flip on an already-detached
-  /// occurrence, as on a one-off, persists right. The local store, and so
-  /// the simulator, gets the one-step save right too.
+  /// Flips the all-day flag of the occurrence `event` to `allDay` in two
+  /// committed saves: every other change first, which detaches the
+  /// occurrence, then the flip with the dates. EventKit's iCloud store gets
+  /// a detach and a flip in one save wrong in both directions (#210, #212);
+  /// the local store, and so the simulator, gets it right, so only a
+  /// signed-in iPhone can see a regression here. CONTRIBUTING ("The iCloud
+  /// two-step save needs a signed-in iPhone") has the symptoms, the tests
+  /// and the run.
   ///
-  /// Both saves commit. Whether the iCloud bug trips at the save or at the
-  /// commit is unknown — only a committed first step has been seen right on
-  /// the device — so staging it with `commit: false` and resetting on
-  /// failure (as detachThisAndFollowing does) is untried. The price is a
-  /// half-state when the second save fails: the occurrence is detached, with
-  /// the all-day span as timed dates; its error names that.
+  /// The first save detaches only if it carries a change: EventKit saves
+  /// nothing for an occurrence with none. What carries it differs by
+  /// direction. Timed to all-day writes the all-day span as timed dates —
+  /// for a bare `isAllDay: true` the only change there is. All-day to timed
+  /// leaves the dates off, since timed hours on a still-all-day occurrence
+  /// would only be read as days, and writes the zone instead. Whether the
+  /// first save detached is checked, not assumed: one that did not fails
+  /// before the flip, which would otherwise re-run the one-save bug.
+  ///
+  /// Both saves commit. Staging the first with `commit: false` and resetting
+  /// on failure (as detachThisAndFollowing does) is untried on the device.
+  /// The price is a half-state when the second save fails: the occurrence is
+  /// detached but unflipped; its error says so.
   private func detachThenFlipAllDay(
     _ event: EKEvent,
+    to allDay: Bool,
     patch: EventFieldPatch,
     dates: (start: Date?, end: Date?)
   ) -> Result<Void, CalendarError> {
-    patch.apply(to: event, isAllDay: nil, start: dates.start, end: dates.end)
+    // Step 1: detach. The fields, plus the timing this direction can carry
+    // before the flip: the all-day span as timed dates (timed -> all-day),
+    // or nothing but the zone write (all-day -> timed), a no-op value whose
+    // setter still dirties the occurrence so the save detaches it. The guard
+    // checks it did.
+    patch.applyFields(to: event)
+    patch.applyTiming(
+      to: event, isAllDay: nil,
+      start: allDay ? dates.start : nil,
+      end: allDay ? dates.end : nil)
     if case .failure(let error) = saveThisEvent(event) {
       return .failure(error)
     }
-    // The flip alone, in apply's order (flag, dates, zone): the fields are
-    // saved, and the dates go on again under the flag they were resolved for.
-    event.isAllDay = true
-    if let start = dates.start { event.startDate = start }
-    if let end = dates.end { event.endDate = end }
-    event.timeZone = nil
+    guard event.isDetached else {
+      eventStore.reset()
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "The occurrence did not detach before its all-day flag could be flipped; it is unchanged"
+      ))
+    }
+    // Step 2: the flip alone. The fields are saved, and the dates go on
+    // under the flag they were resolved for.
+    patch.applyTiming(
+      to: event, isAllDay: allDay, start: dates.start, end: dates.end)
     return saveThisEvent(
       event,
-      orFail: "Failed to flip the detached occurrence all-day (it is detached but still timed)"
+      orFail: "Failed to flip the detached occurrence's all-day flag (it is detached, flag unchanged)"
     )
   }
 
