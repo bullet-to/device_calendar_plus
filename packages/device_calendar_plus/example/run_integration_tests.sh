@@ -171,10 +171,17 @@ if [ "$PLATFORM" == "ios" ]; then
     else
         # Physical device: simctl can't touch its TCC database, so there's no way
         # to pre-grant from the CLI. The first run prompts on-device; tap Allow
-        # once and the grant persists across reinstalls for this bundle id.
+        # once. iOS keeps the grant only while the app stays installed, and
+        # `flutter test` uninstalls the app after a run by default, so run_tests
+        # passes --no-uninstall on a physical device to keep both.
         echo -e "${YELLOW}📱 Physical device detected — calendar permission cannot be auto-granted${NC}"
-        echo -e "${YELLOW}   👉 Watch the device and tap \"Allow\" on the calendar prompt the first time.${NC}"
-        echo -e "${YELLOW}   (Once granted it persists for to.bullet.example, so later runs won't prompt.)${NC}"
+        echo -e "${YELLOW}   👉 Watch the device and tap \"Allow Full Access\" on the calendar prompt the first time.${NC}"
+        echo -e "${YELLOW}   (The app is left installed afterwards, so later runs won't prompt.)${NC}"
+
+        # A checkout last built for the simulator has no device build settings
+        # and `flutter test` fails with "No Xcode build settings have been
+        # found"; regenerate them for a device build first.
+        (cd "$(dirname "$0")" && flutter build ios --config-only --debug > /dev/null)
     fi
     echo ""
 
@@ -241,6 +248,13 @@ run_tests() {
         kill "$grant_pid" 2>/dev/null || true
         wait "$grant_pid" 2>/dev/null || true
         return $result
+    fi
+    # Physical iOS device: keep the app installed after the run (see the
+    # permission note above) — the default uninstall takes the calendar grant
+    # with it and every run would prompt again.
+    if [ "$PLATFORM" == "ios" ] && [ "$IOS_IS_SIMULATOR" != true ]; then
+        flutter test integration_test/all_tests.dart -d "$DEVICE_ID" --no-uninstall
+        return $?
     fi
     flutter test integration_test/all_tests.dart -d "$DEVICE_ID"
 }
@@ -309,8 +323,8 @@ elif [ "$PLATFORM" == "ios" ] && [ "$IOS_IS_SIMULATOR" == true ]; then
     echo -e "${CYAN}🧹 Uninstalling app from $DEVICE_ID${NC}"
     xcrun simctl uninstall "$DEVICE_ID" to.bullet.example > /dev/null 2>&1 || true
 elif [ "$PLATFORM" == "ios" ]; then
-    # Physical device: keep the app installed so the on-device calendar grant
-    # persists and later runs don't prompt again.
+    # Physical device: the run itself passed --no-uninstall, so the app and the
+    # on-device calendar grant stay and later runs don't prompt again.
     echo -e "${CYAN}🧹 Leaving app installed on physical device (preserves the permission grant)${NC}"
 fi
 
