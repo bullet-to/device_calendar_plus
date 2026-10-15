@@ -75,6 +75,8 @@ flutter build ios --config-only --debug
 flutter test integration_test/recurrence_test.dart -d <iphone-udid> --no-uninstall
 ```
 
+`--no-uninstall` matters: `flutter test` removes the app from a physical device after the run by default, and iOS drops the calendar grant with it, so the next run prompts again. `run_integration_tests.sh <iphone-udid>` does both steps for the full suite.
+
 `--no-uninstall` matters on a physical device: a plain `flutter test` uninstalls the app afterwards and iOS drops the calendar grant with it, so every run would re-prompt. Tap **Allow Full Access** once on the first run and later runs keep it.
 
 ### Running tests
