@@ -1714,7 +1714,8 @@ void main() {
     // the all-day frame. Android once wrote the occurrence's timed start and
     // duration under ALL_DAY=1, and the provider reads an all-day time as a
     // UTC date, so a time whose UTC date isn't its local one read back a day
-    // off.
+    // off. iOS: red on an iCloud calendar without the two-step save in
+    // EventsService.updateEvent, green on the simulator either way.
     test(
         'updateEvent toggling a timed occurrence all-day with no dates keeps '
         'it on its calendar day', () async {
@@ -1752,6 +1753,53 @@ void main() {
       expect(detached.single.endDate.toLocal(), nextLocalMidnight(lastDay),
           reason: 'the occurrence must span every day its timed self '
               'touched');
+    });
+
+    // The same flip with explicit dates: the occurrence detaches onto the
+    // caller's all-day span, no more. iOS: the same two-step save as the test
+    // above.
+    test(
+        'updateEvent toggling a timed occurrence all-day with a two-day span '
+        'detaches it onto exactly those days', () async {
+      final series = await seedSeries(
+        plugin,
+        calendarId,
+        count: 4,
+        minOccurrences: 4,
+        windowDays: 30,
+        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+            plugin, calendarId,
+            title: 'Timed Occurrence To Two Days', count: count),
+      );
+      final target = series.occurrences[1];
+      final firstDay = localDay(target.startDate.toLocal());
+      final dayAfterLast = daysOn(firstDay, 2);
+
+      await plugin.updateEvent(
+        instanceId: target.instanceId,
+        title: 'Two-day occurrence',
+        isAllDay: true,
+        startDate: firstDay,
+        endDate: dayAfterLast,
+      );
+
+      final detached = await eventsTitled(
+          plugin, calendarId!, 'Two-day occurrence', series.start,
+          windowDays: 30);
+      expect(detached, hasLength(1),
+          reason: 'the detached occurrence must be listed once');
+      expect(detached.single.isAllDay, isTrue);
+      expect(detached.single.startDate.toLocal(), firstDay,
+          reason: 'the occurrence must start on the day asked for');
+      expect(detached.single.endDate.toLocal(), dayAfterLast,
+          reason: 'the occurrence must run two calendar days, not three');
+      expect(
+        startsOf(await occurrencesOf(
+            plugin, calendarId!, series.eventId, series.start,
+            windowDays: 30)),
+        startsExcept(series.occurrences, {1}),
+        reason: 'every other occurrence must stay on the series',
+      );
     });
 
     test(

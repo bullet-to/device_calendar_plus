@@ -1071,24 +1071,95 @@ class EventsService {
       }
     }
 
-    // Get new data into event
-    patch.apply(to: foundEvent)
-    if let startDate = startDate { foundEvent.startDate = startDate }
-    if let endDate = endDate {
-      foundEvent.endDate = SeriesDates.allDayStoredEnd(endDate, isAllDay: foundEvent.isAllDay)
+    let newIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
+    let becomesAllDay = newIsAllDay && !foundEvent.isAllDay
+
+    // Resolve the dates to write while the live EKEvent is still unmodified
+    // (the rule updateRecurring states): a bare all-day toggle writes the
+    // span of the local days the timed event touched, as Android's
+    // resolveEditedBounds does (#203); otherwise the given bounds in the
+    // effective all-day frame.
+    let dates: (start: Date?, end: Date?)
+    switch EventDates.resolveEditedDates(
+      start: foundEvent.startDate,
+      end: foundEvent.endDate,
+      newStart: startDate,
+      newEnd: endDate,
+      newIsAllDay: newIsAllDay,
+      wasAllDay: foundEvent.isAllDay,
+      deviceZone: .current
+    ) {
+    case .success(let resolved):
+      dates = resolved
+    case .failure(let error):
+      completion(.failure(error))
+      return
     }
-    patch.applyTimeZone(to: foundEvent)
+
+    // An occurrence edit that makes a timed occurrence all-day saves in two
+    // steps (detachThenFlipAllDay); every other edit saves once.
+    if timestamp != nil && becomesAllDay {
+      completion(detachThenFlipAllDay(foundEvent, patch: patch, dates: dates))
+      return
+    }
+    patch.apply(to: foundEvent, start: dates.start, end: dates.end)
 
     // One thing only: an occurrence edit detaches it as an exception, and a
     // one-off saves as itself (a bare series ID was refused above).
+    completion(saveThisEvent(foundEvent))
+  }
+
+  /// Makes the timed occurrence `event` all-day in two saves: every other
+  /// change and the dates first, which detaches the occurrence, then the
+  /// flip. EventKit's iCloud store gets a detach and the flip in one save
+  /// wrong — the detached occurrence's end persisted a day late whatever end
+  /// was written, so a 9-10am occurrence read back as two days and a
+  /// 23:30-00:30 one as three — while the same flip on an already-detached
+  /// occurrence, as on a one-off, persists right. The local store, and so
+  /// the simulator, gets the one-step save right too.
+  ///
+  /// Both saves commit. Whether the iCloud bug trips at the save or at the
+  /// commit is unknown — only a committed first step has been seen right on
+  /// the device — so staging it with `commit: false` and resetting on
+  /// failure (as detachThisAndFollowing does) is untried. The price is a
+  /// half-state when the second save fails: the occurrence is detached, with
+  /// the all-day span as timed dates; its error names that.
+  private func detachThenFlipAllDay(
+    _ event: EKEvent,
+    patch: EventFieldPatch,
+    dates: (start: Date?, end: Date?)
+  ) -> Result<Void, CalendarError> {
+    patch.apply(to: event, isAllDay: nil, start: dates.start, end: dates.end)
+    if case .failure(let error) = saveThisEvent(event) {
+      return .failure(error)
+    }
+    // The flip alone, in apply's order (flag, dates, zone): the fields are
+    // saved, and the dates go on again under the flag they were resolved for.
+    event.isAllDay = true
+    if let start = dates.start { event.startDate = start }
+    if let end = dates.end { event.endDate = end }
+    event.timeZone = nil
+    return saveThisEvent(
+      event,
+      orFail: "Failed to flip the detached occurrence all-day (it is detached but still timed)"
+    )
+  }
+
+  /// Saves `event` alone — `.thisEvent`, committed: a one-off as itself, an
+  /// occurrence as a detached exception. A throw becomes `operationFailed`,
+  /// its message led by `failure`.
+  private func saveThisEvent(
+    _ event: EKEvent,
+    orFail failure: String = "Failed to update event"
+  ) -> Result<Void, CalendarError> {
     do {
-      try eventStore.save(foundEvent, span: .thisEvent, commit: true)
-      completion(.success(()))
+      try eventStore.save(event, span: .thisEvent, commit: true)
+      return .success(())
     } catch {
-      completion(.failure(CalendarError(
+      return .failure(CalendarError(
         code: PlatformExceptionCodes.operationFailed,
-        message: "Failed to update event: \(error.localizedDescription)"
-      )))
+        message: "\(failure): \(error.localizedDescription)"
+      ))
     }
   }
 
@@ -1315,15 +1386,8 @@ class EventsService {
       return
     }
 
-    // Apply field changes.
-    patch.apply(to: foundEvent)
-
-    if let newEnd = newEnd {
-      foundEvent.startDate = newStart
-      foundEvent.endDate = newEnd
-    }
-
-    patch.applyTimeZone(to: foundEvent)
+    // Apply the field changes, and the new times when the change moves them.
+    patch.apply(to: foundEvent, start: newEnd == nil ? nil : newStart, end: newEnd)
 
     // Clearing the rule on a `thisAndFollowing` split is the one case EventKit
     // gets wrong natively (it collapses the whole series), so it splits the
