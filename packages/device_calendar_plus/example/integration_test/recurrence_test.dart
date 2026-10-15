@@ -1802,6 +1802,62 @@ void main() {
       );
     });
 
+    // The reverse flip (#212): an all-day occurrence made timed, with the
+    // hours to run. The dates are wall-clock hours of the occurrence's own
+    // day; the detached occurrence must read back at exactly those hours.
+    // iOS: red on an iCloud calendar, where the detached occurrence read
+    // back seven hours early (09:00-10:00 in Los Angeles as 02:00-03:00),
+    // green on the simulator's local store either way.
+    test(
+        'updateEvent making an all-day occurrence timed with dates detaches '
+        'it onto those hours', () async {
+      final series = await seedSeries(
+        plugin,
+        calendarId,
+        count: 4,
+        minOccurrences: 4,
+        windowDays: 30,
+        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+            plugin, calendarId,
+            title: 'All-day Occurrence To Timed',
+            count: count,
+            isAllDay: true),
+      );
+      final target = series.occurrences[1];
+      final day = localDay(target.startDate.toLocal());
+      final newStart = DateTime(day.year, day.month, day.day, 9);
+      final newEnd = DateTime(day.year, day.month, day.day, 10);
+
+      // The flip and the hours alone, as #212 called it: nothing else
+      // changes, so the detached occurrence keeps the series title.
+      await plugin.updateEvent(
+        instanceId: target.instanceId,
+        isAllDay: false,
+        startDate: newStart,
+        endDate: newEnd,
+      );
+
+      final detached = (await eventsTitled(
+              plugin, calendarId!, 'All-day Occurrence To Timed', series.start,
+              windowDays: 30))
+          .where((e) => e.eventId != series.eventId)
+          .toList();
+      expect(detached, hasLength(1),
+          reason: 'the detached occurrence must be listed once');
+      expect(detached.single.isAllDay, isFalse);
+      expect(detached.single.startDate.toLocal(), newStart,
+          reason: 'the occurrence must start at the hour asked for');
+      expect(detached.single.endDate.toLocal(), newEnd,
+          reason: 'the occurrence must end at the hour asked for');
+      expect(
+        startsOf(await occurrencesOf(
+            plugin, calendarId!, series.eventId, series.start,
+            windowDays: 30)),
+        startsExcept(series.occurrences, {1}),
+        reason: 'every other occurrence must stay all-day on the series',
+      );
+    });
+
     test(
         'updateEvent with an instance ID rejects a startDate past the '
         'occurrence end', () async {

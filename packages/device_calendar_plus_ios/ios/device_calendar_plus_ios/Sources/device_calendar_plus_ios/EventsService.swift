@@ -1072,7 +1072,6 @@ class EventsService {
     }
 
     let newIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
-    let becomesAllDay = newIsAllDay && !foundEvent.isAllDay
 
     // Resolve the dates to write while the live EKEvent is still unmodified
     // (the rule updateRecurring states): a bare all-day toggle writes the
@@ -1096,10 +1095,11 @@ class EventsService {
       return
     }
 
-    // An occurrence edit that makes a timed occurrence all-day saves in two
+    // An occurrence edit that flips the all-day flag either way saves in two
     // steps (detachThenFlipAllDay); every other edit saves once.
-    if timestamp != nil && becomesAllDay {
-      completion(detachThenFlipAllDay(foundEvent, patch: patch, dates: dates))
+    if timestamp != nil && newIsAllDay != foundEvent.isAllDay {
+      completion(detachThenFlipAllDay(
+        foundEvent, to: newIsAllDay, patch: patch, dates: dates))
       return
     }
     patch.apply(to: foundEvent, start: dates.start, end: dates.end)
@@ -1109,39 +1109,61 @@ class EventsService {
     completion(saveThisEvent(foundEvent))
   }
 
-  /// Makes the timed occurrence `event` all-day in two saves: every other
-  /// change and the dates first, which detaches the occurrence, then the
-  /// flip. EventKit's iCloud store gets a detach and the flip in one save
-  /// wrong — the detached occurrence's end persisted a day late whatever end
-  /// was written, so a 9-10am occurrence read back as two days and a
-  /// 23:30-00:30 one as three — while the same flip on an already-detached
-  /// occurrence, as on a one-off, persists right. The local store, and so
-  /// the simulator, gets the one-step save right too.
+  /// Flips the all-day flag of the occurrence `event` to `allDay` in two
+  /// saves: every other change first, which detaches the occurrence, then
+  /// the flip with the dates. EventKit's iCloud store gets a detach and a
+  /// flip in one save wrong either way, while the same flip on an
+  /// already-detached occurrence, as on a one-off, persists right. The local
+  /// store, and so the simulator, gets the one-step save right too.
+  ///
+  /// Timed to all-day (#210): the detached occurrence's end persisted a day
+  /// late whatever end was written, so a 9-10am occurrence read back as two
+  /// days and a 23:30-00:30 one as three. The first save writes the all-day
+  /// span as timed dates too.
+  ///
+  /// All-day to timed (#212): the hours persisted as UTC wall clock — a
+  /// 09:00-10:00 occurrence in Los Angeles read back as 02:00-03:00, though
+  /// the saved EKEvent reported 16:00 UTC and its zone right up to the
+  /// commit. The first save leaves the all-day dates alone: timed hours put
+  /// on a still-all-day occurrence would only be read as days.
   ///
   /// Both saves commit. Whether the iCloud bug trips at the save or at the
   /// commit is unknown — only a committed first step has been seen right on
   /// the device — so staging it with `commit: false` and resetting on
   /// failure (as detachThisAndFollowing does) is untried. The price is a
-  /// half-state when the second save fails: the occurrence is detached, with
-  /// the all-day span as timed dates; its error names that.
+  /// half-state when the second save fails: the occurrence is detached but
+  /// unflipped; its error names that.
   private func detachThenFlipAllDay(
     _ event: EKEvent,
+    to allDay: Bool,
     patch: EventFieldPatch,
     dates: (start: Date?, end: Date?)
   ) -> Result<Void, CalendarError> {
-    patch.apply(to: event, isAllDay: nil, start: dates.start, end: dates.end)
+    patch.apply(
+      to: event,
+      isAllDay: nil,
+      start: allDay ? dates.start : nil,
+      end: allDay ? dates.end : nil
+    )
     if case .failure(let error) = saveThisEvent(event) {
       return .failure(error)
     }
     // The flip alone, in apply's order (flag, dates, zone): the fields are
-    // saved, and the dates go on again under the flag they were resolved for.
-    event.isAllDay = true
+    // saved, and the dates go on under the flag they were resolved for. An
+    // all-day event carries no zone; a timed one takes the patch's, if any.
+    event.isAllDay = allDay
     if let start = dates.start { event.startDate = start }
     if let end = dates.end { event.endDate = end }
-    event.timeZone = nil
+    if allDay {
+      event.timeZone = nil
+    } else if let identifier = patch.timeZone {
+      event.timeZone = TimeZone(identifier: identifier)
+    }
     return saveThisEvent(
       event,
-      orFail: "Failed to flip the detached occurrence all-day (it is detached but still timed)"
+      orFail: allDay
+        ? "Failed to flip the detached occurrence all-day (it is detached but still timed)"
+        : "Failed to flip the detached occurrence timed (it is detached but still all-day)"
     )
   }
 

@@ -1,6 +1,14 @@
 ## Unreleased
 
 ### Fixed
+- `updateEvent` with `isAllDay: false` and new dates on one occurrence of an
+  all-day series saves in two steps too — the other changes first, which
+  detaches the occurrence, then the timed flip with the dates. EventKit's
+  iCloud store persisted the hours as UTC wall clock when the detach and the
+  flip happened in one save: a 09:00–10:00 occurrence in Los Angeles read
+  back as 02:00–03:00, though the saved `EKEvent` reported 16:00 UTC and
+  its zone right up to the commit. The reverse of #210's flip; the local
+  store, and so the simulator, got the one-step save right (#212).
 - `updateRecurring` with `allEvents` and a start on another day of a rule
   that pins days (Monday of a Mon/Wed rule to its Wednesday) moves the
   series. EventKit read the `.futureEvents` save, with the loaded rule left
