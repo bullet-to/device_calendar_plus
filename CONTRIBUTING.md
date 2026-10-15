@@ -64,10 +64,11 @@ The thin shims that call the OS permission APIs directly (`EventKitAuthorization
 
 ### The iCloud two-step save needs a signed-in iPhone
 
-`EventsService.detachThenFlipAllDay` (iOS) is the same class of code. `updateEvent` on a timed occurrence that becomes all-day saves twice — detach first, flip second — because EventKit's iCloud (CalDAV) store persists a detached occurrence's all-day end a day late when the detach and the flip land in one save. Nothing automated can see that: the simulator has no iCloud source, so `createCalendar` puts the test calendar in the local store, which gets the one-step save right, and `EventsService` has no store seam for a Swift test. Collapse the two saves into one and the whole simulator suite and CI stay green while the bug comes straight back. Anything that touches it needs a run on a physical iPhone signed into iCloud, where the two integration tests in `recurrence_test.dart` that cover it go red on the one-step shape:
+`EventsService.detachThenFlipAllDay` (iOS) is the same class of code. `updateEvent` on an occurrence whose all-day flag flips either way saves twice — detach first, flip second — because EventKit's iCloud (CalDAV) store gets a detach and a flip in one save wrong in both directions: a timed occurrence made all-day persists its end a day late (#210), and an all-day occurrence made timed persists its hours as UTC wall clock, so 09:00-10:00 in Los Angeles reads back as 02:00-03:00 (#212). Nothing automated can see that: the simulator has no iCloud source, so `createCalendar` puts the test calendar in the local store, which gets the one-step save right, and `EventsService` has no store seam for a Swift test. Collapse the two saves into one in either direction and the whole simulator suite and CI stay green while the bug comes straight back. Anything that touches it needs a run on a physical iPhone signed into iCloud, where the three integration tests in `recurrence_test.dart` that cover it go red on the one-step shape — the first two on the timed-to-all-day direction, the third on all-day-to-timed:
 
 - `updateEvent toggling a timed occurrence all-day with no dates keeps it on its calendar day`
 - `updateEvent toggling a timed occurrence all-day with a two-day span detaches it onto exactly those days`
+- `updateEvent making an all-day occurrence timed with dates detaches it onto those hours`
 
 ```bash
 cd packages/device_calendar_plus/example

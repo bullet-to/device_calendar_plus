@@ -1854,7 +1854,7 @@ void main() {
             plugin, calendarId!, series.eventId, series.start,
             windowDays: 30)),
         startsExcept(series.occurrences, {1}),
-        reason: 'every other occurrence must stay all-day on the series',
+        reason: 'every other occurrence must stay on the series',
       );
     });
 

@@ -1148,17 +1148,10 @@ class EventsService {
     if case .failure(let error) = saveThisEvent(event) {
       return .failure(error)
     }
-    // The flip alone, in apply's order (flag, dates, zone): the fields are
-    // saved, and the dates go on under the flag they were resolved for. An
-    // all-day event carries no zone; a timed one takes the patch's, if any.
-    event.isAllDay = allDay
-    if let start = dates.start { event.startDate = start }
-    if let end = dates.end { event.endDate = end }
-    if allDay {
-      event.timeZone = nil
-    } else if let identifier = patch.timeZone {
-      event.timeZone = TimeZone(identifier: identifier)
-    }
+    // The flip alone: the fields are saved, and the dates go on under the
+    // flag they were resolved for.
+    patch.applyTiming(
+      to: event, isAllDay: allDay, start: dates.start, end: dates.end)
     return saveThisEvent(
       event,
       orFail: allDay
