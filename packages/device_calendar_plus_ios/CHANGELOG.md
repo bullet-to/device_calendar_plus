@@ -1,4 +1,4 @@
-## Unreleased
+## 0.9.2 - 2026-10-14
 
 ### Fixed
 - `updateEvent` with `isAllDay: false` and new dates on one occurrence of an

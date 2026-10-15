@@ -1,4 +1,4 @@
-## Unreleased
+## 0.9.2 - 2026-10-14
 
 ### Fixed
 - `updateRecurring` with `thisAndFollowing` and a start on another day the
