@@ -65,15 +65,17 @@ Future<SeededSeries> createAllDayWeeklySeriesOnOwnWeekday(
 /// A weekly series titled [title] with [count] occurrences, seeded with all
 /// of them listed over 30 days — the arrange of the occurrence all-day flip
 /// tests (#203, #210, #212), whose bodies are then the one `updateEvent`
-/// call under test and its assertions. Timed from [start] (an hour from now
-/// by default), or all-day from the next local midnight when [isAllDay].
-/// Checks the group's calendar exists first.
+/// call under test and its assertions, and of the all-day duration and
+/// series toggle tests (#195, #208). Timed from [start] (an hour from now
+/// by default) for [duration], or all-day from the next local midnight when
+/// [isAllDay]. Checks the group's calendar exists first.
 Future<SeededSeries> seedWeeklySeries(
   DeviceCalendar plugin,
   String? calendarId, {
-  required String title,
+  String title = 'Weekly Series',
   bool isAllDay = false,
   DateTime? start,
+  Duration duration = const Duration(hours: 1),
   int count = 4,
 }) =>
     seedSeries(
@@ -84,8 +86,41 @@ Future<SeededSeries> seedWeeklySeries(
       windowDays: 30,
       create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
           plugin, calendarId,
-          title: title, count: count, start: start, isAllDay: isAllDay),
+          title: title,
+          count: count,
+          start: start,
+          duration: duration,
+          isAllDay: isAllDay),
     );
+
+/// The one event listed under [title] off [series] after an edit of its
+/// occurrence at [index] — the detached occurrence — over the window
+/// [seedWeeklySeries] listed it in, asserting it is listed once and that
+/// every other occurrence is still on the series. [title] may be the series'
+/// own, as it is when the edit leaves the title alone: the master is
+/// filtered out by its event ID.
+Future<Event> detachedOccurrence(
+  DeviceCalendar plugin,
+  String calendarId,
+  SeededSeries series,
+  String title,
+  int index,
+) async {
+  final detached = (await eventsTitled(plugin, calendarId, title, series.start,
+          windowDays: 30))
+      .where((e) => e.eventId != series.eventId)
+      .toList();
+  expect(detached, hasLength(1),
+      reason: 'the detached occurrence must be listed once');
+  expect(
+    startsOf(await occurrencesOf(
+        plugin, calendarId, series.eventId, series.start,
+        windowDays: 30)),
+    startsExcept(series.occurrences, {index}),
+    reason: 'every other occurrence must stay on the series',
+  );
+  return detached.single;
+}
 
 /// Asserts [occurrences] is the series a rule switch to weekday [on] leaves
 /// (#140): exactly [count] of them, every one on [on], the first at
@@ -1758,16 +1793,13 @@ void main() {
       final lastDay = localDay(target.endDate
           .toLocal()
           .subtract(const Duration(milliseconds: 1)));
-      final detached = await eventsTitled(
-          plugin, calendarId!, 'All-day occurrence', series.start,
-          windowDays: 30);
-      expect(detached, hasLength(1),
-          reason: 'the detached occurrence must be listed once');
-      expect(detached.single.isAllDay, isTrue);
-      expect(localDay(detached.single.startDate.toLocal()),
+      final detached = await detachedOccurrence(
+          plugin, calendarId!, series, 'All-day occurrence', 1);
+      expect(detached.isAllDay, isTrue);
+      expect(localDay(detached.startDate.toLocal()),
           localDay(target.startDate.toLocal()),
           reason: 'the occurrence must stay on its own calendar day');
-      expect(detached.single.endDate.toLocal(), nextLocalMidnight(lastDay),
+      expect(detached.endDate.toLocal(), nextLocalMidnight(lastDay),
           reason: 'the occurrence must span every day its timed self '
               'touched');
     });
@@ -1792,23 +1824,13 @@ void main() {
         endDate: dayAfterLast,
       );
 
-      final detached = await eventsTitled(
-          plugin, calendarId!, 'Two-day occurrence', series.start,
-          windowDays: 30);
-      expect(detached, hasLength(1),
-          reason: 'the detached occurrence must be listed once');
-      expect(detached.single.isAllDay, isTrue);
-      expect(detached.single.startDate.toLocal(), firstDay,
+      final detached = await detachedOccurrence(
+          plugin, calendarId!, series, 'Two-day occurrence', 1);
+      expect(detached.isAllDay, isTrue);
+      expect(detached.startDate.toLocal(), firstDay,
           reason: 'the occurrence must start on the day asked for');
-      expect(detached.single.endDate.toLocal(), dayAfterLast,
+      expect(detached.endDate.toLocal(), dayAfterLast,
           reason: 'the occurrence must run two calendar days, not three');
-      expect(
-        startsOf(await occurrencesOf(
-            plugin, calendarId!, series.eventId, series.start,
-            windowDays: 30)),
-        startsExcept(series.occurrences, {1}),
-        reason: 'every other occurrence must stay on the series',
-      );
     });
 
     // The reverse flip (#212): an all-day occurrence made timed, with the
@@ -1839,25 +1861,13 @@ void main() {
         endDate: newEnd,
       );
 
-      final detached = (await eventsTitled(
-              plugin, calendarId!, 'All-day Occurrence To Timed', series.start,
-              windowDays: 30))
-          .where((e) => e.eventId != series.eventId)
-          .toList();
-      expect(detached, hasLength(1),
-          reason: 'the detached occurrence must be listed once');
-      expect(detached.single.isAllDay, isFalse);
-      expect(detached.single.startDate.toLocal(), newStart,
+      final detached = await detachedOccurrence(
+          plugin, calendarId!, series, 'All-day Occurrence To Timed', 1);
+      expect(detached.isAllDay, isFalse);
+      expect(detached.startDate.toLocal(), newStart,
           reason: 'the occurrence must start at the hour asked for');
-      expect(detached.single.endDate.toLocal(), newEnd,
+      expect(detached.endDate.toLocal(), newEnd,
           reason: 'the occurrence must end at the hour asked for');
-      expect(
-        startsOf(await occurrencesOf(
-            plugin, calendarId!, series.eventId, series.start,
-            windowDays: 30)),
-        startsExcept(series.occurrences, {1}),
-        reason: 'every other occurrence must stay on the series',
-      );
     });
 
     // The same flip with no dates: the toggle alone detaches the occurrence
@@ -1881,26 +1891,14 @@ void main() {
         isAllDay: false,
       );
 
-      final detached = (await eventsTitled(plugin, calendarId!,
-              'All-day Occurrence To Timed Bare', series.start,
-              windowDays: 30))
-          .where((e) => e.eventId != series.eventId)
-          .toList();
-      expect(detached, hasLength(1),
-          reason: 'the detached occurrence must be listed once');
-      expect(detached.single.isAllDay, isFalse);
+      final detached = await detachedOccurrence(
+          plugin, calendarId!, series, 'All-day Occurrence To Timed Bare', 1);
+      expect(detached.isAllDay, isFalse);
       if (!Platform.isAndroid) {
-        expect(localDay(detached.single.startDate.toLocal()),
+        expect(localDay(detached.startDate.toLocal()),
             localDay(target.startDate.toLocal()),
             reason: 'the occurrence must stay on its own calendar day');
       }
-      expect(
-        startsOf(await occurrencesOf(
-            plugin, calendarId!, series.eventId, series.start,
-            windowDays: 30)),
-        startsExcept(series.occurrences, {1}),
-        reason: 'every other occurrence must stay on the series',
-      );
     });
 
     test(
@@ -3128,12 +3126,8 @@ void main() {
       // The shape #195 reported: allEvents with start and a whole-day
       // duration. iOS wrote the end as an exclusive midnight onto an event
       // that was already all-day, and EventKit read it as one more day.
-      final series = await seedSeries(plugin, calendarId,
-          create: (p, c, {count = 3}) =>
-              createWeeklySeries(p, c, count: count, isAllDay: true),
-          count: 3,
-          minOccurrences: 3,
-          windowDays: 30);
+      final series =
+          await seedWeeklySeries(plugin, calendarId, isAllDay: true, count: 3);
       final before = series.occurrences;
 
       await plugin.updateRecurring(
@@ -3255,22 +3249,12 @@ void main() {
     final seedDay = DateTime(2027, 6, 7);
     const seedDuration = Duration(hours: 1);
     const seedCount = 4;
-    Future<SeededSeries> seedTimedOffUtcDate(String title) async {
-      final start = startOnOtherUtcDate(seedDay);
-      return seedSeries(
-        plugin,
-        calendarId,
-        count: seedCount,
-        minOccurrences: seedCount,
-        windowDays: 30,
-        create: (plugin, calendarId, {int count = seedCount}) =>
-            createWeeklySeries(plugin, calendarId,
-                title: title,
-                count: count,
-                start: start,
-                duration: seedDuration),
-      );
-    }
+    Future<SeededSeries> seedTimedOffUtcDate(String title) =>
+        seedWeeklySeries(plugin, calendarId,
+            title: title,
+            start: startOnOtherUtcDate(seedDay),
+            duration: seedDuration,
+            count: seedCount);
 
     /// Asserts [after] is the all-day series a bare toggle leaves of a
     /// [seedTimedOffUtcDate] series [seeded]: its occurrences from index

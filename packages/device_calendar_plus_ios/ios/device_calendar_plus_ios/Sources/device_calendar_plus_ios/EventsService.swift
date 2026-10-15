@@ -1137,17 +1137,16 @@ class EventsService {
     patch: EventFieldPatch,
     dates: (start: Date?, end: Date?)
   ) -> Result<Void, CalendarError> {
-    // Step 1: detach, carrying the change the direction allows (see above).
+    // Step 1: detach. The fields, plus the timing this direction can carry
+    // before the flip: the all-day span as timed dates (timed -> all-day),
+    // or nothing but the zone write (all-day -> timed), a no-op value whose
+    // setter still dirties the occurrence so the save detaches it. The guard
+    // checks it did.
     patch.applyFields(to: event)
-    if allDay {
-      patch.applyTiming(
-        to: event, isAllDay: nil, start: dates.start, end: dates.end)
-    } else {
-      // No-op value (an all-day event's zone is already nil), but the setter
-      // dirties the occurrence so the save detaches it; the guard below
-      // checks that it did.
-      event.timeZone = nil
-    }
+    patch.applyTiming(
+      to: event, isAllDay: nil,
+      start: allDay ? dates.start : nil,
+      end: allDay ? dates.end : nil)
     if case .failure(let error) = saveThisEvent(event) {
       return .failure(error)
     }
