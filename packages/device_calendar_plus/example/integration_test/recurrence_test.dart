@@ -62,6 +62,31 @@ Future<SeededSeries> createAllDayWeeklySeriesOnOwnWeekday(
   );
 }
 
+/// A weekly series titled [title] with [count] occurrences, seeded with all
+/// of them listed over 30 days — the arrange of the occurrence all-day flip
+/// tests (#203, #210, #212), whose bodies are then the one `updateEvent`
+/// call under test and its assertions. Timed from [start] (an hour from now
+/// by default), or all-day from the next local midnight when [isAllDay].
+/// Checks the group's calendar exists first.
+Future<SeededSeries> seedWeeklySeries(
+  DeviceCalendar plugin,
+  String? calendarId, {
+  required String title,
+  bool isAllDay = false,
+  DateTime? start,
+  int count = 4,
+}) =>
+    seedSeries(
+      plugin,
+      calendarId,
+      count: count,
+      minOccurrences: count,
+      windowDays: 30,
+      create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
+          plugin, calendarId,
+          title: title, count: count, start: start, isAllDay: isAllDay),
+    );
+
 /// Asserts [occurrences] is the series a rule switch to weekday [on] leaves
 /// (#140): exactly [count] of them, every one on [on], the first at
 /// [firstAt] (the day after the old anchor), and none at [orphanAt] — the
@@ -1720,16 +1745,8 @@ void main() {
         'updateEvent toggling a timed occurrence all-day with no dates keeps '
         'it on its calendar day', () async {
       final start = startOnOtherUtcDate(localMidnight(2));
-      final series = await seedSeries(
-        plugin,
-        calendarId,
-        count: 4,
-        minOccurrences: 4,
-        windowDays: 30,
-        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
-            plugin, calendarId,
-            title: 'Timed Occurrence To All-day', count: count, start: start),
-      );
+      final series = await seedWeeklySeries(plugin, calendarId,
+          title: 'Timed Occurrence To All-day', start: start);
       final target = series.occurrences[1];
 
       await plugin.updateEvent(
@@ -1761,16 +1778,8 @@ void main() {
     test(
         'updateEvent toggling a timed occurrence all-day with a two-day span '
         'detaches it onto exactly those days', () async {
-      final series = await seedSeries(
-        plugin,
-        calendarId,
-        count: 4,
-        minOccurrences: 4,
-        windowDays: 30,
-        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
-            plugin, calendarId,
-            title: 'Timed Occurrence To Two Days', count: count),
-      );
+      final series = await seedWeeklySeries(plugin, calendarId,
+          title: 'Timed Occurrence To Two Days');
       final target = series.occurrences[1];
       final firstDay = localDay(target.startDate.toLocal());
       final dayAfterLast = daysOn(firstDay, 2);
@@ -1807,22 +1816,15 @@ void main() {
     // day; the detached occurrence must read back at exactly those hours.
     // iOS: red on an iCloud calendar, where the detached occurrence read
     // back seven hours early (09:00-10:00 in Los Angeles as 02:00-03:00),
-    // green on the simulator's local store either way.
+    // green on the simulator's local store either way. The bug persists the
+    // written wall clock as UTC, so it only trips when the device zone's UTC
+    // offset is non-zero; in UTC the written wall clock already is UTC and
+    // the test stays green on the one-step shape too.
     test(
         'updateEvent making an all-day occurrence timed with dates detaches '
         'it onto those hours', () async {
-      final series = await seedSeries(
-        plugin,
-        calendarId,
-        count: 4,
-        minOccurrences: 4,
-        windowDays: 30,
-        create: (plugin, calendarId, {int count = 4}) => createWeeklySeries(
-            plugin, calendarId,
-            title: 'All-day Occurrence To Timed',
-            count: count,
-            isAllDay: true),
-      );
+      final series = await seedWeeklySeries(plugin, calendarId,
+          title: 'All-day Occurrence To Timed', isAllDay: true);
       final target = series.occurrences[1];
       final day = localDay(target.startDate.toLocal());
       final newStart = DateTime(day.year, day.month, day.day, 9);
