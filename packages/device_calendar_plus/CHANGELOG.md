@@ -1,9 +1,10 @@
-## Unreleased
+## 0.10.2 - 2026-10-14
 
 ### Changed
-- **Breaking:** `hasPermissions` and `requestPermissions` throw a
-  `StateError` on a null status or a status string this version doesn't
-  recognise, instead of silently reading it as `denied` (#127).
+- `hasPermissions` and `requestPermissions` throw a `StateError` on a status
+  this version doesn't recognise (a null or an unknown string, which only a
+  mismatched platform package sends), instead of silently reading it as
+  `denied` (#127).
 
 ### Fixed
 - iOS: `updateEvent` with `isAllDay: false` and new dates on one occurrence
