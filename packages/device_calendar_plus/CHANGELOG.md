@@ -12,7 +12,10 @@
   UTC). EventKit's iCloud store got the hours wrong when it detached and
   flipped the occurrence in one save, so the plugin now detaches first and
   flips second, as it already did for the all-day flip (#210); the local
-  store, and so the simulator, got it right (#212).
+  store, and so the simulator, got it right (#212). Either flip now checks
+  that its first save detached the occurrence and throws
+  `DeviceCalendarException(operationFailed)`, the occurrence unchanged, when
+  it did not, rather than flipping an attached occurrence in one save.
 - `updateRecurring` with `EventSpan.thisAndFollowing` and a `start` on
   another day the kept rule generates (the Wednesday of a Mon/Wed/Fri series
   moved to its Friday) now splits the series there: the old series ends

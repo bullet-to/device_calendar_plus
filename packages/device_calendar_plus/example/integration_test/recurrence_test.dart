@@ -1860,6 +1860,49 @@ void main() {
       );
     });
 
+    // The same flip with no dates: the toggle alone detaches the occurrence
+    // as a timed event. iOS: the same two-step save as the test above, where
+    // the first save's only change is the zone write that makes EventKit
+    // detach the occurrence; a first save that leaves it on the series fails
+    // with operationFailed instead of flipping it in one save. The day is
+    // asserted, not the hours: what hours a bare flip resolves to is not yet
+    // pinned across platforms. And on iOS only: Android writes the all-day
+    // instance's UTC midnight as the timed start, a day early west of UTC
+    // (#216); it conforms to iOS once that is fixed.
+    test(
+        'updateEvent toggling an all-day occurrence timed with no dates '
+        'detaches it as a timed event', () async {
+      final series = await seedWeeklySeries(plugin, calendarId,
+          title: 'All-day Occurrence To Timed Bare', isAllDay: true);
+      final target = series.occurrences[1];
+
+      await plugin.updateEvent(
+        instanceId: target.instanceId,
+        isAllDay: false,
+      );
+
+      final detached = (await eventsTitled(plugin, calendarId!,
+              'All-day Occurrence To Timed Bare', series.start,
+              windowDays: 30))
+          .where((e) => e.eventId != series.eventId)
+          .toList();
+      expect(detached, hasLength(1),
+          reason: 'the detached occurrence must be listed once');
+      expect(detached.single.isAllDay, isFalse);
+      if (!Platform.isAndroid) {
+        expect(localDay(detached.single.startDate.toLocal()),
+            localDay(target.startDate.toLocal()),
+            reason: 'the occurrence must stay on its own calendar day');
+      }
+      expect(
+        startsOf(await occurrencesOf(
+            plugin, calendarId!, series.eventId, series.start,
+            windowDays: 30)),
+        startsExcept(series.occurrences, {1}),
+        reason: 'every other occurrence must stay on the series',
+      );
+    });
+
     test(
         'updateEvent with an instance ID rejects a startDate past the '
         'occurrence end', () async {
