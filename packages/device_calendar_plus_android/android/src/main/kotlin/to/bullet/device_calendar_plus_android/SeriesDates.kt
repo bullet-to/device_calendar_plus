@@ -127,13 +127,13 @@ internal sealed class SeriesRuleEdit {
  * ([resolveTargetStart]), while [baseMillis] and [referenceMillis] are in
  * the row's stored frame [storedZone]; the shift reads all three in the one
  * post-edit zone, `seriesTimeZone(timeZoneId, isAllDay)` ([isAllDay] is the
- * series' all-day state after the edit, [rowAllDay] the row's before it).
- * A toggle to all-day first brings base and reference into that frame too,
- * as the UTC midnights of their [deviceZone] dates, so the day delta is
- * counted in the local days EventKit counts even when a DST change falls
- * between them (#186). A toggle off is left as stored: base and reference
- * are then both UTC dates, so the post-edit zone reads them alike and the
- * error cancels out of the day delta.
+ * series' all-day state after the edit). A toggle to all-day
+ * ([SeriesTimeEdit.toAllDayFrom]) first brings base and reference into that
+ * frame too, as the UTC midnights of their device-local dates, so the day
+ * delta is counted in the local days EventKit counts even when a DST change
+ * falls between them (#186). A toggle off is left as stored: base and
+ * reference are then both UTC dates, so the post-edit zone reads them alike
+ * and the error cancels out of the day delta.
  *
  * The new start must be a day the series' rule generates, or the provider
  * emits it as an extra first occurrence (#140, #189). [ruleEdit] decides
@@ -155,9 +155,7 @@ internal fun resolveSeriesTimes(
     ruleEdit: SeriesRuleEdit,
     isAllDay: Boolean,
     timeZoneId: String?,
-    storedZone: TimeZone,
-    rowAllDay: Boolean,
-    deviceZone: TimeZone = TimeZone.getDefault()
+    storedZone: TimeZone
 ): Result<Pair<Long, Long>> {
     val targetStart = timeEdit.targetStart
     val durationMinutes = timeEdit.durationMinutes
@@ -167,12 +165,10 @@ internal fun resolveSeriesTimes(
     // as the target is. Read as timed instants in UTC, a DST change between
     // them could put one on the next UTC date and not the other, and the
     // start moved a day further than the occurrence did (#186, #208).
-    val (frameBase, frameReference) = if (isAllDay && !rowAllDay) {
-        AllDayDates.localDateToUtcMidnight(baseMillis, deviceZone) to
-            AllDayDates.localDateToUtcMidnight(referenceMillis, deviceZone)
-    } else {
-        baseMillis to referenceMillis
-    }
+    val (frameBase, frameReference) = timeEdit.toAllDayFrom?.let { zone ->
+        AllDayDates.localDateToUtcMidnight(baseMillis, zone) to
+            AllDayDates.localDateToUtcMidnight(referenceMillis, zone)
+    } ?: (baseMillis to referenceMillis)
     // A slot copies the new start's time of day, already whole seconds.
     // With no new start the stored start is kept as is, even with millis
     // from an older version or another app: rewriting it would orphan
@@ -305,6 +301,13 @@ internal data class SeriesTimeEdit(
     val durationMinutes: Int?,
     /** Whether [targetStart] is a default rather than the caller's `start`. */
     val startDefaulted: Boolean,
+    /**
+     * The device zone whose local dates a toggle of a timed series to
+     * all-day keeps, or null when the edit isn't that toggle.
+     * [resolveSeriesTimes] brings the stored base and reference into the
+     * all-day frame through it (#186).
+     */
+    val toAllDayFrom: TimeZone? = null,
 ) {
     /** What moved the start, as a refusal of the move names it. */
     val mover: String
@@ -367,6 +370,7 @@ internal fun resolveSeriesTimeEdit(
         durationMinutes = durationMinutes
             ?: allDayToggleDurationMinutes(firstStart, durationMillis, deviceZone),
         startDefaulted = newStartMillis == null,
+        toAllDayFrom = deviceZone,
     )
 }
 
@@ -381,10 +385,14 @@ internal fun resolveSeriesTimeEdit(
  * ([RecurrenceAnchor.countBefore], in the series' zone [tz]), and none at
  * all, saved as a one-off, when that leaves nothing. Android honoured the
  * COUNT as given, so the new series ran longer than on iOS (#124). A rule
- * that ends by UNTIL, or not at all, is unchanged.
+ * that ends by UNTIL, or not at all, or that [RecurrenceAnchor.countBefore]
+ * can't expand, is unchanged.
  */
 internal fun splitSeriesRule(rule: String, seriesStart: Long, splitAt: Long, tz: TimeZone): String? {
     val count = RruleString.count(rule) ?: return rule
-    val left = count - RecurrenceAnchor.countBefore(rule, seriesStart, splitAt, tz)
+    // A rule outside the modelled subset can't be expanded, so its COUNT is
+    // kept as given.
+    val before = RecurrenceAnchor.countBefore(rule, seriesStart, splitAt, tz) ?: return rule
+    val left = count - before
     return if (left > 0) RruleString.withCount(rule, left) else null
 }

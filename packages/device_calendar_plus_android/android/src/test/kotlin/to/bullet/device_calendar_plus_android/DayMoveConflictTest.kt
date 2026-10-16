@@ -37,8 +37,7 @@ internal class DayMoveConflictTest {
             ruleEdit = SeriesRuleEdit.Keep(rrule),
             isAllDay = false,
             timeZoneId = utc.id,
-            storedZone = utc,
-            rowAllDay = false
+            storedZone = utc
         ).map { it.first }
 
     private fun at(month: Int, day: Int, hour: Int = 10) = instantAt(utc, 2026, month, day, hour)

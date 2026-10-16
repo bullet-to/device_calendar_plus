@@ -1078,8 +1078,7 @@ class EventsService(
             ruleEdit = ruleEdit,
             isAllDay = effectiveIsAllDay,
             timeZoneId = row.timeZone,
-            storedZone = seriesTimeZone(row.timeZone, row.allDay),
-            rowAllDay = row.allDay
+            storedZone = seriesTimeZone(row.timeZone, row.allDay)
         ).getOrElse { return Result.failure(it) }
         // A `start` equal to the current anchor is still a rewrite: the
         // DTSTART/DURATION (and RRULE, below) re-put is what makes the
@@ -1209,8 +1208,7 @@ class EventsService(
             ruleEdit = ruleEdit,
             isAllDay = effectiveIsAllDay,
             timeZoneId = row.timeZone,
-            storedZone = seriesTimeZone(row.timeZone, row.allDay),
-            rowAllDay = row.allDay
+            storedZone = seriesTimeZone(row.timeZone, row.allDay)
         ).getOrElse { return Result.failure(it) }
         val newEnd = newStart + newDurationMs
 

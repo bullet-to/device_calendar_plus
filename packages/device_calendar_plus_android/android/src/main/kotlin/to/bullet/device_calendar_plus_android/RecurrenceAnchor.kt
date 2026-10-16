@@ -14,11 +14,18 @@ import java.util.TimeZone
  * series switched to a new pattern lands on that pattern. iOS's counterpart is
  * `RecurrenceAnchor.swift`; the two must agree.
  *
+ * It also counts a rule's occurrences before an instant ([countBefore]),
+ * for the COUNT a `thisAndFollowing` split gives a new rule. That has no
+ * Swift counterpart: iOS gets the count from EventKit, so the "must agree"
+ * above covers [firstMatch] and [generates] only.
+ *
  * Covers the RRULE subset the plugin models: FREQ, BYDAY (with ordinals),
- * BYMONTHDAY, BYMONTH, and BYSETPOS on monthly and yearly rules. INTERVAL and
- * WKST don't affect which days a rule can generate from a given anchor (the
- * anchor itself fixes the interval's phase), and a BYSETPOS on a daily or
- * weekly rule is outside the modelled subset, so all three are ignored.
+ * BYMONTHDAY, BYMONTH, and BYSETPOS on monthly and yearly rules. For
+ * [firstMatch] and [generates], INTERVAL and WKST don't affect which days a
+ * rule can generate from a given anchor (the anchor itself fixes the
+ * interval's phase), so both are ignored there; [countBefore] reads both. A
+ * BYSETPOS on a daily or weekly rule is outside the modelled subset and is
+ * ignored everywhere.
  */
 internal object RecurrenceAnchor {
     private enum class Freq { DAILY, WEEKLY, MONTHLY, YEARLY }
@@ -84,12 +91,14 @@ internal object RecurrenceAnchor {
      * wall-clock time, with the parts it
      * leaves implicit filled in from the anchor and its INTERVAL counted
      * from the anchor's day, week (from WKST, Monday by default), month or
-     * year. 0 for a rule outside the modelled subset, which can't be
-     * expanded here. The COUNT a `thisAndFollowing` split takes off a new
-     * rule ([splitSeriesRule]).
+     * year. 0 when [beforeMillis] is on or before the anchor; null for a
+     * rule outside the modelled subset, which can't be expanded here. The
+     * COUNT a `thisAndFollowing` split takes off a new rule
+     * ([splitSeriesRule]).
      */
-    fun countBefore(rrule: String, anchorMillis: Long, beforeMillis: Long, tz: TimeZone): Int {
-        val rule = parse(rrule) ?: return 0
+    fun countBefore(rrule: String, anchorMillis: Long, beforeMillis: Long, tz: TimeZone): Int? {
+        if (anchorMillis >= beforeMillis) return 0
+        val rule = parse(rrule) ?: return null
         val anchor = Calendar.getInstance(tz).apply { timeInMillis = anchorMillis }
         val matcher = Matcher(rule.impliedBy(anchor))
         val params = RruleString.params(rrule)
@@ -109,7 +118,6 @@ internal object RecurrenceAnchor {
                 (c.get(Calendar.MONTH) - anchor.get(Calendar.MONTH))
             Freq.YEARLY -> (c.get(Calendar.YEAR) - anchor.get(Calendar.YEAR)).toLong()
         }
-        if (anchorMillis >= beforeMillis) return 0
         // The start is always the first occurrence, as RFC 5545 counts
         // DTSTART and EventKit does, even on a day the rule doesn't generate.
         var count = 1

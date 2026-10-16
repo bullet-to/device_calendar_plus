@@ -67,9 +67,7 @@ internal class AllDayToggleTest {
             ruleEdit = SeriesRuleEdit.Keep(rule),
             isAllDay = true,
             timeZoneId = seriesZoneId,
-            storedZone = storedZone,
-            rowAllDay = false,
-            deviceZone = zone
+            storedZone = storedZone
         )
     }
 
@@ -101,7 +99,9 @@ internal class AllDayToggleTest {
         )
 
         assertEquals(
-            SeriesTimeEdit(instantAt(utc, 2026, 6, 10), 3 * 24 * 60, startDefaulted = false),
+            SeriesTimeEdit(
+                instantAt(utc, 2026, 6, 10), 3 * 24 * 60, startDefaulted = false, toAllDayFrom = la
+            ),
             edit
         )
     }
@@ -116,7 +116,9 @@ internal class AllDayToggleTest {
         // The duration still comes from the occurrence: 23:30 to 00:30
         // touches two local dates.
         assertEquals(
-            SeriesTimeEdit(instantAt(utc, 2026, 6, 10), 2 * 24 * 60, startDefaulted = false),
+            SeriesTimeEdit(
+                instantAt(utc, 2026, 6, 10), 2 * 24 * 60, startDefaulted = false, toAllDayFrom = la
+            ),
             edit
         )
     }
@@ -130,7 +132,9 @@ internal class AllDayToggleTest {
         val edit = timeEdit(timestamp = occurrence, seriesStart = seriesStart)
 
         assertEquals(
-            SeriesTimeEdit(instantAt(utc, 2026, 6, 13), 2 * 24 * 60, startDefaulted = true),
+            SeriesTimeEdit(
+                instantAt(utc, 2026, 6, 13), 2 * 24 * 60, startDefaulted = true, toAllDayFrom = la
+            ),
             edit
         )
     }
@@ -142,7 +146,9 @@ internal class AllDayToggleTest {
         val edit = timeEdit(seriesStart = seriesStart)
 
         assertEquals(
-            SeriesTimeEdit(instantAt(utc, 2026, 6, 6), 24 * 60, startDefaulted = true),
+            SeriesTimeEdit(
+                instantAt(utc, 2026, 6, 6), 24 * 60, startDefaulted = true, toAllDayFrom = la
+            ),
             edit
         )
     }
@@ -207,13 +213,12 @@ internal class AllDayToggleTest {
                 newStartMillis = instantAt(la, 2026, 6, 2),
                 timestamp = occurrence,
                 seriesStart = seriesStart,
+                wholeSeries = true,
             ),
             ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
             isAllDay = true,
             timeZoneId = la.id,
-            storedZone = la,
-            rowAllDay = false,
-            deviceZone = la
+            storedZone = la
         ).getOrThrow()
 
         assertEquals(instantAt(utc, 2026, 1, 6), newStart)
@@ -244,9 +249,7 @@ internal class AllDayToggleTest {
             ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;COUNT=4"),
             isAllDay = true,
             timeZoneId = utc.id,
-            storedZone = utc,
-            rowAllDay = false,
-            deviceZone = zone
+            storedZone = utc
         ).getOrThrow()
 
     // #208: a UTC-stored series at 23:30 PDT on Wednesday 28 October runs
