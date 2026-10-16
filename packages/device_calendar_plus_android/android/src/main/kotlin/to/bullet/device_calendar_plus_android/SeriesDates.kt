@@ -36,12 +36,15 @@ internal fun calendarDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone)
  * carries (#158); iOS's counterparts are `SeriesDates.shiftStart` and
  * EKSpan.futureEvents.
  *
- * [slot] is where a date lands on the moved series: that many days on, at
- * the new anchor's wall-clock time of day (midnight for all-day, which is
- * stored as UTC midnight). [start] is where a detached occurrence's own
- * start goes: that many days on, at its own time of day.
+ * [slot] is where a stored slot lands on the moved series: brought into
+ * the frame after the edit ([FrameChange], for an all-day toggle), then
+ * that many days on, at the new anchor's wall-clock time of day (midnight
+ * for all-day, which is stored as UTC midnight). [start] is where a
+ * detached occurrence's own start goes: that many days on, at its own time
+ * of day, in its own frame (the occurrence keeps its own all-day flag).
  */
 internal class SplitShift private constructor(
+    private val frameChange: FrameChange,
     private val dayDelta: Int,
     private val tz: TimeZone,
     private val hour: Int,
@@ -50,9 +53,12 @@ internal class SplitShift private constructor(
     private val millisecond: Int,
 ) {
 
-    /** [old] moved by the anchor's days, at the new anchor's time of day. */
+    /**
+     * [old], a stored instant of the series, in the frame after the edit,
+     * moved by the anchor's days, at the new anchor's time of day.
+     */
     fun slot(old: Long): Long {
-        val cal = addDays(old)
+        val cal = addDays(frameChange.convert(old))
         cal.set(Calendar.HOUR_OF_DAY, hour)
         cal.set(Calendar.MINUTE, minute)
         cal.set(Calendar.SECOND, second)
@@ -72,7 +78,10 @@ internal class SplitShift private constructor(
     companion object {
         /**
          * The shift that moves the anchor [fromAnchor] to [toAnchor], in
-         * the series' time zone [tz]. All-day series shift by whole days
+         * the series' time zone [tz]. [fromAnchor] is a stored instant,
+         * brought into [toAnchor]'s frame by [frameChange] before the days
+         * are counted, so the anchor and every slot [slot] moves are read in
+         * the one frame (#186). All-day series shift by whole days
          * with the time of day left at midnight; timed ones carry the full
          * wall-clock time of day (down to millis) from [toAnchor], matching
          * iOS's shiftStart so the platforms agree. Callers pass whole-second
@@ -80,10 +89,17 @@ internal class SplitShift private constructor(
          * #165), so the millisecond carried is 0 in practice; it is still
          * set so [slot] clears the millis of the start it moves.
          */
-        fun of(fromAnchor: Long, toAnchor: Long, tz: TimeZone, isAllDay: Boolean): SplitShift {
+        fun of(
+            fromAnchor: Long,
+            toAnchor: Long,
+            tz: TimeZone,
+            isAllDay: Boolean,
+            frameChange: FrameChange,
+        ): SplitShift {
             val target = Calendar.getInstance(tz).apply { timeInMillis = toAnchor }
             return SplitShift(
-                dayDelta = calendarDaysBetween(fromAnchor, toAnchor, tz),
+                frameChange = frameChange,
+                dayDelta = calendarDaysBetween(frameChange.convert(fromAnchor), toAnchor, tz),
                 tz = tz,
                 hour = if (isAllDay) 0 else target.get(Calendar.HOUR_OF_DAY),
                 minute = if (isAllDay) 0 else target.get(Calendar.MINUTE),
@@ -125,7 +141,7 @@ internal sealed class SeriesRuleEdit {
  * delta from [referenceMillis] to [targetStart] (see [SplitShift]).
  * [targetStart] is already in the frame after the edit
  * ([resolveTargetStart]), while [baseMillis] and [referenceMillis] are in
- * the row's stored frame [storedZone]; [SeriesTimeEdit.intoEditFrame]
+ * the row's stored frame [storedZone]; [SeriesTimeEdit.frameChange]
  * brings them into the post-edit frame too, keeping their dates, and the
  * shift reads all three in the one post-edit zone,
  * `seriesTimeZone(timeZoneId, isAllDay)` ([isAllDay] is the series' all-day
@@ -144,6 +160,11 @@ internal sealed class SeriesRuleEdit {
  * or in another zone) where it is. A refusal names what moved the start
  * ([SeriesTimeEdit.mover]). The duration is overridden when [timeEdit]
  * carries one.
+ *
+ * [SeriesTimes.carry] is the shift that moved the anchor to the new start,
+ * in that same frame: where a `thisAndFollowing` split's detached
+ * occurrences land on the new series (#158), so they and the anchor are
+ * moved by one shift, read in one frame.
  */
 internal fun resolveSeriesTimes(
     baseMillis: Long,
@@ -154,22 +175,23 @@ internal fun resolveSeriesTimes(
     isAllDay: Boolean,
     timeZoneId: String?,
     storedZone: TimeZone
-): Result<Pair<Long, Long>> {
+): Result<SeriesTimes> {
     val targetStart = timeEdit.targetStart
     val durationMinutes = timeEdit.durationMinutes
     val editZone = seriesTimeZone(timeZoneId, isAllDay)
-    // Base and reference in the frame the target is in. Read in the other
-    // frame's zone, a DST change between them could put one on another
-    // date and not the other, and the start moved a day further than the
-    // occurrence did (#186, #208).
-    val frameBase = timeEdit.intoEditFrame(baseMillis)
-    val frameReference = timeEdit.intoEditFrame(referenceMillis)
+    // Base and reference are read in the frame the target is in. Read in
+    // the other frame's zone, a DST change between them could put one on
+    // another date and not the other, and the start moved a day further
+    // than the occurrence did (#186, #208). With no new start nothing
+    // moves, and the start stays in its stored frame.
+    val frameChange = if (targetStart != null) timeEdit.frameChange else FrameChange.None
     // A slot copies the new start's time of day, already whole seconds.
     // With no new start the stored start is kept as is, even with millis
     // from an older version or another app: rewriting it would orphan
     // detached occurrences keyed at those millis (#165).
     val shiftedStart = if (targetStart != null) {
-        SplitShift.of(frameReference, targetStart, editZone, isAllDay).slot(frameBase)
+        SplitShift.of(referenceMillis, targetStart, editZone, isAllDay, frameChange)
+            .slot(baseMillis)
     } else {
         baseMillis
     }
@@ -177,12 +199,9 @@ internal fun resolveSeriesTimes(
     if (targetStart != null && keptRule != null &&
         leavesRule(
             keptRule,
-            // The reference stays in its stored frame on purpose: leavesRule
-            // reads it in storedZone, so a toggle onto another local day
-            // counts as a day move.
-            referenceMillis = referenceMillis,
-            referenceZone = storedZone,
-            baseMillis = frameBase,
+            storedReference = referenceMillis,
+            storedZone = storedZone,
+            frameBase = frameChange.convert(baseMillis),
             targetStart = targetStart,
             shiftedStart = shiftedStart,
             tz = editZone
@@ -219,24 +238,47 @@ internal fun resolveSeriesTimes(
         // moves is kept, so its end keeps those millis too (#165).
         wholeSeconds(existingDurationMillis)
     }
-    return Result.success(Pair(newStart, newDurationMs))
+    // To the final start, so a rule re-anchor's move is carried too.
+    val carry = SplitShift.of(referenceMillis, newStart, editZone, isAllDay, frameChange)
+    return Result.success(SeriesTimes(newStart, newDurationMs, carry))
 }
+
+/** What [resolveSeriesTimes] resolves a series edit to. */
+internal data class SeriesTimes(
+    /** The new series start, in the frame after the edit. */
+    val start: Long,
+    /** The new duration, in whole seconds. */
+    val durationMillis: Long,
+    /**
+     * The shift that took the anchor to [start]: where a split's detached
+     * occurrences go ([DetachedOccurrenceCarry.settleAfterSplit]).
+     */
+    val carry: SplitShift,
+)
 
 /**
  * Whether a start move leaves [rule]'s days: either move lands on another
  * day, read in the post-edit zone [tz], that the rule doesn't generate
- * ([RecurrenceAnchor.generates]). The occurrence at [referenceMillis] to
- * [targetStart] guards the caller's intent; the reference is read in
- * [referenceZone], its stored frame, so an all-day toggle onto another
- * local day is a day move. The series start [baseMillis] to [shiftedStart]
- * guards against the #140 orphan. iOS's counterpart is
- * `SeriesDates.leavesRule`.
+ * ([RecurrenceAnchor.generates]).
+ *
+ * The two moves take their starting points in different frames, on
+ * purpose:
+ * - The occurrence at [storedReference] to [targetStart] guards the
+ *   caller's intent. [storedReference] is the occurrence as stored, NOT
+ *   brought into the edit frame, and is read in [storedZone]: so an all-day
+ *   toggle onto another local day counts as a day move. Passing it
+ *   converted would quietly lose that check.
+ * - The series start [frameBase] to [shiftedStart] guards against the #140
+ *   orphan. [frameBase] is the start already brought into the edit frame
+ *   ([FrameChange]), read in [tz] like [shiftedStart].
+ *
+ * iOS's counterpart is `SeriesDates.leavesRule`.
  */
 private fun leavesRule(
     rule: String,
-    referenceMillis: Long,
-    referenceZone: TimeZone,
-    baseMillis: Long,
+    storedReference: Long,
+    storedZone: TimeZone,
+    frameBase: Long,
     targetStart: Long,
     shiftedStart: Long,
     tz: TimeZone
@@ -248,8 +290,8 @@ private fun leavesRule(
     // moving Friday to Saturday shifts the start to Tuesday, which the rule
     // generates: only the first check refuses it. Moving Monday to Tuesday
     // shifts a Friday start to Saturday: only the second does (#140).
-    return movesOffRule(referenceMillis, referenceZone, targetStart) ||
-        movesOffRule(baseMillis, tz, shiftedStart)
+    return movesOffRule(storedReference, storedZone, targetStart) ||
+        movesOffRule(frameBase, tz, shiftedStart)
 }
 
 /** Whether [a] read in [aZone] falls on the same calendar date as [b] in [bZone]. */
@@ -291,35 +333,6 @@ internal fun allDayToggleDurationMinutes(
     return ((endEdge - firstDay) / 60_000L).toInt()
 }
 
-/**
- * How an edit moves a series' stored instants into the frame after it,
- * keeping their dates: an all-day series is stored as UTC midnights, a
- * timed one in device-local time (#186).
- */
-internal sealed class FrameChange {
-    abstract fun convert(millis: Long): Long
-
-    /** The edit keeps the all-day flag, so the frame doesn't change. */
-    object None : FrameChange() {
-        override fun convert(millis: Long): Long = millis
-    }
-
-    /** To all-day: the UTC midnight of the [deviceZone] date. */
-    data class ToAllDay(val deviceZone: TimeZone) : FrameChange() {
-        override fun convert(millis: Long): Long =
-            AllDayDates.localDateToUtcMidnight(millis, deviceZone)
-    }
-
-    /**
-     * To timed: the [deviceZone] midnight of the UTC date, as
-     * [AllDayDates.timedSpan] reads it.
-     */
-    data class ToTimed(val deviceZone: TimeZone) : FrameChange() {
-        override fun convert(millis: Long): Long =
-            AllDayDates.utcToLocalMidnight(millis, deviceZone)
-    }
-}
-
 /** The start and duration a series edit writes, after [resolveSeriesTimeEdit]. */
 internal data class SeriesTimeEdit(
     /** The new start in the stored frame ([resolveTargetStart]), or null to keep it. */
@@ -328,15 +341,9 @@ internal data class SeriesTimeEdit(
     val durationMinutes: Int?,
     /** Whether [targetStart] is a default rather than the caller's `start`. */
     val startDefaulted: Boolean,
-    /** How a stored instant reaches the frame [targetStart] is in; see [intoEditFrame]. */
-    val frameChange: FrameChange = FrameChange.None,
+    /** How a stored instant of the series reaches the frame [targetStart] is in. */
+    val frameChange: FrameChange,
 ) {
-    /**
-     * [millis], a stored instant of the series, in the frame [targetStart]
-     * is in, on the same date ([FrameChange]).
-     */
-    fun intoEditFrame(millis: Long): Long = frameChange.convert(millis)
-
     /** What moved the start, as a refusal of the move names it. */
     val mover: String
         get() = if (startDefaulted) {
@@ -382,17 +389,15 @@ internal fun resolveSeriesTimeEdit(
     durationMillis: Long,
     deviceZone: TimeZone = TimeZone.getDefault()
 ): SeriesTimeEdit {
+    val frameChange = FrameChange.of(rowAllDay, patchIsAllDay, deviceZone)
     val effectiveIsAllDay = patchIsAllDay ?: rowAllDay
-    if (patchIsAllDay != true || rowAllDay) {
+    // Only a toggle to all-day fills in defaults.
+    if (frameChange !is FrameChange.ToAllDay) {
         return SeriesTimeEdit(
             targetStart = resolveTargetStart(newStartMillis, effectiveIsAllDay, deviceZone),
             durationMinutes = durationMinutes,
             startDefaulted = false,
-            frameChange = if (patchIsAllDay == false && rowAllDay) {
-                FrameChange.ToTimed(deviceZone)
-            } else {
-                FrameChange.None
-            },
+            frameChange = frameChange,
         )
     }
     return SeriesTimeEdit(
@@ -402,33 +407,34 @@ internal fun resolveSeriesTimeEdit(
         durationMinutes = durationMinutes
             ?: allDayToggleDurationMinutes(firstOccurrenceStart, durationMillis, deviceZone),
         startDefaulted = newStartMillis == null,
-        frameChange = FrameChange.ToAllDay(deviceZone),
+        frameChange = frameChange,
     )
 }
 
 /**
  * The rule the new series of a `thisAndFollowing` split at [splitAt] gets,
  * or null when it doesn't recur: none when [ruleEdit] clears the rule, and
- * [splitSeriesRule] when it replaces it. A kept rule, [existingRule], is the
- * one the series has, so its COUNT drops by the occurrences the series has
- * before the split ([keptBefore], the provider's count, read only when the
- * rule has a COUNT), and keeps at least one: the split occurrence itself.
+ * [replacedRuleAfterSplit] when it replaces it. A kept rule, [existingRule],
+ * is the one the series has, so its COUNT drops by the occurrences the
+ * series has before the split, and keeps at least one: the split occurrence
+ * itself. [providerCountBefore] is the provider's count of those; it is a
+ * lambda so the provider is queried only when the rule has a COUNT.
  */
-internal fun splitRule(
+internal fun newSeriesRule(
     ruleEdit: SeriesRuleEdit,
     existingRule: String,
     seriesStart: Long,
     splitAt: Long,
     tz: TimeZone,
-    keptBefore: () -> Int,
+    providerCountBefore: () -> Int,
 ): String? = when (ruleEdit) {
     SeriesRuleEdit.Clear -> null
     // A new rule's COUNT counts from the series' start, as EventKit counts
     // it; one used up before the split leaves a one-off (#124).
-    is SeriesRuleEdit.Replace -> splitSeriesRule(ruleEdit.rule, seriesStart, splitAt, tz)
+    is SeriesRuleEdit.Replace -> replacedRuleAfterSplit(ruleEdit.rule, seriesStart, splitAt, tz)
     // Without the drop the new series would over-generate.
     is SeriesRuleEdit.Keep -> RruleString.count(existingRule)
-        ?.let { RruleString.withCount(existingRule, maxOf(1, it - keptBefore())) }
+        ?.let { RruleString.withCount(existingRule, maxOf(1, it - providerCountBefore())) }
         ?: existingRule
 }
 
@@ -446,7 +452,7 @@ internal fun splitRule(
  * that ends by UNTIL, or not at all, or that [RecurrenceAnchor.countBefore]
  * can't expand, is unchanged.
  */
-internal fun splitSeriesRule(rule: String, seriesStart: Long, splitAt: Long, tz: TimeZone): String? {
+internal fun replacedRuleAfterSplit(rule: String, seriesStart: Long, splitAt: Long, tz: TimeZone): String? {
     val count = RruleString.count(rule) ?: return rule
     // A rule outside the modelled subset can't be expanded, so its COUNT is
     // kept as given.

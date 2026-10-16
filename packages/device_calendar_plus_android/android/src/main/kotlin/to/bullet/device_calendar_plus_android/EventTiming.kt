@@ -67,13 +67,59 @@ internal fun resolveEditedBounds(
     val isAllDay = newAllDay ?: rowAllDay
     val start = startMillis?.let { storageMillis(it, isAllDay, zone) }
     val end = endMillis?.let { storageMillis(it, isAllDay, zone) }
-    if (isAllDay == rowAllDay) return start to end
-    val (rowStart, rowEnd) = if (isAllDay) {
-        AllDayDates.toggleSpan(currentStart, durationMillis, zone)
-    } else {
-        AllDayDates.timedSpan(currentStart, durationMillis, zone)
+    val (rowStart, rowEnd) = when (FrameChange.of(rowAllDay, newAllDay, zone)) {
+        FrameChange.None -> return start to end
+        is FrameChange.ToAllDay -> AllDayDates.toggleSpan(currentStart, durationMillis, zone)
+        is FrameChange.ToTimed -> AllDayDates.timedSpan(currentStart, durationMillis, zone)
     }
     return (start ?: rowStart) to (end ?: rowEnd)
+}
+
+/**
+ * How an edit moves an event's stored instants into the frame after it,
+ * keeping their dates: an all-day event is stored as UTC midnights, a timed
+ * one in device-local time (#186). Which way an edit toggles is decided
+ * here, once ([of]).
+ */
+internal sealed class FrameChange {
+    abstract fun convert(millis: Long): Long
+
+    /** The edit keeps the all-day flag, so the frame doesn't change. */
+    object None : FrameChange() {
+        override fun convert(millis: Long): Long = millis
+    }
+
+    /**
+     * To all-day: the UTC midnight of the [deviceZone] date, as
+     * [AllDayDates.toggleSpan] starts.
+     */
+    data class ToAllDay(val deviceZone: TimeZone) : FrameChange() {
+        override fun convert(millis: Long): Long =
+            AllDayDates.localDateToUtcMidnight(millis, deviceZone)
+    }
+
+    /**
+     * To timed: the [deviceZone] midnight of the UTC date, as
+     * [AllDayDates.timedSpan] starts.
+     */
+    data class ToTimed(val deviceZone: TimeZone) : FrameChange() {
+        override fun convert(millis: Long): Long =
+            AllDayDates.utcToLocalMidnight(millis, deviceZone)
+    }
+
+    companion object {
+        /**
+         * The frame change an edit setting the all-day flag to [newAllDay]
+         * (null to keep it) makes to an event that is [rowAllDay], on a
+         * device in [zone].
+         */
+        fun of(rowAllDay: Boolean, newAllDay: Boolean?, zone: TimeZone): FrameChange =
+            when (newAllDay) {
+                null, rowAllDay -> None
+                true -> ToAllDay(zone)
+                false -> ToTimed(zone)
+            }
+    }
 }
 
 /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */

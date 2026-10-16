@@ -6,13 +6,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * [splitRule] and [splitSeriesRule]: the rule a `thisAndFollowing` split
- * gives the new series. A kept rule's COUNT drops by the occurrences the
- * provider has before the split, and keeps at least one. A replacing rule
- * is [splitSeriesRule]: EventKit counts a new rule's COUNT from the
- * original series' start, so the new series loses the occurrences the new
- * rule would have had before the split, and doesn't recur at all when that
- * leaves none (#124). The daily, weekly, monthly and yearly counts are what
+ * [newSeriesRule] and [replacedRuleAfterSplit]: the rule a
+ * `thisAndFollowing` split gives the new series. A kept rule's COUNT drops
+ * by the occurrences the provider has before the split, and keeps at least
+ * one. A replacing rule is [replacedRuleAfterSplit]: EventKit counts a new
+ * rule's COUNT from the original series' start, so the new series loses the
+ * occurrences the new rule would have had before the split, and doesn't
+ * recur at all when that leaves none (#124). The daily, weekly, monthly and yearly counts are what
  * an iOS simulator saves for the same splits of a daily series (at its fifth
  * occurrence unless a case names another day). The DST, WKST=SU,
  * out-of-subset and no-COUNT cases pin Android-only behaviour and aren't
@@ -26,18 +26,18 @@ internal class SplitRuleTest {
     private val fifth = instantAt(utc, 2026, 10, 19, 10)
 
     private fun split(rule: String, at: Long = fifth) =
-        splitSeriesRule(rule, seriesStart = seriesStart, splitAt = at, tz = utc)
+        replacedRuleAfterSplit(rule, seriesStart = seriesStart, splitAt = at, tz = utc)
 
     /** The series' occurrence [days] after its start. */
     private fun day(days: Int) = seriesStart + days * AllDayDates.MILLIS_PER_DAY
 
     @Test
-    fun splitSeriesRule_dailyCount_dropsTheDaysBeforeTheSplit() {
+    fun replacedRuleAfterSplit_dailyCount_dropsTheDaysBeforeTheSplit() {
         assertEquals("FREQ=DAILY;COUNT=16", split("FREQ=DAILY;COUNT=20"))
     }
 
     @Test
-    fun splitSeriesRule_dailyCountAtTheSecondOccurrence_dropsOne() {
+    fun replacedRuleAfterSplit_dailyCountAtTheSecondOccurrence_dropsOne() {
         assertEquals(
             "FREQ=DAILY;COUNT=4",
             split("FREQ=DAILY;COUNT=5", at = instantAt(utc, 2026, 10, 16, 10))
@@ -46,13 +46,13 @@ internal class SplitRuleTest {
 
     // Every other day from the start: the 15th and 17th come before the split.
     @Test
-    fun splitSeriesRule_dailyWithInterval_dropsOnlyTheDaysInPhase() {
+    fun replacedRuleAfterSplit_dailyWithInterval_dropsOnlyTheDaysInPhase() {
         assertEquals("FREQ=DAILY;INTERVAL=2;COUNT=3", split("FREQ=DAILY;INTERVAL=2;COUNT=5"))
     }
 
     // On the start's weekday: only the start itself comes before the split.
     @Test
-    fun splitSeriesRule_weeklyCount_dropsTheStartsWeek() {
+    fun replacedRuleAfterSplit_weeklyCount_dropsTheStartsWeek() {
         assertEquals("FREQ=WEEKLY;COUNT=9", split("FREQ=WEEKLY;COUNT=10"))
         assertEquals("FREQ=WEEKLY;COUNT=2", split("FREQ=WEEKLY;COUNT=3"))
     }
@@ -61,7 +61,7 @@ internal class SplitRuleTest {
     // new rule doesn't generate, as RFC 5545 counts DTSTART: Mondays from a
     // Thursday start have none before the split, yet still lose one.
     @Test
-    fun splitSeriesRule_startOffTheNewRule_stillCountsTheStart() {
+    fun replacedRuleAfterSplit_startOffTheNewRule_stillCountsTheStart() {
         assertEquals(
             "FREQ=WEEKLY;BYDAY=MO;COUNT=2",
             split("FREQ=WEEKLY;BYDAY=MO;COUNT=3")
@@ -74,13 +74,13 @@ internal class SplitRuleTest {
     }
 
     @Test
-    fun splitSeriesRule_countUsedUpBeforeTheSplit_doesNotRecur() {
+    fun replacedRuleAfterSplit_countUsedUpBeforeTheSplit_doesNotRecur() {
         assertNull(split("FREQ=DAILY;COUNT=4"))
         assertNull(split("FREQ=DAILY;COUNT=3"))
     }
 
     @Test
-    fun splitSeriesRule_noCount_isUnchanged() {
+    fun replacedRuleAfterSplit_noCount_isUnchanged() {
         assertEquals("FREQ=DAILY", split("FREQ=DAILY"))
         assertEquals(
             "FREQ=DAILY;UNTIL=20261231T000000Z",
@@ -92,7 +92,7 @@ internal class SplitRuleTest {
     // Thursday 15th and Sunday 18th) is in phase, the next isn't, so a split
     // on Friday the 23rd drops two.
     @Test
-    fun splitSeriesRule_weeklyWithInterval_countsTheWeeksFromMonday() {
+    fun replacedRuleAfterSplit_weeklyWithInterval_countsTheWeeksFromMonday() {
         assertEquals(
             "FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;COUNT=8",
             split("FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;COUNT=10", at = day(8))
@@ -107,7 +107,7 @@ internal class SplitRuleTest {
     // with the 22nd, so only the start comes before the split. RFC 5545's
     // count; not checked against EventKit.
     @Test
-    fun splitSeriesRule_weeklyWithIntervalFromSunday_countsTheWeeksFromSunday() {
+    fun replacedRuleAfterSplit_weeklyWithIntervalFromSunday_countsTheWeeksFromSunday() {
         assertEquals(
             "FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=SU;COUNT=9",
             split("FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=SU;COUNT=10", at = day(8))
@@ -117,7 +117,7 @@ internal class SplitRuleTest {
     // Split three weeks in: the start and the 29th, two weeks on, come
     // before it; the 22nd is in the off week.
     @Test
-    fun splitSeriesRule_weeklyWithInterval_dropsOnlyTheWeeksInPhase() {
+    fun replacedRuleAfterSplit_weeklyWithInterval_dropsOnlyTheWeeksInPhase() {
         assertEquals(
             "FREQ=WEEKLY;INTERVAL=2;COUNT=8",
             split("FREQ=WEEKLY;INTERVAL=2;COUNT=10", at = day(21))
@@ -131,13 +131,13 @@ internal class SplitRuleTest {
 
     // Split on 16 December: 15 October, November and December come before.
     @Test
-    fun splitSeriesRule_monthlyCount_dropsTheMonthsBeforeTheSplit() {
+    fun replacedRuleAfterSplit_monthlyCount_dropsTheMonthsBeforeTheSplit() {
         assertEquals("FREQ=MONTHLY;COUNT=3", split("FREQ=MONTHLY;COUNT=6", at = day(62)))
     }
 
     // Every other month: November is out of phase.
     @Test
-    fun splitSeriesRule_monthlyWithInterval_dropsOnlyTheMonthsInPhase() {
+    fun replacedRuleAfterSplit_monthlyWithInterval_dropsOnlyTheMonthsInPhase() {
         assertEquals(
             "FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=15;COUNT=4",
             split("FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=15;COUNT=6", at = day(62))
@@ -146,7 +146,7 @@ internal class SplitRuleTest {
 
     // Split on 24 November: the start and 2 November, its first Monday.
     @Test
-    fun splitSeriesRule_monthlyByDayOrdinal_dropsTheStartAndTheOrdinalDays() {
+    fun replacedRuleAfterSplit_monthlyByDayOrdinal_dropsTheStartAndTheOrdinalDays() {
         assertEquals(
             "FREQ=MONTHLY;BYDAY=1MO;COUNT=4",
             split("FREQ=MONTHLY;BYDAY=1MO;COUNT=6", at = day(40))
@@ -155,7 +155,7 @@ internal class SplitRuleTest {
 
     // Split on 16 October 2027: the start and its first anniversary.
     @Test
-    fun splitSeriesRule_yearlyCount_dropsTheYearsBeforeTheSplit() {
+    fun replacedRuleAfterSplit_yearlyCount_dropsTheYearsBeforeTheSplit() {
         assertEquals("FREQ=YEARLY;COUNT=3", split("FREQ=YEARLY;COUNT=5", at = day(366)))
         // Every other year: only the start.
         assertEquals(
@@ -170,11 +170,11 @@ internal class SplitRuleTest {
     // and not before it: five days, not the six that 24-hour steps (landing
     // at 09:00 PST) would count.
     @Test
-    fun splitSeriesRule_dailyAcrossDst_countsTheLocalDays() {
+    fun replacedRuleAfterSplit_dailyAcrossDst_countsTheLocalDays() {
         val la = TimeZone.getTimeZone("America/Los_Angeles")
         assertEquals(
             "FREQ=DAILY;COUNT=5",
-            splitSeriesRule(
+            replacedRuleAfterSplit(
                 "FREQ=DAILY;COUNT=10",
                 seriesStart = instantAt(la, 2026, 10, 29, 10),
                 splitAt = instantAt(la, 2026, 11, 3, 10),
@@ -185,45 +185,32 @@ internal class SplitRuleTest {
 
     // Split at the series' own start, the count is left as it is.
     @Test
-    fun splitSeriesRule_atTheSeriesStart_keepsTheCount() {
+    fun replacedRuleAfterSplit_atTheSeriesStart_keepsTheCount() {
         assertEquals("FREQ=DAILY;COUNT=5", split("FREQ=DAILY;COUNT=5", at = seriesStart))
     }
 
     // A rule outside the modelled subset (a FREQ it doesn't know) can't be
     // expanded, so it is left exactly as given.
     @Test
-    fun splitSeriesRule_ruleOutsideTheModelledSubset_isUnchanged() {
+    fun replacedRuleAfterSplit_ruleOutsideTheModelledSubset_isUnchanged() {
         assertEquals("FREQ=HOURLY;COUNT=5;INTERVAL=2", split("FREQ=HOURLY;COUNT=5;INTERVAL=2"))
     }
 
     private fun splitWith(
         ruleEdit: SeriesRuleEdit,
         existingRule: String = "FREQ=DAILY;COUNT=5",
-        keptBefore: Int = 4,
-    ) = splitRule(
+        providerCountBefore: Int = 4,
+    ) = newSeriesRule(
         ruleEdit,
         existingRule = existingRule,
         seriesStart = seriesStart,
         splitAt = fifth,
         tz = utc,
-        keptBefore = { keptBefore }
+        providerCountBefore = { providerCountBefore }
     )
 
     @Test
-    fun splitRule_clear_doesNotRecur() {
-        assertNull(splitWith(SeriesRuleEdit.Clear))
-    }
-
-    @Test
-    fun splitRule_replace_countsTheNewRuleFromTheSeriesStart() {
-        assertEquals(
-            "FREQ=DAILY;COUNT=16",
-            splitWith(SeriesRuleEdit.Replace("FREQ=DAILY;COUNT=20"))
-        )
-    }
-
-    @Test
-    fun splitRule_keep_dropsTheOccurrencesBeforeTheSplit() {
+    fun newSeriesRule_keep_dropsTheOccurrencesBeforeTheSplit() {
         assertEquals(
             "FREQ=DAILY;COUNT=6",
             splitWith(SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=10"), "FREQ=DAILY;COUNT=10")
@@ -233,7 +220,7 @@ internal class SplitRuleTest {
     // Unlike a replacing rule, a kept one always leaves the split's own
     // occurrence: it is one of the series' own.
     @Test
-    fun splitRule_keepWithTheCountUsedUp_keepsOne() {
+    fun newSeriesRule_keepWithTheCountUsedUp_keepsOne() {
         assertEquals(
             "FREQ=DAILY;COUNT=1",
             splitWith(SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=3"), "FREQ=DAILY;COUNT=3")
@@ -241,16 +228,16 @@ internal class SplitRuleTest {
     }
 
     @Test
-    fun splitRule_keepWithoutCount_isUnchangedAndCountsNothing() {
+    fun newSeriesRule_keepWithoutCount_isUnchangedAndCountsNothing() {
         assertEquals(
             "FREQ=DAILY",
-            splitRule(
+            newSeriesRule(
                 SeriesRuleEdit.Keep("FREQ=DAILY"),
                 existingRule = "FREQ=DAILY",
                 seriesStart = seriesStart,
                 splitAt = fifth,
                 tz = utc,
-                keptBefore = { error("a rule without COUNT needs no count") }
+                providerCountBefore = { error("a rule without COUNT needs no count") }
             )
         )
     }

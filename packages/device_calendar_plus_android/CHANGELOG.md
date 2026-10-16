@@ -20,6 +20,10 @@
   start a day off (#186). A toggle back to timed counts it the same way, so
   it no longer lands a day off in a zone whose DST offsets straddle UTC,
   such as the Azores.
+- `updateRecurring` with `EventSpan.thisAndFollowing` that toggles a timed
+  series all-day carries the detached occurrences past the split onto the
+  new series' slots on their own local dates. One past a DST change could
+  land a day off its slot, and show beside a generated occurrence (#186).
 - `updateRecurring` with `EventSpan.thisAndFollowing` and a new `CountEnd`
   rule counts it from the series' start, as iOS does: the new series drops
   the occurrences the new rule would have had before the split, and is a

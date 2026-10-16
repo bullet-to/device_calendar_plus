@@ -1176,13 +1176,13 @@ class EventsService(
             if ("url" in patch.clearedFields) null else (patch.url ?: row.url)
         val effectiveTimeZone = patch.timeZone ?: row.timeZone
         val effectiveAvailability = patch.availability ?: row.availability
-        val effectiveRrule = splitRule(
+        val effectiveRrule = newSeriesRule(
             ruleEdit,
             existingRule = rrule,
             seriesStart = row.dtstart,
             splitAt = timestamp,
             tz = seriesTimeZone(row.timeZone, row.allDay),
-            keptBefore = { countInstancesBefore(row, timestamp) }
+            providerCountBefore = { countInstancesBefore(row, timestamp) }
         )
 
         // The new series is anchored at the split occurrence, shifted to the
@@ -1191,7 +1191,7 @@ class EventsService(
         // day (a Saturday series switched to Sundays) — without that the
         // provider keeps the old day as an extra first occurrence (#140).
         // Duration is the master's unless overridden.
-        val (newStart, newDurationMs) = resolveSeriesTimes(
+        val (newStart, newDurationMs, carry) = resolveSeriesTimes(
             baseMillis = timestamp,
             referenceMillis = timestamp,
             existingDurationMillis = eventDurationMillis(row),
@@ -1260,15 +1260,10 @@ class EventsService(
         // leaves the exceptions on the old series rather than losing them.
         // The split is committed by now, so this is best-effort and reports
         // nothing (see DetachedOccurrenceCarry.settleAfterSplit). A new
-        // series moves them as it moved its anchor, in the frame
-        // resolveSeriesTimes did above; a new event that doesn't recur
-        // drops them.
-        val shift = effectiveRrule?.let {
-            SplitShift.of(
-                timestamp, newStart,
-                seriesTimeZone(row.timeZone, effectiveIsAllDay), effectiveIsAllDay
-            )
-        }
+        // series moves them by the very shift resolveSeriesTimes moved its
+        // anchor by, in the same frame (#186); a new event that doesn't
+        // recur drops them.
+        val shift = carry.takeIf { effectiveRrule != null }
         detachedOccurrenceCarry.settleAfterSplit(row, timestamp, newEventId, shift)
 
         return Result.success(newEventId)

@@ -3383,6 +3383,60 @@ void main() {
         before: split.startDate,
       );
     });
+
+    // The split twin of the #208 test above: a split starts the new series
+    // at the named occurrence, so past a DST change it spans that
+    // occurrence's own local days, as EventKit's split does, not the
+    // master's. West of UTC the 23:30 master runs into the next day, but its
+    // occurrences past the change sit at 22:30 and stay on their own.
+    test(
+        'thisAndFollowing toggling a timed series all-day with no start from '
+        "an occurrence past a DST change spans that occurrence's days",
+        () async {
+      final seeded = await seedTimedOffUtcDate('Timed To All-day Split DST',
+          day: dstSeedDay);
+      final before = seeded.occurrences;
+      final split = before[2];
+
+      final newSeriesId = await plugin.updateRecurring(
+        split.instanceId,
+        EventSpan.thisAndFollowing,
+        isAllDay: true,
+      );
+
+      final firstDay = localDay(split.startDate.toLocal());
+      final endDay = nextLocalMidnight(localDay(split.endDate
+          .toLocal()
+          .subtract(const Duration(milliseconds: 1))));
+      final after = await occurrencesOf(
+          plugin, calendarId!, newSeriesId, seeded.start,
+          windowDays: 30);
+      expect(after.every((e) => e.isAllDay), isTrue,
+          reason: 'every occurrence must be all-day');
+      expect(
+        startsOf(after),
+        [
+          for (var i = 0; i < seedCount - 2; i++)
+            daysOn(firstDay, 7 * i).millisecondsSinceEpoch,
+        ],
+        reason: "each new occurrence must sit on the split occurrence's "
+            'local date, a week on each time',
+      );
+      expect(
+        endsOf(after),
+        [
+          for (var i = 0; i < seedCount - 2; i++)
+            daysOn(endDay, 7 * i).millisecondsSinceEpoch,
+        ],
+        reason: 'each new occurrence must run through the last local day '
+            "the split occurrence's timed hour touched",
+      );
+      expectTruncatedMaster(
+        await occurrencesOf(plugin, calendarId!, seeded.eventId, seeded.start,
+            windowDays: 30),
+        before: split.startDate,
+      );
+    });
   });
 
   group('Recurrence Delete Tests', () {

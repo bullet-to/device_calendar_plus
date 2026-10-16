@@ -56,7 +56,7 @@ internal class AllDayToggleTest {
         rule: String = "FREQ=WEEKLY;COUNT=4",
         seriesZoneId: String = "UTC",
         storedZone: TimeZone = utc,
-    ): Result<Pair<Long, Long>> {
+    ): Result<SeriesTimes> {
         return resolveSeriesTimes(
             baseMillis = start,
             referenceMillis = start,
@@ -82,7 +82,10 @@ internal class AllDayToggleTest {
             patchIsAllDay = null, defaultStart = start, firstOccurrenceStart = start
         )
 
-        assertEquals(SeriesTimeEdit(null, null, startDefaulted = false), edit)
+        assertEquals(
+            SeriesTimeEdit(null, null, startDefaulted = false, frameChange = FrameChange.None),
+            edit
+        )
     }
 
     @Test
@@ -91,7 +94,10 @@ internal class AllDayToggleTest {
 
         val edit = timeEdit(rowAllDay = true, defaultStart = start, firstOccurrenceStart = start)
 
-        assertEquals(SeriesTimeEdit(null, null, startDefaulted = false), edit)
+        assertEquals(
+            SeriesTimeEdit(null, null, startDefaulted = false, frameChange = FrameChange.None),
+            edit
+        )
     }
 
     @Test
@@ -312,7 +318,7 @@ internal class AllDayToggleTest {
             isAllDay = true,
             timeZoneId = utc.id,
             storedZone = utc
-        ).getOrThrow()
+        ).getOrThrow().let { it.start to it.durationMillis }
 
     // #208: a UTC-stored series at 23:30 PDT on Wednesday 28 October runs
     // into Thursday; after the 1 November change its 06:30 UTC occurrences
@@ -356,6 +362,34 @@ internal class AllDayToggleTest {
             instantAt(utc, 2026, 11, 4) to AllDayDates.MILLIS_PER_DAY,
             bareToggleNamedAt(occurrence, firstOccurrenceStart = occurrence, zone = la),
         )
+    }
+
+    // A split's detached occurrences carry onto the new series' slots in the
+    // frame its anchor moved in. 16:30 in LA is the same UTC date in PDT
+    // (the Monday 26 October split) but the next one in PST (the Monday 2
+    // November occurrence past the change). Read raw in UTC, the anchor
+    // didn't move and that slot landed on Tuesday 3 November, a day off the
+    // new series' Monday; brought into the all-day frame first, it stays on
+    // its own Monday.
+    @Test
+    fun resolveSeriesTimes_splitToggleCarry_acrossDst_keepsTheSlotsLocalDate() {
+        val occurrence = instantAt(la, 2026, 10, 26, 16, 30)
+        val detachedSlot = instantAt(la, 2026, 11, 2, 16, 30)
+
+        val carry = resolveSeriesTimes(
+            baseMillis = occurrence,
+            referenceMillis = occurrence,
+            existingDurationMillis = hour,
+            timeEdit = timeEdit(defaultStart = occurrence, firstOccurrenceStart = occurrence),
+            ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
+            isAllDay = true,
+            timeZoneId = la.id,
+            storedZone = la
+        ).getOrThrow().carry
+
+        assertEquals(instantAt(utc, 2026, 11, 2), carry.slot(detachedSlot))
+        // The occurrence's own start keeps its date: the anchor's didn't move.
+        assertEquals(detachedSlot, carry.start(detachedSlot))
     }
 
     @Test

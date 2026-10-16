@@ -56,7 +56,7 @@ internal class AllDayStartFrameTest {
         isAllDay = effectiveIsAllDay,
         timeZoneId = seriesZoneId,
         storedZone = seriesTimeZone(seriesZoneId, rowAllDay)
-    ).map { it.first }
+    ).map { it.start }
 
     /**
      * Moves an all-day [rrule] series stored on Saturday 6 June to the local

@@ -98,7 +98,7 @@ internal object RecurrenceAnchor {
      * year. 0 when [beforeMillis] is on or before the anchor; null for a
      * rule outside the modelled subset, which can't be expanded here. The
      * COUNT a `thisAndFollowing` split takes off a new rule
-     * ([splitSeriesRule]).
+     * ([replacedRuleAfterSplit]).
      */
     fun countBefore(rrule: String, anchorMillis: Long, beforeMillis: Long, tz: TimeZone): Int? {
         if (anchorMillis >= beforeMillis) return 0
