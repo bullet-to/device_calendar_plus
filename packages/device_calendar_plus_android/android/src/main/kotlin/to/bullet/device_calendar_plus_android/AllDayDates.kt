@@ -69,12 +69,12 @@ internal object AllDayDates {
             windowEndUtcMidnight(startMillis + maxOf(durationMillis, 1L), zone)
 
     /**
-     * The timed start and end an all-day event stored at [startMillis] (a
-     * UTC midnight) lasting [durationMillis] takes once an edit toggles it
-     * timed without new dates: [zone] midnight of its first date, through
-     * the last second of its last date, as EventKit reads the dates it holds
-     * for an all-day event once the flag is off. An empty span ends where it
-     * starts.
+     * The timed span an all-day event stored at [startMillis] (a UTC
+     * midnight) lasting [durationMillis] takes once an edit toggles it
+     * timed: the bound the edit leaves out comes from here. [zone] midnight
+     * of its first date, through the last second of its last date, as
+     * EventKit reads the dates it holds for an all-day event once the flag
+     * is off. An empty span ends where it starts.
      */
     fun timedSpan(
         startMillis: Long,
