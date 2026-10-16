@@ -108,7 +108,8 @@ internal class AllDayToggleTest {
 
         assertEquals(
             SeriesTimeEdit(
-                instantAt(utc, 2026, 6, 10), 3 * 24 * 60, startDefaulted = false, toAllDayFrom = la
+                instantAt(utc, 2026, 6, 10), 3 * 24 * 60, startDefaulted = false,
+                frameChange = FrameChange.ToAllDay(la)
             ),
             edit
         )
@@ -127,7 +128,8 @@ internal class AllDayToggleTest {
         // 00:30 touches two local dates.
         assertEquals(
             SeriesTimeEdit(
-                instantAt(utc, 2026, 6, 10), 2 * 24 * 60, startDefaulted = false, toAllDayFrom = la
+                instantAt(utc, 2026, 6, 10), 2 * 24 * 60, startDefaulted = false,
+                frameChange = FrameChange.ToAllDay(la)
             ),
             edit
         )
@@ -143,7 +145,8 @@ internal class AllDayToggleTest {
 
         assertEquals(
             SeriesTimeEdit(
-                instantAt(utc, 2026, 6, 13), 2 * 24 * 60, startDefaulted = true, toAllDayFrom = la
+                instantAt(utc, 2026, 6, 13), 2 * 24 * 60, startDefaulted = true,
+                frameChange = FrameChange.ToAllDay(la)
             ),
             edit
         )
@@ -160,7 +163,8 @@ internal class AllDayToggleTest {
 
         assertEquals(
             SeriesTimeEdit(
-                instantAt(utc, 2026, 6, 13), 24 * 60, startDefaulted = true, toAllDayFrom = la
+                instantAt(utc, 2026, 6, 13), 24 * 60, startDefaulted = true,
+                frameChange = FrameChange.ToAllDay(la)
             ),
             edit
         )
@@ -174,7 +178,8 @@ internal class AllDayToggleTest {
 
         assertEquals(
             SeriesTimeEdit(
-                instantAt(utc, 2026, 6, 6), 24 * 60, startDefaulted = true, toAllDayFrom = la
+                instantAt(utc, 2026, 6, 6), 24 * 60, startDefaulted = true,
+                frameChange = FrameChange.ToAllDay(la)
             ),
             edit
         )
@@ -248,6 +253,38 @@ internal class AllDayToggleTest {
         ).getOrThrow()
 
         assertEquals(instantAt(utc, 2026, 1, 6), newStart)
+    }
+
+    // The reverse of #186: a toggle off read base and reference, both UTC
+    // midnights, in the series' timed zone. The Azores sit at UTC-1 in
+    // winter and UTC+0 in summer, so the Monday 5 January start read as
+    // Sunday 4 January there and the Monday 1 June occurrence as itself:
+    // a one-day move took the start to Monday 5 January, not Tuesday 6.
+    @Test
+    fun resolveSeriesTimes_toggleOffNamedAcrossDst_movesTheStartByTheLocalDays() {
+        val azores = TimeZone.getTimeZone("Atlantic/Azores")
+        val seriesStart = instantAt(utc, 2026, 1, 5)
+        val occurrence = instantAt(utc, 2026, 6, 1)
+
+        val (newStart, _) = resolveSeriesTimes(
+            baseMillis = seriesStart,
+            referenceMillis = occurrence,
+            existingDurationMillis = AllDayDates.MILLIS_PER_DAY,
+            timeEdit = timeEdit(
+                newStartMillis = instantAt(azores, 2026, 6, 2, 9),
+                rowAllDay = true,
+                patchIsAllDay = false,
+                defaultStart = occurrence,
+                firstOccurrenceStart = seriesStart,
+                zone = azores,
+            ),
+            ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
+            isAllDay = false,
+            timeZoneId = azores.id,
+            storedZone = seriesTimeZone(azores.id, isAllDay = true)
+        ).getOrThrow()
+
+        assertEquals(instantAt(azores, 2026, 1, 6, 9), newStart)
     }
 
     /**
