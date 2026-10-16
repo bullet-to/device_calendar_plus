@@ -35,7 +35,8 @@ internal class AllDayStartFrameTest {
         ruleEdit: SeriesRuleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;BYDAY=SA"),
         zone: TimeZone = la,
         base: Long = stored(6),
-        storedZone: TimeZone = utc
+        storedZone: TimeZone = utc,
+        rowAllDay: Boolean = true
     ): Result<Long> = resolveSeriesTimes(
         baseMillis = base,
         referenceMillis = base,
@@ -52,7 +53,9 @@ internal class AllDayStartFrameTest {
         ruleEdit = ruleEdit,
         isAllDay = effectiveIsAllDay,
         timeZoneId = zone.id,
-        storedZone = storedZone
+        storedZone = storedZone,
+        rowAllDay = rowAllDay,
+        deviceZone = zone
     ).map { it.first }
 
     /**
@@ -132,7 +135,8 @@ internal class AllDayStartFrameTest {
         val result = resolve(
             instantAt(la, 2026, 6, 6),
             base = instantAt(la, 2026, 6, 6, 20),
-            storedZone = la
+            storedZone = la,
+            rowAllDay = false
         )
         assertEquals(stored(6), result.getOrThrow())
     }
@@ -150,7 +154,8 @@ internal class AllDayStartFrameTest {
             ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;BYDAY=WE"),
             zone = sydney,
             base = instantAt(utc, 2026, 9, 30, 23),
-            storedZone = utc
+            storedZone = utc,
+            rowAllDay = false
         ).assertRefused()
     }
 

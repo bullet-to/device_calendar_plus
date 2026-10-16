@@ -125,17 +125,15 @@ internal sealed class SeriesRuleEdit {
  * delta from [referenceMillis] to [targetStart] (see [SplitShift]).
  * [targetStart] is already in the frame after the edit
  * ([resolveTargetStart]), while [baseMillis] and [referenceMillis] are in
- * the row's stored frame [storedZone], yet the shift reads all three in the
- * one post-edit zone, `seriesTimeZone(timeZoneId, isAllDay)` ([isAllDay] is
- * the series' all-day state after the edit). That zone differs from
- * [storedZone] only when the same edit toggles all-day, and it is still
- * safe then: base and reference are the same instant or occurrences of the
- * same series at the same wall-clock time, so the wrong zone moves both
- * onto the same wrong day (unless a DST change between them carries just
- * one across the other zone's midnight), the error cancels out of the day
- * delta, and [SplitShift.slot] then resets the time of day for the new
- * frame. Keep that invariant, or read them in [storedZone], when changing
- * either input.
+ * the row's stored frame [storedZone]; the shift reads all three in the one
+ * post-edit zone, `seriesTimeZone(timeZoneId, isAllDay)` ([isAllDay] is the
+ * series' all-day state after the edit, [rowAllDay] the row's before it).
+ * A toggle to all-day first brings base and reference into that frame too,
+ * as the UTC midnights of their [deviceZone] dates, so the day delta is
+ * counted in the local days EventKit counts even when a DST change falls
+ * between them (#186). A toggle off is left as stored: base and reference
+ * are then both UTC dates, so the post-edit zone reads them alike and the
+ * error cancels out of the day delta.
  *
  * The new start must be a day the series' rule generates, or the provider
  * emits it as an extra first occurrence (#140, #189). [ruleEdit] decides
@@ -157,17 +155,30 @@ internal fun resolveSeriesTimes(
     ruleEdit: SeriesRuleEdit,
     isAllDay: Boolean,
     timeZoneId: String?,
-    storedZone: TimeZone
+    storedZone: TimeZone,
+    rowAllDay: Boolean,
+    deviceZone: TimeZone = TimeZone.getDefault()
 ): Result<Pair<Long, Long>> {
     val targetStart = timeEdit.targetStart
     val durationMinutes = timeEdit.durationMinutes
     val editZone = seriesTimeZone(timeZoneId, isAllDay)
+    // A toggle to all-day brings the timed base and reference into the
+    // frame the target is in: the UTC midnight of their device-local dates,
+    // as the target is. Read as timed instants in UTC, a DST change between
+    // them could put one on the next UTC date and not the other, and the
+    // start moved a day further than the occurrence did (#186, #208).
+    val (frameBase, frameReference) = if (isAllDay && !rowAllDay) {
+        AllDayDates.localDateToUtcMidnight(baseMillis, deviceZone) to
+            AllDayDates.localDateToUtcMidnight(referenceMillis, deviceZone)
+    } else {
+        baseMillis to referenceMillis
+    }
     // A slot copies the new start's time of day, already whole seconds.
     // With no new start the stored start is kept as is, even with millis
     // from an older version or another app: rewriting it would orphan
     // detached occurrences keyed at those millis (#165).
     val shiftedStart = if (targetStart != null) {
-        SplitShift.of(referenceMillis, targetStart, editZone, isAllDay).slot(baseMillis)
+        SplitShift.of(frameReference, targetStart, editZone, isAllDay).slot(frameBase)
     } else {
         baseMillis
     }
@@ -177,7 +188,7 @@ internal fun resolveSeriesTimes(
             keptRule,
             referenceMillis = referenceMillis,
             referenceZone = storedZone,
-            baseMillis = baseMillis,
+            baseMillis = frameBase,
             targetStart = targetStart,
             shiftedStart = shiftedStart,
             tz = editZone
@@ -312,13 +323,21 @@ internal data class SeriesTimeEdit(
  * through. A toggle of a timed series to all-day ([rowAllDay] false,
  * [patchIsAllDay] true) fills in what the caller left out:
  * - `start` defaults to the named occurrence's own start: [timestamp], or
- *   [seriesStart] when the edit names the master.
- * - `duration` defaults to the whole [deviceZone] days that occurrence,
- *   lasting [durationMillis], covers ([allDayToggleDurationMinutes]).
+ *   [seriesStart] when the edit names the master. [resolveSeriesTimes]
+ *   counts the move from that occurrence in local days, so a series edit
+ *   keeps its start's local date.
+ * - `duration` defaults to the whole [deviceZone] days the series' first
+ *   occurrence covers ([allDayToggleDurationMinutes]), lasting
+ *   [durationMillis]: the master's ([seriesStart]) when the edit spans the
+ *   [wholeSeries], else the named occurrence's, which a split starts the
+ *   new series at.
  *
- * That's what EventKit makes of the same toggle. Without these defaults the
- * timed DTSTART and DURATION stayed under ALL_DAY=1, and the series read
- * back on the wrong date or collapsed (#124).
+ * That's what EventKit makes of the same toggle: it floats the master's (or
+ * the split occurrence's) own dates. Without these defaults the timed
+ * DTSTART and DURATION stayed under ALL_DAY=1, and the series read back on
+ * the wrong date or collapsed (#124). Spanning the named occurrence on a
+ * whole-series edit differed from EventKit wherever a DST change moved that
+ * occurrence across a local midnight the master doesn't cross (#208).
  */
 internal fun resolveSeriesTimeEdit(
     newStartMillis: Long?,
@@ -328,6 +347,7 @@ internal fun resolveSeriesTimeEdit(
     timestamp: Long?,
     seriesStart: Long,
     durationMillis: Long,
+    wholeSeries: Boolean,
     deviceZone: TimeZone = TimeZone.getDefault()
 ): SeriesTimeEdit {
     val effectiveIsAllDay = patchIsAllDay ?: rowAllDay
@@ -339,12 +359,32 @@ internal fun resolveSeriesTimeEdit(
         )
     }
     val occurrenceStart = timestamp ?: seriesStart
+    val firstStart = if (wholeSeries) seriesStart else occurrenceStart
     return SeriesTimeEdit(
         targetStart = resolveTargetStart(
             newStartMillis ?: occurrenceStart, effectiveIsAllDay, deviceZone
         ),
         durationMinutes = durationMinutes
-            ?: allDayToggleDurationMinutes(occurrenceStart, durationMillis, deviceZone),
+            ?: allDayToggleDurationMinutes(firstStart, durationMillis, deviceZone),
         startDefaulted = newStartMillis == null,
     )
+}
+
+/**
+ * The rule a `thisAndFollowing` split that replaces the series' rule with
+ * [rule] gives the new series at [splitAt], or null when it leaves the new
+ * series nothing to repeat.
+ *
+ * EventKit counts a new rule's COUNT from the start of the series it splits
+ * ([seriesStart]), not from the split: the new series gets COUNT less the
+ * occurrences [rule] would have generated before [splitAt]
+ * ([RecurrenceAnchor.countBefore], in the series' zone [tz]), and none at
+ * all, saved as a one-off, when that leaves nothing. Android honoured the
+ * COUNT as given, so the new series ran longer than on iOS (#124). A rule
+ * that ends by UNTIL, or not at all, is unchanged.
+ */
+internal fun splitSeriesRule(rule: String, seriesStart: Long, splitAt: Long, tz: TimeZone): String? {
+    val count = RruleString.count(rule) ?: return rule
+    val left = count - RecurrenceAnchor.countBefore(rule, seriesStart, splitAt, tz)
+    return if (left > 0) RruleString.withCount(rule, left) else null
 }

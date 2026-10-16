@@ -1078,6 +1078,74 @@ void main() {
           reason: 'the event must span every day its timed self touched');
     });
 
+    // A toggle with one date: the bound the caller leaves out moves into the
+    // all-day frame too, as EventKit floats it onto its local date. Android
+    // once stored only the given bound at UTC midnight and left the other
+    // timed under ALL_DAY=1, a day off wherever its UTC date isn't its local
+    // one (#204).
+    test('Change Timed Event to All-Day with only a start keeps its end day',
+        () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Timed to All-Day Start Only Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final start = startOnOtherUtcDate(localMidnight(2));
+      final end = start.add(const Duration(hours: 1));
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Timed to All-Day Start Only',
+        startDate: start,
+        endDate: end,
+        timeZone: 'UTC',
+      );
+
+      final newStart = localMidnight(1);
+      await plugin.updateEvent(
+          instanceId: eventId, isAllDay: true, startDate: newStart);
+
+      final lastDay = localDay(end.subtract(const Duration(milliseconds: 1)));
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.isAllDay, true);
+      expect(event.startDate.toLocal(), newStart,
+          reason: 'the event must start on the day asked for');
+      expect(event.endDate.toLocal(), nextLocalMidnight(lastDay),
+          reason: 'the event must still run through the last day its timed '
+              'self touched');
+    });
+
+    test('Change Timed Event to All-Day with only an end keeps its start day',
+        () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'Timed to All-Day End Only Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final start = startOnOtherUtcDate(localMidnight(2));
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'Timed to All-Day End Only',
+        startDate: start,
+        endDate: start.add(const Duration(hours: 1)),
+        timeZone: 'UTC',
+      );
+
+      final newEnd = localMidnight(5);
+      await plugin.updateEvent(
+          instanceId: eventId, isAllDay: true, endDate: newEnd);
+
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.isAllDay, true);
+      expect(event.startDate.toLocal(), localDay(start),
+          reason: 'the event must stay on its own first calendar day');
+      expect(event.endDate.toLocal(), newEnd,
+          reason: 'the event must end on the day asked for');
+    });
+
     test('Extend an All-Day Event to Two Days (#195)', () async {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
@@ -1144,6 +1212,40 @@ void main() {
       // Should have specific time now (allowing small differences)
       expect(event.startDate.difference(newStart).abs(),
           lessThan(Duration(minutes: 1)));
+    });
+
+    // The reverse toggle alone, with no dates: the event keeps its calendar
+    // days, from the first one's local midnight to the last second of the
+    // last, which is how EventKit reads the all-day dates it already holds
+    // once they are timed. Android once kept the all-day UTC midnights under
+    // ALL_DAY=0, which read back as the evening before west of UTC (#205).
+    test('Change All-Day Event to Timed with no dates keeps its calendar days',
+        () async {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final calendarId = await plugin.createCalendar(
+        name: 'All-Day to Timed No Dates Test $timestamp',
+      );
+      createdCalendarIds.add(calendarId);
+
+      final start = localMidnight(2);
+      final end = daysOn(start, 2);
+      final eventId = await plugin.createEvent(
+        calendarId: calendarId,
+        title: 'All-Day to Timed No Dates',
+        startDate: start,
+        endDate: end,
+        isAllDay: true,
+      );
+
+      await plugin.updateEvent(instanceId: eventId, isAllDay: false);
+
+      final event = await plugin.getEvent(eventId);
+      expect(event, isNotNull);
+      expect(event!.isAllDay, false);
+      expect(event.startDate.toLocal(), start,
+          reason: "the event must start at its first day's local midnight");
+      expect(event.endDate.toLocal(), end.subtract(const Duration(seconds: 1)),
+          reason: 'the event must end at the last second of its last day');
     });
 
     test('Update Event TimeZone', () async {

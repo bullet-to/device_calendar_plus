@@ -78,6 +78,51 @@ internal object RecurrenceAnchor {
     }
 
     /**
+     * How many occurrences [rrule] generates from a series starting at
+     * [anchorMillis] that start before [beforeMillis]: the start itself,
+     * then the days (in [tz]) after it the rule generates, at the anchor's
+     * wall-clock time, with the parts it
+     * leaves implicit filled in from the anchor and its INTERVAL counted
+     * from the anchor's day, week (from WKST, Monday by default), month or
+     * year. 0 for a rule outside the modelled subset, which can't be
+     * expanded here. The COUNT a `thisAndFollowing` split takes off a new
+     * rule ([splitSeriesRule]).
+     */
+    fun countBefore(rrule: String, anchorMillis: Long, beforeMillis: Long, tz: TimeZone): Int {
+        val rule = parse(rrule) ?: return 0
+        val anchor = Calendar.getInstance(tz).apply { timeInMillis = anchorMillis }
+        val matcher = Matcher(rule.impliedBy(anchor))
+        val params = RruleString.params(rrule)
+        val interval = params["INTERVAL"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1
+        val weekStart = params["WKST"]?.let { weekdayCodes[it.uppercase()] } ?: Calendar.MONDAY
+        fun period(c: Calendar): Long = when (rule.freq) {
+            Freq.DAILY -> calendarDaysBetween(anchorMillis, c.timeInMillis, tz).toLong()
+            Freq.WEEKLY -> {
+                fun weekOf(day: Calendar): Long {
+                    val back = (day.get(Calendar.DAY_OF_WEEK) - weekStart + 7) % 7
+                    val start = (day.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -back) }
+                    return calendarDaysBetween(anchorMillis, start.timeInMillis, tz).toLong()
+                }
+                Math.floorDiv(weekOf(c) - weekOf(anchor), 7L)
+            }
+            Freq.MONTHLY -> (c.get(Calendar.YEAR) - anchor.get(Calendar.YEAR)) * 12L +
+                (c.get(Calendar.MONTH) - anchor.get(Calendar.MONTH))
+            Freq.YEARLY -> (c.get(Calendar.YEAR) - anchor.get(Calendar.YEAR)).toLong()
+        }
+        if (anchorMillis >= beforeMillis) return 0
+        // The start is always the first occurrence, as RFC 5545 counts
+        // DTSTART and EventKit does, even on a day the rule doesn't generate.
+        var count = 1
+        val day = (anchor.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 1) }
+        while (day.timeInMillis < beforeMillis) {
+            if (period(day) % interval == 0L && matcher.generates(day)) count++
+            // Whole-day steps keep the wall-clock time across DST.
+            day.add(Calendar.DAY_OF_MONTH, 1)
+        }
+        return count
+    }
+
+    /**
      * The matcher for [rrule] anchored at [anchor], with the parts the rule
      * leaves implicit filled in from [anchor] ([impliedBy]). Null for a rule
      * outside the modelled subset, which callers treat as fitting its anchor.

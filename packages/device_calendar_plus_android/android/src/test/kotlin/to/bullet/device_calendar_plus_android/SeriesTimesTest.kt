@@ -30,7 +30,8 @@ internal class SeriesTimesTest {
         ruleEdit = rrule?.let { SeriesRuleEdit.Replace(it) } ?: SeriesRuleEdit.Keep(null),
         isAllDay = false,
         timeZoneId = newYork.id,
-        storedZone = newYork
+        storedZone = newYork,
+        rowAllDay = false
     ).getOrThrow()
 
     // Rewriting the start would orphan detached occurrences keyed at the

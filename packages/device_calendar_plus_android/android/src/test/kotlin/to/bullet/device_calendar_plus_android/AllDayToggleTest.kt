@@ -31,6 +31,7 @@ internal class AllDayToggleTest {
         timestamp: Long? = null,
         seriesStart: Long,
         durationMillis: Long = hour,
+        wholeSeries: Boolean = false,
         zone: TimeZone = la,
     ) = resolveSeriesTimeEdit(
         newStartMillis = newStartMillis,
@@ -40,6 +41,7 @@ internal class AllDayToggleTest {
         timestamp = timestamp,
         seriesStart = seriesStart,
         durationMillis = durationMillis,
+        wholeSeries = wholeSeries,
         deviceZone = zone
     )
 
@@ -65,7 +67,9 @@ internal class AllDayToggleTest {
             ruleEdit = SeriesRuleEdit.Keep(rule),
             isAllDay = true,
             timeZoneId = seriesZoneId,
-            storedZone = storedZone
+            storedZone = storedZone,
+            rowAllDay = false,
+            deviceZone = zone
         )
     }
 
@@ -182,6 +186,111 @@ internal class AllDayToggleTest {
         result.assertRefused()
         val message = result.exceptionOrNull()?.message.orEmpty()
         assertTrue(message.startsWith("isAllDay without a start"), message)
+    }
+
+    // #186: an allEvents toggle named at an occurrence on the other side of
+    // a DST change from the series start. 16:30 in LA is the next UTC date
+    // in PST (the Monday 5 January start) but the same one in PDT (the
+    // Monday 1 June occurrence). Read in UTC, the occurrence moved one day
+    // and the start, a day ahead, moved with it onto 7 January. In local
+    // days, as EventKit counts them, a one-day move takes it to 6 January.
+    @Test
+    fun resolveSeriesTimes_toggleNamedAcrossDst_movesTheStartByTheLocalDays() {
+        val seriesStart = instantAt(la, 2026, 1, 5, 16, 30)
+        val occurrence = instantAt(la, 2026, 6, 1, 16, 30)
+
+        val (newStart, _) = resolveSeriesTimes(
+            baseMillis = seriesStart,
+            referenceMillis = occurrence,
+            existingDurationMillis = hour,
+            timeEdit = timeEdit(
+                newStartMillis = instantAt(la, 2026, 6, 2),
+                timestamp = occurrence,
+                seriesStart = seriesStart,
+            ),
+            ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
+            isAllDay = true,
+            timeZoneId = la.id,
+            storedZone = la,
+            rowAllDay = false,
+            deviceZone = la
+        ).getOrThrow()
+
+        assertEquals(instantAt(utc, 2026, 1, 6), newStart)
+    }
+
+    /**
+     * The new (start, duration) of a weekly series stored in UTC, starting
+     * at [seriesStart] and lasting an hour, after a bare all-day toggle
+     * named at its [occurrence] from a device in [zone], on the allEvents
+     * span unless [wholeSeries] is false.
+     */
+    private fun bareToggleNamedAt(
+        seriesStart: Long,
+        occurrence: Long,
+        zone: TimeZone,
+        wholeSeries: Boolean = true,
+    ): Pair<Long, Long> =
+        resolveSeriesTimes(
+            baseMillis = if (wholeSeries) seriesStart else occurrence,
+            referenceMillis = occurrence,
+            existingDurationMillis = hour,
+            timeEdit = timeEdit(
+                timestamp = occurrence,
+                seriesStart = seriesStart,
+                wholeSeries = wholeSeries,
+                zone = zone,
+            ),
+            ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;COUNT=4"),
+            isAllDay = true,
+            timeZoneId = utc.id,
+            storedZone = utc,
+            rowAllDay = false,
+            deviceZone = zone
+        ).getOrThrow()
+
+    // #208: a UTC-stored series at 23:30 PDT on Wednesday 28 October runs
+    // into Thursday; after the 1 November change its 06:30 UTC occurrences
+    // fall at 22:30 PST and stay on their day. An allEvents toggle named at
+    // one of those spans the master's two days, as EventKit's does, not the
+    // occurrence's one.
+    @Test
+    fun resolveSeriesTimes_allEventsToggleNamedAcrossDstWestOfUtc_spansTheMastersDays() {
+        val seriesStart = instantAt(la, 2026, 10, 28, 23, 30)
+        val occurrence = instantAt(la, 2026, 11, 4, 22, 30)
+
+        assertEquals(
+            instantAt(utc, 2026, 10, 28) to 2 * AllDayDates.MILLIS_PER_DAY,
+            bareToggleNamedAt(seriesStart, occurrence, la),
+        )
+    }
+
+    // East of UTC the change runs the other way: a 00:30 AEDT start on
+    // Wednesday 1 April is 13:30 UTC, so once Sydney leaves DST on 5 April
+    // the occurrences fall at 23:30 AEST the evening before. Named at one,
+    // the toggle keeps the series on the master's Wednesday, one day long.
+    @Test
+    fun resolveSeriesTimes_allEventsToggleNamedAcrossDstEastOfUtc_staysOnTheMastersDay() {
+        val seriesStart = instantAt(sydney, 2026, 4, 1, 0, 30)
+        val occurrence = instantAt(sydney, 2026, 4, 7, 23, 30)
+
+        assertEquals(
+            instantAt(utc, 2026, 4, 1) to AllDayDates.MILLIS_PER_DAY,
+            bareToggleNamedAt(seriesStart, occurrence, sydney),
+        )
+    }
+
+    // A thisAndFollowing toggle starts the new series at the occurrence, so
+    // it spans the occurrence's own days, as EventKit's split does.
+    @Test
+    fun resolveSeriesTimes_splitToggleNamedAcrossDst_spansTheOccurrencesDays() {
+        val seriesStart = instantAt(la, 2026, 10, 28, 23, 30)
+        val occurrence = instantAt(la, 2026, 11, 4, 22, 30)
+
+        assertEquals(
+            instantAt(utc, 2026, 11, 4) to AllDayDates.MILLIS_PER_DAY,
+            bareToggleNamedAt(seriesStart, occurrence, la, wholeSeries = false),
+        )
     }
 
     @Test

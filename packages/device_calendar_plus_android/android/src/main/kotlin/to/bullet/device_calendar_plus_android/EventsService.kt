@@ -794,7 +794,8 @@ class EventsService(
         applyEventFieldValues(values, patch)
 
         // Write whichever bounds the edit moves: the provided dates in the
-        // effective frame, or the all-day span of a bare toggle.
+        // effective frame, and on an all-day toggle the row's own span in the
+        // new frame for a bound left out.
         val (newStart, newEnd) = resolveEditedBounds(
             currentStart = row.dtstart,
             durationMillis = eventDurationMillis(row),
@@ -905,8 +906,8 @@ class EventsService(
             rowAllDay = series.row.allDay
         )
         // A bound the edit doesn't move keeps the occurrence's own value
-        // (iOS: setting startDate leaves endDate untouched). A bare all-day
-        // toggle moves both, via resolveEditedBounds.
+        // (iOS: setting startDate leaves endDate untouched). An all-day toggle
+        // moves both into the new frame, via resolveEditedBounds.
         val newStart = resolvedStart ?: timestamp
         val newEnd = resolvedEnd ?: (timestamp + duration)
         if (newEnd <= newStart) {
@@ -1005,7 +1006,8 @@ class EventsService(
                 patchIsAllDay = patch.isAllDay,
                 timestamp = timestamp,
                 seriesStart = row.dtstart,
-                durationMillis = eventDurationMillis(row)
+                durationMillis = eventDurationMillis(row),
+                wholeSeries = span == "allEvents"
             )
             val ruleEdit = SeriesRuleEdit.of(
                 recurrenceRule,
@@ -1076,7 +1078,8 @@ class EventsService(
             ruleEdit = ruleEdit,
             isAllDay = effectiveIsAllDay,
             timeZoneId = row.timeZone,
-            storedZone = seriesTimeZone(row.timeZone, row.allDay)
+            storedZone = seriesTimeZone(row.timeZone, row.allDay),
+            rowAllDay = row.allDay
         ).getOrElse { return Result.failure(it) }
         // A `start` equal to the current anchor is still a rewrite: the
         // DTSTART/DURATION (and RRULE, below) re-put is what makes the
@@ -1170,7 +1173,14 @@ class EventsService(
         val effectiveAvailability = patch.availability ?: row.availability
         val effectiveRrule = when (ruleEdit) {
             SeriesRuleEdit.Clear -> null
-            is SeriesRuleEdit.Replace -> ruleEdit.rule
+            // A new rule's COUNT counts from the series' start, as EventKit
+            // counts it; one used up before the split leaves a one-off (#124).
+            is SeriesRuleEdit.Replace -> splitSeriesRule(
+                ruleEdit.rule,
+                seriesStart = row.dtstart,
+                splitAt = timestamp,
+                tz = seriesTimeZone(row.timeZone, row.allDay)
+            )
             is SeriesRuleEdit.Keep -> {
                 // Rule unchanged: the new series inherits the original rule. A
                 // COUNT must drop by the occurrences left on the old series,
@@ -1199,7 +1209,8 @@ class EventsService(
             ruleEdit = ruleEdit,
             isAllDay = effectiveIsAllDay,
             timeZoneId = row.timeZone,
-            storedZone = seriesTimeZone(row.timeZone, row.allDay)
+            storedZone = seriesTimeZone(row.timeZone, row.allDay),
+            rowAllDay = row.allDay
         ).getOrElse { return Result.failure(it) }
         val newEnd = newStart + newDurationMs
 

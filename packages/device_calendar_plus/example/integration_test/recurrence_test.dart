@@ -909,26 +909,49 @@ void main() {
         recurrenceRule: Patch.set(const WeeklyRecurrence(end: CountEnd(3))),
       );
 
-      // The new series carries the new rule type with an end count.
-      // Asserting the exact CountEnd value isn't portable: Android honors
-      // the literal `CountEnd(3)`, while iOS's `.futureEvents` save
-      // normalizes the count (returns 2 for `COUNT=3` requested — EventKit
-      // appears to fit the new rule into the original master's lifespan).
-      // Cross-platform contract is "WEEKLY with some CountEnd"; an exact
-      // value would require either platform-specific assertions or a fix
-      // on the iOS side to honor the rule literally.
-      // TODO(updateRecurring.thisAndFollowing/iOS): investigate why
-      // `.futureEvents` save normalizes the new rule's COUNT.
+      // The new rule's count runs from the series' start, as EventKit's
+      // `.futureEvents` save counts it: the weekly rule would have had one
+      // occurrence (the start) before the split, so the new series keeps
+      // two. Android once kept the literal three (#124).
       final newSeries = await plugin.getEvent(newSeriesId);
       expect(newSeries, isNotNull);
       final weekly = newSeries!.recurrenceRule as WeeklyRecurrence;
-      expect(weekly.end, isA<CountEnd>(),
-          reason: 'the new rule must end via a count, not infinite');
+      expect(weekly.end, const CountEnd(2),
+          reason: 'the count must drop the occurrences before the split');
 
       // The new series starts at the split point — i.e. the anchor
       // occurrence is now the first occurrence of the new series.
       expect(newSeries.startDate.millisecondsSinceEpoch, splitMillis,
           reason: 'the new series must start at the split point');
+    });
+
+    // The same count rule, used up before the split: a daily COUNT=3 from
+    // the series' start ends before its fifth day, so EventKit saves the
+    // split as a one-off at the split point. Android once started a new
+    // three-day series there (#124).
+    test(
+        'thisAndFollowing with a rule whose count runs out before the split '
+        'leaves a one-off at the split point', () async {
+      final series = await seedSeries(plugin, calendarId);
+      final splitPoint = series.occurrences[4];
+
+      final newId = await plugin.updateRecurring(
+        splitPoint.instanceId,
+        EventSpan.thisAndFollowing,
+        title: 'Count Used Up',
+        recurrenceRule: Patch.set(const DailyRecurrence(end: CountEnd(3))),
+      );
+
+      final newEvent = await plugin.getEvent(newId);
+      expect(newEvent, isNotNull);
+      expect(newEvent!.isRecurring, isFalse,
+          reason: 'a count used up before the split leaves nothing to repeat');
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, 'Count Used Up', series.start)),
+        [splitPoint.startDate.millisecondsSinceEpoch],
+        reason: 'the split point must be the one occurrence left',
+      );
     });
 
     test(
@@ -1829,11 +1852,7 @@ void main() {
       expect(detached.isAllDay, isFalse);
       expect(localDay(detached.startDate.toLocal()),
           localDay(target.startDate.toLocal()),
-          reason: 'the occurrence must stay on its own calendar day',
-          skip: Platform.isAndroid
-              ? 'Android writes the all-day UTC midnight as the timed start, '
-                  'a day early west of UTC (#216)'
-              : false);
+          reason: 'the occurrence must stay on its own calendar day');
     });
 
     test(
@@ -3163,22 +3182,29 @@ void main() {
     // before it west of UTC. It runs for seedDuration, so west of UTC it
     // straddles its local midnight.
     //
-    // The seed is pinned to a window no harness zone changes clocks in: in
-    // June, Los Angeles, UTC and Sydney are all between transitions. The
-    // series is stored in UTC, so a device DST change inside the window
-    // moves its later occurrences an hour on the local clock, where the
-    // platforms disagree on a toggle named at one of them (#208: Android
-    // spans the named occurrence's local days, EventKit the master's) and a
-    // 23:30 occurrence can stop touching the next day at all. The all-day
+    // The seed is pinned by default to a window no harness zone changes
+    // clocks in: in June, Los Angeles, UTC and Sydney are all between
+    // transitions. The series is stored in UTC, so a device DST change
+    // inside the window moves its later occurrences an hour on the local
+    // clock, and a 23:30 occurrence can stop touching the next day at all.
+    // [dstSeedDay] puts a change inside the window on purpose. The all-day
     // series the toggle leaves is expanded as whole dates and never moves.
     // The year is arbitrary; nothing here needs the seed in the future.
     final seedDay = DateTime(2027, 6, 7);
+    // A Wednesday a few days before the zone's DST change, so the later
+    // occurrences of a seed there sit an hour off the master's local time:
+    // Los Angeles falls back on 7 November 2027 and Sydney on 4 April. West
+    // of UTC that takes the 23:30 seed's later occurrences off the next day,
+    // east of it it puts the 00:30 seed's onto the day before.
+    final dstSeedDay = DateTime.now().timeZoneOffset.isNegative
+        ? DateTime(2027, 10, 27)
+        : DateTime(2027, 3, 31);
     const seedDuration = Duration(hours: 1);
     const seedCount = 4;
-    Future<SeededSeries> seedTimedOffUtcDate(String title) =>
+    Future<SeededSeries> seedTimedOffUtcDate(String title, {DateTime? day}) =>
         seedWeeklySeries(plugin, calendarId,
             title: title,
-            start: startOnOtherUtcDate(seedDay),
+            start: startOnOtherUtcDate(day ?? seedDay),
             duration: seedDuration,
             count: seedCount);
 
@@ -3246,6 +3272,29 @@ void main() {
 
       await plugin.updateRecurring(
         before[1].instanceId,
+        EventSpan.allEvents,
+        isAllDay: true,
+      );
+
+      expectAllDaySeries(
+        await occurrencesOf(plugin, calendarId!, seeded.eventId, seeded.start,
+            windowDays: 30),
+        seeded,
+      );
+    });
+
+    // Named at an occurrence past a DST change, the toggle still spans the
+    // master's days on the master's dates, as EventKit floats the master.
+    // Android once spanned the named occurrence's days instead (#208).
+    test(
+        'toggling a timed series all-day with no start from an occurrence '
+        "past a DST change spans the master's days", () async {
+      final seeded = await seedTimedOffUtcDate('Timed To All-day Past DST',
+          day: dstSeedDay);
+      final before = seeded.occurrences;
+
+      await plugin.updateRecurring(
+        before[2].instanceId,
         EventSpan.allEvents,
         isAllDay: true,
       );
