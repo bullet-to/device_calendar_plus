@@ -31,7 +31,7 @@ internal class AllDayToggleTest {
         timestamp: Long? = null,
         seriesStart: Long,
         durationMillis: Long = hour,
-        wholeSeries: Boolean = false,
+        firstOccurrenceStart: Long? = null,
         zone: TimeZone = la,
     ) = resolveSeriesTimeEdit(
         newStartMillis = newStartMillis,
@@ -41,7 +41,7 @@ internal class AllDayToggleTest {
         timestamp = timestamp,
         seriesStart = seriesStart,
         durationMillis = durationMillis,
-        wholeSeries = wholeSeries,
+        firstOccurrenceStart = firstOccurrenceStart ?: timestamp ?: seriesStart,
         deviceZone = zone
     )
 
@@ -213,7 +213,7 @@ internal class AllDayToggleTest {
                 newStartMillis = instantAt(la, 2026, 6, 2),
                 timestamp = occurrence,
                 seriesStart = seriesStart,
-                wholeSeries = true,
+                firstOccurrenceStart = seriesStart,
             ),
             ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
             isAllDay = true,
@@ -243,7 +243,7 @@ internal class AllDayToggleTest {
             timeEdit = timeEdit(
                 timestamp = occurrence,
                 seriesStart = seriesStart,
-                wholeSeries = wholeSeries,
+                firstOccurrenceStart = if (wholeSeries) seriesStart else occurrence,
                 zone = zone,
             ),
             ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;COUNT=4"),

@@ -38,7 +38,11 @@ internal object RecurrenceAnchor {
         val byDay: List<ByDay>,
         val byMonthDay: List<Int>,
         val byMonth: List<Int>,
-        val bySetPos: List<Int>
+        val bySetPos: List<Int>,
+        /** INTERVAL, at least 1. Only [countBefore] reads it. */
+        val interval: Int,
+        /** WKST as a `Calendar.DAY_OF_WEEK`, Monday by default. Only [countBefore] reads it. */
+        val weekStart: Int
     )
 
     private val weekdayCodes = mapOf(
@@ -101,19 +105,12 @@ internal object RecurrenceAnchor {
         val rule = parse(rrule) ?: return null
         val anchor = Calendar.getInstance(tz).apply { timeInMillis = anchorMillis }
         val matcher = Matcher(rule.impliedBy(anchor))
-        val params = RruleString.params(rrule)
-        val interval = params["INTERVAL"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1
-        val weekStart = params["WKST"]?.let { weekdayCodes[it.uppercase()] } ?: Calendar.MONDAY
-        fun period(c: Calendar): Long = when (rule.freq) {
-            Freq.DAILY -> calendarDaysBetween(anchorMillis, c.timeInMillis, tz).toLong()
-            Freq.WEEKLY -> {
-                fun weekOf(day: Calendar): Long {
-                    val back = (day.get(Calendar.DAY_OF_WEEK) - weekStart + 7) % 7
-                    val start = (day.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, -back) }
-                    return calendarDaysBetween(anchorMillis, start.timeInMillis, tz).toLong()
-                }
-                Math.floorDiv(weekOf(c) - weekOf(anchor), 7L)
-            }
+        // How far the anchor's day is into its week, so a day [daysOn] after
+        // it is in week (daysOn + that) / 7 from the anchor's.
+        val anchorOffsetInWeek = (anchor.get(Calendar.DAY_OF_WEEK) - rule.weekStart + 7) % 7
+        fun period(c: Calendar, daysOn: Long): Long = when (rule.freq) {
+            Freq.DAILY -> daysOn
+            Freq.WEEKLY -> Math.floorDiv(daysOn + anchorOffsetInWeek, 7L)
             Freq.MONTHLY -> (c.get(Calendar.YEAR) - anchor.get(Calendar.YEAR)) * 12L +
                 (c.get(Calendar.MONTH) - anchor.get(Calendar.MONTH))
             Freq.YEARLY -> (c.get(Calendar.YEAR) - anchor.get(Calendar.YEAR)).toLong()
@@ -121,11 +118,14 @@ internal object RecurrenceAnchor {
         // The start is always the first occurrence, as RFC 5545 counts
         // DTSTART and EventKit does, even on a day the rule doesn't generate.
         var count = 1
+        var daysOn = 1L
         val day = (anchor.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 1) }
         while (day.timeInMillis < beforeMillis) {
-            if (period(day) % interval == 0L && matcher.generates(day)) count++
-            // Whole-day steps keep the wall-clock time across DST.
+            if (period(day, daysOn) % rule.interval == 0L && matcher.generates(day)) count++
+            // Whole-day steps keep the wall-clock time across DST, and are
+            // what [daysOn] counts.
             day.add(Calendar.DAY_OF_MONTH, 1)
+            daysOn++
         }
         return count
     }
@@ -156,7 +156,9 @@ internal object RecurrenceAnchor {
             byDay = byDay,
             byMonthDay = ints("BYMONTHDAY"),
             byMonth = ints("BYMONTH"),
-            bySetPos = ints("BYSETPOS")
+            bySetPos = ints("BYSETPOS"),
+            interval = params["INTERVAL"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1,
+            weekStart = params["WKST"]?.let { weekdayCodes[it.uppercase()] } ?: Calendar.MONDAY
         )
     }
 

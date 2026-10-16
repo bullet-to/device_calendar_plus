@@ -10,9 +10,10 @@ import kotlin.test.assertNull
  * rule gives the new series. EventKit counts a new rule's COUNT from the
  * original series' start, so the new series loses the occurrences the new
  * rule would have had before the split, and doesn't recur at all when that
- * leaves none (#124). The expected counts are what an iOS simulator saves
- * for the same splits of a daily series (at its fifth occurrence unless a
- * case names another day).
+ * leaves none (#124). The daily, weekly, monthly and yearly counts are what
+ * an iOS simulator saves for the same splits of a daily series (at its fifth
+ * occurrence unless a case names another day). The DST, out-of-subset and
+ * no-COUNT cases pin Android-only behaviour and aren't from EventKit.
  */
 internal class SplitRuleTest {
     private val utc = TimeZone.getTimeZone("UTC")

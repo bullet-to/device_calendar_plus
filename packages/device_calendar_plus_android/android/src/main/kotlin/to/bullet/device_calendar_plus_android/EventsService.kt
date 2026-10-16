@@ -1007,7 +1007,10 @@ class EventsService(
                 timestamp = timestamp,
                 seriesStart = row.dtstart,
                 durationMillis = eventDurationMillis(row),
-                wholeSeries = span == "allEvents"
+                // The first occurrence of the series after the edit: the
+                // master's, or the split occurrence a new series starts at.
+                firstOccurrenceStart =
+                    if (span == "allEvents") row.dtstart else (timestamp ?: row.dtstart)
             )
             val ruleEdit = SeriesRuleEdit.of(
                 recurrenceRule,

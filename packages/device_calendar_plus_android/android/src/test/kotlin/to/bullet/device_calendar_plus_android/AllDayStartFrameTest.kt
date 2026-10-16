@@ -50,7 +50,7 @@ internal class AllDayStartFrameTest {
             timestamp = null,
             seriesStart = base,
             durationMillis = 3_600_000L,
-            wholeSeries = true,
+            firstOccurrenceStart = base,
             deviceZone = zone
         ),
         ruleEdit = ruleEdit,

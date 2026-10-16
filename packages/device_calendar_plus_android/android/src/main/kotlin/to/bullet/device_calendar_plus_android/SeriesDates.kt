@@ -329,11 +329,12 @@ internal data class SeriesTimeEdit(
  *   [seriesStart] when the edit names the master. [resolveSeriesTimes]
  *   counts the move from that occurrence in local days, so a series edit
  *   keeps its start's local date.
- * - `duration` defaults to the whole [deviceZone] days the series' first
- *   occurrence covers ([allDayToggleDurationMinutes]), lasting
- *   [durationMillis]: the master's ([seriesStart]) when the edit spans the
- *   [wholeSeries], else the named occurrence's, which a split starts the
- *   new series at.
+ * - `duration` defaults to the whole [deviceZone] days that the first
+ *   occurrence of the series after the edit covers
+ *   ([allDayToggleDurationMinutes]): the one starting at
+ *   [firstOccurrenceStart] and lasting [durationMillis]. That's the master
+ *   on a whole-series edit, and the named occurrence a split starts the new
+ *   series at.
  *
  * That's what EventKit makes of the same toggle: it floats the master's (or
  * the split occurrence's) own dates. Without these defaults the timed
@@ -350,7 +351,7 @@ internal fun resolveSeriesTimeEdit(
     timestamp: Long?,
     seriesStart: Long,
     durationMillis: Long,
-    wholeSeries: Boolean,
+    firstOccurrenceStart: Long,
     deviceZone: TimeZone = TimeZone.getDefault()
 ): SeriesTimeEdit {
     val effectiveIsAllDay = patchIsAllDay ?: rowAllDay
@@ -362,13 +363,12 @@ internal fun resolveSeriesTimeEdit(
         )
     }
     val occurrenceStart = timestamp ?: seriesStart
-    val firstStart = if (wholeSeries) seriesStart else occurrenceStart
     return SeriesTimeEdit(
         targetStart = resolveTargetStart(
             newStartMillis ?: occurrenceStart, effectiveIsAllDay, deviceZone
         ),
         durationMinutes = durationMinutes
-            ?: allDayToggleDurationMinutes(firstStart, durationMillis, deviceZone),
+            ?: allDayToggleDurationMinutes(firstOccurrenceStart, durationMillis, deviceZone),
         startDefaulted = newStartMillis == null,
         toAllDayFrom = deviceZone,
     )
