@@ -1176,29 +1176,14 @@ class EventsService(
             if ("url" in patch.clearedFields) null else (patch.url ?: row.url)
         val effectiveTimeZone = patch.timeZone ?: row.timeZone
         val effectiveAvailability = patch.availability ?: row.availability
-        val effectiveRrule = when (ruleEdit) {
-            SeriesRuleEdit.Clear -> null
-            // A new rule's COUNT counts from the series' start, as EventKit
-            // counts it; one used up before the split leaves a one-off (#124).
-            is SeriesRuleEdit.Replace -> splitSeriesRule(
-                ruleEdit.rule,
-                seriesStart = row.dtstart,
-                splitAt = timestamp,
-                tz = seriesTimeZone(row.timeZone, row.allDay)
-            )
-            is SeriesRuleEdit.Keep -> {
-                // Rule unchanged: the new series inherits the original rule. A
-                // COUNT must drop by the occurrences left on the old series,
-                // or the new series would over-generate.
-                val originalCount = RruleString.count(rrule)
-                if (originalCount != null) {
-                    val before = countInstancesBefore(row, timestamp)
-                    RruleString.withCount(rrule, maxOf(1, originalCount - before))
-                } else {
-                    rrule
-                }
-            }
-        }
+        val effectiveRrule = splitRule(
+            ruleEdit,
+            existingRule = rrule,
+            seriesStart = row.dtstart,
+            splitAt = timestamp,
+            tz = seriesTimeZone(row.timeZone, row.allDay),
+            keptBefore = { countInstancesBefore(row, timestamp) }
+        )
 
         // The new series is anchored at the split occurrence, shifted to the
         // caller's new start (the reference and base are both the occurrence)

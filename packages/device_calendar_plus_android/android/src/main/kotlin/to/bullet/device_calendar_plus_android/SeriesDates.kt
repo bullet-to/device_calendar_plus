@@ -407,6 +407,32 @@ internal fun resolveSeriesTimeEdit(
 }
 
 /**
+ * The rule the new series of a `thisAndFollowing` split at [splitAt] gets,
+ * or null when it doesn't recur: none when [ruleEdit] clears the rule, and
+ * [splitSeriesRule] when it replaces it. A kept rule, [existingRule], is the
+ * one the series has, so its COUNT drops by the occurrences the series has
+ * before the split ([keptBefore], the provider's count, read only when the
+ * rule has a COUNT), and keeps at least one: the split occurrence itself.
+ */
+internal fun splitRule(
+    ruleEdit: SeriesRuleEdit,
+    existingRule: String,
+    seriesStart: Long,
+    splitAt: Long,
+    tz: TimeZone,
+    keptBefore: () -> Int,
+): String? = when (ruleEdit) {
+    SeriesRuleEdit.Clear -> null
+    // A new rule's COUNT counts from the series' start, as EventKit counts
+    // it; one used up before the split leaves a one-off (#124).
+    is SeriesRuleEdit.Replace -> splitSeriesRule(ruleEdit.rule, seriesStart, splitAt, tz)
+    // Without the drop the new series would over-generate.
+    is SeriesRuleEdit.Keep -> RruleString.count(existingRule)
+        ?.let { RruleString.withCount(existingRule, maxOf(1, it - keptBefore())) }
+        ?: existingRule
+}
+
+/**
  * The rule a `thisAndFollowing` split that replaces the series' rule with
  * [rule] gives the new series at [splitAt], or null when it leaves the new
  * series nothing to repeat.

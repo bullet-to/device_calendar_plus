@@ -6,14 +6,17 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * [splitSeriesRule]: the rule a `thisAndFollowing` split that replaces the
- * rule gives the new series. EventKit counts a new rule's COUNT from the
+ * [splitRule] and [splitSeriesRule]: the rule a `thisAndFollowing` split
+ * gives the new series. A kept rule's COUNT drops by the occurrences the
+ * provider has before the split, and keeps at least one. A replacing rule
+ * is [splitSeriesRule]: EventKit counts a new rule's COUNT from the
  * original series' start, so the new series loses the occurrences the new
  * rule would have had before the split, and doesn't recur at all when that
  * leaves none (#124). The daily, weekly, monthly and yearly counts are what
  * an iOS simulator saves for the same splits of a daily series (at its fifth
- * occurrence unless a case names another day). The DST, out-of-subset and
- * no-COUNT cases pin Android-only behaviour and aren't from EventKit.
+ * occurrence unless a case names another day). The DST, WKST=SU,
+ * out-of-subset and no-COUNT cases pin Android-only behaviour and aren't
+ * from EventKit.
  */
 internal class SplitRuleTest {
     private val utc = TimeZone.getTimeZone("UTC")
@@ -87,8 +90,7 @@ internal class SplitRuleTest {
 
     // Every other week, counted in weeks from Monday: the start's week (the
     // Thursday 15th and Sunday 18th) is in phase, the next isn't, so a split
-    // on Friday the 23rd drops two. Weeks from Sunday would put the 18th in
-    // the off week.
+    // on Friday the 23rd drops two.
     @Test
     fun splitSeriesRule_weeklyWithInterval_countsTheWeeksFromMonday() {
         assertEquals(
@@ -98,6 +100,17 @@ internal class SplitRuleTest {
         assertEquals(
             "FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=MO;COUNT=8",
             split("FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=MO;COUNT=10", at = day(8))
+        )
+    }
+
+    // The same split with weeks from Sunday: the 18th starts the off week,
+    // with the 22nd, so only the start comes before the split. RFC 5545's
+    // count; not checked against EventKit.
+    @Test
+    fun splitSeriesRule_weeklyWithIntervalFromSunday_countsTheWeeksFromSunday() {
+        assertEquals(
+            "FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=SU;COUNT=9",
+            split("FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=SU;COUNT=10", at = day(8))
         )
     }
 
@@ -181,5 +194,64 @@ internal class SplitRuleTest {
     @Test
     fun splitSeriesRule_ruleOutsideTheModelledSubset_isUnchanged() {
         assertEquals("FREQ=HOURLY;COUNT=5;INTERVAL=2", split("FREQ=HOURLY;COUNT=5;INTERVAL=2"))
+    }
+
+    private fun splitWith(
+        ruleEdit: SeriesRuleEdit,
+        existingRule: String = "FREQ=DAILY;COUNT=5",
+        keptBefore: Int = 4,
+    ) = splitRule(
+        ruleEdit,
+        existingRule = existingRule,
+        seriesStart = seriesStart,
+        splitAt = fifth,
+        tz = utc,
+        keptBefore = { keptBefore }
+    )
+
+    @Test
+    fun splitRule_clear_doesNotRecur() {
+        assertNull(splitWith(SeriesRuleEdit.Clear))
+    }
+
+    @Test
+    fun splitRule_replace_countsTheNewRuleFromTheSeriesStart() {
+        assertEquals(
+            "FREQ=DAILY;COUNT=16",
+            splitWith(SeriesRuleEdit.Replace("FREQ=DAILY;COUNT=20"))
+        )
+    }
+
+    @Test
+    fun splitRule_keep_dropsTheOccurrencesBeforeTheSplit() {
+        assertEquals(
+            "FREQ=DAILY;COUNT=6",
+            splitWith(SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=10"), "FREQ=DAILY;COUNT=10")
+        )
+    }
+
+    // Unlike a replacing rule, a kept one always leaves the split's own
+    // occurrence: it is one of the series' own.
+    @Test
+    fun splitRule_keepWithTheCountUsedUp_keepsOne() {
+        assertEquals(
+            "FREQ=DAILY;COUNT=1",
+            splitWith(SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=3"), "FREQ=DAILY;COUNT=3")
+        )
+    }
+
+    @Test
+    fun splitRule_keepWithoutCount_isUnchangedAndCountsNothing() {
+        assertEquals(
+            "FREQ=DAILY",
+            splitRule(
+                SeriesRuleEdit.Keep("FREQ=DAILY"),
+                existingRule = "FREQ=DAILY",
+                seriesStart = seriesStart,
+                splitAt = fifth,
+                tz = utc,
+                keptBefore = { error("a rule without COUNT needs no count") }
+            )
+        )
     }
 }
