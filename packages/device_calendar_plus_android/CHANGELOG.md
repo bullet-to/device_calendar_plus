@@ -1,3 +1,29 @@
+## Unreleased
+
+### Fixed
+- `updateEvent` with `isAllDay: false` and no `startDate` or `endDate`
+  keeps an all-day one-off event, or a detached occurrence of an all-day
+  series, on its own days: local midnight of the first through the last
+  second of the last, as on iOS. The stored UTC midnights were left under
+  `ALL_DAY=0`, so west of UTC it read back as the evening before (#205,
+  #216).
+- `updateEvent` that toggles `isAllDay` with only one of `startDate` or
+  `endDate` moves the other bound into the new frame too, as iOS does, rather
+  than leaving it in the old one, where it read back a day off (#204).
+- `updateRecurring` with `EventSpan.allEvents` and `isAllDay: true` without
+  a `duration`, named at an occurrence, spans the series' first occurrence's
+  local days, as on iOS, not the named occurrence's. The two differ when a
+  DST change falls between them (#208).
+- `updateRecurring` with `EventSpan.allEvents` that toggles a timed series
+  all-day and moves it counts the move in local days, so a DST change
+  between the series start and the named occurrence no longer lands the
+  start a day off (#186).
+- `updateRecurring` with `EventSpan.thisAndFollowing` and a new `CountEnd`
+  rule counts it from the series' start, as iOS does: the new series drops
+  the occurrences the new rule would have had before the split, and is a
+  one-off when that leaves none. It kept the count as given, so it ran
+  longer than on iOS (#124).
+
 ## 0.9.2 - 2026-10-14
 
 ### Fixed

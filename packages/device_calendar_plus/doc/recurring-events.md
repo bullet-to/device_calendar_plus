@@ -159,6 +159,14 @@ years of the anchor (`YearlyRecurrence(months: [2], daysOfMonth: [30])`, say)
 throws `DeviceCalendarException` with `invalidArguments` and leaves the series
 as it was, rather than anchoring it on a day the rule never generates.
 
+With `thisAndFollowing`, a new rule's `CountEnd` counts from the original
+series' start, not from the split, because that is how EventKit saves it. The
+new series keeps only the occurrences the rule would still have left: split a
+daily series at its fifth occurrence with `DailyRecurrence(end: CountEnd(20))`
+and the new series has 16. A count used up before the split leaves a single
+non-recurring event at the split point. A kept rule's count is shared the same
+way: the two series together have as many occurrences as the original.
+
 ### Moving the day of a pinned rule
 
 `start` moves the series anchor. For rules whose day is implied by the start
