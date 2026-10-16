@@ -10,8 +10,10 @@ import kotlin.test.assertNull
  * a recurring master stores DURATION with a NULL DTEND (#122).
  *
  * `resolveEditedBounds` decides the DTSTART/DTEND an updateEvent edit writes:
- * a bare all-day toggle takes the row's toggleSpan, anything else stores the
- * provided bounds in the effective frame.
+ * each provided bound is stored in the effective frame, and a toggle in
+ * either direction fills a bound it leaves out from the row's span in the
+ * new frame (toggleSpan to all-day, timedSpan to timed). Without a toggle a
+ * missing bound stays null.
  */
 internal class EventTimingTest {
     // "P{n}S" is the form the plugin writes (the timed-master integration

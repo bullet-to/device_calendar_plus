@@ -128,7 +128,7 @@ internal sealed class SeriesRuleEdit {
  * the row's stored frame [storedZone]; the shift reads all three in the one
  * post-edit zone, `seriesTimeZone(timeZoneId, isAllDay)` ([isAllDay] is the
  * series' all-day state after the edit). A toggle to all-day
- * ([SeriesTimeEdit.toAllDayFrom]) first brings base and reference into that
+ * ([SeriesTimeEdit.intoEditFrame]) first brings base and reference into that
  * frame too, as the UTC midnights of their device-local dates, so the day
  * delta is counted in the local days EventKit counts even when a DST change
  * falls between them (#186). A toggle off is left as stored: base and
@@ -160,15 +160,12 @@ internal fun resolveSeriesTimes(
     val targetStart = timeEdit.targetStart
     val durationMinutes = timeEdit.durationMinutes
     val editZone = seriesTimeZone(timeZoneId, isAllDay)
-    // A toggle to all-day brings the timed base and reference into the
-    // frame the target is in: the UTC midnight of their device-local dates,
-    // as the target is. Read as timed instants in UTC, a DST change between
-    // them could put one on the next UTC date and not the other, and the
-    // start moved a day further than the occurrence did (#186, #208).
-    val (frameBase, frameReference) = timeEdit.toAllDayFrom?.let { zone ->
-        AllDayDates.localDateToUtcMidnight(baseMillis, zone) to
-            AllDayDates.localDateToUtcMidnight(referenceMillis, zone)
-    } ?: (baseMillis to referenceMillis)
+    // Base and reference in the frame the target is in. Read as timed
+    // instants in UTC, a DST change between them could put one on the next
+    // UTC date and not the other, and the start moved a day further than
+    // the occurrence did (#186, #208).
+    val frameBase = timeEdit.intoEditFrame(baseMillis)
+    val frameReference = timeEdit.intoEditFrame(referenceMillis)
     // A slot copies the new start's time of day, already whole seconds.
     // With no new start the stored start is kept as is, even with millis
     // from an older version or another app: rewriting it would orphan
@@ -182,6 +179,9 @@ internal fun resolveSeriesTimes(
     if (targetStart != null && keptRule != null &&
         leavesRule(
             keptRule,
+            // The reference stays in its stored frame on purpose: leavesRule
+            // reads it in storedZone, so a toggle onto another local day
+            // counts as a day move.
             referenceMillis = referenceMillis,
             referenceZone = storedZone,
             baseMillis = frameBase,
@@ -303,12 +303,19 @@ internal data class SeriesTimeEdit(
     val startDefaulted: Boolean,
     /**
      * The device zone whose local dates a toggle of a timed series to
-     * all-day keeps, or null when the edit isn't that toggle.
-     * [resolveSeriesTimes] brings the stored base and reference into the
-     * all-day frame through it (#186).
+     * all-day keeps, or null when the edit isn't that toggle. Read it
+     * through [intoEditFrame].
      */
     val toAllDayFrom: TimeZone? = null,
 ) {
+    /**
+     * [millis], a stored instant of the series, in the frame [targetStart]
+     * is in: on a toggle to all-day, the UTC midnight of its [toAllDayFrom]
+     * local date (#186); otherwise [millis] unchanged.
+     */
+    fun intoEditFrame(millis: Long): Long =
+        toAllDayFrom?.let { AllDayDates.localDateToUtcMidnight(millis, it) } ?: millis
+
     /** What moved the start, as a refusal of the move names it. */
     val mover: String
         get() = if (startDefaulted) {
@@ -325,8 +332,8 @@ internal data class SeriesTimeEdit(
  * Most edits pass the caller's [newStartMillis] and [durationMinutes]
  * through. A toggle of a timed series to all-day ([rowAllDay] false,
  * [patchIsAllDay] true) fills in what the caller left out:
- * - `start` defaults to the named occurrence's own start: [timestamp], or
- *   [seriesStart] when the edit names the master. [resolveSeriesTimes]
+ * - `start` defaults to [defaultStart], the named occurrence's own start
+ *   (the master's when the edit names the master). [resolveSeriesTimes]
  *   counts the move from that occurrence in local days, so a series edit
  *   keeps its start's local date.
  * - `duration` defaults to the whole [deviceZone] days that the first
@@ -348,10 +355,9 @@ internal fun resolveSeriesTimeEdit(
     durationMinutes: Int?,
     rowAllDay: Boolean,
     patchIsAllDay: Boolean?,
-    timestamp: Long?,
-    seriesStart: Long,
-    durationMillis: Long,
+    defaultStart: Long,
     firstOccurrenceStart: Long,
+    durationMillis: Long,
     deviceZone: TimeZone = TimeZone.getDefault()
 ): SeriesTimeEdit {
     val effectiveIsAllDay = patchIsAllDay ?: rowAllDay
@@ -362,10 +368,9 @@ internal fun resolveSeriesTimeEdit(
             startDefaulted = false
         )
     }
-    val occurrenceStart = timestamp ?: seriesStart
     return SeriesTimeEdit(
         targetStart = resolveTargetStart(
-            newStartMillis ?: occurrenceStart, effectiveIsAllDay, deviceZone
+            newStartMillis ?: defaultStart, effectiveIsAllDay, deviceZone
         ),
         durationMinutes = durationMinutes
             ?: allDayToggleDurationMinutes(firstOccurrenceStart, durationMillis, deviceZone),

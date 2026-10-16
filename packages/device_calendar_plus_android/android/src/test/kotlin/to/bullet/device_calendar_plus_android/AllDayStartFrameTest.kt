@@ -47,10 +47,9 @@ internal class AllDayStartFrameTest {
             durationMinutes = null,
             rowAllDay = rowAllDay,
             patchIsAllDay = effectiveIsAllDay,
-            timestamp = null,
-            seriesStart = base,
-            durationMillis = 3_600_000L,
+            defaultStart = base,
             firstOccurrenceStart = base,
+            durationMillis = 3_600_000L,
             deviceZone = zone
         ),
         ruleEdit = ruleEdit,

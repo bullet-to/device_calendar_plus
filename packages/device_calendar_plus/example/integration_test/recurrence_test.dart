@@ -3306,6 +3306,61 @@ void main() {
       );
     });
 
+    // An allEvents toggle that also moves the start, named at an
+    // occurrence past a DST change, moves the master by the local days the
+    // occurrence moved, as EventKit counts them. The series is stored in the
+    // device zone at 16:30, which in Los Angeles is the next UTC date in PST
+    // but the same one in PDT. Android once counted the move in UTC days, so
+    // the master moved a day more or less than the occurrence did (#186).
+    test(
+        'toggling a timed series all-day with a start a day later, from an '
+        'occurrence past a DST change, moves the master one local day',
+        () async {
+      final id = requireCalendar(calendarId);
+      final offset = DateTime.now().timeZoneOffset;
+      // The harness zones: Los Angeles, UTC and Sydney.
+      final deviceZone = offset.isNegative
+          ? 'America/Los_Angeles'
+          : offset == Duration.zero
+              ? 'UTC'
+              : 'Australia/Sydney';
+      final start = dstSeedDay.add(const Duration(hours: 16, minutes: 30));
+      final eventId = await plugin.createEvent(
+        calendarId: id,
+        title: 'Timed To All-day Moved Past DST',
+        startDate: start,
+        endDate: start.add(seedDuration),
+        recurrenceRule: DailyRecurrence(end: const CountEnd(14)),
+        timeZone: deviceZone,
+      );
+      final before =
+          await occurrencesOf(plugin, id, eventId, start, windowDays: 30);
+      expect(before.length, 14,
+          reason: 'the daily series must expand across the DST change');
+      // The first occurrence on the other side of the change, or the last
+      // one where the zone has none.
+      final named = before.firstWhere(
+          (e) => e.startDate.toLocal().timeZoneOffset != start.timeZoneOffset,
+          orElse: () => before.last);
+
+      await plugin.updateRecurring(
+        named.instanceId,
+        EventSpan.allEvents,
+        isAllDay: true,
+        start: daysOn(localDay(named.startDate.toLocal()), 1),
+      );
+
+      final after =
+          await occurrencesOf(plugin, id, eventId, start, windowDays: 30);
+      expect(after.every((e) => e.isAllDay), isTrue,
+          reason: 'every occurrence must be all-day');
+      expect(
+        after.first.startDate.millisecondsSinceEpoch,
+        daysOn(localDay(start), 1).millisecondsSinceEpoch,
+        reason: 'the master must move one local day, as the occurrence did',
+      );
+    });
+
     test(
         'thisAndFollowing toggling a timed series all-day with no start '
         'keeps every new occurrence on its calendar day', () async {
