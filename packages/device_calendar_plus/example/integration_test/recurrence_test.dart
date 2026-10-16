@@ -3317,31 +3317,28 @@ void main() {
         'occurrence past a DST change, moves the master one local day',
         () async {
       final id = requireCalendar(calendarId);
-      final offset = DateTime.now().timeZoneOffset;
-      // The harness zones: Los Angeles, UTC and Sydney.
-      final deviceZone = offset.isNegative
-          ? 'America/Los_Angeles'
-          : offset == Duration.zero
-              ? 'UTC'
-              : 'Australia/Sydney';
       final start = dstSeedDay.add(const Duration(hours: 16, minutes: 30));
+      // No timeZone: both platforms store a new timed event in the device
+      // zone.
       final eventId = await plugin.createEvent(
         calendarId: id,
         title: 'Timed To All-day Moved Past DST',
         startDate: start,
         endDate: start.add(seedDuration),
         recurrenceRule: DailyRecurrence(end: const CountEnd(14)),
-        timeZone: deviceZone,
       );
       final before =
           await occurrencesOf(plugin, id, eventId, start, windowDays: 30);
       expect(before.length, 14,
           reason: 'the daily series must expand across the DST change');
-      // The first occurrence on the other side of the change, or the last
-      // one where the zone has none.
-      final named = before.firstWhere(
-          (e) => e.startDate.toLocal().timeZoneOffset != start.timeZoneOffset,
-          orElse: () => before.last);
+      // The first occurrence on the other side of the change.
+      final pastChange = before.where(
+          (e) => e.startDate.toLocal().timeZoneOffset != start.timeZoneOffset);
+      if (pastChange.isEmpty) {
+        markTestSkipped('the device zone has no DST change in the window');
+        return;
+      }
+      final named = pastChange.first;
 
       await plugin.updateRecurring(
         named.instanceId,

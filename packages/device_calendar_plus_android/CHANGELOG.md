@@ -17,7 +17,9 @@
 - `updateRecurring` with `EventSpan.allEvents` that toggles a timed series
   all-day and moves it counts the move in local days, so a DST change
   between the series start and the named occurrence no longer lands the
-  start a day off (#186).
+  start a day off (#186). A toggle back to timed counts it the same way, so
+  it no longer lands a day off in a zone whose DST offsets straddle UTC,
+  such as the Azores.
 - `updateRecurring` with `EventSpan.thisAndFollowing` and a new `CountEnd`
   rule counts it from the series' start, as iOS does: the new series drops
   the occurrences the new rule would have had before the split, and is a

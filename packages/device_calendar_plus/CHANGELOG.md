@@ -15,7 +15,7 @@
 - Android: `updateRecurring` with `EventSpan.allEvents` that toggles a timed
   series all-day and moves its `start` no longer lands the series a day off
   when a DST change falls between the series start and the named occurrence
-  (#186).
+  (#186). The same holds for a toggle back to timed with `isAllDay: false`.
 - Android: `updateRecurring` with `EventSpan.thisAndFollowing` and a new
   `CountEnd` rule now counts it from the original series' start, as iOS
   does: the new series keeps only the occurrences left after the split, and
