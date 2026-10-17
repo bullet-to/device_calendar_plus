@@ -3384,11 +3384,12 @@ void main() {
       );
     });
 
-    // The split twin of the #208 test above: past a DST change the new
-    // series still spans the master's days, as EventKit's split does. West
-    // of UTC the 23:30 master runs into the next day, though its
-    // occurrences past the change sit at 22:30 and stay on their own.
-    // Android once spanned the split occurrence's days instead (#221).
+    // The split twin of the #208 test above: the new series starts on the
+    // split occurrence's local date, and past a DST change it still spans
+    // the master's days, as EventKit's split does. West of UTC the 23:30
+    // master runs into the next day, though its occurrences past the change
+    // sit at 22:30 and stay on their own. Android once spanned the split
+    // occurrence's days instead (#221).
     test(
         'thisAndFollowing toggling a timed series all-day with no start from '
         "an occurrence past a DST change spans the master's days",
@@ -3404,11 +3405,35 @@ void main() {
         isAllDay: true,
       );
 
-      expectAllDaySeries(
-        await occurrencesOf(plugin, calendarId!, newSeriesId, seeded.start,
-            windowDays: 30),
-        seeded,
-        fromIndex: 2,
+      final master = before.first;
+      final masterDays = nextLocalMidnight(localDay(master.endDate
+                  .toLocal()
+                  .subtract(const Duration(milliseconds: 1))))
+              .difference(localDay(master.startDate.toLocal()))
+              .inHours ~/
+          24;
+      final firstDay = localDay(split.startDate.toLocal());
+      final after = await occurrencesOf(
+          plugin, calendarId!, newSeriesId, seeded.start,
+          windowDays: 30);
+      expect(after.every((e) => e.isAllDay), isTrue,
+          reason: 'every occurrence must be all-day');
+      expect(
+        startsOf(after),
+        [
+          for (var i = 0; i < seedCount - 2; i++)
+            daysOn(firstDay, 7 * i).millisecondsSinceEpoch,
+        ],
+        reason: "each new occurrence must sit on the split occurrence's "
+            'local date, a week on each time',
+      );
+      expect(
+        endsOf(after),
+        [
+          for (var i = 0; i < seedCount - 2; i++)
+            daysOn(firstDay, 7 * i + masterDays).millisecondsSinceEpoch,
+        ],
+        reason: "each new occurrence must span the master's local days",
       );
       expectTruncatedMaster(
         await occurrencesOf(plugin, calendarId!, seeded.eventId, seeded.start,
