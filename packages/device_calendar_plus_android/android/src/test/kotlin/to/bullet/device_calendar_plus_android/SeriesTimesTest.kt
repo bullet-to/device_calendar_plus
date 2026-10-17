@@ -26,7 +26,7 @@ internal class SeriesTimesTest {
         baseMillis = stored,
         referenceMillis = stored,
         existingDurationMillis = duration,
-        timeEdit = SeriesTimeEdit(null, durationMinutes, false, FrameChange.None),
+        timeEdit = SeriesTimeEdit(null, durationMinutes?.let { it * 60_000L }, false, FrameChange.None),
         ruleEdit = rrule?.let { SeriesRuleEdit.Replace(it) } ?: SeriesRuleEdit.Keep(null),
         isAllDay = false,
         timeZoneId = newYork.id,

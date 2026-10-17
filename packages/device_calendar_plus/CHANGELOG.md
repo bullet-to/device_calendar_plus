@@ -5,6 +5,11 @@
   all-day event or occurrence on its own days, from local midnight of the
   first to the last second of the last, as on iOS. West of UTC it read back
   starting the evening before (#205, #216).
+- Android: `updateRecurring` with `isAllDay: false` and no `start` keeps an
+  all-day series on its own days the same way, on `EventSpan.allEvents` and
+  `EventSpan.thisAndFollowing`. On a DST change day an occurrence ends an
+  hour off iOS's 23:59:59, as Android stores a timed series' length in
+  fixed seconds (#219).
 - Android: `updateEvent` toggling `isAllDay` with only `startDate` or only
   `endDate` moves the other bound into the new frame as well, as on iOS,
   instead of leaving it a day off (#204).

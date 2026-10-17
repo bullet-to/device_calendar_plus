@@ -3416,6 +3416,78 @@ void main() {
         before: split.startDate,
       );
     });
+
+    /// Asserts [after] is the timed series a bare toggle leaves of the
+    /// all-day series [before]: each occurrence timed, from local midnight
+    /// of its own calendar day to its last second, as EventKit reads the
+    /// dates an all-day event holds once the flag is off. A DST change day's
+    /// end isn't checked: EventKit still ends it at 23:59:59, while
+    /// Android's DURATION is fixed seconds, so it ends an hour off.
+    void expectTimedOnOwnDays(List<Event> after, List<Event> before) {
+      expect(after.every((e) => !e.isAllDay), isTrue,
+          reason: 'every occurrence must be timed');
+      final days = [for (final e in before) localDay(e.startDate.toLocal())];
+      expect(
+        [for (final e in after) e.startDate.millisecondsSinceEpoch],
+        [for (final day in days) day.millisecondsSinceEpoch],
+        reason: 'each occurrence must start at local midnight of its own '
+            'calendar day',
+      );
+      for (var i = 0; i < days.length; i++) {
+        final next = nextLocalMidnight(days[i]);
+        if (next.difference(days[i]) != const Duration(days: 1)) continue;
+        expect(after[i].endDate.millisecondsSinceEpoch,
+            next.millisecondsSinceEpoch - 1000,
+            reason: 'occurrence $i must run to the last second of its day');
+      }
+    }
+
+    // A bare toggle of an all-day series back to timed keeps it on its
+    // days. Android left the stored UTC midnights under ALL_DAY=0, so west
+    // of UTC the series read back the evening before (#219).
+    test(
+        'toggling an all-day series timed with no start keeps every '
+        'occurrence on its calendar day', () async {
+      final seeded = await seedWeeklySeries(plugin, calendarId,
+          title: 'All-day To Timed Series', isAllDay: true);
+      final before = seeded.occurrences;
+
+      await plugin.updateRecurring(
+        before[0].instanceId,
+        EventSpan.allEvents,
+        isAllDay: false,
+      );
+
+      // A day early so a local midnight east of UTC is still in the window.
+      expectTimedOnOwnDays(
+        await occurrencesOf(plugin, calendarId!, seeded.eventId,
+            seeded.start.subtract(const Duration(days: 1)),
+            windowDays: 31),
+        before,
+      );
+    });
+
+    test(
+        'thisAndFollowing toggling an all-day series timed with no start '
+        'keeps every new occurrence on its calendar day', () async {
+      final seeded = await seedWeeklySeries(plugin, calendarId,
+          title: 'All-day To Timed Split', isAllDay: true);
+      final before = seeded.occurrences;
+      final split = before[2];
+
+      final newSeriesId = await plugin.updateRecurring(
+        split.instanceId,
+        EventSpan.thisAndFollowing,
+        isAllDay: false,
+      );
+
+      expectTimedOnOwnDays(
+        await occurrencesOf(plugin, calendarId!, newSeriesId,
+            seeded.start.subtract(const Duration(days: 1)),
+            windowDays: 31),
+        before.sublist(2),
+      );
+    });
   });
 
   group('Recurrence Delete Tests', () {

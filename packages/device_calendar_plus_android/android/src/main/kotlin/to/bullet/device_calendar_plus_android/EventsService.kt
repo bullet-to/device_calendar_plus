@@ -1089,7 +1089,7 @@ class EventsService(
         // DTSTART/DURATION (and RRULE, below) re-put is what makes the
         // provider re-expand the series.
         val rewriteTimeColumns = timeEdit.targetStart != null ||
-            timeEdit.durationMinutes != null || newStart != row.dtstart
+            timeEdit.durationMillis != null || newStart != row.dtstart
         if (rewriteTimeColumns || wasRecurring != willBeRecurring) {
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {

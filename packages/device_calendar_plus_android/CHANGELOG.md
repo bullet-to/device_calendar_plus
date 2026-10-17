@@ -7,6 +7,14 @@
   second of the last, as on iOS. The stored UTC midnights were left under
   `ALL_DAY=0`, so west of UTC it read back as the evening before (#205,
   #216).
+- `updateRecurring` with `isAllDay: false` and no `start` does the same for
+  an all-day series, on `EventSpan.allEvents` and on a
+  `EventSpan.thisAndFollowing` split: each occurrence runs from local
+  midnight through the last second of its days, as on iOS, from the
+  master's span. It kept the UTC-midnight DTSTART under `ALL_DAY=0`, so west
+  of UTC the series read back the evening before. The DURATION is fixed
+  seconds, so on a DST change day an occurrence ends an hour off iOS's
+  23:59:59 (#219).
 - `updateEvent` that toggles `isAllDay` with only one of `startDate` or
   `endDate` moves the other bound into the new frame too, as iOS does, rather
   than leaving it in the old one, where it read back a day off (#204).

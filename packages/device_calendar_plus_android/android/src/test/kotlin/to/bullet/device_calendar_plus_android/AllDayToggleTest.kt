@@ -114,7 +114,7 @@ internal class AllDayToggleTest {
 
         assertEquals(
             SeriesTimeEdit(
-                instantAt(utc, 2026, 6, 10), 3 * 24 * 60, startDefaulted = false,
+                instantAt(utc, 2026, 6, 10), 3 * AllDayDates.MILLIS_PER_DAY, startDefaulted = false,
                 frameChange = FrameChange.ToAllDay(la)
             ),
             edit
@@ -134,7 +134,7 @@ internal class AllDayToggleTest {
         // 00:30 touches two local dates.
         assertEquals(
             SeriesTimeEdit(
-                instantAt(utc, 2026, 6, 10), 2 * 24 * 60, startDefaulted = false,
+                instantAt(utc, 2026, 6, 10), 2 * AllDayDates.MILLIS_PER_DAY, startDefaulted = false,
                 frameChange = FrameChange.ToAllDay(la)
             ),
             edit
@@ -142,7 +142,8 @@ internal class AllDayToggleTest {
     }
 
     // A split named at a later occurrence starts the new series there: its
-    // own start, not the series', is the default, and so are its days.
+    // own start, not the series', is the default. Here its days match the
+    // master's, which is where the duration comes from.
     @Test
     fun resolveSeriesTimeEdit_splitToggleNamedByLaterOccurrence_defaultsFromThatOccurrence() {
         val occurrence = instantAt(la, 2026, 6, 13, 23, 30)
@@ -151,7 +152,7 @@ internal class AllDayToggleTest {
 
         assertEquals(
             SeriesTimeEdit(
-                instantAt(utc, 2026, 6, 13), 2 * 24 * 60, startDefaulted = true,
+                instantAt(utc, 2026, 6, 13), 2 * AllDayDates.MILLIS_PER_DAY, startDefaulted = true,
                 frameChange = FrameChange.ToAllDay(la)
             ),
             edit
@@ -169,8 +170,34 @@ internal class AllDayToggleTest {
 
         assertEquals(
             SeriesTimeEdit(
-                instantAt(utc, 2026, 6, 13), 24 * 60, startDefaulted = true,
+                instantAt(utc, 2026, 6, 13), AllDayDates.MILLIS_PER_DAY, startDefaulted = true,
                 frameChange = FrameChange.ToAllDay(la)
+            ),
+            edit
+        )
+    }
+
+    // #219: a bare toggle of an all-day series to timed starts it at local
+    // midnight of the named occurrence's date and spans the master's dates
+    // through their last second, as EventKit reads them once the flag is
+    // off.
+    @Test
+    fun resolveSeriesTimeEdit_bareToggleToTimed_spansTheMastersLocalDays() {
+        val masterStart = instantAt(utc, 2026, 6, 6)
+        val occurrence = instantAt(utc, 2026, 6, 13)
+
+        val edit = timeEdit(
+            rowAllDay = true,
+            patchIsAllDay = false,
+            defaultStart = occurrence,
+            masterStart = masterStart,
+            durationMillis = 2 * AllDayDates.MILLIS_PER_DAY,
+        )
+
+        assertEquals(
+            SeriesTimeEdit(
+                instantAt(la, 2026, 6, 13), 2 * AllDayDates.MILLIS_PER_DAY - 1_000L,
+                startDefaulted = true, frameChange = FrameChange.ToTimed(la)
             ),
             edit
         )
@@ -184,7 +211,7 @@ internal class AllDayToggleTest {
 
         assertEquals(
             SeriesTimeEdit(
-                instantAt(utc, 2026, 6, 6), 24 * 60, startDefaulted = true,
+                instantAt(utc, 2026, 6, 6), AllDayDates.MILLIS_PER_DAY, startDefaulted = true,
                 frameChange = FrameChange.ToAllDay(la)
             ),
             edit
