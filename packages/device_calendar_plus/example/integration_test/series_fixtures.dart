@@ -15,12 +15,34 @@ String requireCalendar(String? calendarId) {
 
 /// A series factory: creates a recurring event of [count] occurrences in the
 /// calendar and returns its event ID and start: [createDailySeries],
-/// [createAllDayDailySeries], or a closure over [createWeeklySeries].
+/// [createAllDayDailySeries], [createMidUtcDayDailySeries], or a closure
+/// over [createWeeklySeries].
 typedef SeriesFactory = Future<({String eventId, DateTime start})> Function(
   DeviceCalendar plugin,
   String calendarId, {
   int count,
 });
+
+/// Tomorrow (by the UTC date) at 14:00 UTC: the start for a series stored
+/// in UTC whose test moves it, or its occurrences, by a few hours and
+/// expects that to stay a time-only move. A shift of under ten hours either
+/// way stays on the start's UTC date. Seeded at "an hour from now" instead,
+/// a run between 22:00 and 23:00 UTC let an hour's shift cross UTC
+/// midnight, and the tests failed only in that hour (#222).
+DateTime _midUtcDayTomorrow() {
+  final now = DateTime.now().toUtc();
+  return DateTime.utc(now.year, now.month, now.day + 1, 14);
+}
+
+/// A daily series factory that starts at [_midUtcDayTomorrow], for
+/// [seedSeries].
+Future<({String eventId, DateTime start})> createMidUtcDayDailySeries(
+  DeviceCalendar plugin,
+  String calendarId, {
+  int count = 10,
+}) =>
+    createDailySeries(plugin, calendarId,
+        count: count, start: _midUtcDayTomorrow());
 
 /// A seeded series: its event ID and start, and its occurrences as listed
 /// right after it was created — the baseline a per-occurrence test compares
@@ -31,16 +53,17 @@ typedef SeededSeries = ({
   List<Event> occurrences,
 });
 
-/// Creates a daily recurring event starting one hour from now (UTC), with
-/// `count` total occurrences and any [reminders]. Returns the event ID and
-/// the start time.
+/// Creates a daily recurring event starting at [start] (one hour from now
+/// by default), stored in UTC, with `count` total occurrences and any
+/// [reminders]. Returns the event ID and the start time.
 Future<({String eventId, DateTime start})> createDailySeries(
   DeviceCalendar plugin,
   String calendarId, {
   int count = 10,
   List<Duration>? reminders,
+  DateTime? start,
 }) async {
-  final start = DateTime.now().add(const Duration(hours: 1));
+  start ??= DateTime.now().add(const Duration(hours: 1));
   final eventId = await plugin.createEvent(
     calendarId: calendarId,
     title: 'Daily Series',

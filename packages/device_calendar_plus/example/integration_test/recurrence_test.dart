@@ -1281,8 +1281,9 @@ void main() {
     /// The start shift of a [splitAfterDrags] split.
     const splitShift = Duration(hours: 1);
 
-    /// Seeds a daily series, moves each of [drags]' occurrences (`index`) by
-    /// its `move`, retitled `'<label> <tag>'` so it can be found, then splits
+    /// Seeds a daily series mid-UTC-day (so [splitShift] stays a time-only
+    /// move, #222), moves each of [drags]' occurrences (`index`) by its
+    /// `move`, retitled `'<label> <tag>'` so it can be found, then splits
     /// the series at [3] with a thisAndFollowing update that shifts the start
     /// by [splitShift] and sets the rule [ruleFor] gives for the series, if
     /// any. The series has [count] occurrences. Returns the moved occurrences
@@ -1302,6 +1303,7 @@ void main() {
       final series = await seedSeries(
         plugin,
         calendarId,
+        create: createMidUtcDayDailySeries,
         count: count,
         minOccurrences: count,
       );
@@ -1649,6 +1651,12 @@ void main() {
           final series = await seedSeries(
             plugin,
             calendarId,
+            // Mid-UTC-day, so the 1h shift stays a time-only move (#222).
+            // Android stores the delete as a cancelled exception row, so
+            // the split carries it the same way it carries a detached
+            // occurrence, and the same midnight-crossing day shift would
+            // hit it.
+            create: createMidUtcDayDailySeries,
             minOccurrences: 10,
           );
           final id = calendarId!;
