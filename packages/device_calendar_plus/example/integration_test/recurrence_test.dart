@@ -1651,6 +1651,9 @@ void main() {
           final series = await seedSeries(
             plugin,
             calendarId,
+            // Mid-UTC-day, so the 1h shift stays a time-only move (#222);
+            // Android carries the delete as a cancelled exception, so it
+            // shares the detached-carry day count.
             create: createMidUtcDayDailySeries,
             minOccurrences: 10,
           );
