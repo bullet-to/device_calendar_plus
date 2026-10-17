@@ -22,6 +22,30 @@ typedef SeriesFactory = Future<({String eventId, DateTime start})> Function(
   int count,
 });
 
+/// Tomorrow (by the UTC date) at 14:00 UTC: the start for a series stored
+/// in UTC whose test moves it, or its occurrences, by a few hours and
+/// expects that to stay a time-only move. Seeded at "an hour from now"
+/// instead, a run between 22:00 and 23:00 UTC put the series' start in the
+/// last hour of the UTC day, so an hour's split shift crossed UTC midnight:
+/// Android's `SplitShift` then counts a calendar day's move and carries the
+/// detached occurrences a day with it, and EventKit pairs them with another
+/// slot, and the tests failed only in that hour (#222). From here a shift
+/// of up to ten hours either way stays on the start's UTC date.
+DateTime midUtcDayTomorrow() {
+  final now = DateTime.now().toUtc();
+  return DateTime.utc(now.year, now.month, now.day + 1, 14);
+}
+
+/// A daily series factory that starts at [midUtcDayTomorrow], for
+/// [seedSeries].
+Future<({String eventId, DateTime start})> createMidUtcDayDailySeries(
+  DeviceCalendar plugin,
+  String calendarId, {
+  int count = 10,
+}) =>
+    createDailySeries(plugin, calendarId,
+        count: count, start: midUtcDayTomorrow());
+
 /// A seeded series: its event ID and start, and its occurrences as listed
 /// right after it was created — the baseline a per-occurrence test compares
 /// against.
@@ -31,16 +55,17 @@ typedef SeededSeries = ({
   List<Event> occurrences,
 });
 
-/// Creates a daily recurring event starting one hour from now (UTC), with
-/// `count` total occurrences and any [reminders]. Returns the event ID and
-/// the start time.
+/// Creates a daily recurring event starting at [start] (one hour from now
+/// by default), stored in UTC, with `count` total occurrences and any
+/// [reminders]. Returns the event ID and the start time.
 Future<({String eventId, DateTime start})> createDailySeries(
   DeviceCalendar plugin,
   String calendarId, {
   int count = 10,
   List<Duration>? reminders,
+  DateTime? start,
 }) async {
-  final start = DateTime.now().add(const Duration(hours: 1));
+  start ??= DateTime.now().add(const Duration(hours: 1));
   final eventId = await plugin.createEvent(
     calendarId: calendarId,
     title: 'Daily Series',

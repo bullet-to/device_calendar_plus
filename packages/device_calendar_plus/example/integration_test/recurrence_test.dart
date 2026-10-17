@@ -1302,6 +1302,7 @@ void main() {
       final series = await seedSeries(
         plugin,
         calendarId,
+        create: createMidUtcDayDailySeries,
         count: count,
         minOccurrences: count,
       );
