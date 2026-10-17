@@ -1651,9 +1651,11 @@ void main() {
           final series = await seedSeries(
             plugin,
             calendarId,
-            // Mid-UTC-day, so the 1h shift stays a time-only move (#222);
-            // Android carries the delete as a cancelled exception, so it
-            // shares the detached-carry day count.
+            // Mid-UTC-day, so the 1h shift stays a time-only move (#222).
+            // Android stores the delete as a cancelled exception row, so
+            // the split carries it the same way it carries a detached
+            // occurrence, and the same midnight-crossing day shift would
+            // hit it.
             create: createMidUtcDayDailySeries,
             minOccurrences: 10,
           );
