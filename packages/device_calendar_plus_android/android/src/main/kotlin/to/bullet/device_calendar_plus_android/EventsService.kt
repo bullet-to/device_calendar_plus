@@ -1001,18 +1001,17 @@ class EventsService(
             // rule doesn't generate (#189; see updateRecurring docs).
             // The default start is the named occurrence's own (the master's
             // when the edit names the master). The default duration spans
-            // the first occurrence of the series after the edit: the
-            // master's on allEvents (#208), or the named occurrence a split
-            // starts the new series at.
+            // the master's days on either span, as EventKit's does, even on
+            // a split past a DST change the master's local time doesn't
+            // share (#208, #221).
             val namedStart = timestamp ?: row.dtstart
-            val firstOccurrenceStart = if (span == "allEvents") row.dtstart else namedStart
             val timeEdit = resolveSeriesTimeEdit(
                 newStartMillis = newStartMillis,
                 durationMinutes = durationMinutes,
                 rowAllDay = row.allDay,
                 patchIsAllDay = patch.isAllDay,
                 defaultStart = namedStart,
-                firstOccurrenceStart = firstOccurrenceStart,
+                masterStart = row.dtstart,
                 durationMillis = eventDurationMillis(row)
             )
             val ruleEdit = SeriesRuleEdit.of(

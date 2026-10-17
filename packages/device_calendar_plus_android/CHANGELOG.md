@@ -10,10 +10,11 @@
 - `updateEvent` that toggles `isAllDay` with only one of `startDate` or
   `endDate` moves the other bound into the new frame too, as iOS does, rather
   than leaving it in the old one, where it read back a day off (#204).
-- `updateRecurring` with `EventSpan.allEvents` and `isAllDay: true` without
-  a `duration`, named at an occurrence, spans the series' first occurrence's
-  local days, as on iOS, not the named occurrence's. The two differ when a
-  DST change falls between them (#208).
+- `updateRecurring` with `isAllDay: true` without a `duration`, named at an
+  occurrence, spans the series' first occurrence's local days, as on iOS,
+  not the named occurrence's, on `EventSpan.allEvents` and on a
+  `EventSpan.thisAndFollowing` split alike. The two differ when a DST change
+  falls between them (#208, #221).
 - `updateRecurring` with `EventSpan.allEvents` that toggles a timed series
   all-day and moves it counts the move in local days, so a DST change
   between the series start and the named occurrence no longer lands the

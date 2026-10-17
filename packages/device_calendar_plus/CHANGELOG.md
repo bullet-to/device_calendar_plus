@@ -8,10 +8,11 @@
 - Android: `updateEvent` toggling `isAllDay` with only `startDate` or only
   `endDate` moves the other bound into the new frame as well, as on iOS,
   instead of leaving it a day off (#204).
-- Android: `updateRecurring` with `EventSpan.allEvents` and `isAllDay: true`
-  but no `duration`, called with a later occurrence's instance ID, spans the
-  series' own first occurrence's days, as on iOS. Across a DST change it
-  spanned the named occurrence's instead (#208).
+- Android: `updateRecurring` with `isAllDay: true` but no `duration`,
+  called with a later occurrence's instance ID, spans the series' own first
+  occurrence's days, as on iOS, on both `EventSpan.allEvents` and
+  `EventSpan.thisAndFollowing`. Across a DST change it spanned the named
+  occurrence's instead (#208, #221).
 - Android: `updateRecurring` with `EventSpan.allEvents` that toggles a timed
   series all-day and moves its `start` no longer lands the series a day off
   when a DST change falls between the series start and the named occurrence

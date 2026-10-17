@@ -3384,14 +3384,14 @@ void main() {
       );
     });
 
-    // The split twin of the #208 test above: a split starts the new series
-    // at the named occurrence, so past a DST change it spans that
-    // occurrence's own local days, as EventKit's split does, not the
-    // master's. West of UTC the 23:30 master runs into the next day, but its
+    // The split twin of the #208 test above: past a DST change the new
+    // series still spans the master's days, as EventKit's split does. West
+    // of UTC the 23:30 master runs into the next day, though its
     // occurrences past the change sit at 22:30 and stay on their own.
+    // Android once spanned the split occurrence's days instead (#221).
     test(
         'thisAndFollowing toggling a timed series all-day with no start from '
-        "an occurrence past a DST change spans that occurrence's days",
+        "an occurrence past a DST change spans the master's days",
         () async {
       final seeded = await seedTimedOffUtcDate('Timed To All-day Split DST',
           day: dstSeedDay);
@@ -3404,32 +3404,11 @@ void main() {
         isAllDay: true,
       );
 
-      final firstDay = localDay(split.startDate.toLocal());
-      final endDay = nextLocalMidnight(localDay(split.endDate
-          .toLocal()
-          .subtract(const Duration(milliseconds: 1))));
-      final after = await occurrencesOf(
-          plugin, calendarId!, newSeriesId, seeded.start,
-          windowDays: 30);
-      expect(after.every((e) => e.isAllDay), isTrue,
-          reason: 'every occurrence must be all-day');
-      expect(
-        startsOf(after),
-        [
-          for (var i = 0; i < seedCount - 2; i++)
-            daysOn(firstDay, 7 * i).millisecondsSinceEpoch,
-        ],
-        reason: "each new occurrence must sit on the split occurrence's "
-            'local date, a week on each time',
-      );
-      expect(
-        endsOf(after),
-        [
-          for (var i = 0; i < seedCount - 2; i++)
-            daysOn(endDay, 7 * i).millisecondsSinceEpoch,
-        ],
-        reason: 'each new occurrence must run through the last local day '
-            "the split occurrence's timed hour touched",
+      expectAllDaySeries(
+        await occurrencesOf(plugin, calendarId!, newSeriesId, seeded.start,
+            windowDays: 30),
+        seeded,
+        fromIndex: 2,
       );
       expectTruncatedMaster(
         await occurrencesOf(plugin, calendarId!, seeded.eventId, seeded.start,

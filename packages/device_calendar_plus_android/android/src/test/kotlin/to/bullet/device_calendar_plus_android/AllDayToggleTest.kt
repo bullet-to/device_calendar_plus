@@ -29,7 +29,7 @@ internal class AllDayToggleTest {
         rowAllDay: Boolean = false,
         patchIsAllDay: Boolean? = true,
         defaultStart: Long,
-        firstOccurrenceStart: Long,
+        masterStart: Long,
         durationMillis: Long = hour,
         zone: TimeZone = la,
     ) = resolveSeriesTimeEdit(
@@ -38,7 +38,7 @@ internal class AllDayToggleTest {
         rowAllDay = rowAllDay,
         patchIsAllDay = patchIsAllDay,
         defaultStart = defaultStart,
-        firstOccurrenceStart = firstOccurrenceStart,
+        masterStart = masterStart,
         durationMillis = durationMillis,
         deviceZone = zone
     )
@@ -63,7 +63,7 @@ internal class AllDayToggleTest {
             existingDurationMillis = duration,
             timeEdit = timeEdit(
                 defaultStart = start,
-                firstOccurrenceStart = start,
+                masterStart = start,
                 durationMillis = duration,
                 zone = zone,
             ),
@@ -79,7 +79,7 @@ internal class AllDayToggleTest {
         val start = instantAt(la, 2026, 6, 6, 23, 30)
 
         val edit = timeEdit(
-            patchIsAllDay = null, defaultStart = start, firstOccurrenceStart = start
+            patchIsAllDay = null, defaultStart = start, masterStart = start
         )
 
         assertEquals(
@@ -92,7 +92,7 @@ internal class AllDayToggleTest {
     fun resolveSeriesTimeEdit_alreadyAllDay_defaultsNothing() {
         val start = instantAt(utc, 2026, 6, 6)
 
-        val edit = timeEdit(rowAllDay = true, defaultStart = start, firstOccurrenceStart = start)
+        val edit = timeEdit(rowAllDay = true, defaultStart = start, masterStart = start)
 
         assertEquals(
             SeriesTimeEdit(null, null, startDefaulted = false, frameChange = FrameChange.None),
@@ -109,7 +109,7 @@ internal class AllDayToggleTest {
             newStartMillis = given,
             durationMinutes = 3 * 24 * 60,
             defaultStart = start,
-            firstOccurrenceStart = start,
+            masterStart = start,
         )
 
         assertEquals(
@@ -127,7 +127,7 @@ internal class AllDayToggleTest {
         val given = instantAt(la, 2026, 6, 10)
 
         val edit = timeEdit(
-            newStartMillis = given, defaultStart = start, firstOccurrenceStart = start
+            newStartMillis = given, defaultStart = start, masterStart = start
         )
 
         // The duration still comes from the first occurrence: 23:30 to
@@ -147,7 +147,7 @@ internal class AllDayToggleTest {
     fun resolveSeriesTimeEdit_splitToggleNamedByLaterOccurrence_defaultsFromThatOccurrence() {
         val occurrence = instantAt(la, 2026, 6, 13, 23, 30)
 
-        val edit = timeEdit(defaultStart = occurrence, firstOccurrenceStart = occurrence)
+        val edit = timeEdit(defaultStart = occurrence, masterStart = occurrence)
 
         assertEquals(
             SeriesTimeEdit(
@@ -165,7 +165,7 @@ internal class AllDayToggleTest {
         val seriesStart = instantAt(la, 2026, 6, 6, 12)
         val occurrence = instantAt(la, 2026, 6, 13, 23, 30)
 
-        val edit = timeEdit(defaultStart = occurrence, firstOccurrenceStart = seriesStart)
+        val edit = timeEdit(defaultStart = occurrence, masterStart = seriesStart)
 
         assertEquals(
             SeriesTimeEdit(
@@ -180,7 +180,7 @@ internal class AllDayToggleTest {
     fun resolveSeriesTimeEdit_toggleNamedByMaster_defaultsFromTheSeriesStart() {
         val seriesStart = instantAt(la, 2026, 6, 6, 12)
 
-        val edit = timeEdit(defaultStart = seriesStart, firstOccurrenceStart = seriesStart)
+        val edit = timeEdit(defaultStart = seriesStart, masterStart = seriesStart)
 
         assertEquals(
             SeriesTimeEdit(
@@ -250,7 +250,7 @@ internal class AllDayToggleTest {
             timeEdit = timeEdit(
                 newStartMillis = instantAt(la, 2026, 6, 2),
                 defaultStart = occurrence,
-                firstOccurrenceStart = seriesStart,
+                masterStart = seriesStart,
             ),
             ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
             isAllDay = true,
@@ -281,7 +281,7 @@ internal class AllDayToggleTest {
                 rowAllDay = true,
                 patchIsAllDay = false,
                 defaultStart = occurrence,
-                firstOccurrenceStart = seriesStart,
+                masterStart = seriesStart,
                 zone = azores,
             ),
             ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
@@ -296,22 +296,21 @@ internal class AllDayToggleTest {
     /**
      * The new (start, duration) of a weekly series stored in UTC, its
      * occurrences lasting an hour, after a bare all-day toggle named at its
-     * [occurrence] from a device in [zone]. The series the edit writes starts
-     * at [firstOccurrenceStart]: the master's start on allEvents, or
-     * [occurrence] itself on a split.
+     * [occurrence] from a device in [zone], the master starting at
+     * [masterStart].
      */
     private fun bareToggleNamedAt(
         occurrence: Long,
-        firstOccurrenceStart: Long,
+        masterStart: Long,
         zone: TimeZone,
     ): Pair<Long, Long> =
         resolveSeriesTimes(
-            baseMillis = firstOccurrenceStart,
+            baseMillis = masterStart,
             referenceMillis = occurrence,
             existingDurationMillis = hour,
             timeEdit = timeEdit(
                 defaultStart = occurrence,
-                firstOccurrenceStart = firstOccurrenceStart,
+                masterStart = masterStart,
                 zone = zone,
             ),
             ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;COUNT=4"),
@@ -332,7 +331,7 @@ internal class AllDayToggleTest {
 
         assertEquals(
             instantAt(utc, 2026, 10, 28) to 2 * AllDayDates.MILLIS_PER_DAY,
-            bareToggleNamedAt(occurrence, firstOccurrenceStart = seriesStart, zone = la),
+            bareToggleNamedAt(occurrence, masterStart = seriesStart, zone = la),
         )
     }
 
@@ -347,20 +346,7 @@ internal class AllDayToggleTest {
 
         assertEquals(
             instantAt(utc, 2026, 4, 1) to AllDayDates.MILLIS_PER_DAY,
-            bareToggleNamedAt(occurrence, firstOccurrenceStart = seriesStart, zone = sydney),
-        )
-    }
-
-    // A thisAndFollowing toggle starts the new series at the occurrence, so
-    // it spans the occurrence's own days, as EventKit's split does.
-    @Test
-    fun resolveSeriesTimes_splitToggleNamedAcrossDst_spansTheOccurrencesDays() {
-        // The master, at 23:30 PDT on 28 October, spans two days.
-        val occurrence = instantAt(la, 2026, 11, 4, 22, 30)
-
-        assertEquals(
-            instantAt(utc, 2026, 11, 4) to AllDayDates.MILLIS_PER_DAY,
-            bareToggleNamedAt(occurrence, firstOccurrenceStart = occurrence, zone = la),
+            bareToggleNamedAt(occurrence, masterStart = seriesStart, zone = sydney),
         )
     }
 
@@ -380,7 +366,7 @@ internal class AllDayToggleTest {
             baseMillis = occurrence,
             referenceMillis = occurrence,
             existingDurationMillis = hour,
-            timeEdit = timeEdit(defaultStart = occurrence, firstOccurrenceStart = occurrence),
+            timeEdit = timeEdit(defaultStart = occurrence, masterStart = occurrence),
             ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
             isAllDay = true,
             timeZoneId = la.id,

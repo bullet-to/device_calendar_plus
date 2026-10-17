@@ -365,19 +365,18 @@ internal data class SeriesTimeEdit(
  *   (the master's when the edit names the master). [resolveSeriesTimes]
  *   counts the move from that occurrence in local days, so a series edit
  *   keeps its start's local date.
- * - `duration` defaults to the whole [deviceZone] days that the first
- *   occurrence of the series after the edit covers
- *   ([allDayToggleDurationMinutes]): the one starting at
- *   [firstOccurrenceStart] and lasting [durationMillis]. That's the master
- *   on a whole-series edit, and the named occurrence a split starts the new
- *   series at.
+ * - `duration` defaults to the whole [deviceZone] days that the master
+ *   covers ([allDayToggleDurationMinutes]): the occurrence starting at
+ *   [masterStart] and lasting [durationMillis], on a whole-series edit and
+ *   a split alike.
  *
- * That's what EventKit makes of the same toggle: it floats the master's (or
- * the split occurrence's) own dates. Without these defaults the timed
- * DTSTART and DURATION stayed under ALL_DAY=1, and the series read back on
- * the wrong date or collapsed (#124). Spanning the named occurrence on a
- * whole-series edit differed from EventKit wherever a DST change moved that
- * occurrence across a local midnight the master doesn't cross (#208).
+ * That's what EventKit makes of the same toggle: it floats the master's own
+ * dates, and a split's new series keeps the master's span. Without these
+ * defaults the timed DTSTART and DURATION stayed under ALL_DAY=1, and the
+ * series read back on the wrong date or collapsed (#124). Spanning the
+ * named occurrence instead differed from EventKit wherever a DST change
+ * moved that occurrence across a local midnight the master doesn't cross,
+ * on a whole-series edit (#208) and on a split (#221).
  */
 internal fun resolveSeriesTimeEdit(
     newStartMillis: Long?,
@@ -385,7 +384,7 @@ internal fun resolveSeriesTimeEdit(
     rowAllDay: Boolean,
     patchIsAllDay: Boolean?,
     defaultStart: Long,
-    firstOccurrenceStart: Long,
+    masterStart: Long,
     durationMillis: Long,
     deviceZone: TimeZone = TimeZone.getDefault()
 ): SeriesTimeEdit {
@@ -405,7 +404,7 @@ internal fun resolveSeriesTimeEdit(
             newStartMillis ?: defaultStart, effectiveIsAllDay, deviceZone
         ),
         durationMinutes = durationMinutes
-            ?: allDayToggleDurationMinutes(firstOccurrenceStart, durationMillis, deviceZone),
+            ?: allDayToggleDurationMinutes(masterStart, durationMillis, deviceZone),
         startDefaulted = newStartMillis == null,
         frameChange = frameChange,
     )
