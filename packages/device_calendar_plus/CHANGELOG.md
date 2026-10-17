@@ -1,3 +1,33 @@
+## Unreleased
+
+### Fixed
+- Android: `updateEvent` with `isAllDay: false` and no dates keeps an
+  all-day event or occurrence on its own days, from local midnight of the
+  first to the last second of the last, as on iOS. West of UTC it read back
+  starting the evening before (#205, #216).
+- Android: `updateRecurring` with `isAllDay: false` and no `start` keeps an
+  all-day series on its own days the same way, on `EventSpan.allEvents` and
+  `EventSpan.thisAndFollowing`. On a DST change day an occurrence ends an
+  hour off iOS's 23:59:59, as Android stores a timed series' length in
+  fixed seconds (#219).
+- Android: `updateEvent` toggling `isAllDay` with only `startDate` or only
+  `endDate` moves the other bound into the new frame as well, as on iOS,
+  instead of leaving it a day off (#204).
+- Android: `updateRecurring` with `isAllDay: true` but no `duration`,
+  called with a later occurrence's instance ID, spans the series' own first
+  occurrence's days, as on iOS, on both `EventSpan.allEvents` and
+  `EventSpan.thisAndFollowing`. Across a DST change it spanned the named
+  occurrence's instead (#208, #221).
+- Android: `updateRecurring` with `EventSpan.allEvents` that toggles a timed
+  series all-day and moves its `start` no longer lands the series a day off
+  when a DST change falls between the series start and the named occurrence
+  (#186). The same holds for a toggle back to timed with `isAllDay: false`.
+- Android: `updateRecurring` with `EventSpan.thisAndFollowing` and a new
+  `CountEnd` rule now counts it from the original series' start, as iOS
+  does: the new series keeps only the occurrences left after the split, and
+  is a one-off when there are none. Android used to keep the full count
+  (#124).
+
 ## 0.10.2 - 2026-10-14
 
 ### Changed

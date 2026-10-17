@@ -794,7 +794,8 @@ class EventsService(
         applyEventFieldValues(values, patch)
 
         // Write whichever bounds the edit moves: the provided dates in the
-        // effective frame, or the all-day span of a bare toggle.
+        // effective frame, and on an all-day toggle the row's own span in the
+        // new frame for a bound left out.
         val (newStart, newEnd) = resolveEditedBounds(
             currentStart = row.dtstart,
             durationMillis = eventDurationMillis(row),
@@ -905,8 +906,8 @@ class EventsService(
             rowAllDay = series.row.allDay
         )
         // A bound the edit doesn't move keeps the occurrence's own value
-        // (iOS: setting startDate leaves endDate untouched). A bare all-day
-        // toggle moves both, via resolveEditedBounds.
+        // (iOS: setting startDate leaves endDate untouched). An all-day toggle
+        // moves both into the new frame, via resolveEditedBounds.
         val newStart = resolvedStart ?: timestamp
         val newEnd = resolvedEnd ?: (timestamp + duration)
         if (newEnd <= newStart) {
@@ -998,13 +999,19 @@ class EventsService(
             // and the caller's local `start` is brought into the stored
             // frame (#144). resolveSeriesTimes then refuses a start the kept
             // rule doesn't generate (#189; see updateRecurring docs).
+            // The default start is the named occurrence's own (the master's
+            // when the edit names the master). The default duration spans
+            // the master's days on either span, as EventKit's does, even on
+            // a split past a DST change the master's local time doesn't
+            // share (#208, #221).
+            val namedStart = timestamp ?: row.dtstart
             val timeEdit = resolveSeriesTimeEdit(
                 newStartMillis = newStartMillis,
                 durationMinutes = durationMinutes,
                 rowAllDay = row.allDay,
                 patchIsAllDay = patch.isAllDay,
-                timestamp = timestamp,
-                seriesStart = row.dtstart,
+                defaultStart = namedStart,
+                masterStart = row.dtstart,
                 durationMillis = eventDurationMillis(row)
             )
             val ruleEdit = SeriesRuleEdit.of(
@@ -1082,7 +1089,7 @@ class EventsService(
         // DTSTART/DURATION (and RRULE, below) re-put is what makes the
         // provider re-expand the series.
         val rewriteTimeColumns = timeEdit.targetStart != null ||
-            timeEdit.durationMinutes != null || newStart != row.dtstart
+            timeEdit.durationMillis != null || newStart != row.dtstart
         if (rewriteTimeColumns || wasRecurring != willBeRecurring) {
             values.put(CalendarContract.Events.DTSTART, newStart)
             if (willBeRecurring) {
@@ -1168,22 +1175,14 @@ class EventsService(
             if ("url" in patch.clearedFields) null else (patch.url ?: row.url)
         val effectiveTimeZone = patch.timeZone ?: row.timeZone
         val effectiveAvailability = patch.availability ?: row.availability
-        val effectiveRrule = when (ruleEdit) {
-            SeriesRuleEdit.Clear -> null
-            is SeriesRuleEdit.Replace -> ruleEdit.rule
-            is SeriesRuleEdit.Keep -> {
-                // Rule unchanged: the new series inherits the original rule. A
-                // COUNT must drop by the occurrences left on the old series,
-                // or the new series would over-generate.
-                val originalCount = RruleString.count(rrule)
-                if (originalCount != null) {
-                    val before = countInstancesBefore(row, timestamp)
-                    RruleString.withCount(rrule, maxOf(1, originalCount - before))
-                } else {
-                    rrule
-                }
-            }
-        }
+        val effectiveRrule = newSeriesRule(
+            ruleEdit,
+            existingRule = rrule,
+            seriesStart = row.dtstart,
+            splitAt = timestamp,
+            tz = seriesTimeZone(row.timeZone, row.allDay),
+            providerCountBefore = { countInstancesBefore(row, timestamp) }
+        )
 
         // The new series is anchored at the split occurrence, shifted to the
         // caller's new start (the reference and base are both the occurrence)
@@ -1191,7 +1190,7 @@ class EventsService(
         // day (a Saturday series switched to Sundays) — without that the
         // provider keeps the old day as an extra first occurrence (#140).
         // Duration is the master's unless overridden.
-        val (newStart, newDurationMs) = resolveSeriesTimes(
+        val (newStart, newDurationMs, carry) = resolveSeriesTimes(
             baseMillis = timestamp,
             referenceMillis = timestamp,
             existingDurationMillis = eventDurationMillis(row),
@@ -1260,15 +1259,10 @@ class EventsService(
         // leaves the exceptions on the old series rather than losing them.
         // The split is committed by now, so this is best-effort and reports
         // nothing (see DetachedOccurrenceCarry.settleAfterSplit). A new
-        // series moves them as it moved its anchor, in the frame
-        // resolveSeriesTimes did above; a new event that doesn't recur
-        // drops them.
-        val shift = effectiveRrule?.let {
-            SplitShift.of(
-                timestamp, newStart,
-                seriesTimeZone(row.timeZone, effectiveIsAllDay), effectiveIsAllDay
-            )
-        }
+        // series moves them by the very shift resolveSeriesTimes moved its
+        // anchor by, in the same frame (#186); a new event that doesn't
+        // recur drops them.
+        val shift = carry.takeIf { effectiveRrule != null }
         detachedOccurrenceCarry.settleAfterSplit(row, timestamp, newEventId, shift)
 
         return Result.success(newEventId)

@@ -103,8 +103,11 @@ await plugin.updateEvent(
 );
 ```
 
-Switching `isAllDay` reinterprets the times: timed → all-day strips the start
-and end to midnight; all-day → timed starts them at midnight. Setting `timeZone`
+Switching `isAllDay` reinterprets the times, keeping the event on its local
+days: timed → all-day covers every day the timed event touched; all-day →
+timed runs from midnight of its first day to the last second of its last.
+Pass `startDate` or `endDate` with the switch to set that bound instead; a bound
+you leave out still moves into the new form. Setting `timeZone`
 reinterprets the wall-clock time rather than preserving the instant. Passing no
 fields is a no-op.
 

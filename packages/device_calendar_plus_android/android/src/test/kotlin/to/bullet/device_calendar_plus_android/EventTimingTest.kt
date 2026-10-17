@@ -10,8 +10,10 @@ import kotlin.test.assertNull
  * a recurring master stores DURATION with a NULL DTEND (#122).
  *
  * `resolveEditedBounds` decides the DTSTART/DTEND an updateEvent edit writes:
- * a bare all-day toggle takes the row's toggleSpan, anything else stores the
- * provided bounds in the effective frame.
+ * each provided bound is stored in the effective frame, and a toggle in
+ * either direction fills a bound it leaves out from the row's span in the
+ * new frame (toggleSpan to all-day, timedSpan to timed). Without a toggle a
+ * missing bound stays null.
  */
 internal class EventTimingTest {
     // "P{n}S" is the form the plugin writes (the timed-master integration
@@ -84,12 +86,61 @@ internal class EventTimingTest {
     }
 
     // Provided bounds are stored in the effective frame: the patch's flag,
-    // else the row's. A missing bound stays null.
+    // else the row's. A missing bound stays null unless the edit toggles.
     private val lateEveningUtcDate = instantAt(utc, 2026, 10, 3)
 
+    // A toggle with one date takes the other bound from the row's
+    // toggleSpan, as EventKit floats it onto its local date (#204): left
+    // timed under ALL_DAY=1 it read back as its UTC date.
     @Test
-    fun resolveEditedBounds_providedStart_patchAllDay_storedAsUtcDate() {
-        assertEquals(lateEveningUtcDate to null, resolve(start = lateEvening, newAllDay = true))
+    fun resolveEditedBounds_toggleToAllDayWithStartOnly_endIsTheRowsLastLocalDay() {
+        assertEquals(
+            instantAt(utc, 2026, 10, 1) to instantAt(utc, 2026, 10, 5),
+            resolve(start = instantAt(losAngeles, 2026, 10, 1), newAllDay = true),
+        )
+    }
+
+    @Test
+    fun resolveEditedBounds_toggleToAllDayWithEndOnly_startIsTheRowsLocalDate() {
+        assertEquals(
+            lateEveningUtcDate to instantAt(utc, 2026, 10, 8),
+            resolve(end = instantAt(losAngeles, 2026, 10, 8), newAllDay = true),
+        )
+    }
+
+    // An all-day row: 3 to 5 October, stored as the UTC midnights of 3 and
+    // (exclusive) 5 October.
+    private fun resolveAllDayRow(start: Long? = null, end: Long? = null) =
+        resolveEditedBounds(
+            currentStart = lateEveningUtcDate,
+            durationMillis = 2 * AllDayDates.MILLIS_PER_DAY,
+            startMillis = start,
+            endMillis = end,
+            newAllDay = false,
+            rowAllDay = true,
+            zone = losAngeles,
+        )
+
+    // The reverse toggle alone keeps the row's days, from the first one's
+    // local midnight to the last second of the last, the timed reading
+    // EventKit gives the all-day dates it holds (#205, #216). Left as UTC
+    // midnights under ALL_DAY=0, they read back as the evening before west
+    // of UTC.
+    @Test
+    fun resolveEditedBounds_bareToggleOfAllDayRow_isItsDaysInTheLocalZone() {
+        assertEquals(
+            instantAt(losAngeles, 2026, 10, 3) to instantAt(losAngeles, 2026, 10, 5) - 1_000L,
+            resolveAllDayRow(),
+        )
+    }
+
+    @Test
+    fun resolveEditedBounds_toggleToTimedWithStartOnly_endIsTheRowsLastLocalSecond() {
+        val nineAm = instantAt(losAngeles, 2026, 10, 3, 9)
+        assertEquals(
+            nineAm to instantAt(losAngeles, 2026, 10, 5) - 1_000L,
+            resolveAllDayRow(start = nineAm),
+        )
     }
 
     @Test

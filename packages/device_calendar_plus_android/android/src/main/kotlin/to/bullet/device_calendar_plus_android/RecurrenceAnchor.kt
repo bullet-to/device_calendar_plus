@@ -14,11 +14,18 @@ import java.util.TimeZone
  * series switched to a new pattern lands on that pattern. iOS's counterpart is
  * `RecurrenceAnchor.swift`; the two must agree.
  *
+ * It also counts a rule's occurrences before an instant ([countBefore]),
+ * for the COUNT a `thisAndFollowing` split gives a new rule. That has no
+ * Swift counterpart: iOS gets the count from EventKit, so the "must agree"
+ * above covers [firstMatch] and [generates] only.
+ *
  * Covers the RRULE subset the plugin models: FREQ, BYDAY (with ordinals),
- * BYMONTHDAY, BYMONTH, and BYSETPOS on monthly and yearly rules. INTERVAL and
- * WKST don't affect which days a rule can generate from a given anchor (the
- * anchor itself fixes the interval's phase), and a BYSETPOS on a daily or
- * weekly rule is outside the modelled subset, so all three are ignored.
+ * BYMONTHDAY, BYMONTH, and BYSETPOS on monthly and yearly rules. For
+ * [firstMatch] and [generates], INTERVAL and WKST don't affect which days a
+ * rule can generate from a given anchor (the anchor itself fixes the
+ * interval's phase), so both are ignored there; [countBefore] reads both. A
+ * BYSETPOS on a daily or weekly rule is outside the modelled subset and is
+ * ignored everywhere.
  */
 internal object RecurrenceAnchor {
     private enum class Freq { DAILY, WEEKLY, MONTHLY, YEARLY }
@@ -31,7 +38,11 @@ internal object RecurrenceAnchor {
         val byDay: List<ByDay>,
         val byMonthDay: List<Int>,
         val byMonth: List<Int>,
-        val bySetPos: List<Int>
+        val bySetPos: List<Int>,
+        /** INTERVAL, at least 1. Only [countBefore] reads it. */
+        val interval: Int,
+        /** WKST as a `Calendar.DAY_OF_WEEK`, Monday by default. Only [countBefore] reads it. */
+        val weekStart: Int
     )
 
     private val weekdayCodes = mapOf(
@@ -78,6 +89,48 @@ internal object RecurrenceAnchor {
     }
 
     /**
+     * How many occurrences [rrule] generates from a series starting at
+     * [anchorMillis] that start before [beforeMillis]: the start itself,
+     * then the days (in [tz]) after it the rule generates, at the anchor's
+     * wall-clock time, with the parts it
+     * leaves implicit filled in from the anchor and its INTERVAL counted
+     * from the anchor's day, week (from WKST, Monday by default), month or
+     * year. 0 when [beforeMillis] is on or before the anchor; null for a
+     * rule outside the modelled subset, which can't be expanded here. The
+     * COUNT a `thisAndFollowing` split takes off a new rule
+     * ([replacedRuleAfterSplit]).
+     */
+    fun countBefore(rrule: String, anchorMillis: Long, beforeMillis: Long, tz: TimeZone): Int? {
+        if (anchorMillis >= beforeMillis) return 0
+        val rule = parse(rrule) ?: return null
+        val anchor = Calendar.getInstance(tz).apply { timeInMillis = anchorMillis }
+        val matcher = Matcher(rule.impliedBy(anchor))
+        // How far the anchor's day is into its week, so a day [daysOn] after
+        // it is in week (daysOn + that) / 7 from the anchor's.
+        val anchorOffsetInWeek = (anchor.get(Calendar.DAY_OF_WEEK) - rule.weekStart + 7) % 7
+        fun period(c: Calendar, daysOn: Long): Long = when (rule.freq) {
+            Freq.DAILY -> daysOn
+            Freq.WEEKLY -> Math.floorDiv(daysOn + anchorOffsetInWeek, 7L)
+            Freq.MONTHLY -> (c.get(Calendar.YEAR) - anchor.get(Calendar.YEAR)) * 12L +
+                (c.get(Calendar.MONTH) - anchor.get(Calendar.MONTH))
+            Freq.YEARLY -> (c.get(Calendar.YEAR) - anchor.get(Calendar.YEAR)).toLong()
+        }
+        // The start is always the first occurrence, as RFC 5545 counts
+        // DTSTART and EventKit does, even on a day the rule doesn't generate.
+        var count = 1
+        var daysOn = 1L
+        val day = (anchor.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 1) }
+        while (day.timeInMillis < beforeMillis) {
+            if (period(day, daysOn) % rule.interval == 0L && matcher.generates(day)) count++
+            // Whole-day steps keep the wall-clock time across DST, and are
+            // what [daysOn] counts.
+            day.add(Calendar.DAY_OF_MONTH, 1)
+            daysOn++
+        }
+        return count
+    }
+
+    /**
      * The matcher for [rrule] anchored at [anchor], with the parts the rule
      * leaves implicit filled in from [anchor] ([impliedBy]). Null for a rule
      * outside the modelled subset, which callers treat as fitting its anchor.
@@ -103,7 +156,9 @@ internal object RecurrenceAnchor {
             byDay = byDay,
             byMonthDay = ints("BYMONTHDAY"),
             byMonth = ints("BYMONTH"),
-            bySetPos = ints("BYSETPOS")
+            bySetPos = ints("BYSETPOS"),
+            interval = params["INTERVAL"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1,
+            weekStart = params["WKST"]?.let { weekdayCodes[it.uppercase()] } ?: Calendar.MONDAY
         )
     }
 

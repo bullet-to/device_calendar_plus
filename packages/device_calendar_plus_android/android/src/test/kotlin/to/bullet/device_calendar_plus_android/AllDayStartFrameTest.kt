@@ -23,11 +23,12 @@ internal class AllDayStartFrameTest {
     private fun stored(day: Int) = instantAt(utc, 2026, 6, day)
 
     /**
-     * Moves a series stored at [base] in [storedZone] (UTC, as all-day is
-     * stored, unless the series was timed) to [newStart] from a device in
-     * [zone], and returns the series' new start. [effectiveIsAllDay] is the
-     * series' frame after the edit. [ruleEdit] defaults to keeping a
-     * Saturday rule; a replacing rule lifts the day-move check.
+     * Moves a series stored at [base] (UTC midnight, as all-day is stored,
+     * unless the series was timed in [seriesZoneId]) to [newStart] from a
+     * device in [zone], and returns the series' new start. [rowAllDay] is
+     * the series' frame before the edit and [effectiveIsAllDay] after it.
+     * [ruleEdit] defaults to keeping a Saturday rule; a replacing rule lifts
+     * the day-move check.
      */
     private fun resolve(
         newStart: Long,
@@ -35,25 +36,27 @@ internal class AllDayStartFrameTest {
         ruleEdit: SeriesRuleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;BYDAY=SA"),
         zone: TimeZone = la,
         base: Long = stored(6),
-        storedZone: TimeZone = utc
+        seriesZoneId: String = zone.id,
+        rowAllDay: Boolean = true
     ): Result<Long> = resolveSeriesTimes(
         baseMillis = base,
         referenceMillis = base,
         existingDurationMillis = 3_600_000L,
-        timeEdit = SeriesTimeEdit(
-            resolveTargetStart(
-                newStartMillis = newStart,
-                effectiveIsAllDay = effectiveIsAllDay,
-                deviceZone = zone
-            ),
-            null,
-            false
+        timeEdit = resolveSeriesTimeEdit(
+            newStartMillis = newStart,
+            durationMinutes = null,
+            rowAllDay = rowAllDay,
+            patchIsAllDay = effectiveIsAllDay,
+            defaultStart = base,
+            masterStart = base,
+            durationMillis = 3_600_000L,
+            deviceZone = zone
         ),
         ruleEdit = ruleEdit,
         isAllDay = effectiveIsAllDay,
-        timeZoneId = zone.id,
-        storedZone = storedZone
-    ).map { it.first }
+        timeZoneId = seriesZoneId,
+        storedZone = seriesTimeZone(seriesZoneId, rowAllDay)
+    ).map { it.start }
 
     /**
      * Moves an all-day [rrule] series stored on Saturday 6 June to the local
@@ -132,7 +135,7 @@ internal class AllDayStartFrameTest {
         val result = resolve(
             instantAt(la, 2026, 6, 6),
             base = instantAt(la, 2026, 6, 6, 20),
-            storedZone = la
+            rowAllDay = false
         )
         assertEquals(stored(6), result.getOrThrow())
     }
@@ -142,7 +145,8 @@ internal class AllDayStartFrameTest {
     // Wednesday-23:00-UTC series shows on Thursday in Sydney, but the weekday
     // it pins is the stored-zone one. Toggling it all-day onto the Thursday
     // it shows on lands on a day the rule doesn't generate, so it needs a
-    // new rule like any other day move. 1 October 2026 is a Thursday.
+    // new rule like any other day move. The series is stored in UTC, as the
+    // integration fixtures store it. 1 October 2026 is a Thursday.
     @Test
     fun resolveSeriesTimes_timedToAllDayOntoNextLocalDayEastOfUtc_refused() {
         resolve(
@@ -150,7 +154,8 @@ internal class AllDayStartFrameTest {
             ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;BYDAY=WE"),
             zone = sydney,
             base = instantAt(utc, 2026, 9, 30, 23),
-            storedZone = utc
+            seriesZoneId = utc.id,
+            rowAllDay = false
         ).assertRefused()
     }
 

@@ -41,12 +41,19 @@ internal fun storageMillis(
  * [startMillis]/[endMillis], the patch's [newAllDay] and the row's
  * [rowAllDay]. Null means "leave that bound as it is".
  *
- * A bare all-day toggle — [newAllDay] true with no new dates, on a row that
- * isn't all-day yet — moves the event into the all-day frame the way EventKit
- * does: [AllDayDates.toggleSpan] of the row. Left timed under ALL_DAY=1, the
- * provider read it as a UTC date, a day off where that isn't the local one.
- * Otherwise each provided bound is stored in the effective frame
- * ([storageMillis]) and a missing one stays null.
+ * Each provided bound is stored in the effective frame ([storageMillis]).
+ * An edit that toggles the all-day flag moves a bound it leaves out into the
+ * new frame too, the way EventKit reads the dates it holds under the new
+ * flag:
+ * - to all-day, from [AllDayDates.toggleSpan] of the row: UTC midnight of
+ *   its first local date, and the exclusive end of its last. Left timed under
+ *   ALL_DAY=1, the provider read the bound as a UTC date, a day off where
+ *   that isn't the local one (#203, #204).
+ * - to timed, from [AllDayDates.timedSpan] of the row: local midnight of its
+ *   first date, and the last second of its last. Left as UTC midnights under
+ *   ALL_DAY=0, the bounds read back as the evening before west of UTC (#205,
+ *   #216).
+ * Without a toggle a missing bound stays null.
  */
 internal fun resolveEditedBounds(
     currentStart: Long,
@@ -57,12 +64,62 @@ internal fun resolveEditedBounds(
     rowAllDay: Boolean,
     zone: TimeZone = TimeZone.getDefault()
 ): Pair<Long?, Long?> {
-    if (newAllDay == true && !rowAllDay && startMillis == null && endMillis == null) {
-        return AllDayDates.toggleSpan(currentStart, durationMillis, zone)
-    }
     val isAllDay = newAllDay ?: rowAllDay
-    return startMillis?.let { storageMillis(it, isAllDay, zone) } to
-        endMillis?.let { storageMillis(it, isAllDay, zone) }
+    val start = startMillis?.let { storageMillis(it, isAllDay, zone) }
+    val end = endMillis?.let { storageMillis(it, isAllDay, zone) }
+    val (rowStart, rowEnd) = when (FrameChange.of(rowAllDay, newAllDay, zone)) {
+        FrameChange.None -> return start to end
+        is FrameChange.ToAllDay -> AllDayDates.toggleSpan(currentStart, durationMillis, zone)
+        is FrameChange.ToTimed -> AllDayDates.timedSpan(currentStart, durationMillis, zone)
+    }
+    return (start ?: rowStart) to (end ?: rowEnd)
+}
+
+/**
+ * How an edit moves an event's stored instants into the frame after it,
+ * keeping their dates: an all-day event is stored as UTC midnights, a timed
+ * one in device-local time (#186). Which way an edit toggles is decided
+ * here, once ([of]).
+ */
+internal sealed class FrameChange {
+    abstract fun convert(millis: Long): Long
+
+    /** The edit keeps the all-day flag, so the frame doesn't change. */
+    object None : FrameChange() {
+        override fun convert(millis: Long): Long = millis
+    }
+
+    /**
+     * To all-day: the UTC midnight of the [deviceZone] date, as
+     * [AllDayDates.toggleSpan] starts.
+     */
+    data class ToAllDay(val deviceZone: TimeZone) : FrameChange() {
+        override fun convert(millis: Long): Long =
+            AllDayDates.localDateToUtcMidnight(millis, deviceZone)
+    }
+
+    /**
+     * To timed: the [deviceZone] midnight of the UTC date, as
+     * [AllDayDates.timedSpan] starts.
+     */
+    data class ToTimed(val deviceZone: TimeZone) : FrameChange() {
+        override fun convert(millis: Long): Long =
+            AllDayDates.utcToLocalMidnight(millis, deviceZone)
+    }
+
+    companion object {
+        /**
+         * The frame change an edit setting the all-day flag to [newAllDay]
+         * (null to keep it) makes to an event that is [rowAllDay], on a
+         * device in [zone].
+         */
+        fun of(rowAllDay: Boolean, newAllDay: Boolean?, zone: TimeZone): FrameChange =
+            when (newAllDay) {
+                null, rowAllDay -> None
+                true -> ToAllDay(zone)
+                false -> ToTimed(zone)
+            }
+    }
 }
 
 /** DTEND, else DTSTART + DURATION when it parses; null when neither is usable. */

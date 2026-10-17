@@ -1,3 +1,44 @@
+## Unreleased
+
+### Fixed
+- `updateEvent` with `isAllDay: false` and no `startDate` or `endDate`
+  keeps an all-day one-off event, or a detached occurrence of an all-day
+  series, on its own days: local midnight of the first through the last
+  second of the last, as on iOS. The stored UTC midnights were left under
+  `ALL_DAY=0`, so west of UTC it read back as the evening before (#205,
+  #216).
+- `updateRecurring` with `isAllDay: false` and no `start` does the same for
+  an all-day series, on `EventSpan.allEvents` and on a
+  `EventSpan.thisAndFollowing` split: each occurrence runs from local
+  midnight through the last second of its days, as on iOS, from the
+  master's span. It kept the UTC-midnight DTSTART under `ALL_DAY=0`, so west
+  of UTC the series read back the evening before. The DURATION is fixed
+  seconds, so on a DST change day an occurrence ends an hour off iOS's
+  23:59:59 (#219).
+- `updateEvent` that toggles `isAllDay` with only one of `startDate` or
+  `endDate` moves the other bound into the new frame too, as iOS does, rather
+  than leaving it in the old one, where it read back a day off (#204).
+- `updateRecurring` with `isAllDay: true` without a `duration`, named at an
+  occurrence, spans the series' first occurrence's local days, as on iOS,
+  not the named occurrence's, on `EventSpan.allEvents` and on a
+  `EventSpan.thisAndFollowing` split alike. The two differ when a DST change
+  falls between them (#208, #221).
+- `updateRecurring` with `EventSpan.allEvents` that toggles a timed series
+  all-day and moves it counts the move in local days, so a DST change
+  between the series start and the named occurrence no longer lands the
+  start a day off (#186). A toggle back to timed counts it the same way, so
+  it no longer lands a day off in a zone whose DST offsets straddle UTC,
+  such as the Azores.
+- `updateRecurring` with `EventSpan.thisAndFollowing` that toggles a timed
+  series all-day carries the detached occurrences past the split onto the
+  new series' slots on their own local dates. One past a DST change could
+  land a day off its slot, and show beside a generated occurrence (#186).
+- `updateRecurring` with `EventSpan.thisAndFollowing` and a new `CountEnd`
+  rule counts it from the series' start, as iOS does: the new series drops
+  the occurrences the new rule would have had before the split, and is a
+  one-off when that leaves none. It kept the count as given, so it ran
+  longer than on iOS (#124).
+
 ## 0.9.2 - 2026-10-14
 
 ### Fixed

@@ -69,6 +69,24 @@ internal object AllDayDates {
             windowEndUtcMidnight(startMillis + maxOf(durationMillis, 1L), zone)
 
     /**
+     * The timed span an all-day event stored at [startMillis] (a UTC
+     * midnight) lasting [durationMillis] takes once an edit toggles it
+     * timed: the bound the edit leaves out comes from here. [zone] midnight
+     * of its first date, through the last second of its last date, as
+     * EventKit reads the dates it holds for an all-day event once the flag
+     * is off. An empty span ends where it starts.
+     */
+    fun timedSpan(
+        startMillis: Long,
+        durationMillis: Long,
+        zone: TimeZone = TimeZone.getDefault()
+    ): Pair<Long, Long> {
+        val start = utcToLocalMidnight(startMillis, zone)
+        val end = utcToLocalMidnight(startMillis + durationMillis, zone) - 1_000L
+        return start to maxOf(start, end)
+    }
+
+    /**
      * Midnight, in [zone], of the calendar date that [millis] falls on in
      * [zone]: the start of that instant's local day. Not an all-day
      * conversion; the recurrence anchor shift uses it to count whole

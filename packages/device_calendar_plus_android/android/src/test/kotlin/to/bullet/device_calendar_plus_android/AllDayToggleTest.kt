@@ -28,8 +28,8 @@ internal class AllDayToggleTest {
         durationMinutes: Int? = null,
         rowAllDay: Boolean = false,
         patchIsAllDay: Boolean? = true,
-        timestamp: Long? = null,
-        seriesStart: Long,
+        defaultStart: Long,
+        masterStart: Long,
         durationMillis: Long = hour,
         zone: TimeZone = la,
     ) = resolveSeriesTimeEdit(
@@ -37,8 +37,8 @@ internal class AllDayToggleTest {
         durationMinutes = durationMinutes,
         rowAllDay = rowAllDay,
         patchIsAllDay = patchIsAllDay,
-        timestamp = timestamp,
-        seriesStart = seriesStart,
+        defaultStart = defaultStart,
+        masterStart = masterStart,
         durationMillis = durationMillis,
         deviceZone = zone
     )
@@ -56,12 +56,17 @@ internal class AllDayToggleTest {
         rule: String = "FREQ=WEEKLY;COUNT=4",
         seriesZoneId: String = "UTC",
         storedZone: TimeZone = utc,
-    ): Result<Pair<Long, Long>> {
+    ): Result<SeriesTimes> {
         return resolveSeriesTimes(
             baseMillis = start,
             referenceMillis = start,
             existingDurationMillis = duration,
-            timeEdit = timeEdit(seriesStart = start, durationMillis = duration, zone = zone),
+            timeEdit = timeEdit(
+                defaultStart = start,
+                masterStart = start,
+                durationMillis = duration,
+                zone = zone,
+            ),
             ruleEdit = SeriesRuleEdit.Keep(rule),
             isAllDay = true,
             timeZoneId = seriesZoneId,
@@ -73,18 +78,26 @@ internal class AllDayToggleTest {
     fun resolveSeriesTimeEdit_noAllDayChange_passesStartAndDurationThrough() {
         val start = instantAt(la, 2026, 6, 6, 23, 30)
 
-        val edit = timeEdit(patchIsAllDay = null, seriesStart = start)
+        val edit = timeEdit(
+            patchIsAllDay = null, defaultStart = start, masterStart = start
+        )
 
-        assertEquals(SeriesTimeEdit(null, null, startDefaulted = false), edit)
+        assertEquals(
+            SeriesTimeEdit(null, null, startDefaulted = false, frameChange = FrameChange.None),
+            edit
+        )
     }
 
     @Test
     fun resolveSeriesTimeEdit_alreadyAllDay_defaultsNothing() {
         val start = instantAt(utc, 2026, 6, 6)
 
-        val edit = timeEdit(rowAllDay = true, seriesStart = start)
+        val edit = timeEdit(rowAllDay = true, defaultStart = start, masterStart = start)
 
-        assertEquals(SeriesTimeEdit(null, null, startDefaulted = false), edit)
+        assertEquals(
+            SeriesTimeEdit(null, null, startDefaulted = false, frameChange = FrameChange.None),
+            edit
+        )
     }
 
     @Test
@@ -93,11 +106,17 @@ internal class AllDayToggleTest {
         val given = instantAt(la, 2026, 6, 10)
 
         val edit = timeEdit(
-            newStartMillis = given, durationMinutes = 3 * 24 * 60, seriesStart = start
+            newStartMillis = given,
+            durationMinutes = 3 * 24 * 60,
+            defaultStart = start,
+            masterStart = start,
         )
 
         assertEquals(
-            SeriesTimeEdit(instantAt(utc, 2026, 6, 10), 3 * 24 * 60, startDefaulted = false),
+            SeriesTimeEdit(
+                instantAt(utc, 2026, 6, 10), 3 * AllDayDates.MILLIS_PER_DAY, startDefaulted = false,
+                frameChange = FrameChange.ToAllDay(la)
+            ),
             edit
         )
     }
@@ -107,26 +126,79 @@ internal class AllDayToggleTest {
         val start = instantAt(la, 2026, 6, 6, 23, 30)
         val given = instantAt(la, 2026, 6, 10)
 
-        val edit = timeEdit(newStartMillis = given, seriesStart = start)
+        val edit = timeEdit(
+            newStartMillis = given, defaultStart = start, masterStart = start
+        )
 
-        // The duration still comes from the occurrence: 23:30 to 00:30
-        // touches two local dates.
+        // The duration still comes from the first occurrence: 23:30 to
+        // 00:30 touches two local dates.
         assertEquals(
-            SeriesTimeEdit(instantAt(utc, 2026, 6, 10), 2 * 24 * 60, startDefaulted = false),
+            SeriesTimeEdit(
+                instantAt(utc, 2026, 6, 10), 2 * AllDayDates.MILLIS_PER_DAY, startDefaulted = false,
+                frameChange = FrameChange.ToAllDay(la)
+            ),
             edit
         )
     }
 
+    // A split named at a later occurrence starts the new series there: its
+    // own start, not the series', is the default. Here its days match the
+    // master's, which is where the duration comes from.
     @Test
-    fun resolveSeriesTimeEdit_toggleNamedByLaterOccurrence_defaultsFromThatOccurrence() {
-        val seriesStart = instantAt(la, 2026, 6, 6, 12)
-        // A later occurrence: its own start, not the series', is the default.
+    fun resolveSeriesTimeEdit_splitToggleNamedByLaterOccurrence_defaultsFromThatOccurrence() {
         val occurrence = instantAt(la, 2026, 6, 13, 23, 30)
 
-        val edit = timeEdit(timestamp = occurrence, seriesStart = seriesStart)
+        val edit = timeEdit(defaultStart = occurrence, masterStart = occurrence)
 
         assertEquals(
-            SeriesTimeEdit(instantAt(utc, 2026, 6, 13), 2 * 24 * 60, startDefaulted = true),
+            SeriesTimeEdit(
+                instantAt(utc, 2026, 6, 13), 2 * AllDayDates.MILLIS_PER_DAY, startDefaulted = true,
+                frameChange = FrameChange.ToAllDay(la)
+            ),
+            edit
+        )
+    }
+
+    // An allEvents toggle named at a later occurrence keeps that
+    // occurrence's date, but spans the master's days: noon touches one.
+    @Test
+    fun resolveSeriesTimeEdit_allEventsToggleNamedByLaterOccurrence_spansTheMastersDays() {
+        val seriesStart = instantAt(la, 2026, 6, 6, 12)
+        val occurrence = instantAt(la, 2026, 6, 13, 23, 30)
+
+        val edit = timeEdit(defaultStart = occurrence, masterStart = seriesStart)
+
+        assertEquals(
+            SeriesTimeEdit(
+                instantAt(utc, 2026, 6, 13), AllDayDates.MILLIS_PER_DAY, startDefaulted = true,
+                frameChange = FrameChange.ToAllDay(la)
+            ),
+            edit
+        )
+    }
+
+    // #219: a bare toggle of an all-day series to timed starts it at local
+    // midnight of the named occurrence's date and spans the master's dates
+    // through their last second, as EventKit reads them once the flag is
+    // off.
+    @Test
+    fun resolveSeriesTimeEdit_bareToggleToTimed_spansTheMastersLocalDays() {
+        val masterStart = instantAt(utc, 2026, 6, 6)
+        val occurrence = instantAt(utc, 2026, 6, 13)
+
+        val edit = timeEdit(
+            rowAllDay = true,
+            patchIsAllDay = false,
+            defaultStart = occurrence,
+            masterStart = masterStart,
+            durationMillis = 2 * AllDayDates.MILLIS_PER_DAY,
+        )
+
+        assertEquals(
+            SeriesTimeEdit(
+                instantAt(la, 2026, 6, 13), 2 * AllDayDates.MILLIS_PER_DAY - 1_000L,
+                startDefaulted = true, frameChange = FrameChange.ToTimed(la)
+            ),
             edit
         )
     }
@@ -135,10 +207,13 @@ internal class AllDayToggleTest {
     fun resolveSeriesTimeEdit_toggleNamedByMaster_defaultsFromTheSeriesStart() {
         val seriesStart = instantAt(la, 2026, 6, 6, 12)
 
-        val edit = timeEdit(seriesStart = seriesStart)
+        val edit = timeEdit(defaultStart = seriesStart, masterStart = seriesStart)
 
         assertEquals(
-            SeriesTimeEdit(instantAt(utc, 2026, 6, 6), 24 * 60, startDefaulted = true),
+            SeriesTimeEdit(
+                instantAt(utc, 2026, 6, 6), AllDayDates.MILLIS_PER_DAY, startDefaulted = true,
+                frameChange = FrameChange.ToAllDay(la)
+            ),
             edit
         )
     }
@@ -182,6 +257,152 @@ internal class AllDayToggleTest {
         result.assertRefused()
         val message = result.exceptionOrNull()?.message.orEmpty()
         assertTrue(message.startsWith("isAllDay without a start"), message)
+    }
+
+    // #186: an allEvents toggle named at an occurrence on the other side of
+    // a DST change from the series start. 16:30 in LA is the next UTC date
+    // in PST (the Monday 5 January start) but the same one in PDT (the
+    // Monday 1 June occurrence). Read in UTC, the occurrence moved one day
+    // and the start, a day ahead, moved with it onto 7 January. In local
+    // days, as EventKit counts them, a one-day move takes it to 6 January.
+    @Test
+    fun resolveSeriesTimes_toggleNamedAcrossDst_movesTheStartByTheLocalDays() {
+        val seriesStart = instantAt(la, 2026, 1, 5, 16, 30)
+        val occurrence = instantAt(la, 2026, 6, 1, 16, 30)
+
+        val (newStart, _) = resolveSeriesTimes(
+            baseMillis = seriesStart,
+            referenceMillis = occurrence,
+            existingDurationMillis = hour,
+            timeEdit = timeEdit(
+                newStartMillis = instantAt(la, 2026, 6, 2),
+                defaultStart = occurrence,
+                masterStart = seriesStart,
+            ),
+            ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
+            isAllDay = true,
+            timeZoneId = la.id,
+            storedZone = la
+        ).getOrThrow()
+
+        assertEquals(instantAt(utc, 2026, 1, 6), newStart)
+    }
+
+    // The reverse of #186: a toggle off read base and reference, both UTC
+    // midnights, in the series' timed zone. The Azores sit at UTC-1 in
+    // winter and UTC+0 in summer, so the Monday 5 January start read as
+    // Sunday 4 January there and the Monday 1 June occurrence as itself:
+    // a one-day move took the start to Monday 5 January, not Tuesday 6.
+    @Test
+    fun resolveSeriesTimes_toggleOffNamedAcrossDst_movesTheStartByTheLocalDays() {
+        val azores = TimeZone.getTimeZone("Atlantic/Azores")
+        val seriesStart = instantAt(utc, 2026, 1, 5)
+        val occurrence = instantAt(utc, 2026, 6, 1)
+
+        val (newStart, _) = resolveSeriesTimes(
+            baseMillis = seriesStart,
+            referenceMillis = occurrence,
+            existingDurationMillis = AllDayDates.MILLIS_PER_DAY,
+            timeEdit = timeEdit(
+                newStartMillis = instantAt(azores, 2026, 6, 2, 9),
+                rowAllDay = true,
+                patchIsAllDay = false,
+                defaultStart = occurrence,
+                masterStart = seriesStart,
+                zone = azores,
+            ),
+            ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
+            isAllDay = false,
+            timeZoneId = azores.id,
+            storedZone = seriesTimeZone(azores.id, isAllDay = true)
+        ).getOrThrow()
+
+        assertEquals(instantAt(azores, 2026, 1, 6, 9), newStart)
+    }
+
+    /**
+     * The new (start, duration) of a weekly series stored in UTC, its
+     * occurrences lasting an hour, after a bare all-day toggle named at its
+     * [occurrence] from a device in [zone], the master starting at
+     * [masterStart].
+     */
+    private fun bareToggleNamedAt(
+        occurrence: Long,
+        masterStart: Long,
+        zone: TimeZone,
+    ): Pair<Long, Long> =
+        resolveSeriesTimes(
+            baseMillis = masterStart,
+            referenceMillis = occurrence,
+            existingDurationMillis = hour,
+            timeEdit = timeEdit(
+                defaultStart = occurrence,
+                masterStart = masterStart,
+                zone = zone,
+            ),
+            ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY;COUNT=4"),
+            isAllDay = true,
+            timeZoneId = utc.id,
+            storedZone = utc
+        ).getOrThrow().let { it.start to it.durationMillis }
+
+    // #208: a UTC-stored series at 23:30 PDT on Wednesday 28 October runs
+    // into Thursday; after the 1 November change its 06:30 UTC occurrences
+    // fall at 22:30 PST and stay on their day. An allEvents toggle named at
+    // one of those spans the master's two days, as EventKit's does, not the
+    // occurrence's one.
+    @Test
+    fun resolveSeriesTimes_allEventsToggleNamedAcrossDstWestOfUtc_spansTheMastersDays() {
+        val seriesStart = instantAt(la, 2026, 10, 28, 23, 30)
+        val occurrence = instantAt(la, 2026, 11, 4, 22, 30)
+
+        assertEquals(
+            instantAt(utc, 2026, 10, 28) to 2 * AllDayDates.MILLIS_PER_DAY,
+            bareToggleNamedAt(occurrence, masterStart = seriesStart, zone = la),
+        )
+    }
+
+    // East of UTC the change runs the other way: a 00:30 AEDT start on
+    // Wednesday 1 April is 13:30 UTC, so once Sydney leaves DST on 5 April
+    // the occurrences fall at 23:30 AEST the evening before. Named at one,
+    // the toggle keeps the series on the master's Wednesday, one day long.
+    @Test
+    fun resolveSeriesTimes_allEventsToggleNamedAcrossDstEastOfUtc_staysOnTheMastersDay() {
+        val seriesStart = instantAt(sydney, 2026, 4, 1, 0, 30)
+        val occurrence = instantAt(sydney, 2026, 4, 7, 23, 30)
+
+        assertEquals(
+            instantAt(utc, 2026, 4, 1) to AllDayDates.MILLIS_PER_DAY,
+            bareToggleNamedAt(occurrence, masterStart = seriesStart, zone = sydney),
+        )
+    }
+
+    // A split's detached occurrences carry onto the new series' slots in the
+    // frame its anchor moved in. 16:30 in LA is the same UTC date in PDT
+    // (the Monday 26 October split) but the next one in PST (the Monday 2
+    // November occurrence past the change). Read raw in UTC, the anchor
+    // didn't move and that slot landed on Tuesday 3 November, a day off the
+    // new series' Monday; brought into the all-day frame first, it stays on
+    // its own Monday.
+    @Test
+    fun resolveSeriesTimes_splitToggleCarry_acrossDst_keepsTheSlotsLocalDate() {
+        val occurrence = instantAt(la, 2026, 10, 26, 16, 30)
+        val detachedSlot = instantAt(la, 2026, 11, 2, 16, 30)
+
+        val carry = resolveSeriesTimes(
+            baseMillis = occurrence,
+            referenceMillis = occurrence,
+            existingDurationMillis = hour,
+            timeEdit = timeEdit(defaultStart = occurrence, masterStart = occurrence),
+            ruleEdit = SeriesRuleEdit.Keep("FREQ=WEEKLY"),
+            isAllDay = true,
+            timeZoneId = la.id,
+            storedZone = la
+        ).getOrThrow().carry
+
+        assertEquals(instantAt(utc, 2026, 11, 2), carry.slot(detachedSlot))
+        // The occurrence's own start keeps its date: the anchor's didn't move.
+        assertEquals(detachedSlot, carry.start(detachedSlot))
     }
 
     @Test
