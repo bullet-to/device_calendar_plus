@@ -1650,6 +1650,7 @@ void main() {
           final series = await seedSeries(
             plugin,
             calendarId,
+            create: createMidUtcDayDailySeries,
             minOccurrences: 10,
           );
           final id = calendarId!;

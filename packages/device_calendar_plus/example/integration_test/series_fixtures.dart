@@ -24,13 +24,10 @@ typedef SeriesFactory = Future<({String eventId, DateTime start})> Function(
 
 /// Tomorrow (by the UTC date) at 14:00 UTC: the start for a series stored
 /// in UTC whose test moves it, or its occurrences, by a few hours and
-/// expects that to stay a time-only move. Seeded at "an hour from now"
-/// instead, a run between 22:00 and 23:00 UTC put the series' start in the
-/// last hour of the UTC day, so an hour's split shift crossed UTC midnight:
-/// Android's `SplitShift` then counts a calendar day's move and carries the
-/// detached occurrences a day with it, and EventKit pairs them with another
-/// slot, and the tests failed only in that hour (#222). From here a shift
-/// of up to ten hours either way stays on the start's UTC date.
+/// expects that to stay a time-only move. A shift of under ten hours either
+/// way stays on the start's UTC date. Seeded at "an hour from now" instead,
+/// a run between 22:00 and 23:00 UTC let an hour's shift cross UTC
+/// midnight, and the tests failed only in that hour (#222).
 DateTime midUtcDayTomorrow() {
   final now = DateTime.now().toUtc();
   return DateTime.utc(now.year, now.month, now.day + 1, 14);
