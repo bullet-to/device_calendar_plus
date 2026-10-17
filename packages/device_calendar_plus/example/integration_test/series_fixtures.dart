@@ -15,7 +15,8 @@ String requireCalendar(String? calendarId) {
 
 /// A series factory: creates a recurring event of [count] occurrences in the
 /// calendar and returns its event ID and start: [createDailySeries],
-/// [createAllDayDailySeries], or a closure over [createWeeklySeries].
+/// [createAllDayDailySeries], [createMidUtcDayDailySeries], or a closure
+/// over [createWeeklySeries].
 typedef SeriesFactory = Future<({String eventId, DateTime start})> Function(
   DeviceCalendar plugin,
   String calendarId, {

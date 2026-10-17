@@ -15,8 +15,10 @@ import 'test_seed.dart';
 /// upload — a DELETED=1 tombstone or a fresh DIRTY=1. [create] makes the
 /// series, as for [seedSeries].
 Future<SeededSeries> seedUploadedSeries(
-    DeviceCalendar plugin, String? calendarId,
-    {SeriesFactory create = createDailySeries}) async {
+  DeviceCalendar plugin,
+  String? calendarId, {
+  SeriesFactory create = createDailySeries,
+}) async {
   final series = await seedSeries(plugin, calendarId, create: create);
   await markUploaded(series.eventId);
   return series;
