@@ -29,12 +29,12 @@ typedef SeriesFactory = Future<({String eventId, DateTime start})> Function(
 /// way stays on the start's UTC date. Seeded at "an hour from now" instead,
 /// a run between 22:00 and 23:00 UTC let an hour's shift cross UTC
 /// midnight, and the tests failed only in that hour (#222).
-DateTime midUtcDayTomorrow() {
+DateTime _midUtcDayTomorrow() {
   final now = DateTime.now().toUtc();
   return DateTime.utc(now.year, now.month, now.day + 1, 14);
 }
 
-/// A daily series factory that starts at [midUtcDayTomorrow], for
+/// A daily series factory that starts at [_midUtcDayTomorrow], for
 /// [seedSeries].
 Future<({String eventId, DateTime start})> createMidUtcDayDailySeries(
   DeviceCalendar plugin,
@@ -42,7 +42,7 @@ Future<({String eventId, DateTime start})> createMidUtcDayDailySeries(
   int count = 10,
 }) =>
     createDailySeries(plugin, calendarId,
-        count: count, start: midUtcDayTomorrow());
+        count: count, start: _midUtcDayTomorrow());
 
 /// A seeded series: its event ID and start, and its occurrences as listed
 /// right after it was created — the baseline a per-occurrence test compares
