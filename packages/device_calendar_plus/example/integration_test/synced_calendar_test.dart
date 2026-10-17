@@ -12,10 +12,14 @@ import 'test_seed.dart';
 /// master in the adapter's "uploaded" state (see [markUploaded]). A row with
 /// no `_sync_id` is removed outright by any caller and starts out DIRTY, so
 /// only an uploaded row shows whether a write left the adapter something to
-/// upload — a DELETED=1 tombstone or a fresh DIRTY=1.
+/// upload — a DELETED=1 tombstone or a fresh DIRTY=1. [create] makes the
+/// series, as for [seedSeries].
 Future<SeededSeries> seedUploadedSeries(
-    DeviceCalendar plugin, String? calendarId) async {
-  final series = await seedSeries(plugin, calendarId);
+  DeviceCalendar plugin,
+  String? calendarId, {
+  SeriesFactory create = createDailySeries,
+}) async {
+  final series = await seedSeries(plugin, calendarId, create: create);
   await markUploaded(series.eventId);
   return series;
 }
@@ -284,7 +288,10 @@ void main() {
         'updateRecurring(thisAndFollowing) carries a detached occurrence past '
         'the split to a fresh exception of the new series and tombstones the '
         'old one (#158)', () async {
-      final series = await seedUploadedSeries(plugin, calendarId);
+      // Mid-UTC-day, so the split's hour shift stays a time-only move
+      // (#222).
+      final series = await seedUploadedSeries(plugin, calendarId,
+          create: createMidUtcDayDailySeries);
       final tag = DateTime.now().millisecondsSinceEpoch;
       final detachedTitle = 'Detached past update split #158 $tag';
       final exceptionId =
