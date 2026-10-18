@@ -24,10 +24,10 @@ it gets its own type with its own semantics.
 **Read-only data** is exempt: a value that only one platform provides MAY be
 exposed as a nullable platform-specific field (e.g. `Event.colorHex`, which
 Android reads from `EVENT_COLOR` and iOS always reports as `null`). Document
-the per-platform behaviour on the field. Write support for a value only one
-platform can write goes through that platform's options type, never a shared
-field (see *Platform-specific options*): e.g. `Event.attendees` is read on
-both, written on Android through `EventOptionsAndroid.attendees`.
+the per-platform behaviour on the field, and don't add shared write support
+unless both platforms have it. A value both platforms read but only one can
+write (e.g. `Event.attendees`) is written through that platform's options type,
+never a shared field (see *Platform-specific options*).
 
 When a behaviour *can* be made consistent but the platforms naturally differ,
 conform Android to iOS. iOS is the priority platform — it has most of the

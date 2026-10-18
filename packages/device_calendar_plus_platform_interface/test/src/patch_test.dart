@@ -2,6 +2,18 @@ import 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('Patch', () {
+    group('map', () {
+      test('should map a clear to a clear of the new type', () {
+        final mapped = Patch<int>.clear().map((x) => '$x');
+
+        expect(mapped, Patch<String>.clear());
+        expect(Patch<String>.clear(), mapped);
+        expect(mapped.hashCode, Patch<String>.clear().hashCode);
+      });
+    });
+  });
+
   group('PatchSet', () {
     group('==', () {
       test('should compare a List value by its elements', () {

@@ -1,5 +1,6 @@
 package to.bullet.device_calendar_plus_android
 
+import android.content.ContentProviderOperation
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
@@ -306,7 +307,7 @@ internal class SeriesRowStore(private val context: Context) {
 
     /**
      * Updates event row [eventId] with [values]: the one update-by-ID in
-     * the plugin. A plain caller's write on every account, so on a synced
+     * the plugin (with [updateEventRowOp], its batch form). A plain caller's write on every account, so on a synced
      * calendar the provider marks the row DIRTY and the adapter uploads the
      * change (#132). Returns the rows updated.
      *
@@ -322,9 +323,24 @@ internal class SeriesRowStore(private val context: Context) {
         resolver.update(
             CalendarContract.Events.CONTENT_URI,
             values,
-            "${CalendarContract.Events._ID} = ?",
+            eventById,
             arrayOf(eventId)
         )
+
+    /**
+     * [updateEventRow] as a batch operation, for an edit that writes the
+     * event row and its child rows in one transaction. It expects exactly
+     * one row updated: a missing row fails the whole batch, so no child row
+     * is written for it.
+     */
+    fun updateEventRowOp(eventId: String, values: ContentValues): ContentProviderOperation =
+        ContentProviderOperation.newUpdate(CalendarContract.Events.CONTENT_URI)
+            .withValues(values)
+            .withSelection(eventById, arrayOf(eventId))
+            .withExpectedCount(1)
+            .build()
+
+    private val eventById = "${CalendarContract.Events._ID} = ?"
 
     /**
      * The Events URI the plugin's deletes against [account]'s rows go to:

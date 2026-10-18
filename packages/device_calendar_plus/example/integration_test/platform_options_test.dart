@@ -33,7 +33,10 @@ void main() {
   });
 
   /// A one-off event an hour long, starting tomorrow at 10:00 local time.
-  Future<String> createOneOff({EventOptionsAndroid? android}) {
+  Future<String> createOneOff({
+    EventOptionsAndroid? android,
+    List<Duration>? reminders,
+  }) {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month, now.day + 1, 10);
     return plugin.createEvent(
@@ -41,6 +44,7 @@ void main() {
       title: 'Options one-off',
       startDate: start,
       endDate: start.add(const Duration(hours: 1)),
+      reminders: reminders,
       android: android,
     );
   }
@@ -467,6 +471,33 @@ void main() {
       expect(attendeesOf(event), unorderedEquals([adaRead, bobRead]));
     });
 
+    testWidgets('createEvent and updateEvent write reminders with them', (
+      tester,
+    ) async {
+      // Reminders and attendees share one child-row batch: this pins its
+      // back-references and op order when both kinds are in the same write.
+      final id = await createOneOff(
+        reminders: const [Duration(minutes: 15)],
+        android: const EventOptionsAndroid(attendees: [ada, bob]),
+      );
+
+      var event = await plugin.getEvent(id);
+      expect(event!.reminders, const [Duration(minutes: 15)]);
+      expect(attendeesOf(event), unorderedEquals([adaRead, bobRead]));
+
+      await plugin.updateEvent(
+        instanceId: id,
+        reminders: const Patch.set([Duration(minutes: 30)]),
+        android: const EventUpdateOptionsAndroid(
+          attendees: Patch.set([room]),
+        ),
+      );
+
+      event = await plugin.getEvent(id);
+      expect(event!.reminders, const [Duration(minutes: 30)]);
+      expect(attendeesOf(event), [roomRead]);
+    });
+
     testWidgets('updateEvent set applies alongside other fields', (
       tester,
     ) async {
@@ -713,7 +744,10 @@ void main() {
     testWidgets('createEvent ignores them', (tester) async {
       final baseline = await plugin.getEvent(await createOneOff());
       final id = await createOneOff(
-        android: const EventOptionsAndroid(status: EventStatusAndroid.canceled),
+        android: const EventOptionsAndroid(
+          status: EventStatusAndroid.canceled,
+          attendees: [ada, bob],
+        ),
       );
 
       final event = await plugin.getEvent(id);
@@ -723,14 +757,11 @@ void main() {
         baseline!.status,
         reason: 'the same as passing no options',
       );
-    });
-
-    testWidgets('createEvent ignores attendees', (tester) async {
-      final id = await createOneOff(
-        android: const EventOptionsAndroid(attendees: [ada, bob]),
+      expect(
+        attendeesOf(event),
+        attendeesOf(baseline),
+        reason: 'the same as passing no options',
       );
-
-      expect(await attendeesOfEvent(id), isEmpty);
     });
 
     testWidgets('updateEvent with only them changes nothing', (tester) async {

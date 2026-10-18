@@ -785,9 +785,10 @@ class EventsService(
     }
 
     /**
-     * Writes an edit to existing event [eventId]: its row's [values], then
-     * the [patch]'s reminders and attendees child rows (see
-     * [applyChildRowPatches]). Fails with NOT_FOUND when the row is gone.
+     * Writes an edit to existing event [eventId]: its row's [values] and the
+     * [patch]'s reminders and attendees child rows (see [childRowPatchOps]),
+     * in one [android.content.ContentResolver.applyBatch], so the provider
+     * applies all of it or none. Fails with NOT_FOUND when the row is gone.
      */
     private fun writeEventEdit(
         eventId: String,
@@ -796,31 +797,48 @@ class EventsService(
     ): Result<Unit> {
         // An edit of child rows alone has no event column to write (and
         // Android's SQLiteDatabase rejects an update with no values), so the
-        // write is skipped; every caller read the row just before.
-        if (values.size() > 0 && store.updateEventRow(eventId, values) == 0) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID $eventId not found"
+        // row update is left out; every caller read the row just before.
+        val updateOp = if (values.size() > 0) store.updateEventRowOp(eventId, values) else null
+        val ops = listOfNotNull(updateOp) + childRowPatchOps(eventId.toLong(), patch)
+        if (ops.isEmpty()) return Result.success(Unit)
+        try {
+            context.contentResolver.applyBatch(CalendarContract.AUTHORITY, ArrayList(ops))
+        } catch (e: android.content.OperationApplicationException) {
+            // The row update expects one row; a row gone since the caller's
+            // read fails the batch, child rows included.
+            if (updateOp != null && store.readEventRow(eventId).isFailure) {
+                return Result.failure(
+                    CalendarException(
+                        PlatformExceptionCodes.NOT_FOUND,
+                        "Event with ID $eventId not found"
+                    )
                 )
-            )
+            }
+            throw e
         }
-        applyChildRowPatches(eventId.toLong(), patch)
         return Result.success(Unit)
     }
 
     /**
      * Applies the [patch]'s reminders and attendees edits to event
-     * [eventId]'s child rows, which live in their own tables keyed by
-     * EVENT_ID, in one [android.content.ContentResolver.applyBatch]: all of
-     * it or none. Unchanged edits write nothing.
+     * [eventId]'s child rows in one [android.content.ContentResolver.applyBatch]:
+     * all of it or none. Unchanged edits write nothing.
      */
     private fun applyChildRowPatches(eventId: Long, patch: EventFieldPatch) {
-        val resolver = context.contentResolver
-        val ops = remindersPatchOps(eventId, patch.reminders) +
-            resolver.attendeesPatchOps(eventId, patch.attendees)
-        if (ops.isNotEmpty()) resolver.applyBatch(CalendarContract.AUTHORITY, ArrayList(ops))
+        val ops = childRowPatchOps(eventId, patch)
+        if (ops.isNotEmpty()) {
+            context.contentResolver.applyBatch(CalendarContract.AUTHORITY, ArrayList(ops))
+        }
     }
+
+    /**
+     * The operations that apply the [patch]'s reminders and attendees edits
+     * to event [eventId]'s child rows, which live in their own tables keyed
+     * by EVENT_ID. Unchanged edits need none.
+     */
+    private fun childRowPatchOps(eventId: Long, patch: EventFieldPatch): List<ContentProviderOperation> =
+        remindersPatchOps(eventId, patch.reminders) +
+            context.contentResolver.attendeesPatchOps(eventId, patch.attendees)
 
     /**
      * Applies [patch] — title, description, location, url, all-day flag,

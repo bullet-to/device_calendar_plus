@@ -22,14 +22,18 @@ sealed class Patch<T> {
   /// or a clear.
   Patch<R> map<R>(R Function(T value) f) => switch (this) {
         PatchSet(:final value) => Patch.set(f(value)),
-        PatchClear() => const Patch.clear(),
+        // Not `const Patch.clear()`: a const can't use R, so it would infer
+        // PatchClear<Never>, which isn't == to a Patch<R>.clear().
+        PatchClear() => PatchClear<R>(),
       };
 }
 
 /// A [Patch] that sets the field to [value].
 ///
-/// Two sets are equal when their values are: a [List] value (reminder
-/// offsets, attendees…) compares element by element, in order.
+/// Two sets are equal when their values are. A [List] value (reminder
+/// offsets, attendees…) compares element by element, in order; that is the
+/// only collection special-cased. Any other value, including a [Set], a [Map]
+/// or a list nested inside another value, uses its own `==`.
 final class PatchSet<T> extends Patch<T> {
   const PatchSet(this.value);
 
