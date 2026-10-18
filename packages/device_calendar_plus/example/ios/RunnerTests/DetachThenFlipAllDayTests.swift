@@ -78,16 +78,20 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
       dates: (at(losAngeles, 3, 10), endOfDay(losAngeles, 3, 10)))
   }
 
-  /// The detach and flip saves, or a failure (not an out-of-range trap) when
-  /// the sequence didn't save exactly twice, each `.thisEvent`.
+  /// The detach and flip saves. Throws (a test failure, not an out-of-range
+  /// trap) when the sequence didn't save exactly twice; also fails unless
+  /// each save was `.thisEvent`.
   private func twoSaves(
     file: StaticString = #filePath, line: UInt = #line
-  ) -> (detach: FakeSaves.Save, flip: FakeSaves.Save)? {
+  ) throws -> (detach: FakeSaves.Save, flip: FakeSaves.Save) {
     XCTAssertEqual(
       fake.saves.map(\.span), [.thisEvent, .thisEvent],
       file: file, line: line)
-    guard fake.saves.count == 2 else { return nil }
-    return (fake.saves[0], fake.saves[1])
+    let saves = try XCTUnwrap(
+      fake.saves.count == 2 ? fake.saves : nil,
+      "expected exactly two saves, got \(fake.saves.count)",
+      file: file, line: line)
+    return (saves[0], saves[1])
   }
 
   private func assertOperationFailed(
@@ -119,7 +123,8 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
       dates: (start, end)
     ).get()
 
-    guard case let (detach, flipSave)? = twoSaves() else { return }
+    let (detach, flipSave) = try twoSaves()
+    XCTAssertEqual(fake.resets, 0)
     XCTAssertEqual(detach.title, "Offsite")
     XCTAssertFalse(detach.isAllDay)
     XCTAssertEqual(detach.startDate, start)
@@ -153,7 +158,8 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
       dates: (start, end)
     ).get()
 
-    guard case let (detach, flipSave)? = twoSaves() else { return }
+    let (detach, flipSave) = try twoSaves()
+    XCTAssertEqual(fake.resets, 0)
     XCTAssertEqual(detach.title, "Dentist")
     XCTAssertTrue(detach.isAllDay)
     XCTAssertEqual(detach.startDate, allDayStart)
@@ -186,6 +192,7 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
     let result = flipTimedToAllDay()
 
     XCTAssertEqual(fake.saves.count, 1)
+    XCTAssertEqual(fake.resets, 0)
     assertOperationFailed(result)
   }
 
