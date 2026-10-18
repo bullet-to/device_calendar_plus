@@ -75,7 +75,7 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
   private func flipTimedToAllDay() -> Result<Void, CalendarError> {
     flip(
       timedOccurrence(), to: true, patch: [:],
-      dates: (at(losAngeles, 3, 10), endOfDay(losAngeles, 3, 10)))
+      dates: (at(.current, 3, 10), endOfDay(.current, 3, 10)))
   }
 
   /// The detach and flip saves. Throws (a test failure, not an out-of-range
@@ -115,8 +115,11 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
   /// Step 1 carries the fields and the all-day span as timed dates, still
   /// timed in its zone; step 2 is the flag, with the span and no zone.
   func testTimedToAllDayDetachesWithTheSpanThenFlipsTheFlag() throws {
-    let start = at(losAngeles, 3, 10)
-    let end = endOfDay(losAngeles, 3, 10)
+    // An all-day span is the device zone's midnights, as `allDayToggleSpan`
+    // builds it: EventKit snaps an all-day event's dates to those, so a span
+    // in another zone reads back moved on a device outside it (CI is UTC).
+    let start = at(.current, 3, 10)
+    let end = endOfDay(.current, 3, 10)
 
     try flip(
       timedOccurrence(), to: true, patch: ["title": "Offsite"],
@@ -145,8 +148,8 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
     let event = EKEvent(eventStore: EKEventStore())
     event.title = "Holiday"
     event.isAllDay = true
-    event.startDate = at(losAngeles, 3, 10)
-    event.endDate = endOfDay(losAngeles, 3, 10)
+    event.startDate = at(.current, 3, 10)
+    event.endDate = endOfDay(.current, 3, 10)
     let allDayStart = event.startDate
     let allDayEnd = event.endDate
     let start = at(losAngeles, 3, 10, hour: 9)
