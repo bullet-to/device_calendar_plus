@@ -2306,6 +2306,45 @@ void main() {
             'after the split, ending where the original series ended',
       );
     });
+
+    test(
+        'thisAndFollowing keeps a COUNT series to its total when occurrences '
+        'before the split were deleted (#220)', () async {
+      // COUNT counts deleted occurrences too (RFC 5545), and EventKit's
+      // `.futureEvents` save gives the new series COUNT less every
+      // occurrence before the split, deleted or not. Android once took the
+      // deleted ones off the occurrences before the split, so the new series
+      // ran on past the original's end.
+      final calendar = requireCalendar(calendarId);
+      final series = await seedSeries(plugin, calendar);
+      final occurrences = series.occurrences;
+      expect(occurrences, hasLength(10),
+          reason: 'the daily series should expand into all 10 occurrences');
+      await plugin.deleteEvent(instanceId: occurrences[1].instanceId);
+      await plugin.deleteEvent(instanceId: occurrences[2].instanceId);
+      final split = occurrences[4];
+
+      final newSeriesId = await plugin.updateRecurring(
+        split.instanceId,
+        EventSpan.thisAndFollowing,
+        title: 'Deleted Before Split Tail',
+      );
+
+      expect(
+        startsOf(await occurrencesOf(
+            plugin, calendar, series.eventId, series.start)),
+        startsOf([occurrences[0], occurrences[3]]),
+        reason: 'the original series must keep only its undeleted '
+            'occurrences before the split',
+      );
+      expect(
+        startsOf(await occurrencesOf(
+            plugin, calendar, newSeriesId, series.start)),
+        startsOf(occurrences.sublist(4)),
+        reason: 'the new series must carry exactly the occurrences left '
+            'after the split, ending where the original series ended',
+      );
+    });
   });
 
   // Anchor-shift: `start` moves the anchored occurrence to a new instant and

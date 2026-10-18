@@ -1,6 +1,13 @@
 ## Unreleased
 
 ### Fixed
+- `updateRecurring` with `EventSpan.thisAndFollowing` that keeps a COUNT
+  rule counts the occurrences before the split from the rule, deleted ones
+  included, as RFC 5545 and EventKit do. It counted the provider's
+  Instances, which leave deleted occurrences out, so the new series ran past
+  the original's end by one occurrence per deletion. The Instances count is
+  now only the fallback for a rule the plugin can't expand itself, such as
+  one with BYHOUR (#220).
 - `updateRecurring` with `EventSpan.thisAndFollowing` moves a detached
   occurrence past the split by the whole 24h days in the anchor's shift
   (read on the wall clock, truncated toward zero), as EventKit does, not by

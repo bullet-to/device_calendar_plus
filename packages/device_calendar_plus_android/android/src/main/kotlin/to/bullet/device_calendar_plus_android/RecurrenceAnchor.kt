@@ -15,8 +15,8 @@ import java.util.TimeZone
  * `RecurrenceAnchor.swift`; the two must agree.
  *
  * It also counts a rule's occurrences before an instant ([countBefore]),
- * for the COUNT a `thisAndFollowing` split gives a new rule. That has no
- * Swift counterpart: iOS gets the count from EventKit, so the "must agree"
+ * for the COUNT a `thisAndFollowing` split gives a new or a kept rule. That
+ * has no Swift counterpart: iOS gets the count from EventKit, so the "must agree"
  * above covers [firstMatch] and [generates] only.
  *
  * Covers the RRULE subset the plugin models: FREQ, BYDAY (with ordinals),
@@ -24,8 +24,8 @@ import java.util.TimeZone
  * [firstMatch] and [generates], INTERVAL and WKST don't affect which days a
  * rule can generate from a given anchor (the anchor itself fixes the
  * interval's phase), so both are ignored there; [countBefore] reads both. A
- * BYSETPOS on a daily or weekly rule is outside the modelled subset and is
- * ignored everywhere.
+ * BYSETPOS on a daily or weekly rule is outside the modelled subset:
+ * [firstMatch] and [generates] ignore it, and [countBefore] declines it.
  */
 internal object RecurrenceAnchor {
     private enum class Freq { DAILY, WEEKLY, MONTHLY, YEARLY }
@@ -42,7 +42,15 @@ internal object RecurrenceAnchor {
         /** INTERVAL, at least 1. Only [countBefore] reads it. */
         val interval: Int,
         /** WKST as a `Calendar.DAY_OF_WEEK`, Monday by default. Only [countBefore] reads it. */
-        val weekStart: Int
+        val weekStart: Int,
+        /**
+         * Whether every part of the rule is one this object models
+         * ([modelledParts]), with BYSETPOS only on a monthly or yearly rule.
+         * Only [countBefore] reads it: a rule from another app with, say,
+         * BYHOUR (more than one occurrence a day) or a BYSETPOS on a daily
+         * or weekly rule isn't counted as if those parts weren't there.
+         */
+        val fullyModelled: Boolean
     )
 
     private val weekdayCodes = mapOf(
@@ -96,13 +104,14 @@ internal object RecurrenceAnchor {
      * leaves implicit filled in from the anchor and its INTERVAL counted
      * from the anchor's day, week (from WKST, Monday by default), month or
      * year. 0 when [beforeMillis] is on or before the anchor; null for a
-     * rule outside the modelled subset, which can't be expanded here. The
-     * COUNT a `thisAndFollowing` split takes off a new rule
-     * ([replacedRuleAfterSplit]).
+     * rule outside the modelled subset, or with a part it doesn't model
+     * ([Rule.fullyModelled]), which can't be expanded here. The COUNT a
+     * `thisAndFollowing` split takes off a new or a kept rule
+     * ([replacedRuleAfterSplit], [keptRuleAfterSplit]).
      */
     fun countBefore(rrule: String, anchorMillis: Long, beforeMillis: Long, tz: TimeZone): Int? {
         if (anchorMillis >= beforeMillis) return 0
-        val rule = parse(rrule) ?: return null
+        val rule = parse(rrule)?.takeIf { it.fullyModelled } ?: return null
         val anchor = Calendar.getInstance(tz).apply { timeInMillis = anchorMillis }
         val matcher = Matcher(rule.impliedBy(anchor))
         // How far the anchor's day is into its week, so a day [daysOn] after
@@ -138,6 +147,15 @@ internal object RecurrenceAnchor {
     private fun matcher(rrule: String, anchor: Calendar): Matcher? =
         parse(rrule)?.impliedBy(anchor)?.let(::Matcher)
 
+    /**
+     * The parts [parse] reads, plus COUNT and UNTIL, which don't change which
+     * days a rule generates. A rule with any other part isn't
+     * [Rule.fullyModelled].
+     */
+    private val modelledParts = setOf(
+        "FREQ", "COUNT", "UNTIL", "INTERVAL", "WKST", "BYDAY", "BYMONTHDAY", "BYMONTH", "BYSETPOS"
+    )
+
     private fun parse(rrule: String): Rule? {
         val params = RruleString.params(rrule)
         val freq = when (params["FREQ"]?.uppercase()) {
@@ -151,14 +169,18 @@ internal object RecurrenceAnchor {
             params[key]?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
         val byDay = params["BYDAY"]?.split(",")
             ?.mapNotNull { parseByDay(it.trim().uppercase()) } ?: emptyList()
+        val bySetPos = ints("BYSETPOS")
         return Rule(
             freq = freq,
             byDay = byDay,
             byMonthDay = ints("BYMONTHDAY"),
             byMonth = ints("BYMONTH"),
-            bySetPos = ints("BYSETPOS"),
+            bySetPos = bySetPos,
             interval = params["INTERVAL"]?.toIntOrNull()?.coerceAtLeast(1) ?: 1,
-            weekStart = params["WKST"]?.let { weekdayCodes[it.uppercase()] } ?: Calendar.MONDAY
+            weekStart = params["WKST"]?.let { weekdayCodes[it.uppercase()] } ?: Calendar.MONDAY,
+            // RruleString.params already upper-cases the keys.
+            fullyModelled = params.keys.all { it in modelledParts } &&
+                (bySetPos.isEmpty() || freq == Freq.MONTHLY || freq == Freq.YEARLY)
         )
     }
 

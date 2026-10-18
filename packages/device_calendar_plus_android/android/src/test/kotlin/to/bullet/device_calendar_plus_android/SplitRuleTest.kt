@@ -6,15 +6,25 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * [newSeriesRule] and [replacedRuleAfterSplit]: the rule a
- * `thisAndFollowing` split gives the new series. A kept rule's COUNT drops
- * by the occurrences the provider has before the split, and keeps at least
- * one. A replacing rule is [replacedRuleAfterSplit]: EventKit counts a new
- * rule's COUNT from the original series' start, so the new series loses the
- * occurrences the new rule would have had before the split, and doesn't
- * recur at all when that leaves none (#124). The daily, weekly, monthly and yearly counts are what
- * an iOS simulator saves for the same splits of a daily series (at its fifth
- * occurrence unless a case names another day). The DST, WKST=SU,
+ * [keptRuleAfterSplit] and [replacedRuleAfterSplit]: the rule a
+ * `thisAndFollowing` split gives the new series.
+ *
+ * Keep: a kept rule's COUNT drops by the occurrences the rule generates
+ * before the split, deleted ones included (#220), and keeps at least one;
+ * the provider's count is only the fallback for a rule that can't be
+ * expanded. The deleted-occurrences case matches what an iOS simulator saves
+ * (COUNT=6). The BYMONTHDAY, yearly ordinal BYDAY and WEEKLY+INTERVAL+WKST
+ * cases match the provider's own expansion of the same series on an
+ * emulator. The BYHOUR, daily/weekly BYSETPOS fallback, monthly/yearly
+ * BYSETPOS, count-used-up and no-COUNT cases pin Android-only behaviour and
+ * aren't from EventKit.
+ *
+ * Replace: EventKit counts a new rule's COUNT from the original series'
+ * start, so the new series loses the occurrences the new rule would have had
+ * before the split, and doesn't recur at all when that leaves none (#124).
+ * The plain daily, weekly, monthly and yearly counts are what an iOS
+ * simulator saves for the same splits of a daily series (at its fifth
+ * occurrence unless a case names another day). The DST, WKST=SU, BYSETPOS,
  * out-of-subset and no-COUNT cases pin Android-only behaviour and aren't
  * from EventKit.
  */
@@ -27,6 +37,19 @@ internal class SplitRuleTest {
 
     private fun split(rule: String, at: Long = fifth) =
         replacedRuleAfterSplit(rule, seriesStart = seriesStart, splitAt = at, tz = utc)
+
+    private fun keep(
+        rule: String,
+        at: Long = fifth,
+        start: Long = seriesStart,
+        providerCountBefore: () -> Int = { error("a countable rule needs no provider count") },
+    ) = keptRuleAfterSplit(
+        rule,
+        seriesStart = start,
+        splitAt = at,
+        tz = utc,
+        providerCountBefore = providerCountBefore
+    )
 
     /** The series' occurrence [days] after its start. */
     private fun day(days: Int) = seriesStart + days * AllDayDates.MILLIS_PER_DAY
@@ -196,49 +219,180 @@ internal class SplitRuleTest {
         assertEquals("FREQ=HOURLY;COUNT=5;INTERVAL=2", split("FREQ=HOURLY;COUNT=5;INTERVAL=2"))
     }
 
-    private fun splitWith(
-        ruleEdit: SeriesRuleEdit,
-        existingRule: String = "FREQ=DAILY;COUNT=5",
-        providerCountBefore: Int = 4,
-    ) = newSeriesRule(
-        ruleEdit,
-        existingRule = existingRule,
-        seriesStart = seriesStart,
-        splitAt = fifth,
-        tz = utc,
-        providerCountBefore = { providerCountBefore }
-    )
-
+    // A BYSETPOS on a daily rule is outside what the rule count models, so
+    // the rule can't be counted and its COUNT is left as given.
     @Test
-    fun newSeriesRule_keep_dropsTheOccurrencesBeforeTheSplit() {
+    fun replacedRuleAfterSplit_dailyBySetPos_isUnchanged() {
+        assertEquals(
+            "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;COUNT=10",
+            split("FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;COUNT=10")
+        )
+    }
+
+    // A monthly BYSETPOS is modelled. Split on 16 December: the start and
+    // the last weekdays of October and November (the 30th of each) come
+    // before it.
+    @Test
+    fun replacedRuleAfterSplit_monthlyBySetPos_dropsTheMonthsBeforeTheSplit() {
+        assertEquals(
+            "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=3",
+            split("FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=6", at = day(62))
+        )
+    }
+
+    // Two of the four occurrences before the split were deleted, so the
+    // provider's Instances (which leave EXDATE'd and cancelled occurrences
+    // out) list only two. COUNT counts them anyway (RFC 5545), and an iOS
+    // simulator saves the new series with COUNT=6 for this split all the
+    // same; the provider's two gave it eight, running past the original's
+    // end (#220).
+    @Test
+    fun keptRuleAfterSplit_deletedOccurrencesBeforeTheSplit_stillCountsThem() {
         assertEquals(
             "FREQ=DAILY;COUNT=6",
-            splitWith(SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=10"), "FREQ=DAILY;COUNT=10")
+            keep("FREQ=DAILY;COUNT=10", providerCountBefore = { 2 })
+        )
+    }
+
+    // A kept rule can come from another app, with parts the rule count
+    // doesn't model: here two occurrences a day, eight before the split.
+    // Counting it as one a day would leave the new series six, not two, so
+    // the provider's count is used instead.
+    @Test
+    fun keptRuleAfterSplit_aPartTheCountDoesNotModel_usesTheProviderCount() {
+        assertEquals(
+            "FREQ=DAILY;BYHOUR=10,14;COUNT=2",
+            keep("FREQ=DAILY;BYHOUR=10,14;COUNT=10", providerCountBefore = { 8 })
+        )
+    }
+
+    // A BYSETPOS on a daily or weekly rule is outside what the rule count
+    // models, so the provider's count is used rather than counting the rule
+    // as a plain daily or weekly one.
+    @Test
+    fun keptRuleAfterSplit_weeklyBySetPos_usesTheProviderCount() {
+        assertEquals(
+            "FREQ=WEEKLY;BYDAY=MO,TU,WE;BYSETPOS=1;COUNT=7",
+            keep("FREQ=WEEKLY;BYDAY=MO,TU,WE;BYSETPOS=1;COUNT=10", providerCountBefore = { 3 })
+        )
+    }
+
+    @Test
+    fun keptRuleAfterSplit_dailyBySetPos_usesTheProviderCount() {
+        assertEquals(
+            "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;COUNT=7",
+            keep("FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;COUNT=10", providerCountBefore = { 3 })
+        )
+    }
+
+    // A monthly or yearly BYSETPOS is modelled, so a kept one is counted
+    // from the rule, without asking the provider: the start and the last
+    // weekdays of October and November come before a split on 16 December.
+    @Test
+    fun keptRuleAfterSplit_monthlyBySetPos_countsTheRule() {
+        assertEquals(
+            "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=3",
+            keep("FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=6", at = day(62))
+        )
+    }
+
+    // The last weekday of each October: a split on 16 October 2027 has the
+    // start and 30 October 2026 before it.
+    @Test
+    fun keptRuleAfterSplit_yearlyBySetPos_countsTheRule() {
+        assertEquals(
+            "FREQ=YEARLY;BYMONTH=10;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=4",
+            keep("FREQ=YEARLY;BYMONTH=10;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=6", at = day(366))
         )
     }
 
     // Unlike a replacing rule, a kept one always leaves the split's own
     // occurrence: it is one of the series' own.
     @Test
-    fun newSeriesRule_keepWithTheCountUsedUp_keepsOne() {
-        assertEquals(
-            "FREQ=DAILY;COUNT=1",
-            splitWith(SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=3"), "FREQ=DAILY;COUNT=3")
-        )
+    fun keptRuleAfterSplit_countUsedUp_keepsOne() {
+        assertEquals("FREQ=DAILY;COUNT=1", keep("FREQ=DAILY;COUNT=3"))
     }
 
     @Test
-    fun newSeriesRule_keepWithoutCount_isUnchangedAndCountsNothing() {
+    fun keptRuleAfterSplit_noCount_isUnchanged() {
+        assertEquals("FREQ=DAILY", keep("FREQ=DAILY"))
+    }
+
+    // Rules another app may write, counted from the rule rather than the
+    // provider. Each count matches the provider's own expansion of the same
+    // series (an API 34 emulator), so the kept split's COUNT agrees with what
+    // the provider then expands for the new series.
+
+    // The 31st skips the months without one: 31 October, 31 December and
+    // 31 January come before a split on 31 March.
+    @Test
+    fun keptRuleAfterSplit_byMonthDay31_skipsTheShortMonths() {
         assertEquals(
-            "FREQ=DAILY",
-            newSeriesRule(
-                SeriesRuleEdit.Keep("FREQ=DAILY"),
-                existingRule = "FREQ=DAILY",
-                seriesStart = seriesStart,
-                splitAt = fifth,
-                tz = utc,
-                providerCountBefore = { error("a rule without COUNT needs no count") }
+            "FREQ=MONTHLY;BYMONTHDAY=31;COUNT=3",
+            keep(
+                "FREQ=MONTHLY;BYMONTHDAY=31;COUNT=6",
+                start = instantAt(utc, 2026, 10, 31, 10),
+                at = instantAt(utc, 2027, 3, 31, 10)
             )
+        )
+    }
+
+    // The last day of each month: 31 October, 30 November, 31 December and
+    // 31 January come before a split on 28 February.
+    @Test
+    fun keptRuleAfterSplit_byMonthDayLast_countsEveryMonthsLastDay() {
+        assertEquals(
+            "FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=2",
+            keep(
+                "FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=6",
+                start = instantAt(utc, 2026, 10, 31, 10),
+                at = instantAt(utc, 2027, 2, 28, 10)
+            )
+        )
+    }
+
+    // The fourth Thursday of November: 26 November 2026 and 25 November
+    // 2027 come before a split on 23 November 2028.
+    @Test
+    fun keptRuleAfterSplit_yearlyOrdinalByDayInAMonth_countsTheRule() {
+        assertEquals(
+            "FREQ=YEARLY;BYMONTH=11;BYDAY=4TH;COUNT=3",
+            keep(
+                "FREQ=YEARLY;BYMONTH=11;BYDAY=4TH;COUNT=5",
+                start = instantAt(utc, 2026, 11, 26, 10),
+                at = instantAt(utc, 2028, 11, 23, 10)
+            )
+        )
+    }
+
+    // The second Monday of the year: 12 January 2026 and 11 January 2027
+    // come before a split on 10 January 2028.
+    @Test
+    fun keptRuleAfterSplit_yearlyOrdinalByDay_countsTheRule() {
+        assertEquals(
+            "FREQ=YEARLY;BYDAY=2MO;COUNT=2",
+            keep(
+                "FREQ=YEARLY;BYDAY=2MO;COUNT=4",
+                start = instantAt(utc, 2026, 1, 12, 10),
+                at = instantAt(utc, 2028, 1, 10, 10)
+            )
+        )
+    }
+
+    // Every other week on Sunday and Thursday from Thursday 15 October.
+    // Weeks from Sunday: the 15th, then the 25th and 29th, come before a
+    // split on Sunday 8 November. Weeks from Monday pair the 15th with the
+    // 18th and the 29th with 1 November, so four come before a split on
+    // Thursday 12 November.
+    @Test
+    fun keptRuleAfterSplit_weeklyWithIntervalAndWeekStart_countsTheWeeksFromIt() {
+        assertEquals(
+            "FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=SU;COUNT=7",
+            keep("FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=SU;COUNT=10", at = day(24))
+        )
+        assertEquals(
+            "FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=MO;COUNT=6",
+            keep("FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=MO;COUNT=10", at = day(28))
         )
     }
 }

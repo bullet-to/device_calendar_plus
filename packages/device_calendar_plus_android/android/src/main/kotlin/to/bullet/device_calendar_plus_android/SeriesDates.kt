@@ -462,11 +462,11 @@ internal fun resolveSeriesTimeEdit(
 /**
  * The rule the new series of a `thisAndFollowing` split at [splitAt] gets,
  * or null when it doesn't recur: none when [ruleEdit] clears the rule, and
- * [replacedRuleAfterSplit] when it replaces it. A kept rule, [existingRule],
- * is the one the series has, so its COUNT drops by the occurrences the
- * series has before the split, and keeps at least one: the split occurrence
- * itself. [providerCountBefore] is the provider's count of those; it is a
- * lambda so the provider is queried only when the rule has a COUNT.
+ * [replacedRuleAfterSplit] when it replaces it, [keptRuleAfterSplit] when
+ * it keeps the series' own, [existingRule]. Between them they own the COUNT
+ * a split gives the new series. [providerCountBefore] is the provider's
+ * count of the series' occurrences before the split, the kept rule's
+ * fallback.
  */
 internal fun newSeriesRule(
     ruleEdit: SeriesRuleEdit,
@@ -480,10 +480,38 @@ internal fun newSeriesRule(
     // A new rule's COUNT counts from the series' start, as EventKit counts
     // it; one used up before the split leaves a one-off (#124).
     is SeriesRuleEdit.Replace -> replacedRuleAfterSplit(ruleEdit.rule, seriesStart, splitAt, tz)
-    // Without the drop the new series would over-generate.
-    is SeriesRuleEdit.Keep -> RruleString.count(existingRule)
-        ?.let { RruleString.withCount(existingRule, maxOf(1, it - providerCountBefore())) }
-        ?: existingRule
+    is SeriesRuleEdit.Keep -> keptRuleAfterSplit(existingRule, seriesStart, splitAt, tz, providerCountBefore)
+}
+
+/**
+ * The rule a `thisAndFollowing` split that keeps the series' rule [rule]
+ * gives the new series at [splitAt]: COUNT less the occurrences [rule]
+ * generates from [seriesStart] before the split, and at least one, the
+ * split occurrence itself. Without the drop the new series would
+ * over-generate.
+ *
+ * The occurrences before the split are counted from the rule
+ * ([RecurrenceAnchor.countBefore], in the series' zone [tz]), so deleted
+ * ones count too, as RFC 5545 counts COUNT and as EventKit saves the same
+ * split. The provider's Instances leave deleted occurrences out, so a series
+ * with some before the split once ran past the original's end (#220).
+ * [providerCountBefore] is that Instances count, the fallback for a rule
+ * [RecurrenceAnchor.countBefore] can't expand; a lambda, so the provider is
+ * queried only then. That fallback still leaves deleted occurrences out, so
+ * for such a rule (such as BYHOUR, BYWEEKNO, BYYEARDAY or a daily or weekly
+ * BYSETPOS) the new series still runs one occurrence past the original's
+ * end per deletion before the split. A rule without COUNT is unchanged.
+ */
+internal fun keptRuleAfterSplit(
+    rule: String,
+    seriesStart: Long,
+    splitAt: Long,
+    tz: TimeZone,
+    providerCountBefore: () -> Int,
+): String {
+    val count = RruleString.count(rule) ?: return rule
+    val before = RecurrenceAnchor.countBefore(rule, seriesStart, splitAt, tz) ?: providerCountBefore()
+    return RruleString.withCount(rule, maxOf(1, count - before))
 }
 
 /**
