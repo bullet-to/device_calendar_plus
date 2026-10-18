@@ -1,4 +1,4 @@
-## Unreleased
+## 0.10.0 - 2026-10-18
 
 ### Changed
 - **Breaking:** implements the platform interface's new `android:` / `ios:`

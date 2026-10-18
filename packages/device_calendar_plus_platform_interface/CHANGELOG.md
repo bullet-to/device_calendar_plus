@@ -1,4 +1,4 @@
-## Unreleased
+## 0.9.0 - 2026-10-18
 
 ### Changed
 - **Breaking:** `createCalendar` takes named `android:` / `ios:` options
