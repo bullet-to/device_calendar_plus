@@ -28,10 +28,9 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
      * them when the new event doesn't recur.
      *
      * Each carried occurrence and its slot move as [shift] says, because
-     * the new series generates every slot moved by the split; iOS keeps the
-     * pairing across the move (except on a midnight-crossing sub-day shift,
-     * see [SplitShift]), and moves the occurrence itself by the whole 24h
-     * days in the shift ([SplitShift.start], #224), so Android does too.
+     * the new series generates every slot moved by the split: the slot by
+     * [SplitShift.slot], the occurrence itself by [SplitShift.start], as
+     * iOS does (#224).
      * The same slot rule as the delete path decides which rows carry over:
      * where each occurrence was, not where it was moved to. A deleted
      * occurrence is the exception: iOS keeps its deleted date at the old

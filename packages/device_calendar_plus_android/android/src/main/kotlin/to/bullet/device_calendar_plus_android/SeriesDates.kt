@@ -26,17 +26,28 @@ internal fun calendarDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone)
 }
 
 /**
+ * Whole 24h days from [fromMillis] to [toMillis], read on the wall clock in
+ * [tz] and truncated toward zero: -1d+9h is 0 days, +1d+1h is 1. Read on
+ * the wall clock rather than raw, so a DST change between the two doesn't
+ * turn a whole-day move into a day less. That DST case follows Android's
+ * calendar-day count from before #224 and hasn't been checked against
+ * EventKit.
+ */
+internal fun wholeWallClockDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone): Int =
+    (((toMillis + tz.getOffset(toMillis)) - (fromMillis + tz.getOffset(fromMillis))) /
+        AllDayDates.MILLIS_PER_DAY).toInt()
+
+/**
  * A series' anchor moved from one instant to another, as a rule for moving
  * the rest of the series with it: its slots by the whole calendar days the
  * anchor moved, and its detached occurrences' starts by the whole 24h
  * wall-clock days in the anchor's shift, both counted in the series' time
  * zone [tz] (see [seriesTimeZone]). Not by the raw millisecond shift, which
  * a DST change between the anchor and a later date would put an hour off.
- * The anchor-shift that lets
- * [EventsService.updateRecurring] move both the time and the day of a
- * series (#103), and where a `thisAndFollowing` split carries what it
- * carries (#158); iOS's counterparts are `SeriesDates.shiftStart` and
- * EKSpan.futureEvents.
+ * The anchor-shift that lets [EventsService.updateRecurring] move both the
+ * time and the day of a series (#103), and where a `thisAndFollowing`
+ * split carries what it carries (#158); iOS's counterparts are
+ * `SeriesDates.shiftStart` and EKSpan.futureEvents.
  *
  * [slot] is where a stored slot lands on the moved series: brought into
  * the frame after the edit ([FrameChange], for an all-day toggle), then
@@ -51,13 +62,10 @@ internal fun calendarDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone)
  * days in the anchor's shift, not by the calendar days: a +1h shift from
  * 23:30 to 00:30 the next day moves the slots a day but leaves the
  * occurrence where it is, and a +25h one moves it a day (#224). So
- * [startDayDelta] is the anchor's wall-clock shift (the calendar days plus
- * the change in time of day) in whole days, truncated toward zero. Read on
- * the wall clock rather than raw, a DST change between the anchors doesn't
- * turn a whole-day move into a day less. A move that keeps the time of day
- * and an all-day series (midnight on both sides) come out at the calendar
- * days either way. A toggle to timed ([FrameChange.ToTimed]) counts the
- * calendar days, as before #224, not checked against EventKit.
+ * [startDayDelta] is the anchor's wall-clock shift in whole days
+ * ([wholeWallClockDaysBetween]). A move that keeps the time of day and an
+ * all-day series (midnight on both sides) come out at the calendar days
+ * either way.
  *
  * EventKit also pairs the kept occurrence with the slot before its own on
  * such a shift (it skips [5]'s slot, not [6]'s, for [6]): Android doesn't
@@ -65,7 +73,7 @@ internal fun calendarDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone)
  */
 internal class SplitShift private constructor(
     private val frameChange: FrameChange,
-    private val dayDelta: Int,
+    private val slotDayDelta: Int,
     private val startDayDelta: Int,
     private val tz: TimeZone,
     private val hour: Int,
@@ -79,7 +87,7 @@ internal class SplitShift private constructor(
      * moved by the anchor's days, at the new anchor's time of day.
      */
     fun slot(old: Long): Long {
-        val cal = addDays(frameChange.convert(old), dayDelta)
+        val cal = addDays(frameChange.convert(old), slotDayDelta)
         cal.set(Calendar.HOUR_OF_DAY, hour)
         cal.set(Calendar.MINUTE, minute)
         cal.set(Calendar.SECOND, second)
@@ -122,7 +130,7 @@ internal class SplitShift private constructor(
         ): SplitShift {
             val target = Calendar.getInstance(tz).apply { timeInMillis = toAnchor }
             val from = frameChange.convert(fromAnchor)
-            val dayDelta = calendarDaysBetween(from, toAnchor, tz)
+            val slotDayDelta = calendarDaysBetween(from, toAnchor, tz)
             // A toggle to timed keeps the calendar-day count, as before #224
             // (not checked against EventKit): its converted anchor sits at
             // local midnight but [toAnchor] can carry any time of day, so
@@ -131,14 +139,13 @@ internal class SplitShift private constructor(
             // shift, which for all-day (UTC, midnight both sides) and a
             // toggle to all-day is already the calendar-day count.
             val startDayDelta = if (frameChange is FrameChange.ToTimed) {
-                dayDelta
+                slotDayDelta
             } else {
-                fun wallClock(x: Long) = x + tz.getOffset(x)
-                ((wallClock(toAnchor) - wallClock(from)) / AllDayDates.MILLIS_PER_DAY).toInt()
+                wholeWallClockDaysBetween(from, toAnchor, tz)
             }
             return SplitShift(
                 frameChange = frameChange,
-                dayDelta = dayDelta,
+                slotDayDelta = slotDayDelta,
                 startDayDelta = startDayDelta,
                 tz = tz,
                 hour = if (isAllDay) 0 else target.get(Calendar.HOUR_OF_DAY),
