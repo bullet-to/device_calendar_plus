@@ -1,10 +1,50 @@
 package to.bullet.device_calendar_plus_android
 
 import android.content.ContentProviderOperation
+import android.content.ContentResolver
+import android.content.ContentValues
 import android.provider.CalendarContract.Reminders
 
 // CalendarContract.Reminders as the plugin writes it: one relative
-// METHOD_ALERT row per minute value, that many minutes before the start.
+// METHOD_ALERT row per minute value, that many minutes before the start;
+// and the raw rows a `thisAndFollowing` split carries as stored.
+
+/**
+ * Event [eventId]'s Reminders rows, whatever the method, as insert values
+ * without their EVENT_ID: MINUTES and METHOD copied as stored (nulls
+ * included).
+ */
+internal fun ContentResolver.readReminderRows(eventId: Long): List<ContentValues> {
+    val columns = arrayOf(Reminders.MINUTES, Reminders.METHOD)
+    val rows = mutableListOf<ContentValues>()
+    query(
+        Reminders.CONTENT_URI,
+        columns,
+        "${Reminders.EVENT_ID} = ?",
+        arrayOf(eventId.toString()),
+        null
+    )?.use { cursor ->
+        while (cursor.moveToNext()) {
+            rows += ContentValues().apply { cursor.copyColumnsInto(this, columns) }
+        }
+    }
+    return rows
+}
+
+/**
+ * Inserts of raw Reminders [rows] (from [readReminderRows]) as they are,
+ * METHOD included, unlike [reminderInsertOps], which writes METHOD_ALERT.
+ * [keyToEvent] sets each row's EVENT_ID, as for [reminderInsertOps].
+ */
+internal fun reminderRowInsertOps(
+    rows: List<ContentValues>,
+    keyToEvent: ContentProviderOperation.Builder.() -> ContentProviderOperation.Builder
+): List<ContentProviderOperation> = rows.map { row ->
+    ContentProviderOperation.newInsert(Reminders.CONTENT_URI)
+        .withValues(row)
+        .keyToEvent()
+        .build()
+}
 
 /**
  * Inserts of one Reminders row per value of [minutes], the one builder of

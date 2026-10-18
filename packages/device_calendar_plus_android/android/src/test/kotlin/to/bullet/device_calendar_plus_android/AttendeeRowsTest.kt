@@ -3,6 +3,7 @@ package to.bullet.device_calendar_plus_android
 import android.provider.CalendarContract.Attendees
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 internal class AttendeeRowsTest {
     private fun row(email: String, relationship: Int?) = AttendeeRow(
@@ -46,6 +47,47 @@ internal class AttendeeRowsTest {
             listOf(newOrganizer),
             RowsPatch.Set(listOf(newOrganizer)).applyTo(existing)
         )
+    }
+
+    @Test
+    fun attendeeTypeFromName_mapsEveryName() {
+        assertEquals(Attendees.TYPE_NONE, attendeeTypeFromName("none"))
+        assertEquals(Attendees.TYPE_REQUIRED, attendeeTypeFromName("required"))
+        assertEquals(Attendees.TYPE_OPTIONAL, attendeeTypeFromName("optional"))
+        assertEquals(Attendees.TYPE_RESOURCE, attendeeTypeFromName("resource"))
+    }
+
+    @Test
+    fun attendeeTypeFromName_throwsOnAnUnknownName() {
+        assertFailsWith<IllegalArgumentException> { attendeeTypeFromName("chair") }
+    }
+
+    @Test
+    fun attendeeRelationshipFromName_mapsEveryName() {
+        assertEquals(Attendees.RELATIONSHIP_NONE, attendeeRelationshipFromName("none"))
+        assertEquals(Attendees.RELATIONSHIP_ATTENDEE, attendeeRelationshipFromName("attendee"))
+        assertEquals(Attendees.RELATIONSHIP_ORGANIZER, attendeeRelationshipFromName("organizer"))
+        assertEquals(Attendees.RELATIONSHIP_PERFORMER, attendeeRelationshipFromName("performer"))
+        assertEquals(Attendees.RELATIONSHIP_SPEAKER, attendeeRelationshipFromName("speaker"))
+    }
+
+    @Test
+    fun attendeeRelationshipFromName_throwsOnAnUnknownName() {
+        assertFailsWith<IllegalArgumentException> { attendeeRelationshipFromName("host") }
+    }
+
+    @Test
+    fun attendeeStatusFromName_mapsEveryName() {
+        assertEquals(Attendees.ATTENDEE_STATUS_NONE, attendeeStatusFromName("none"))
+        assertEquals(Attendees.ATTENDEE_STATUS_ACCEPTED, attendeeStatusFromName("accepted"))
+        assertEquals(Attendees.ATTENDEE_STATUS_DECLINED, attendeeStatusFromName("declined"))
+        assertEquals(Attendees.ATTENDEE_STATUS_INVITED, attendeeStatusFromName("invited"))
+        assertEquals(Attendees.ATTENDEE_STATUS_TENTATIVE, attendeeStatusFromName("tentative"))
+    }
+
+    @Test
+    fun attendeeStatusFromName_throwsOnAnUnknownName() {
+        assertFailsWith<IllegalArgumentException> { attendeeStatusFromName("maybe") }
     }
 
     @Test

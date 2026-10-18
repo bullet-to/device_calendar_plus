@@ -333,11 +333,8 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             .withSelection("${CalendarContract.Reminders.EVENT_ID} = ?", arrayOf(""))
             .withSelectionBackReference(eventIdArg, copyOp)
             .build()
-        for (reminder in readReminderRows(oldId)) {
-            ops += ContentProviderOperation.newInsert(CalendarContract.Reminders.CONTENT_URI)
-                .withValues(reminder)
-                .withValueBackReference(CalendarContract.Reminders.EVENT_ID, copyOp)
-                .build()
+        ops += reminderRowInsertOps(resolver.readReminderRows(oldId)) {
+            withValueBackReference(CalendarContract.Reminders.EVENT_ID, copyOp)
         }
 
         // The provider seeds an exception with its master's guest list, and
@@ -404,26 +401,4 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             if (!cursor.moveToFirst()) return@use null
             ContentValues().apply { cursor.copyColumnsInto(this, carriedOccurrenceColumns) }
         }
-
-    /**
-     * Event [eventId]'s [CalendarContract.Reminders] rows, whatever the
-     * method, as insert values without their EVENT_ID: MINUTES and METHOD
-     * copied as stored (nulls included).
-     */
-    private fun readReminderRows(eventId: Long): List<ContentValues> {
-        val columns = arrayOf(CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD)
-        val rows = mutableListOf<ContentValues>()
-        resolver.query(
-            CalendarContract.Reminders.CONTENT_URI,
-            columns,
-            "${CalendarContract.Reminders.EVENT_ID} = ?",
-            arrayOf(eventId.toString()),
-            null
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                rows += ContentValues().apply { cursor.copyColumnsInto(this, columns) }
-            }
-        }
-        return rows
-    }
 }

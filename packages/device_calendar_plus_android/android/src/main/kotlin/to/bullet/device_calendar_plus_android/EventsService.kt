@@ -549,10 +549,6 @@ class EventsService(
                     CalendarContract.Events.STATUS,
                     status ?: CalendarContract.Events.STATUS_CONFIRMED
                 )
-
-                // Flag the event as having alarms so the provider expands them.
-                val hasReminders = reminders != null && reminders.isNotEmpty()
-                put(CalendarContract.Events.HAS_ALARM, if (hasReminders) 1 else 0)
             }
 
             // Reminders and the caller's EventOptionsAndroid.attendees attach
@@ -1461,9 +1457,6 @@ class EventsService(
                 else (timeZone ?: java.util.TimeZone.getDefault().id)
             )
             put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
-            if (reminders.isNotEmpty()) {
-                put(CalendarContract.Events.HAS_ALARM, 1)
-            }
         }
         // Written even when null, so the new series has the status the edit
         // resolved to rather than whatever the provider fills in.
@@ -1486,14 +1479,16 @@ class EventsService(
      * and [attendees] as its child rows, in one
      * [android.content.ContentResolver.applyBatch], which the Calendar
      * Provider applies in one transaction: the event and all its rows, or
-     * none of it. Returns the new event's ID, or null when the provider
-     * returned none.
+     * none of it. Sets HAS_ALARM in [values] to agree with [reminders], so
+     * the provider expands them. Returns the new event's ID, or null when
+     * the provider returned none.
      */
     private fun insertEventWithChildren(
         values: android.content.ContentValues,
         reminders: List<Int>,
         attendees: List<AttendeeRow>
     ): String? {
+        values.put(CalendarContract.Events.HAS_ALARM, if (reminders.isNotEmpty()) 1 else 0)
         // Each child row is keyed to the event by a back-reference to the
         // result of this first operation, the event's insert.
         val eventOp = 0
