@@ -7,16 +7,22 @@ import kotlin.test.assertNull
 
 /**
  * [keptRuleAfterSplit] and [replacedRuleAfterSplit]: the rule a
- * `thisAndFollowing` split gives the new series. A kept rule's COUNT
- * drops by the occurrences the rule generates before the split, deleted ones
- * included (#220), and keeps at least one; the provider's count is only the
- * fallback for a rule that can't be expanded. A replacing rule is
- * [replacedRuleAfterSplit]: EventKit counts a new rule's COUNT from the
- * original series' start, so the new series loses the occurrences the new
- * rule would have had before the split, and doesn't recur at all when that
- * leaves none (#124). The daily, weekly, monthly and yearly counts are what
- * an iOS simulator saves for the same splits of a daily series (at its fifth
- * occurrence unless a case names another day). The DST, WKST=SU,
+ * `thisAndFollowing` split gives the new series.
+ *
+ * Keep: a kept rule's COUNT drops by the occurrences the rule generates
+ * before the split, deleted ones included (#220), and keeps at least one;
+ * the provider's count is only the fallback for a rule that can't be
+ * expanded. The deleted-occurrences case matches what an iOS simulator saves
+ * (COUNT=6). The BYHOUR, daily/weekly BYSETPOS fallback, monthly/yearly
+ * BYSETPOS, count-used-up and no-COUNT cases pin Android-only behaviour and
+ * aren't from EventKit.
+ *
+ * Replace: EventKit counts a new rule's COUNT from the original series'
+ * start, so the new series loses the occurrences the new rule would have had
+ * before the split, and doesn't recur at all when that leaves none (#124).
+ * The plain daily, weekly, monthly and yearly counts are what an iOS
+ * simulator saves for the same splits of a daily series (at its fifth
+ * occurrence unless a case names another day). The DST, WKST=SU, BYSETPOS,
  * out-of-subset and no-COUNT cases pin Android-only behaviour and aren't
  * from EventKit.
  */
