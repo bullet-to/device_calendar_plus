@@ -140,4 +140,22 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
     XCTAssertEqual(flipSave.endDate, end)
     XCTAssertEqual(flipSave.timeZone, losAngeles)
   }
+
+  // MARK: - failures
+
+  /// A first save that leaves the occurrence attached resets the store and
+  /// fails before the flip, which would otherwise be the one-save bug.
+  func testFailsAfterAResetWithoutFlippingWhenStepOneDoesNotDetach() {
+    fake.firstSaveDetaches = false
+
+    let result = flip(
+      timedOccurrence(), to: true, patch: [:],
+      dates: (at(losAngeles, 3, 10), endOfDay(losAngeles, 3, 10)))
+
+    XCTAssertEqual(fake.saves.count, 1)
+    XCTAssertEqual(fake.resets, 1)
+    XCTAssertThrowsError(try result.get()) { error in
+      XCTAssertEqual((error as? CalendarError)?.code, PlatformExceptionCodes.operationFailed)
+    }
+  }
 }
