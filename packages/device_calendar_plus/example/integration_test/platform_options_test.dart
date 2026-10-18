@@ -64,15 +64,23 @@ void main() {
     },
   );
 
+  /// The occurrences of [eventId] (by default [series] itself) listed from
+  /// [series]' start.
+  Future<List<Event>> seriesOccurrences(
+    SeededSeries series, [
+    String? eventId,
+  ]) => occurrencesOf(
+    plugin,
+    requireCalendar(calendarId),
+    eventId ?? series.eventId,
+    series.start,
+  );
+
   Future<List<EventStatus>> statusesOf(
     SeededSeries series,
     String eventId,
-  ) async => (await occurrencesOf(
-    plugin,
-    requireCalendar(calendarId),
-    eventId,
-    series.start,
-  )).map((e) => e.status).toList();
+  ) async =>
+      (await seriesOccurrences(series, eventId)).map((e) => e.status).toList();
 
   /// The events in [series]' window titled [title]: an occurrence detached
   /// under that title.
@@ -192,12 +200,7 @@ void main() {
           ),
         );
 
-        final remaining = await occurrencesOf(
-          plugin,
-          requireCalendar(calendarId),
-          series.eventId,
-          series.start,
-        );
+        final remaining = await seriesOccurrences(series);
         expect(startsOf(remaining), startsExcept(series.occurrences, {2}));
       },
     );
@@ -326,7 +329,7 @@ void main() {
           ),
         );
 
-        await plugin.updateRecurring(
+        final newId = await plugin.updateRecurring(
           series.occurrences[2].instanceId,
           EventSpan.thisAndFollowing,
           android: const EventUpdateOptionsAndroid(
@@ -334,6 +337,7 @@ void main() {
           ),
         );
 
+        expect(newId, isNot(series.eventId), reason: 'the series must split');
         final detached = await detachedTitled(series, title);
         expect(
           detached.single.status,
@@ -405,15 +409,7 @@ void main() {
         android: android,
       );
 
-      expect(
-        await occurrencesOf(
-          plugin,
-          requireCalendar(calendarId),
-          series.eventId,
-          series.start,
-        ),
-        series.occurrences,
-      );
+      expect(await seriesOccurrences(series), series.occurrences);
     });
 
     testWidgets(
@@ -433,15 +429,7 @@ void main() {
         );
 
         expect(id, series.eventId);
-        expect(
-          await occurrencesOf(
-            plugin,
-            requireCalendar(calendarId),
-            series.eventId,
-            series.start,
-          ),
-          series.occurrences,
-        );
+        expect(await seriesOccurrences(series), series.occurrences);
       },
     );
   }, skip: !Platform.isIOS);
