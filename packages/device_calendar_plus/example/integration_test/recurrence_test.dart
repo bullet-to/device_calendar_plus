@@ -3621,23 +3621,20 @@ void main() {
           title: title, isAllDay: true, start: seedDay, count: seedCount);
       final before = seeded.occurrences;
 
-      final newSeriesId = await plugin.updateRecurring(
+      await plugin.updateRecurring(
         before[0].instanceId,
         EventSpan.thisAndFollowing,
         isAllDay: false,
       );
 
-      final from = seeded.start.subtract(const Duration(days: 1));
+      // Every event with the title, not just the returned series: exactly
+      // one timed occurrence per seeded day, so neither an all-day leftover
+      // nor a duplicate left by the old series gets through.
       expectTimedOnOwnDays(
-        await occurrencesOf(plugin, calendarId!, newSeriesId, from,
+        await eventsTitled(plugin, calendarId!, title,
+            seeded.start.subtract(const Duration(days: 1)),
             windowDays: 31),
         before,
-      );
-      expect(
-        (await eventsTitled(plugin, calendarId!, title, from, windowDays: 31))
-            .where((e) => e.isAllDay),
-        isEmpty,
-        reason: 'no all-day occurrence of the series may be left',
       );
     },
         skip: Platform.isAndroid
