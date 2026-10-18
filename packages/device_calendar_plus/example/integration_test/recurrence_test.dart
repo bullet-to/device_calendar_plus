@@ -3716,6 +3716,41 @@ void main() {
       await expectAllDayToTimedSplit('All-day To Timed Split DST', dstSeedDay);
     });
 
+    // thisAndFollowing from the first occurrence covers the whole series,
+    // so there is nothing to split, but iOS still routes it through
+    // splitThenFlipToTimed's two saves, both on the master.
+    test(
+        'thisAndFollowing toggling an all-day series timed from its first '
+        'occurrence keeps every occurrence on its calendar day', () async {
+      const title = 'All-day To Timed From First';
+      final seeded = await seedWeeklySeries(plugin, calendarId,
+          title: title, isAllDay: true, start: seedDay, count: seedCount);
+      final before = seeded.occurrences;
+
+      final newSeriesId = await plugin.updateRecurring(
+        before[0].instanceId,
+        EventSpan.thisAndFollowing,
+        isAllDay: false,
+      );
+
+      final from = seeded.start.subtract(const Duration(days: 1));
+      expectTimedOnOwnDays(
+        await occurrencesOf(plugin, calendarId!, newSeriesId, from,
+            windowDays: 31),
+        before,
+      );
+      expect(
+        (await eventsTitled(plugin, calendarId!, title, from, windowDays: 31))
+            .where((e) => e.isAllDay),
+        isEmpty,
+        reason: 'no all-day occurrence of the series may be left',
+      );
+    },
+        skip: Platform.isAndroid
+            ? 'Android: a first-occurrence thisAndFollowing toggle leaves the '
+                'first occurrence all-day (pre-dates #232, follow-up to file)'
+            : false);
+
     /// 09:00 local on [day]'s local date.
     DateTime nineOn(DateTime day) {
       final d = day.toLocal();

@@ -27,6 +27,8 @@ final class SplitThenFlipToTimedTests: XCTestCase, DateFixtures {
     var resets = 0
     /// The 1-based save that throws, if any.
     var throwingSave: Int?
+    /// Whether the first save comes back with the rule stripped.
+    var splitStripsRule = false
 
     struct SaveFailed: Error {}
 
@@ -37,6 +39,7 @@ final class SplitThenFlipToTimedTests: XCTestCase, DateFixtures {
         endDate: event.endDate,
         hasRule: event.recurrenceRules?.isEmpty == false))
       if saves.count == throwingSave { throw SaveFailed() }
+      if saves.count == 1 && splitStripsRule { event.recurrenceRules = nil }
     }
 
     func reset() { resets += 1 }
@@ -122,6 +125,24 @@ final class SplitThenFlipToTimedTests: XCTestCase, DateFixtures {
     fake.throwingSave = 1
 
     let result = split(allDayOccurrence(), start: nil, end: nil)
+
+    XCTAssertEqual(fake.saves.count, 1)
+    XCTAssertEqual(fake.resets, 1)
+    XCTAssertThrowsError(try result.get()) { error in
+      XCTAssertEqual(
+        (error as? CalendarError)?.code, PlatformExceptionCodes.operationFailed)
+    }
+  }
+
+  /// A split that comes back without its rule resets and fails before the
+  /// flip, rather than flip on the un-rebased `splitRule`.
+  func testResetsWithoutFlippingWhenTheSplitLosesItsRule() {
+    fake.splitStripsRule = true
+
+    let result = split(
+      allDayOccurrence(),
+      start: at(losAngeles, 3, 10, hour: 9),
+      end: at(losAngeles, 3, 10, hour: 10))
 
     XCTAssertEqual(fake.saves.count, 1)
     XCTAssertEqual(fake.resets, 1)

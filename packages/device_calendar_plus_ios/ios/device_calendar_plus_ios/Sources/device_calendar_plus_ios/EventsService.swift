@@ -1116,14 +1116,6 @@ class EventsService {
     try eventStore.save(event, span: span, commit: true)
   }
 
-  /// The store's save of `event` at `span`, staged or committed by `commit`:
-  /// the one `save` that production hands `splitThenFlipToTimed`.
-  private func storeSave(
-    _ event: EKEvent, _ span: EKSpan, _ commit: Bool
-  ) throws {
-    try eventStore.save(event, span: span, commit: commit)
-  }
-
   /// Flips the all-day flag of the occurrence `event` to `allDay` in two
   /// committed saves: every other change first, which detaches the
   /// occurrence, then the flip with the dates. EventKit's iCloud store gets
@@ -1363,8 +1355,10 @@ class EventsService {
   /// splits even when the toggle is the only change. The second saves the
   /// new series whole and sets its rule again, as a fresh copy of the
   /// split's with its count already left to the new series, so a rule set
-  /// again for a day move (#206) is set again there too. A cleared rule
-  /// never comes here: it splits by hand (`detachThisAndFollowing`).
+  /// again for a day move (#206) is set again there too; a split that comes
+  /// back without a rule fails, staged and reset, rather than flip on a
+  /// guessed count. A cleared rule never comes here: it splits by hand
+  /// (`detachThisAndFollowing`).
   ///
   /// The first save is staged (`commit: false`) and the second commits
   /// both; a failure resets the store, leaving the calendar as it was.
@@ -1376,7 +1370,8 @@ class EventsService {
   ///
   /// The store sits behind two closures so `SplitThenFlipToTimedTests` can
   /// pin the sequence: `save` is a save at the given span with the given
-  /// commit flag (`storeSave` in production), `reset` the store's reset.
+  /// commit flag (`EKEventStore.save(_:span:commit:)` in production), `reset`
+  /// the store's reset.
   static func splitThenFlipToTimed(
     _ occurrence: EKEvent,
     patch: EventFieldPatch,
@@ -1391,11 +1386,18 @@ class EventsService {
     patch.applyFields(to: occurrence)
     do {
       try save(occurrence, .futureEvents, false)
+      // The read-back rule is the one to set again: its count is already
+      // rebased to the new series, which `splitRule`'s is not. A split that
+      // lost it fails rather than guess a count; the staged first save is
+      // reset, so nothing is written.
+      guard let split = occurrence.recurrenceRules?.first else {
+        reset()
+        return .failure(CalendarError(
+          code: PlatformExceptionCodes.operationFailed,
+          message: "The split lost its recurrence rule before the flip; nothing was saved"
+        ))
+      }
       patch.applyTiming(to: occurrence, isAllDay: false, start: start, end: end)
-      // The read-back rule is preferred, as its count is already rebased to
-      // the new series; `splitRule` is the fallback should EventKit ever
-      // strip it, so the flip never saves without a rule set again (#206).
-      let split = occurrence.recurrenceRules?.first ?? splitRule
       occurrence.recurrenceRules = [SeriesDates.ruleCopy(split)]
       try save(occurrence, .futureEvents, true)
       return .success(occurrence.eventIdentifier ?? fallbackId)
@@ -1522,20 +1524,23 @@ class EventsService {
         occurrenceDate: Date(millis: timestamp),
         completion: completion
       )
-    case (_, _?) where flipsToTimed:
-      guard let splitRule = resolved.rule.ruleToSplitOn(
-        loaded: foundEvent.recurrenceRules?.first)
-      else {
-        // Unreachable: a cleared rule splits above, and a series target
-        // always has a rule (`resolveSeriesTarget` refuses a one-off).
+    case (.set(let rule), _?) where flipsToTimed:
+      completion(EventsService.splitThenFlipToTimed(
+        foundEvent, patch: patch, splitRule: rule,
+        start: moveStart, end: newEnd, fallbackId: eventId,
+        save: eventStore.save(_:span:commit:), reset: eventStore.reset))
+    case (.leaveAsLoaded, _?) where flipsToTimed:
+      // A series target always has a rule (`resolveSeriesTarget` refuses a
+      // one-off); the split carries a fresh copy of it.
+      guard let loaded = foundEvent.recurrenceRules?.first else {
         return completion(.failure(CalendarError(
           code: PlatformExceptionCodes.operationFailed,
-          message: "Could not resolve the series rule to split")))
+          message: "The series has no recurrence rule to split on")))
       }
       completion(EventsService.splitThenFlipToTimed(
-        foundEvent, patch: patch, splitRule: splitRule,
+        foundEvent, patch: patch, splitRule: SeriesDates.ruleCopy(loaded),
         start: moveStart, end: newEnd, fallbackId: eventId,
-        save: storeSave, reset: eventStore.reset))
+        save: eventStore.save(_:span:commit:), reset: eventStore.reset))
     default:
       // Apply the field changes, and the new times when the change moves
       // them.

@@ -44,21 +44,6 @@ enum SeriesRuleWrite {
   case clear
 }
 
-extension SeriesRuleWrite {
-  /// The rule a `thisAndFollowing` split onto a new series carries
-  /// (`EventsService.splitThenFlipToTimed`): the set rule, a fresh copy of
-  /// `loaded` for a rule left as loaded, and `nil` for a cleared rule, which
-  /// splits by hand instead. `nil` too when `loaded` is, which a series
-  /// target never is (`resolveSeriesTarget` refuses a one-off).
-  func ruleToSplitOn(loaded: EKRecurrenceRule?) -> EKRecurrenceRule? {
-    switch self {
-    case .set(let rule): return rule
-    case .leaveAsLoaded: return loaded.map { SeriesDates.ruleCopy($0) }
-    case .clear: return nil
-    }
-  }
-}
-
 /// What a series update writes, as `SeriesDates.resolveSeriesStart` resolves
 /// it: the series' new start and the rule the save writes.
 struct SeriesWrite {
