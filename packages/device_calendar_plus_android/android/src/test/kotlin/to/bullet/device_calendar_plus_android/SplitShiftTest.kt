@@ -5,9 +5,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * [SplitShift] moves a series by the whole calendar days its anchor moved,
- * in the series' zone, never by the raw millisecond shift: across a DST
- * change the two differ by an hour (#158). New York's 2026 transitions are
+ * [SplitShift] moves a series' slots by the whole calendar days its anchor
+ * moved, and a detached occurrence's start by the whole 24h wall-clock days
+ * in the shift, both in the series' zone, never by the raw millisecond
+ * shift: across a DST change the two differ by an hour (#158). New York's 2026 transitions are
  * March 8 (spring forward) and November 1 (fall back).
  */
 internal class SplitShiftTest {
@@ -17,7 +18,7 @@ internal class SplitShiftTest {
     private fun ny(month: Int, day: Int, hour: Int, minute: Int = 0) =
         instantAt(newYork, 2026, month, day, hour, minute)
 
-    /** A shift with no all-day toggle, which every case here is. */
+    /** A shift with no all-day toggle, which most cases here are. */
     private fun untoggled(from: Long, to: Long, tz: TimeZone, isAllDay: Boolean) =
         SplitShift.of(from, to, tz, isAllDay, FrameChange.None)
 
@@ -125,6 +126,22 @@ internal class SplitShiftTest {
             isAllDay = false, frameChange = FrameChange.ToTimed(newYork),
         )
         assertEquals(instantAt(utc, 2026, 6, 9), shift.start(instantAt(utc, 2026, 6, 10)))
+    }
+
+    // A toggle to all-day reads the wall-clock shift, which is the
+    // calendar-day count here: the series zone is UTC and both anchors sit
+    // at UTC midnight. 21:00 on June 4 in New York is June 5 in UTC, but
+    // the toggle keeps its New York date, so the anchor moves two days, and
+    // a slot (a stored timed instant, toggled the same way) and an all-day
+    // occurrence's start both move two days with it.
+    @Test
+    fun start_toAllDayToggle_countsCalendarDays() {
+        val shift = SplitShift.of(
+            ny(6, 4, 21), instantAt(utc, 2026, 6, 6), utc,
+            isAllDay = true, frameChange = FrameChange.ToAllDay(newYork),
+        )
+        assertEquals(instantAt(utc, 2026, 6, 12), shift.slot(ny(6, 10, 21)))
+        assertEquals(instantAt(utc, 2026, 6, 12), shift.start(instantAt(utc, 2026, 6, 10)))
     }
 
     // No move leaves every date where it was.

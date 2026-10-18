@@ -68,8 +68,9 @@ internal fun wholeWallClockDaysBetween(fromMillis: Long, toMillis: Long, tz: Tim
  * either way.
  *
  * EventKit also pairs the kept occurrence with the slot before its own on
- * such a shift (it skips [5]'s slot, not [6]'s, for [6]): Android doesn't
- * copy that, and pairs it with its own slot, [slot] (#224).
+ * such a shift (it skips occurrence 5's slot, not occurrence 6's, for
+ * occurrence 6): Android doesn't copy that, and pairs it with its own
+ * slot, [slot] (#224).
  */
 internal class SplitShift private constructor(
     private val frameChange: FrameChange,
