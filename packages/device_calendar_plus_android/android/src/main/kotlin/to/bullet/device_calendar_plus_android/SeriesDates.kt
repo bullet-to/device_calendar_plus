@@ -498,9 +498,9 @@ internal fun newSeriesRule(
  * [providerCountBefore] is that Instances count, the fallback for a rule
  * [RecurrenceAnchor.countBefore] can't expand; a lambda, so the provider is
  * queried only then. That fallback still leaves deleted occurrences out, so
- * for such a rule (BYHOUR, BYWEEKNO, a daily or weekly BYSETPOS) the new
- * series still runs one occurrence past the original's end per deletion
- * before the split. A rule without COUNT is unchanged.
+ * for such a rule (such as BYHOUR, BYWEEKNO, BYYEARDAY or a daily or weekly
+ * BYSETPOS) the new series still runs one occurrence past the original's
+ * end per deletion before the split. A rule without COUNT is unchanged.
  */
 internal fun keptRuleAfterSplit(
     rule: String,

@@ -168,8 +168,8 @@ non-recurring event at the split point. A kept rule's count is shared the same
 way, and occurrences you deleted before the split still count, as they do in
 an RRULE's `COUNT`: the two series together cover exactly the original's
 occurrences, ending where it ended. One Android exception: a rule from another
-app with parts the plugin can't expand (`BYHOUR`, `BYWEEKNO`, or a daily or
-weekly `BYSETPOS`) is counted from the calendar's own occurrences, which leave
+app with parts the plugin can't expand (such as `BYHOUR`, `BYWEEKNO`,
+`BYYEARDAY` or a daily or weekly `BYSETPOS`) is counted from the calendar's own occurrences, which leave
 deleted ones out, so there the new series runs one occurrence longer per
 deletion before the split.
 

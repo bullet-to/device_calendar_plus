@@ -13,7 +13,9 @@ import kotlin.test.assertNull
  * before the split, deleted ones included (#220), and keeps at least one;
  * the provider's count is only the fallback for a rule that can't be
  * expanded. The deleted-occurrences case matches what an iOS simulator saves
- * (COUNT=6). The BYHOUR, daily/weekly BYSETPOS fallback, monthly/yearly
+ * (COUNT=6). The BYMONTHDAY, yearly ordinal BYDAY and WEEKLY+INTERVAL+WKST
+ * cases match the provider's own expansion of the same series on an
+ * emulator. The BYHOUR, daily/weekly BYSETPOS fallback, monthly/yearly
  * BYSETPOS, count-used-up and no-COUNT cases pin Android-only behaviour and
  * aren't from EventKit.
  *
@@ -39,10 +41,11 @@ internal class SplitRuleTest {
     private fun keep(
         rule: String,
         at: Long = fifth,
+        start: Long = seriesStart,
         providerCountBefore: () -> Int = { error("a countable rule needs no provider count") },
     ) = keptRuleAfterSplit(
         rule,
-        seriesStart = seriesStart,
+        seriesStart = start,
         splitAt = at,
         tz = utc,
         providerCountBefore = providerCountBefore
@@ -312,9 +315,84 @@ internal class SplitRuleTest {
 
     @Test
     fun keptRuleAfterSplit_noCount_isUnchanged() {
+        assertEquals("FREQ=DAILY", keep("FREQ=DAILY"))
+    }
+
+    // Rules another app may write, counted from the rule rather than the
+    // provider. Each count matches the provider's own expansion of the same
+    // series (an API 34 emulator), so the kept split's COUNT agrees with what
+    // the provider then expands for the new series.
+
+    // The 31st skips the months without one: 31 October, 31 December and
+    // 31 January come before a split on 31 March.
+    @Test
+    fun keptRuleAfterSplit_byMonthDay31_skipsTheShortMonths() {
         assertEquals(
-            "FREQ=DAILY",
-            keep("FREQ=DAILY", providerCountBefore = { error("a rule without COUNT needs no count") })
+            "FREQ=MONTHLY;BYMONTHDAY=31;COUNT=3",
+            keep(
+                "FREQ=MONTHLY;BYMONTHDAY=31;COUNT=6",
+                start = instantAt(utc, 2026, 10, 31, 10),
+                at = instantAt(utc, 2027, 3, 31, 10)
+            )
+        )
+    }
+
+    // The last day of each month: 31 October, 30 November, 31 December and
+    // 31 January come before a split on 28 February.
+    @Test
+    fun keptRuleAfterSplit_byMonthDayLast_countsEveryMonthsLastDay() {
+        assertEquals(
+            "FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=2",
+            keep(
+                "FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=6",
+                start = instantAt(utc, 2026, 10, 31, 10),
+                at = instantAt(utc, 2027, 2, 28, 10)
+            )
+        )
+    }
+
+    // The fourth Thursday of November: 26 November 2026 and 25 November
+    // 2027 come before a split on 23 November 2028.
+    @Test
+    fun keptRuleAfterSplit_yearlyOrdinalByDayInAMonth_countsTheRule() {
+        assertEquals(
+            "FREQ=YEARLY;BYMONTH=11;BYDAY=4TH;COUNT=3",
+            keep(
+                "FREQ=YEARLY;BYMONTH=11;BYDAY=4TH;COUNT=5",
+                start = instantAt(utc, 2026, 11, 26, 10),
+                at = instantAt(utc, 2028, 11, 23, 10)
+            )
+        )
+    }
+
+    // The second Monday of the year: 12 January 2026 and 11 January 2027
+    // come before a split on 10 January 2028.
+    @Test
+    fun keptRuleAfterSplit_yearlyOrdinalByDay_countsTheRule() {
+        assertEquals(
+            "FREQ=YEARLY;BYDAY=2MO;COUNT=2",
+            keep(
+                "FREQ=YEARLY;BYDAY=2MO;COUNT=4",
+                start = instantAt(utc, 2026, 1, 12, 10),
+                at = instantAt(utc, 2028, 1, 10, 10)
+            )
+        )
+    }
+
+    // Every other week on Sunday and Thursday from Thursday 15 October.
+    // Weeks from Sunday: the 15th, then the 25th and 29th, come before a
+    // split on Sunday 8 November. Weeks from Monday pair the 15th with the
+    // 18th and the 29th with 1 November, so four come before a split on
+    // Thursday 12 November.
+    @Test
+    fun keptRuleAfterSplit_weeklyWithIntervalAndWeekStart_countsTheWeeksFromIt() {
+        assertEquals(
+            "FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=SU;COUNT=7",
+            keep("FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=SU;COUNT=10", at = day(24))
+        )
+        assertEquals(
+            "FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=MO;COUNT=6",
+            keep("FREQ=WEEKLY;INTERVAL=2;BYDAY=SU,TH;WKST=MO;COUNT=10", at = day(28))
         )
     }
 }
