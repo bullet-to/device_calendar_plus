@@ -83,7 +83,7 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
   }
 
   /// Step 1 carries the fields and the all-day span as timed dates, still
-  /// timed; step 2 is the flag, with the span and no zone.
+  /// timed in its zone; step 2 is the flag, with the span and no zone.
   func testTimedToAllDayDetachesWithTheSpanThenFlipsTheFlag() throws {
     let start = at(losAngeles, 3, 10)
     let end = endOfDay(losAngeles, 3, 10)
@@ -98,6 +98,7 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
     XCTAssertFalse(detach.isAllDay)
     XCTAssertEqual(detach.startDate, start)
     XCTAssertEqual(detach.endDate, end)
+    XCTAssertEqual(detach.timeZone, losAngeles)
     let flipSave = fake.saves[1]
     XCTAssertTrue(flipSave.isAllDay)
     XCTAssertEqual(flipSave.startDate, start)
