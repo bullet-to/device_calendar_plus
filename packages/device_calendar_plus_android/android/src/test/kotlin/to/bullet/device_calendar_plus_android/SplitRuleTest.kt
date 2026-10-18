@@ -201,14 +201,14 @@ internal class SplitRuleTest {
     private fun splitWith(
         ruleEdit: SeriesRuleEdit,
         existingRule: String = "FREQ=DAILY;COUNT=5",
-        providerCountBefore: Int = 4,
+        providerCountBefore: () -> Int = { error("a countable rule needs no provider count") },
     ) = newSeriesRule(
         ruleEdit,
         existingRule = existingRule,
         seriesStart = seriesStart,
         splitAt = fifth,
         tz = utc,
-        providerCountBefore = { providerCountBefore }
+        providerCountBefore = providerCountBefore
     )
 
     @Test
@@ -232,7 +232,7 @@ internal class SplitRuleTest {
             splitWith(
                 SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=10"),
                 "FREQ=DAILY;COUNT=10",
-                providerCountBefore = 2
+                providerCountBefore = { 2 }
             )
         )
     }
@@ -248,8 +248,45 @@ internal class SplitRuleTest {
             splitWith(
                 SeriesRuleEdit.Keep("FREQ=DAILY;BYHOUR=10,14;COUNT=10"),
                 "FREQ=DAILY;BYHOUR=10,14;COUNT=10",
-                providerCountBefore = 8
+                providerCountBefore = { 8 }
             )
+        )
+    }
+
+    // A BYSETPOS on a daily or weekly rule is outside what the rule count
+    // models, so the provider's count is used rather than counting the rule
+    // as a plain daily or weekly one.
+    @Test
+    fun newSeriesRule_keepWithAWeeklyBySetPos_usesTheProviderCount() {
+        assertEquals(
+            "FREQ=WEEKLY;BYDAY=MO,TU,WE;BYSETPOS=1;COUNT=7",
+            splitWith(
+                SeriesRuleEdit.Keep("FREQ=WEEKLY;BYDAY=MO,TU,WE;BYSETPOS=1;COUNT=10"),
+                "FREQ=WEEKLY;BYDAY=MO,TU,WE;BYSETPOS=1;COUNT=10",
+                providerCountBefore = { 3 }
+            )
+        )
+    }
+
+    @Test
+    fun newSeriesRule_keepWithADailyBySetPos_usesTheProviderCount() {
+        assertEquals(
+            "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;COUNT=7",
+            splitWith(
+                SeriesRuleEdit.Keep("FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;COUNT=10"),
+                "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;COUNT=10",
+                providerCountBefore = { 3 }
+            )
+        )
+    }
+
+    // The replacing side of the same decline: the rule can't be counted, so
+    // its COUNT is left as given.
+    @Test
+    fun replacedRuleAfterSplit_dailyBySetPos_isUnchanged() {
+        assertEquals(
+            "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;COUNT=10",
+            split("FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=1;COUNT=10")
         )
     }
 
