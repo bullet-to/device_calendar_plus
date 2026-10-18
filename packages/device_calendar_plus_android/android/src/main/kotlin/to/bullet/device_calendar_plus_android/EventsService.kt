@@ -148,17 +148,6 @@ class EventsService(
     }
 
     
-    // A NULL STATUS column means "no status", not 0 — and 0 is
-    // STATUS_TENTATIVE, so defaulting the column would invent a status.
-    internal fun statusToString(status: Int?): String {
-        return when (status) {
-            CalendarContract.Events.STATUS_CONFIRMED -> "confirmed"
-            CalendarContract.Events.STATUS_TENTATIVE -> "tentative"
-            CalendarContract.Events.STATUS_CANCELED -> "canceled"
-            else -> "none"
-        }
-    }
-    
     // Projection/read contract (why getColumnIndexOrThrow): see the
     // EventColumns KDoc.
     private fun buildEventMapFromCursor(
@@ -494,7 +483,8 @@ class EventsService(
         timeZone: String?,
         availability: String,
         recurrenceRule: String?,
-        reminders: List<Int>?
+        reminders: List<Int>?,
+        status: Int?
     ): Result<String> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -586,8 +576,12 @@ class EventsService(
                 }
                 put(CalendarContract.Events.AVAILABILITY, availabilityValue)
                 
-                // Set status to confirmed
-                put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
+                // The caller's EventOptionsAndroid.status, confirmed when
+                // none is given.
+                put(
+                    CalendarContract.Events.STATUS,
+                    status ?: CalendarContract.Events.STATUS_CONFIRMED
+                )
 
                 // Flag the event as having alarms so the provider expands them.
                 val hasReminders = reminders != null && reminders.isNotEmpty()
@@ -843,10 +837,10 @@ class EventsService(
     }
 
     /**
-     * Applies [patch] — title, description, location, url, all-day flag and
-     * availability — to [values]. Fields named in the patch's clearedFields
-     * are nulled; null fields are left untouched. The patch's time zone is
-     * not applied here: each write path handles it differently.
+     * Applies [patch] — title, description, location, url, all-day flag,
+     * availability and status — to [values]. Fields named in the patch's
+     * clearedFields are nulled; null fields are left untouched. The patch's
+     * time zone is not applied here: each write path handles it differently.
      */
     private fun applyEventFieldValues(
         values: android.content.ContentValues,
@@ -878,6 +872,9 @@ class EventsService(
                 CalendarContract.Events.AVAILABILITY,
                 availabilityToInt(patch.availability)
             )
+        }
+        if (patch.status != null) {
+            values.put(CalendarContract.Events.STATUS, patch.status)
         }
     }
 
@@ -925,8 +922,10 @@ class EventsService(
             put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
             put(CalendarContract.Events.DTSTART, newStart)
             put(CalendarContract.Events.DURATION, "P${(newEnd - newStart) / 1000}S")
-            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
         }
+        // Inherit the series' status (NULL included); applyEventFieldValues
+        // overrides it when the patch sets one.
+        values.putStatus(series.row.status)
         applyEventFieldValues(values, patch)
         if (patch.timeZone != null) {
             values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)
@@ -1175,6 +1174,7 @@ class EventsService(
             if ("url" in patch.clearedFields) null else (patch.url ?: row.url)
         val effectiveTimeZone = patch.timeZone ?: row.timeZone
         val effectiveAvailability = patch.availability ?: row.availability
+        val effectiveStatus = patch.status ?: row.status
         val effectiveRrule = newSeriesRule(
             ruleEdit,
             existingRule = rrule,
@@ -1215,6 +1215,7 @@ class EventsService(
             url = effectiveUrl,
             timeZone = effectiveTimeZone,
             availability = effectiveAvailability,
+            status = effectiveStatus,
             rrule = effectiveRrule
         )
         val newEventId = insertResult.getOrElse { return Result.failure(it) }
@@ -1422,7 +1423,11 @@ class EventsService(
         return Result.success(exceptionId)
     }
 
-    /** Inserts a fresh event row, using DURATION when recurring and DTEND otherwise. */
+    /**
+     * Inserts a fresh event row, using DURATION when recurring and DTEND
+     * otherwise: the new series of a `thisAndFollowing` split, which carries
+     * [status] (the edit's, else the original series') as it is.
+     */
     private fun insertEvent(
         calendarId: String,
         title: String,
@@ -1434,6 +1439,7 @@ class EventsService(
         url: String?,
         timeZone: String?,
         availability: String,
+        status: Int?,
         rrule: String?
     ): Result<String> {
         val values = android.content.ContentValues().apply {
@@ -1465,8 +1471,10 @@ class EventsService(
                 else (timeZone ?: java.util.TimeZone.getDefault().id)
             )
             put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
-            put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
         }
+        // Written even when null, so the new series has the status the edit
+        // resolved to rather than whatever the provider fills in.
+        values.putStatus(status)
         val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
         val newId = uri?.lastPathSegment
         return if (newId != null) {

@@ -1,3 +1,12 @@
+## Unreleased
+
+### Changed
+- **Breaking:** implements the platform interface's new `android:` / `ios:`
+  options. `CreateCalendarOptionsIos` moves to the platform interface as
+  `CalendarOptionsIos`. Android-only options are ignored, and an
+  `updateEvent` or `updateRecurring` call whose only change is Android-only
+  writes nothing (#70).
+
 ## 0.9.2 - 2026-10-14
 
 ### Fixed

@@ -1,3 +1,30 @@
+## Unreleased
+
+### Changed
+- **Breaking:** `createCalendar`'s `platformOptions:` parameter is replaced
+  by separate `android:` and `ios:` parameters, and the option classes are
+  renamed: `CreateCalendarOptionsAndroid` is now `CalendarOptionsAndroid`,
+  `CreateCalendarOptionsIos` is now `CalendarOptionsIos`, and
+  `CreateCalendarPlatformOptions` is gone. Their fields are now optional, so
+  one call can pass both; each applies only on its own platform. See
+  [Migrating `createCalendar`](doc/platform-options.md#migrating-createcalendar).
+
+### Added
+- Platform-only options: `createEvent` takes `android: EventOptionsAndroid`,
+  and `updateEvent` / `updateRecurring` take
+  `android: EventUpdateOptionsAndroid`. They apply only on Android and are
+  ignored on iOS, so shared code can pass them. Their fields speak Android's
+  own semantics, with no attempt at parity with iOS. See
+  [Platform-only options](doc/platform-options.md).
+- Android: write an event's status with `EventStatusAndroid` (`tentative`,
+  `confirmed`, `canceled`, Android's `STATUS` values). It carries through a
+  single-occurrence edit, both `updateRecurring` spans and the
+  `thisAndFollowing` split's carried occurrences. An occurrence edited
+  without a status now keeps the series' status instead of being written as
+  `confirmed`. Android can't write a `NULL` status to an existing event, so
+  there's no clear; `canceled` on a series or one occurrence takes it out of
+  listings, as Android's provider reads it (#70).
+
 ## 0.10.3 - 2026-10-18
 
 ### Fixed

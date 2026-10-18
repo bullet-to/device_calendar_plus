@@ -150,5 +150,31 @@ void main() {
       expect(log[0].arguments['reminders'], isNull);
       expect(log[0].arguments['clearedFields'], contains('reminders'));
     });
+
+    group('android options', () {
+      const android = EventUpdateOptionsAndroid(
+        status: EventStatusAndroid.canceled,
+      );
+
+      test('updateEvent writes nothing when android is the only change',
+          () async {
+        await plugin.updateEvent('event-123', timestamp: 1, android: android);
+
+        expect(log, isEmpty);
+      });
+
+      test('updateRecurring writes nothing when android is the only change',
+          () async {
+        final result = await plugin.updateRecurring(
+          'event-123',
+          1,
+          'thisAndFollowing',
+          android: android,
+        );
+
+        expect(log, isEmpty);
+        expect(result, 'event-123');
+      });
+    });
   });
 }

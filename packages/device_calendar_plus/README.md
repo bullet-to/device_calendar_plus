@@ -23,7 +23,9 @@ Built for [Bullet](https://bullet.to), a calmer task + notes + calendar app, and
 
 ## One API, both platforms
 
-This plugin exposes only what works the same on Android and iOS. If a feature is read-only on one platform, it's read-only here. If it doesn't exist on one, it isn't included. Where the platforms naturally disagree, Android is conformed to iOS, which sets the contract.
+The shared API exposes only what works the same on Android and iOS. Where the platforms naturally disagree, Android is conformed to iOS, which sets the contract. What one platform genuinely can't do never shows up as a shared field that quietly does nothing there.
+
+When only one platform can write something, it goes through a typed `android:` or `ios:` parameter instead (the event's Android status, say, or the account a new calendar lives in). Those fields speak their own platform's language, with no attempt at parity, and the other platform ignores them, so shared code can pass both. See [Platform-only options](doc/platform-options.md).
 
 It's best-effort, and honest about the gaps. A few platform realities can't be smoothed over: older iOS has no write-only permission tier, and the native editor screens behave differently across calendar apps. Those cases are flagged in the docs where they show up, not hidden behind an API pretending everything's identical.
 
@@ -136,6 +138,26 @@ try {
 }
 ```
 
+## Upgrading: `createCalendar` options
+
+`createCalendar(platformOptions: ...)` is now `createCalendar(android: ..., ios: ...)`, and the option classes lost their `Create` prefix:
+
+```dart
+// Before
+await plugin.createCalendar(
+  name: 'Work',
+  platformOptions: CreateCalendarOptionsAndroid(accountName: 'MyApp'),
+);
+
+// After
+await plugin.createCalendar(
+  name: 'Work',
+  android: CalendarOptionsAndroid(accountName: 'MyApp'),
+);
+```
+
+`CreateCalendarOptionsIos(sourceId: ...)` becomes `ios: CalendarOptionsIos(sourceId: ...)` the same way. See [Platform-only options](doc/platform-options.md#migrating-createcalendar).
+
 ## Upgrading to 0.10.0
 
 `updateEvent` and `deleteEvent` now act on one thing (a one-off event, or one occurrence) and take `instanceId` instead of `eventId`. Pass `event.instanceId`; for a one-off event that's the same as `event.eventId`, so nothing else changes. Series-wide edits go through `updateRecurring` / `deleteRecurring`:
@@ -162,6 +184,7 @@ Passing a recurring series' bare ID to `updateEvent` or `deleteEvent` throws `De
 - [Recurring events](doc/recurring-events.md) - rules, series edits, occurrences
 - [Reminders](doc/reminders.md) - relative before-start alarms
 - [Native UI](doc/native-ui.md) - view, edit, and create modals
+- [Platform-only options](doc/platform-options.md) - `android:` / `ios:` fields, Android event status
 
 ## Contributing
 

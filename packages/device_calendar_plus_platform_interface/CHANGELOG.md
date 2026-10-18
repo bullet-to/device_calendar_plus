@@ -1,3 +1,19 @@
+## Unreleased
+
+### Changed
+- **Breaking:** `createCalendar` takes named `android:` / `ios:` options
+  (`CalendarOptionsAndroid`, `CalendarOptionsIos`) instead of a positional
+  `CreateCalendarPlatformOptions`, which is removed.
+- **Breaking:** `createEvent` gains a named `EventOptionsAndroid? android`
+  parameter, and `updateEvent` / `updateRecurring` a named
+  `EventUpdateOptionsAndroid? android` parameter.
+
+### Added
+- The platform-only options types, `EventStatusAndroid`,
+  `EventOptionsAndroid`, `EventUpdateOptionsAndroid`,
+  `CalendarOptionsAndroid` and `CalendarOptionsIos`, here so every
+  implementation can take them (#70).
+
 ## 0.8.0 - 2026-09-30
 
 ### Changed

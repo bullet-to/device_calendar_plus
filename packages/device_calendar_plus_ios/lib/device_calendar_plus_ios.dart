@@ -2,10 +2,10 @@ import 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import 'src/create_calendar_options_ios.dart';
-export 'src/create_calendar_options_ios.dart';
-
 /// The iOS implementation of [DeviceCalendarPlusPlatform].
+///
+/// Android-only options (the `android:` parameters) are ignored: iOS has no
+/// counterpart to write them to.
 class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   /// The method channel used to interact with the native platform.
   @visibleForTesting
@@ -53,20 +53,16 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   @override
   Future<String> createCalendar(
     String name,
-    String? colorHex,
-    CreateCalendarPlatformOptions? platformOptions,
-  ) async {
-    String? sourceId;
-    if (platformOptions is CreateCalendarOptionsIos) {
-      sourceId = platformOptions.sourceId;
-    }
-
+    String? colorHex, {
+    CalendarOptionsAndroid? android,
+    CalendarOptionsIos? ios,
+  }) async {
     final result = await methodChannel.invokeMethod<String>(
       'createCalendar',
       <String, dynamic>{
         'name': name,
         'colorHex': colorHex,
-        'sourceId': sourceId,
+        'sourceId': ios?.sourceId,
       },
     );
     return result!;
@@ -149,8 +145,9 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     String? timeZone,
     String availability,
     String? recurrenceRule,
-    List<int>? reminders,
-  ) async {
+    List<int>? reminders, {
+    EventOptionsAndroid? android,
+  }) async {
     final result = await methodChannel.invokeMethod<String>(
       'createEvent',
       <String, dynamic>{
@@ -196,10 +193,9 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     String? timeZone,
     String? availability,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {
-    final args = <String, dynamic>{
-      'eventId': eventId,
-      'timestamp': timestamp,
+    final fields = <String, dynamic>{
       'title': title,
       'startDate': startDate?.millisecondsSinceEpoch,
       'endDate': endDate?.millisecondsSinceEpoch,
@@ -207,13 +203,20 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       'timeZone': timeZone,
       'availability': availability,
     };
-    writePatchFields(args, {
+    writePatchFields(fields, {
       'description': description,
       'location': location,
       'url': url,
       'reminders': reminders,
     });
-    await methodChannel.invokeMethod<void>('updateEvent', args);
+    // A call whose only change is Android-only has nothing for iOS to write.
+    // Saving no change would still detach an occurrence, so write nothing.
+    if (_writesNothing(fields)) return;
+    await methodChannel.invokeMethod<void>('updateEvent', <String, dynamic>{
+      'eventId': eventId,
+      'timestamp': timestamp,
+      ...fields,
+    });
   }
 
   @override
@@ -232,11 +235,9 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     String? availability,
     Patch<String>? recurrenceRule,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {
-    final args = <String, dynamic>{
-      'eventId': eventId,
-      'timestamp': timestamp,
-      'span': span,
+    final fields = <String, dynamic>{
       'title': title,
       'newStartMillis': start?.millisecondsSinceEpoch,
       'durationMinutes': durationMinutes,
@@ -244,17 +245,35 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       'timeZone': timeZone,
       'availability': availability,
     };
-    writePatchFields(args, {
+    writePatchFields(fields, {
       'description': description,
       'location': location,
       'url': url,
       'recurrenceRule': recurrenceRule,
       'reminders': reminders,
     });
-    final result =
-        await methodChannel.invokeMethod<String>('updateRecurring', args);
+    // Nothing for iOS to write, and nothing to split for thisAndFollowing:
+    // the targeted scope stands.
+    if (_writesNothing(fields)) return eventId;
+    final result = await methodChannel.invokeMethod<String>(
+      'updateRecurring',
+      <String, dynamic>{
+        'eventId': eventId,
+        'timestamp': timestamp,
+        'span': span,
+        ...fields,
+      },
+    );
     return result!;
   }
+
+  /// Whether an update's field changes (the payload minus the event's
+  /// identity and scope) are all empty: the `clearedFields` list is empty and
+  /// every other entry is null. Judged from the field map itself, so a new
+  /// shared field is covered automatically.
+  static bool _writesNothing(Map<String, dynamic> fields) =>
+      (fields['clearedFields'] as List).isEmpty &&
+      fields.entries.every((e) => e.key == 'clearedFields' || e.value == null);
 
   @override
   Future<void> deleteRecurring(

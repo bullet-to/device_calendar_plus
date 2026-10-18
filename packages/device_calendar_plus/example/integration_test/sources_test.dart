@@ -83,7 +83,12 @@ void main() {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
         name: 'Source Test iOS $timestamp',
-        platformOptions: CreateCalendarOptionsIos(sourceId: source.id),
+        ios: CalendarOptionsIos(sourceId: source.id),
+        // Ignored on iOS: the calendar still lands under the iOS source.
+        android: const CalendarOptionsAndroid(
+          accountName: 'ignored',
+          accountType: 'com.google',
+        ),
       );
       createdCalendarIds.add(calendarId);
 
@@ -108,10 +113,12 @@ void main() {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
         name: 'Source Test Android $timestamp',
-        platformOptions: CreateCalendarOptionsAndroid(
+        android: CalendarOptionsAndroid(
           accountName: source.accountName,
           accountType: source.accountType,
         ),
+        // Ignored on Android: the calendar still lands under the account.
+        ios: const CalendarOptionsIos(sourceId: 'ignored'),
       );
       createdCalendarIds.add(calendarId);
 
@@ -135,7 +142,7 @@ void main() {
       try {
         final calendarId = await plugin.createCalendar(
           name: 'Phantom $timestamp',
-          platformOptions: const CreateCalendarOptionsAndroid(
+          android: const CalendarOptionsAndroid(
             accountName: 'someone@example.com',
             accountType: 'com.google',
           ),

@@ -63,7 +63,7 @@ void main() {
       final calendarId = await plugin.createCalendar(
         'My App Calendar',
         null,
-        CreateCalendarOptionsAndroid(accountName: 'MyApp'),
+        android: const CalendarOptionsAndroid(accountName: 'MyApp'),
       );
 
       expect(log.length, equals(1));

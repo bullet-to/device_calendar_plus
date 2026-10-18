@@ -15,14 +15,14 @@ import 'src/event_span.dart';
 import 'src/platform_exception_converter.dart';
 import 'src/recurrence_rule.dart';
 
-export 'package:device_calendar_plus_android/device_calendar_plus_android.dart'
-    show CreateCalendarOptionsAndroid;
-export 'package:device_calendar_plus_ios/device_calendar_plus_ios.dart'
-    show CreateCalendarOptionsIos;
-// Platform-specific options
+// Platform-only options (see doc/platform-options.md).
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
     show
-        CreateCalendarPlatformOptions,
+        CalendarOptionsAndroid,
+        CalendarOptionsIos,
+        EventOptionsAndroid,
+        EventStatusAndroid,
+        EventUpdateOptionsAndroid,
         InstanceIdParser,
         ParsedInstanceId,
         Patch,
@@ -231,8 +231,8 @@ class DeviceCalendar {
   }
 
   /// Lists the accounts (iCloud, Google, local…) that calendars can be created
-  /// under. Pass a source to [createCalendar] via [CreateCalendarOptionsIos] or
-  /// [CreateCalendarOptionsAndroid] to target a specific account.
+  /// under. Pass a source to [createCalendar] via [CalendarOptionsIos] or
+  /// [CalendarOptionsAndroid] to target a specific account.
   ///
   /// On Android, only sources that already have a calendar are returned.
   /// Requires full access.
@@ -255,10 +255,13 @@ class DeviceCalendar {
   /// Creates a calendar and returns its ID.
   ///
   /// [colorHex] is an optional `#RRGGBB` color; anything else throws
-  /// [ArgumentError]. [platformOptions] targets a specific account (see
-  /// [listSources]); without it a sensible default account is chosen (iOS:
-  /// iCloud, else local; Android: the local account type). Requires full
-  /// access.
+  /// [ArgumentError]. Requires full access.
+  ///
+  /// [android] and [ios] target a specific account (see [listSources]); each
+  /// applies only on its own platform and is ignored on the other, so shared
+  /// code can pass both. Without them a sensible default account is chosen
+  /// (iOS: iCloud, else local; Android: the local account type). See
+  /// [doc/platform-options.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/platform-options.md).
   ///
   /// Throws [DeviceCalendarException] ([DeviceCalendarError.readOnly]) when
   /// the targeted source or account type can't hold a new calendar, i.e. one
@@ -267,7 +270,8 @@ class DeviceCalendar {
   Future<String> createCalendar({
     required String name,
     String? colorHex,
-    CreateCalendarPlatformOptions? platformOptions,
+    CalendarOptionsAndroid? android,
+    CalendarOptionsIos? ios,
   }) async {
     requireNonBlank(name, name: 'name', label: 'Calendar name');
     if (colorHex != null) {
@@ -277,7 +281,7 @@ class DeviceCalendar {
     await _ensurePermission(CalendarAccessLevel.full);
     try {
       final String calendarId = await DeviceCalendarPlusPlatform.instance
-          .createCalendar(name, colorHex, platformOptions);
+          .createCalendar(name, colorHex, android: android, ios: ios);
       return calendarId;
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
@@ -483,6 +487,8 @@ class DeviceCalendar {
   /// [reminders] are lead times **before** start; each is minute-granular and
   /// must be non-negative (see
   /// [doc/reminders.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/reminders.md)).
+  ///
+  /// [android]: Android-only fields, ignored on iOS. See [EventOptionsAndroid].
   Future<String> createEvent({
     String? calendarId,
     required String title,
@@ -496,6 +502,7 @@ class DeviceCalendar {
     EventAvailability availability = EventAvailability.busy,
     RecurrenceRule? recurrenceRule,
     List<Duration>? reminders,
+    EventOptionsAndroid? android,
   }) async {
     // Validate fields. A null calendarId is valid (use the default calendar);
     // an explicit but empty/whitespace ID targets nothing — a programmer error.
@@ -535,6 +542,7 @@ class DeviceCalendar {
         availability.name,
         recurrenceRule?.toRruleString(),
         reminderMinutes,
+        android: android,
       );
       return eventId;
     } on PlatformException catch (e, stackTrace) {
@@ -604,6 +612,9 @@ class DeviceCalendar {
   /// assign, [Patch.clear] to remove. Setting [timeZone] reinterprets the
   /// wall-clock time rather than preserving the instant. Passing no fields is a
   /// no-op. Requires full access.
+  ///
+  /// [android]: Android-only fields, ignored on iOS (a call whose only change
+  /// is [android] writes nothing there). See [EventUpdateOptionsAndroid].
   Future<void> updateEvent({
     required String instanceId,
     String? title,
@@ -616,6 +627,7 @@ class DeviceCalendar {
     String? timeZone,
     EventAvailability? availability,
     Patch<List<Duration>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {
     requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
 
@@ -631,7 +643,8 @@ class DeviceCalendar {
         isAllDay == null &&
         timeZone == null &&
         availability == null &&
-        reminders == null) {
+        reminders == null &&
+        (android == null || android.isEmpty)) {
       return;
     }
 
@@ -672,6 +685,7 @@ class DeviceCalendar {
         timeZone: timeZone,
         availability: availability?.name,
         reminders: reminderMinutes,
+        android: android,
       );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
@@ -726,6 +740,10 @@ class DeviceCalendar {
   /// Returns the affected scope's event ID (the same ID for `allEvents`, the new
   /// series' ID for `thisAndFollowing`). Passing no fields is a no-op. Requires
   /// full access.
+  ///
+  /// [android]: Android-only fields across the scope, ignored on iOS (a call
+  /// whose only change is [android] writes nothing there and returns the
+  /// targeted event ID). See [EventUpdateOptionsAndroid].
   Future<String> updateRecurring(
     String instanceId,
     EventSpan span, {
@@ -740,6 +758,7 @@ class DeviceCalendar {
     EventAvailability? availability,
     Patch<RecurrenceRule>? recurrenceRule,
     Patch<List<Duration>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {
     // Validate instanceId
     requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
@@ -804,7 +823,8 @@ class DeviceCalendar {
         timeZone == null &&
         availability == null &&
         recurrenceRule == null &&
-        reminders == null) {
+        reminders == null &&
+        (android == null || android.isEmpty)) {
       return parsed.eventId;
     }
 
@@ -834,6 +854,7 @@ class DeviceCalendar {
         availability: availability?.name,
         recurrenceRule: recurrenceRulePatch,
         reminders: reminderMinutes,
+        android: android,
       );
     } on PlatformException catch (e, stackTrace) {
       final convertedException =
