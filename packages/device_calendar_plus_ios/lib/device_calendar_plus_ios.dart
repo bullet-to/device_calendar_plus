@@ -203,7 +203,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       'timeZone': timeZone,
       'availability': availability,
     };
-    final cleared = writePatchFields(fields, {
+    writePatchFields(fields, {
       'description': description,
       'location': location,
       'url': url,
@@ -211,7 +211,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     });
     // A call whose only change is Android-only has nothing for iOS to write.
     // Saving no change would still detach an occurrence, so write nothing.
-    if (_writesNothing(fields, cleared)) return;
+    if (_writesNothing(fields)) return;
     await methodChannel.invokeMethod<void>('updateEvent', <String, dynamic>{
       'eventId': eventId,
       'timestamp': timestamp,
@@ -245,7 +245,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       'timeZone': timeZone,
       'availability': availability,
     };
-    final cleared = writePatchFields(fields, {
+    writePatchFields(fields, {
       'description': description,
       'location': location,
       'url': url,
@@ -254,7 +254,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     });
     // Nothing for iOS to write, and nothing to split for thisAndFollowing:
     // the targeted scope stands.
-    if (_writesNothing(fields, cleared)) return eventId;
+    if (_writesNothing(fields)) return eventId;
     final result = await methodChannel.invokeMethod<String>(
       'updateRecurring',
       <String, dynamic>{
@@ -268,16 +268,12 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   }
 
   /// Whether an update's field changes (the payload minus the event's
-  /// identity and scope) are all empty: [writePatchFields] cleared nothing,
-  /// and every other entry is null. Judged from the field map itself, so a
-  /// new shared field is covered automatically. [cleared] is the entry
-  /// [writePatchFields] wrote, so it alone is skipped.
-  static bool _writesNothing(
-    Map<String, dynamic> fields,
-    List<String> cleared,
-  ) =>
-      cleared.isEmpty &&
-      fields.values.every((v) => v == null || identical(v, cleared));
+  /// identity and scope) are all empty: the `clearedFields` list is empty and
+  /// every other entry is null. Judged from the field map itself, so a new
+  /// shared field is covered automatically.
+  static bool _writesNothing(Map<String, dynamic> fields) =>
+      (fields['clearedFields'] as List).isEmpty &&
+      fields.entries.every((e) => e.key == 'clearedFields' || e.value == null);
 
   @override
   Future<void> deleteRecurring(

@@ -247,8 +247,11 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// converted the public `Duration` values to whole minutes.
   ///
   /// [android] carries Android-only fields, `null` ones left unchanged; the
-  /// iOS implementation ignores it. An implementation handed no field it acts
-  /// on writes nothing.
+  /// iOS implementation ignores it.
+  ///
+  /// The facade calls this only with at least one changed field, shared or
+  /// Android-only. An implementation must not write for the other platform's
+  /// options alone: iOS handed only [android] writes nothing.
   ///
   /// Requires calendar write permissions.
   Future<void> updateEvent(
@@ -293,8 +296,10 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// [Patch.clear] removes them.
   ///
   /// [android] carries Android-only fields, as in [updateEvent]; the iOS
-  /// implementation ignores it. An implementation handed no field it acts on
-  /// writes nothing and returns [eventId].
+  /// implementation ignores it. As in [updateEvent], the facade passes at
+  /// least one changed field, and an implementation must not write for the
+  /// other platform's options alone: iOS handed only [android] writes
+  /// nothing and returns [eventId].
   ///
   /// Returns the event ID for the affected scope — the same ID for
   /// `allEvents`, the new series' ID for `thisAndFollowing`.

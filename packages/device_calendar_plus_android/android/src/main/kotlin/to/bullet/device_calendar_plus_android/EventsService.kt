@@ -923,7 +923,9 @@ class EventsService(
             put(CalendarContract.Events.DTSTART, newStart)
             put(CalendarContract.Events.DURATION, "P${(newEnd - newStart) / 1000}S")
         }
-        values.putStatus(patch.status ?: series.row.status)
+        // Inherit the series' status (NULL included); applyEventFieldValues
+        // overrides it when the patch sets one.
+        values.putStatus(series.row.status)
         applyEventFieldValues(values, patch)
         if (patch.timeZone != null) {
             values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)

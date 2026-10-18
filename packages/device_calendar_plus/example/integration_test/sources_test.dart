@@ -84,6 +84,11 @@ void main() {
       final calendarId = await plugin.createCalendar(
         name: 'Source Test iOS $timestamp',
         ios: CalendarOptionsIos(sourceId: source.id),
+        // Ignored on iOS: the calendar still lands under the iOS source.
+        android: const CalendarOptionsAndroid(
+          accountName: 'ignored',
+          accountType: 'com.google',
+        ),
       );
       createdCalendarIds.add(calendarId);
 
@@ -112,6 +117,8 @@ void main() {
           accountName: source.accountName,
           accountType: source.accountType,
         ),
+        // Ignored on Android: the calendar still lands under the account.
+        ios: const CalendarOptionsIos(sourceId: 'ignored'),
       );
       createdCalendarIds.add(calendarId);
 

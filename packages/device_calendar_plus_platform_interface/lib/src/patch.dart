@@ -52,10 +52,7 @@ final class PatchClear<T> extends Patch<T> {
 ///
 /// Values cross the channel as dynamic, so fields of any serializable type
 /// (strings, `List<int>` reminder offsets, …) share the one path.
-///
-/// Returns the list written under `clearedFields`, so a caller can tell
-/// whether the call clears anything without reading it back from [args].
-List<String> writePatchFields(
+void writePatchFields(
   Map<String, dynamic> args,
   Map<String, Patch<Object?>?> fields,
 ) {
@@ -71,5 +68,4 @@ List<String> writePatchFields(
     }
   }
   args['clearedFields'] = cleared;
-  return cleared;
 }

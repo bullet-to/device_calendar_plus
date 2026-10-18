@@ -74,6 +74,11 @@ void main() {
     series.start,
   )).map((e) => e.status).toList();
 
+  /// The events in [series]' window titled [title]: an occurrence detached
+  /// under that title.
+  Future<List<Event>> detachedTitled(SeededSeries series, String title) =>
+      eventsTitled(plugin, requireCalendar(calendarId), title, series.start);
+
   group('Android event status (#70)', () {
     testWidgets('createEvent writes the status', (tester) async {
       final id = await createOneOff(
@@ -150,12 +155,7 @@ void main() {
         ),
       );
 
-      final detached = await eventsTitled(
-        plugin,
-        requireCalendar(calendarId),
-        title,
-        series.start,
-      );
+      final detached = await detachedTitled(series, title);
       expect(detached.single.status, EventStatus.confirmed);
       expect(
         await statusesOf(series, series.eventId),
@@ -175,12 +175,7 @@ void main() {
           title: title,
         );
 
-        final detached = await eventsTitled(
-          plugin,
-          requireCalendar(calendarId),
-          title,
-          series.start,
-        );
+        final detached = await detachedTitled(series, title);
         expect(detached.single.status, EventStatus.tentative);
       },
     );
@@ -270,12 +265,7 @@ void main() {
           ),
         );
 
-        final detached = await eventsTitled(
-          plugin,
-          requireCalendar(calendarId),
-          title,
-          series.start,
-        );
+        final detached = await detachedTitled(series, title);
         expect(
           detached.single.status,
           EventStatus.tentative,
@@ -344,12 +334,7 @@ void main() {
           ),
         );
 
-        final detached = await eventsTitled(
-          plugin,
-          requireCalendar(calendarId),
-          title,
-          series.start,
-        );
+        final detached = await detachedTitled(series, title);
         expect(
           detached.single.status,
           EventStatus.tentative,
