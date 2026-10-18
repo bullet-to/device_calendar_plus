@@ -1137,6 +1137,27 @@ class EventsService {
     patch: EventFieldPatch,
     dates: (start: Date?, end: Date?)
   ) -> Result<Void, CalendarError> {
+    return EventsService.detachThenFlipAllDay(
+      event, to: allDay, patch: patch, dates: dates,
+      save: { try self.eventStore.save($0, span: $1, commit: true) },
+      reset: { self.eventStore.reset() },
+      isDetached: { $0.isDetached })
+  }
+
+  /// The sequencing of `detachThenFlipAllDay(_:to:patch:dates:)`, with the
+  /// store behind three closures so a Swift test can drive it
+  /// (`DetachThenFlipAllDayTests`): `save` is a committed save at the given
+  /// span, `reset` the store's reset, and `isDetached` reads
+  /// `EKEvent.isDetached`, which EventKit owns and a test can't set.
+  static func detachThenFlipAllDay(
+    _ event: EKEvent,
+    to allDay: Bool,
+    patch: EventFieldPatch,
+    dates: (start: Date?, end: Date?),
+    save: (EKEvent, EKSpan) throws -> Void,
+    reset: () -> Void,
+    isDetached: (EKEvent) -> Bool
+  ) -> Result<Void, CalendarError> {
     // Step 1: detach. The fields, plus the timing this direction can carry
     // before the flip: the all-day span as timed dates (timed -> all-day),
     // or nothing but the zone write (all-day -> timed), a no-op value whose
@@ -1147,11 +1168,11 @@ class EventsService {
       to: event, isAllDay: nil,
       start: allDay ? dates.start : nil,
       end: allDay ? dates.end : nil)
-    if case .failure(let error) = saveThisEvent(event) {
+    if case .failure(let error) = saveThisEvent(event, save: save) {
       return .failure(error)
     }
-    guard event.isDetached else {
-      eventStore.reset()
+    guard isDetached(event) else {
+      reset()
       return .failure(CalendarError(
         code: PlatformExceptionCodes.operationFailed,
         message: "The occurrence did not detach before its all-day flag could be flipped; it is unchanged"
@@ -1163,7 +1184,8 @@ class EventsService {
       to: event, isAllDay: allDay, start: dates.start, end: dates.end)
     return saveThisEvent(
       event,
-      orFail: "Failed to flip the detached occurrence's all-day flag (it is detached, flag unchanged)"
+      orFail: "Failed to flip the detached occurrence's all-day flag (it is detached, flag unchanged)",
+      save: save
     )
   }
 
@@ -1174,8 +1196,20 @@ class EventsService {
     _ event: EKEvent,
     orFail failure: String = "Failed to update event"
   ) -> Result<Void, CalendarError> {
+    return EventsService.saveThisEvent(
+      event, orFail: failure,
+      save: { try self.eventStore.save($0, span: $1, commit: true) })
+  }
+
+  /// `saveThisEvent(_:orFail:)` through `save`, a committed save at the given
+  /// span: the form the static `detachThenFlipAllDay` saves through.
+  private static func saveThisEvent(
+    _ event: EKEvent,
+    orFail failure: String = "Failed to update event",
+    save: (EKEvent, EKSpan) throws -> Void
+  ) -> Result<Void, CalendarError> {
     do {
-      try eventStore.save(event, span: .thisEvent, commit: true)
+      try save(event, .thisEvent)
       return .success(())
     } catch {
       return .failure(CalendarError(
