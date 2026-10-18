@@ -1114,7 +1114,8 @@ class EventsService {
   /// occurrence, then the flip with the dates. EventKit's iCloud store gets
   /// a detach and a flip in one save wrong in both directions (#210, #212);
   /// the local store, and so the simulator, gets it right, so only a
-  /// signed-in iPhone can see a regression here. CONTRIBUTING ("The iCloud
+  /// signed-in iPhone can see the bug; `DetachThenFlipAllDayTests` pins the
+  /// two-save sequence through the static form below. CONTRIBUTING ("The iCloud
   /// two-step save needs a signed-in iPhone") has the symptoms, the tests
   /// and the run.
   ///
