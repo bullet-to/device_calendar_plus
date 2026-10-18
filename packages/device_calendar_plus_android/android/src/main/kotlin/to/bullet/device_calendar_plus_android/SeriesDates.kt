@@ -132,17 +132,11 @@ internal class SplitShift private constructor(
             val target = Calendar.getInstance(tz).apply { timeInMillis = toAnchor }
             val from = frameChange.convert(fromAnchor)
             val slotDayDelta = calendarDaysBetween(from, toAnchor, tz)
-            // A toggle to timed keeps the calendar-day count, as before #224
-            // (not checked against EventKit): its converted anchor sits at
-            // local midnight but [toAnchor] can carry any time of day, so
-            // the wall-clock count would differ on a backward move (-1d+9h
-            // truncates to 0, not -1). Everything else reads the wall-clock
-            // shift, which for all-day (UTC, midnight both sides) and a
-            // toggle to all-day is already the calendar-day count.
-            val startDayDelta = if (frameChange is FrameChange.ToTimed) {
-                slotDayDelta
-            } else {
+            // See [FrameChange.hasComparableTimeOfDay].
+            val startDayDelta = if (frameChange.hasComparableTimeOfDay) {
                 wholeWallClockDaysBetween(from, toAnchor, tz)
+            } else {
+                slotDayDelta
             }
             return SplitShift(
                 frameChange = frameChange,

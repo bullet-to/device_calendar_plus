@@ -84,9 +84,21 @@ internal fun resolveEditedBounds(
 internal sealed class FrameChange {
     abstract fun convert(millis: Long): Long
 
+    /**
+     * Whether [convert]'s result has a time of day that can be compared
+     * with the post-edit anchor's, so [SplitShift] can read a detached
+     * occurrence's day count off the wall-clock shift between them (#224).
+     * False when [convert] makes up the time of day, so the shift falls
+     * back to the calendar-day count.
+     */
+    abstract val hasComparableTimeOfDay: Boolean
+
     /** The edit keeps the all-day flag, so the frame doesn't change. */
     object None : FrameChange() {
         override fun convert(millis: Long): Long = millis
+
+        /** The stored time of day, unchanged. */
+        override val hasComparableTimeOfDay = true
     }
 
     /**
@@ -96,6 +108,12 @@ internal sealed class FrameChange {
     data class ToAllDay(val deviceZone: TimeZone) : FrameChange() {
         override fun convert(millis: Long): Long =
             AllDayDates.localDateToUtcMidnight(millis, deviceZone)
+
+        /**
+         * Midnight, the same time of day as the all-day anchor it's read
+         * against, so the wall-clock shift is the calendar-day count.
+         */
+        override val hasComparableTimeOfDay = true
     }
 
     /**
@@ -105,6 +123,15 @@ internal sealed class FrameChange {
     data class ToTimed(val deviceZone: TimeZone) : FrameChange() {
         override fun convert(millis: Long): Long =
             AllDayDates.utcToLocalMidnight(millis, deviceZone)
+
+        /**
+         * A made-up local midnight, while the timed anchor it's read
+         * against can carry any time of day: the wall-clock shift would
+         * truncate a backward move such as -1d+9h to 0, not -1. So a toggle
+         * to timed keeps the calendar-day count, as before #224 (not
+         * checked against EventKit).
+         */
+        override val hasComparableTimeOfDay = false
     }
 
     companion object {

@@ -7,9 +7,10 @@ import kotlin.test.assertEquals
 /**
  * [SplitShift] moves a series' slots by the whole calendar days its anchor
  * moved, and a detached occurrence's start by the whole 24h wall-clock days
- * in the shift, both in the series' zone, never by the raw millisecond
- * shift: across a DST change the two differ by an hour (#158). New York's 2026 transitions are
- * March 8 (spring forward) and November 1 (fall back).
+ * in the shift, both in the series' zone. Not by the raw millisecond
+ * shift: either count differs from it by an hour across a DST change
+ * (#158). New York's 2026 transitions are March 8 (spring forward) and
+ * November 1 (fall back).
  */
 internal class SplitShiftTest {
     private val newYork = TimeZone.getTimeZone("America/New_York")

@@ -2,12 +2,11 @@
 
 ### Fixed
 - Android: `updateRecurring` with `EventSpan.thisAndFollowing` and a
-  `start` shift that crosses midnight in the series' time zone without a
-  whole 24h day in it (23:30 to 00:30, say) leaves the occurrences the user
-  had moved past the split where they are, as iOS does. Android moved them a
-  day with the series. A detached occurrence now moves by the whole 24h days
-  in the shift, as on iOS. iOS still pairs it with a neighbouring slot of
-  the new series, which Android doesn't copy (#224).
+  sub-day `start` shift across midnight (23:30 to 00:30, say) no longer
+  moves the occurrences the user had moved past the split a day, matching
+  iOS. See
+  [Customised occurrences](doc/recurring-events.md#customised-occurrences)
+  (#224).
 - Android: `updateEvent` with `isAllDay: false` and no dates keeps an
   all-day event or occurrence on its own days, from local midnight of the
   first to the last second of the last, as on iOS. West of UTC it read back
