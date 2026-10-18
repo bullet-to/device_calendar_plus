@@ -365,13 +365,18 @@ void main() {
     );
 
     testWidgets('createEvent ignores them', (tester) async {
+      final baseline = await plugin.getEvent(await createOneOff());
       final id = await createOneOff(
         android: const EventOptionsAndroid(status: EventStatusAndroid.canceled),
       );
 
       final event = await plugin.getEvent(id);
       expect(event, isNotNull);
-      expect(event!.status, isNot(EventStatus.canceled));
+      expect(
+        event!.status,
+        baseline!.status,
+        reason: 'the same as passing no options',
+      );
     });
 
     testWidgets('updateEvent with only them changes nothing', (tester) async {
@@ -387,6 +392,7 @@ void main() {
       tester,
     ) async {
       final id = await createOneOff();
+      final before = await plugin.getEvent(id);
 
       await plugin.updateEvent(
         instanceId: id,
@@ -396,7 +402,7 @@ void main() {
 
       final event = await plugin.getEvent(id);
       expect(event!.title, 'Renamed on iOS');
-      expect(event.status, isNot(EventStatus.canceled));
+      expect(event.status, before!.status);
     });
 
     testWidgets('an occurrence edit with only them detaches nothing', (

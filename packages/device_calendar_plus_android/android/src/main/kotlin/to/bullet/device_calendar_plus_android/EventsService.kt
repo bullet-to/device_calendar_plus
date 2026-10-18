@@ -879,19 +879,6 @@ class EventsService(
     }
 
     /**
-     * Puts [status] as the STATUS column of a row [values] inserts, NULL
-     * included: a row copied from one with no status gets none. An insert
-     * takes a NULL; an update can't (see [EventFieldPatch.status]).
-     */
-    private fun putStatus(values: android.content.ContentValues, status: Int?) {
-        if (status != null) {
-            values.put(CalendarContract.Events.STATUS, status)
-        } else {
-            values.putNull(CalendarContract.Events.STATUS)
-        }
-    }
-
-    /**
      * Detaches the occurrence at [timestamp] from its recurring series as an
      * exception and applies the changes to it alone. The instance-ID path of
      * [updateEvent]; [startDate] and [endDate] are absolute instants, so the
@@ -936,9 +923,7 @@ class EventsService(
             put(CalendarContract.Events.DTSTART, newStart)
             put(CalendarContract.Events.DURATION, "P${(newEnd - newStart) / 1000}S")
         }
-        // The base row keeps the series' status; applyEventFieldValues then
-        // overwrites it with the edit's own, if it sets one (the patch wins).
-        putStatus(values, series.row.status)
+        values.putStatus(patch.status ?: series.row.status)
         applyEventFieldValues(values, patch)
         if (patch.timeZone != null) {
             values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)
@@ -1487,7 +1472,7 @@ class EventsService(
         }
         // Written even when null, so the new series has the status the edit
         // resolved to rather than whatever the provider fills in.
-        putStatus(values, status)
+        values.putStatus(status)
         val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
         val newId = uri?.lastPathSegment
         return if (newId != null) {
