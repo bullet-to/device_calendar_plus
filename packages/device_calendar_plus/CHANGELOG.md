@@ -1,6 +1,12 @@
 ## Unreleased
 
 ### Fixed
+- Android: `updateRecurring` with `EventSpan.thisAndFollowing` and a
+  sub-day `start` shift across midnight (23:30 to 00:30, say) no longer
+  moves the occurrences the user had moved past the split a day, matching
+  iOS. See
+  [Customised occurrences](doc/recurring-events.md#customised-occurrences)
+  (#224).
 - Android: `updateEvent` with `isAllDay: false` and no dates keeps an
   all-day event or occurrence on its own days, from local midnight of the
   first to the last second of the last, as on iOS. West of UTC it read back

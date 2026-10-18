@@ -199,6 +199,19 @@ individually moved or deleted. Customisations before a `thisAndFollowing` split
 point survive; customisations at or after the split point (or anywhere, for
 `allEvents`) may be reset.
 
+A `thisAndFollowing` split that also moves `start` moves an occurrence the user
+had moved past the split point too: by the whole 24-hour days in the start's
+shift, rounded toward zero, keeping its own time of day. That is how EventKit
+moves it, and Android matches. A shift with no whole day in it leaves the
+occurrence where it is, even when it crosses midnight in the series' time zone
+and so moves the series to the next (or previous) day: 23:30 to 00:30 leaves it
+alone, and 14:00 to 15:00 the next day moves it a day.
+
+Which slot of the new series such a kept occurrence stands in for differs on a
+midnight-crossing shift. Android skips the occurrence's own slot. iOS pairs it
+with the slot before: in a daily series with the seventh occurrence moved, it
+skips the sixth's slot and lists the seventh's beside the moved occurrence.
+
 ## Deleting a series
 
 `deleteRecurring` takes the same `EventSpan`:
