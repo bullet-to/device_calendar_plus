@@ -1337,6 +1337,61 @@ class EventsService {
     }
   }
 
+  /// Splits the all-day series at `occurrence` and flips the new series
+  /// timed, in two saves: the split with every other change first, which
+  /// EventKit divides as it divides any all-day split, then the flip, with
+  /// `start` and `end` when the edit moves them, on the new series alone.
+  ///
+  /// EventKit gets the split wrong when it flips the occurrence in the same
+  /// save: it counts the occurrences before the split against the
+  /// occurrence's new timed start, with the all-day dates read in another
+  /// frame. Across a DST change the new series loses its last occurrence,
+  /// and west of UTC the original keeps the split occurrence on any date.
+  ///
+  /// The first save carries a fresh copy of the rule (`rule`, or the
+  /// series' own when the edit keeps it as loaded): a set rule makes the
+  /// save a series edit (`SeriesRuleWrite.set`), so it splits even when the
+  /// toggle is the only change. The second saves the new series whole, so a
+  /// rule set again for a day move (#206) is set again there, as a fresh
+  /// copy of the split's, its count already left to the new series. The
+  /// first save is staged and the second commits both; a failure resets the
+  /// store, leaving the calendar as it was.
+  private func splitThenFlipToTimed(
+    _ occurrence: EKEvent,
+    patch: EventFieldPatch,
+    rule: SeriesRuleWrite,
+    start: Date?,
+    end: Date?,
+    fallbackId: String
+  ) -> Result<String, CalendarError> {
+    let setsRule: Bool
+    switch rule {
+    case .set(let newRule):
+      occurrence.recurrenceRules = [newRule]
+      setsRule = true
+    case .leaveAsLoaded, .clear:
+      occurrence.recurrenceRules = occurrence.recurrenceRules?.first
+        .map { [SeriesDates.ruleCopy($0)] }
+      setsRule = false
+    }
+    patch.applyFields(to: occurrence)
+    do {
+      try eventStore.save(occurrence, span: .futureEvents, commit: false)
+      patch.applyTiming(to: occurrence, isAllDay: false, start: start, end: end)
+      if setsRule, let split = occurrence.recurrenceRules?.first {
+        occurrence.recurrenceRules = [SeriesDates.ruleCopy(split)]
+      }
+      try eventStore.save(occurrence, span: .futureEvents, commit: true)
+      return .success(occurrence.eventIdentifier ?? fallbackId)
+    } catch {
+      eventStore.reset()
+      return .failure(CalendarError(
+        code: PlatformExceptionCodes.operationFailed,
+        message: "Failed to update recurring event: \(error.localizedDescription)"
+      ))
+    }
+  }
+
   /// Updates a recurring event, choosing which occurrences the edit affects.
   ///
   /// `span` is "allEvents" (the whole series) or "thisAndFollowing" (split the
@@ -1424,6 +1479,19 @@ class EventsService {
     case .failure(let error):
       completion(.failure(error))
       return
+    }
+
+    // A split that flips an all-day series timed saves in two steps
+    // (splitThenFlipToTimed); a cleared rule takes the hand-made split below.
+    if span == "thisAndFollowing", timestamp != nil,
+       foundEvent.isAllDay, !effectiveIsAllDay {
+      if case .clear = resolved.rule {} else {
+        completion(splitThenFlipToTimed(
+          foundEvent, patch: patch, rule: resolved.rule,
+          start: newEnd == nil ? nil : newStart, end: newEnd,
+          fallbackId: eventId))
+        return
+      }
     }
 
     // Apply the field changes, and the new times when the change moves them.

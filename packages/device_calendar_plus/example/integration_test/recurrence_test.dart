@@ -3589,11 +3589,13 @@ void main() {
       );
     });
 
-    test(
-        'thisAndFollowing toggling an all-day series timed with no start '
-        'keeps every new occurrence on its calendar day', () async {
+    /// Splits an all-day weekly series seeded on [day] at its third
+    /// occurrence with a bare toggle to timed, and asserts the new series
+    /// holds every occurrence from the split on, each timed on its own
+    /// calendar day, and the original only those before the split.
+    Future<void> expectAllDayToTimedSplit(String title, DateTime day) async {
       final seeded = await seedWeeklySeries(plugin, calendarId,
-          title: 'All-day To Timed Split', isAllDay: true);
+          title: title, isAllDay: true, start: day, count: seedCount);
       final before = seeded.occurrences;
       final split = before[2];
 
@@ -3603,12 +3605,37 @@ void main() {
         isAllDay: false,
       );
 
+      // A day early so a local midnight east of UTC is still in the window.
+      final from = seeded.start.subtract(const Duration(days: 1));
       expectTimedOnOwnDays(
-        await occurrencesOf(plugin, calendarId!, newSeriesId,
-            seeded.start.subtract(const Duration(days: 1)),
+        await occurrencesOf(plugin, calendarId!, newSeriesId, from,
             windowDays: 31),
         before.sublist(2),
       );
+      expectTruncatedMaster(
+        await occurrencesOf(plugin, calendarId!, seeded.eventId, from,
+            windowDays: 31),
+        before: split.startDate,
+      );
+    }
+
+    test(
+        'thisAndFollowing toggling an all-day series timed with no start '
+        'keeps every new occurrence on its calendar day', () async {
+      await expectAllDayToTimedSplit('All-day To Timed Split', seedDay);
+    });
+
+    // The split above with the device zone's DST change between the
+    // series' start and the split. iOS let EventKit split the all-day
+    // series and flip it timed in one save, and EventKit counted the
+    // occurrences before the split in the wrong frame: the new series lost
+    // its last occurrence across the change, and west of UTC the original
+    // also kept the split occurrence, on any date.
+    test(
+        'thisAndFollowing toggling an all-day series timed with no start from '
+        'an occurrence past a DST change keeps every new occurrence on its '
+        'calendar day', () async {
+      await expectAllDayToTimedSplit('All-day To Timed Split DST', dstSeedDay);
     });
   });
 
