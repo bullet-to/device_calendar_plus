@@ -158,4 +158,35 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
       XCTAssertEqual((error as? CalendarError)?.code, PlatformExceptionCodes.operationFailed)
     }
   }
+
+  /// A throwing first save fails the update and never reaches the flip.
+  func testFailsWithoutFlippingWhenStepOneThrows() {
+    fake.throwingSave = 1
+
+    let result = flip(
+      timedOccurrence(), to: true, patch: [:],
+      dates: (at(losAngeles, 3, 10), endOfDay(losAngeles, 3, 10)))
+
+    XCTAssertEqual(fake.saves.count, 1)
+    XCTAssertThrowsError(try result.get()) { error in
+      XCTAssertEqual((error as? CalendarError)?.code, PlatformExceptionCodes.operationFailed)
+    }
+  }
+
+  /// A throwing second save fails the update, saying the occurrence was left
+  /// detached but unflipped.
+  func testFailsSayingTheOccurrenceIsDetachedWhenStepTwoThrows() {
+    fake.throwingSave = 2
+
+    let result = flip(
+      timedOccurrence(), to: true, patch: [:],
+      dates: (at(losAngeles, 3, 10), endOfDay(losAngeles, 3, 10)))
+
+    XCTAssertEqual(fake.saves.count, 2)
+    XCTAssertThrowsError(try result.get()) { error in
+      let error = error as? CalendarError
+      XCTAssertEqual(error?.code, PlatformExceptionCodes.operationFailed)
+      XCTAssertTrue(error?.message.contains("it is detached") ?? false, error?.message ?? "")
+    }
+  }
 }
