@@ -114,6 +114,19 @@ internal class SplitShiftTest {
         assertEquals(ny(3, 13, 16), shift.start(ny(3, 10, 16)))
     }
 
+    // A toggle to timed counts the calendar days, as before #224: the
+    // converted anchor sits at New York midnight on June 5, so a move back
+    // to 9:00 on June 4 is one calendar day back, though on the wall clock
+    // it is only 15h (which truncated would be no days).
+    @Test
+    fun start_toTimedToggleMovedBack_countsCalendarDays() {
+        val shift = SplitShift.of(
+            instantAt(utc, 2026, 6, 5), ny(6, 4, 9), newYork,
+            isAllDay = false, frameChange = FrameChange.ToTimed(newYork),
+        )
+        assertEquals(instantAt(utc, 2026, 6, 9), shift.start(instantAt(utc, 2026, 6, 10)))
+    }
+
     // No move leaves every date where it was.
     @Test
     fun slotAndStart_sameAnchor_areIdentity() {

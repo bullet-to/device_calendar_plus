@@ -27,10 +27,12 @@ internal fun calendarDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone)
 
 /**
  * A series' anchor moved from one instant to another, as a rule for moving
- * the rest of the series with it: by the whole calendar days the anchor
- * moved, counted in the series' time zone [tz] (see [seriesTimeZone]). Not
- * by the raw millisecond shift, which a DST change between the anchor and
- * a later date would put an hour off. The anchor-shift that lets
+ * the rest of the series with it: its slots by the whole calendar days the
+ * anchor moved, and its detached occurrences' starts by the whole 24h
+ * wall-clock days in the anchor's shift, both counted in the series' time
+ * zone [tz] (see [seriesTimeZone]). Not by the raw millisecond shift, which
+ * a DST change between the anchor and a later date would put an hour off.
+ * The anchor-shift that lets
  * [EventsService.updateRecurring] move both the time and the day of a
  * series (#103), and where a `thisAndFollowing` split carries what it
  * carries (#158); iOS's counterparts are `SeriesDates.shiftStart` and
@@ -52,9 +54,10 @@ internal fun calendarDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone)
  * [startDayDelta] is the anchor's wall-clock shift (the calendar days plus
  * the change in time of day) in whole days, truncated toward zero. Read on
  * the wall clock rather than raw, a DST change between the anchors doesn't
- * turn a whole-day move into a day less. A move that keeps the time of day,
- * an all-day series and an all-day toggle ([FrameChange]) all count the
- * calendar days, as before.
+ * turn a whole-day move into a day less. A move that keeps the time of day
+ * and an all-day series (midnight on both sides) come out at the calendar
+ * days either way. A toggle to timed ([FrameChange.ToTimed]) counts the
+ * calendar days, as before #224, not checked against EventKit.
  *
  * EventKit also pairs the kept occurrence with the slot before its own on
  * such a shift (it skips [5]'s slot, not [6]'s, for [6]): Android doesn't
@@ -120,15 +123,18 @@ internal class SplitShift private constructor(
             val target = Calendar.getInstance(tz).apply { timeInMillis = toAnchor }
             val from = frameChange.convert(fromAnchor)
             val dayDelta = calendarDaysBetween(from, toAnchor, tz)
-            // Only a timed shift that stays in its frame can change its time
-            // of day: an all-day one is at midnight on both sides, and a
-            // toggle's converted anchor is at its frame's midnight (#186).
-            val startDayDelta = if (isAllDay || frameChange != FrameChange.None) {
+            // A toggle to timed keeps the calendar-day count, as before #224
+            // (not checked against EventKit): its converted anchor sits at
+            // local midnight but [toAnchor] can carry any time of day, so
+            // the wall-clock count would differ on a backward move (-1d+9h
+            // truncates to 0, not -1). Everything else reads the wall-clock
+            // shift, which for all-day (UTC, midnight both sides) and a
+            // toggle to all-day is already the calendar-day count.
+            val startDayDelta = if (frameChange is FrameChange.ToTimed) {
                 dayDelta
             } else {
-                val wallClockShift = dayDelta * AllDayDates.MILLIS_PER_DAY +
-                    wallClockTimeOfDay(toAnchor, tz) - wallClockTimeOfDay(from, tz)
-                (wallClockShift / AllDayDates.MILLIS_PER_DAY).toInt()
+                fun wallClock(x: Long) = x + tz.getOffset(x)
+                ((wallClock(toAnchor) - wallClock(from)) / AllDayDates.MILLIS_PER_DAY).toInt()
             }
             return SplitShift(
                 frameChange = frameChange,
@@ -140,13 +146,6 @@ internal class SplitShift private constructor(
                 second = if (isAllDay) 0 else target.get(Calendar.SECOND),
                 millisecond = if (isAllDay) 0 else target.get(Calendar.MILLISECOND),
             )
-        }
-
-        /** Millis since local midnight of [millis]'s wall-clock time in [tz]. */
-        private fun wallClockTimeOfDay(millis: Long, tz: TimeZone): Long {
-            val cal = Calendar.getInstance(tz).apply { timeInMillis = millis }
-            return ((cal.get(Calendar.HOUR_OF_DAY) * 60L + cal.get(Calendar.MINUTE)) * 60L +
-                cal.get(Calendar.SECOND)) * 1000L + cal.get(Calendar.MILLISECOND)
         }
     }
 }

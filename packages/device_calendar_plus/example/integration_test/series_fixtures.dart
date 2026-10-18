@@ -24,44 +24,38 @@ typedef SeriesFactory = Future<({String eventId, DateTime start})> Function(
   int count,
 });
 
-/// Tomorrow (by the UTC date) at 14:00 UTC: the start for a series stored
-/// in UTC whose test moves it, or its occurrences, by a few hours and
-/// expects that to stay a time-only move. A shift of under ten hours either
-/// way stays on the start's UTC date. Seeded at "an hour from now" instead,
-/// a run between 22:00 and 23:00 UTC let an hour's shift cross UTC
-/// midnight, and the tests failed only in that hour (#222).
-DateTime _midUtcDayTomorrow() {
+/// Tomorrow (by the UTC date) at [hour]:[minute] UTC: the start for a
+/// series stored in UTC whose test needs to know which side of UTC midnight
+/// a shift of a few hours lands on.
+DateTime _utcTomorrowAt(int hour, [int minute = 0]) {
   final now = DateTime.now().toUtc();
-  return DateTime.utc(now.year, now.month, now.day + 1, 14);
+  return DateTime.utc(now.year, now.month, now.day + 1, hour, minute);
 }
 
-/// A daily series factory that starts at [_midUtcDayTomorrow], for
-/// [seedSeries].
+/// A daily series factory for [seedSeries] that starts tomorrow at 14:00
+/// UTC, for a test that moves the series, or its occurrences, by a few hours
+/// and expects that to stay a time-only move. A shift of under ten hours
+/// either way stays on the start's UTC date. Seeded at "an hour from now"
+/// instead, a run between 22:00 and 23:00 UTC let an hour's shift cross UTC
+/// midnight, and the tests failed only in that hour (#222).
 Future<({String eventId, DateTime start})> createMidUtcDayDailySeries(
   DeviceCalendar plugin,
   String calendarId, {
   int count = 10,
 }) =>
     createDailySeries(plugin, calendarId,
-        count: count, start: _midUtcDayTomorrow());
+        count: count, start: _utcTomorrowAt(14));
 
-/// Tomorrow (by the UTC date) at 23:30 UTC: the start for a series stored
-/// in UTC whose test needs a shift of an hour or so to cross UTC midnight,
-/// as [_midUtcDayTomorrow] makes sure it doesn't (#224).
-DateTime _lateUtcDayTomorrow() {
-  final now = DateTime.now().toUtc();
-  return DateTime.utc(now.year, now.month, now.day + 1, 23, 30);
-}
-
-/// A daily series factory that starts at [_lateUtcDayTomorrow], for
-/// [seedSeries].
+/// A daily series factory for [seedSeries] that starts tomorrow at 23:30
+/// UTC, for a test that needs a shift of an hour or so to cross UTC
+/// midnight, as [createMidUtcDayDailySeries] makes sure it doesn't (#224).
 Future<({String eventId, DateTime start})> createLateUtcDayDailySeries(
   DeviceCalendar plugin,
   String calendarId, {
   int count = 10,
 }) =>
     createDailySeries(plugin, calendarId,
-        count: count, start: _lateUtcDayTomorrow());
+        count: count, start: _utcTomorrowAt(23, 30));
 
 /// A seeded series: its event ID and start, and its occurrences as listed
 /// right after it was created — the baseline a per-occurrence test compares
