@@ -84,10 +84,13 @@ enum AttendeeStatus {
 
 /// A participant in a calendar event (read-only).
 ///
-/// Attendees are populated when fetching events. Neither platform supports
-/// programmatic attendee creation through this plugin — use
-/// [DeviceCalendar.showCreateEventModal] to let users add attendees via
-/// the native UI.
+/// Attendees are populated when fetching events, on both platforms. Writing
+/// them is Android only, since iOS EventKit can't add attendees: pass
+/// `AttendeeAndroid` rows through `EventOptionsAndroid.attendees` or
+/// `EventUpdateOptionsAndroid.attendees`, which use Android's own column
+/// values rather than [AttendeeRole] and [AttendeeStatus]. On iOS, use
+/// [DeviceCalendar.showCreateEventModal] to let users add attendees via the
+/// native UI.
 class Attendee {
   /// Display name of the attendee.
   final String? name;

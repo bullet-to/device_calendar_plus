@@ -10,8 +10,11 @@
 // platform: if the other platform later gets a similar feature, it gets its
 // own type with its own semantics.
 //
-// Every class is immutable, with optional named fields and value equality, so
-// adding a field later is not a breaking change.
+// Every options class is immutable, with optional named fields and value
+// equality, so adding a field later is not a breaking change. The values they
+// carry (such as AttendeeAndroid) are immutable with value equality too.
+
+import 'patch.dart';
 
 /// An Android event's `STATUS` column, as `CalendarContract.Events` defines
 /// it: `STATUS_TENTATIVE`, `STATUS_CONFIRMED` and `STATUS_CANCELED`.
@@ -37,12 +40,159 @@ enum EventStatusAndroid {
   canceled,
 }
 
+/// An Android attendee's `ATTENDEE_TYPE`, as `CalendarContract.Attendees`
+/// defines it.
+///
+/// Android's own value set, not the shared `AttendeeRole`: it is written
+/// straight to the column, with Android's semantics.
+enum AttendeeTypeAndroid {
+  /// `CalendarContract.Attendees.TYPE_NONE`.
+  none,
+
+  /// `CalendarContract.Attendees.TYPE_REQUIRED`.
+  required,
+
+  /// `CalendarContract.Attendees.TYPE_OPTIONAL`.
+  optional,
+
+  /// `CalendarContract.Attendees.TYPE_RESOURCE`: a room or piece of
+  /// equipment rather than a person.
+  resource,
+}
+
+/// An Android attendee's `ATTENDEE_RELATIONSHIP`, as
+/// `CalendarContract.Attendees` defines it.
+///
+/// Android's own value set, written straight to the column.
+enum AttendeeRelationshipAndroid {
+  /// `CalendarContract.Attendees.RELATIONSHIP_NONE`.
+  none,
+
+  /// `CalendarContract.Attendees.RELATIONSHIP_ATTENDEE`.
+  attendee,
+
+  /// `CalendarContract.Attendees.RELATIONSHIP_ORGANIZER`.
+  ///
+  /// The provider takes an organizer row's email as the event's
+  /// `ORGANIZER`. The shared `Event.attendees` skips organizer rows, so an
+  /// attendee written with this relationship isn't read back there.
+  organizer,
+
+  /// `CalendarContract.Attendees.RELATIONSHIP_PERFORMER`.
+  performer,
+
+  /// `CalendarContract.Attendees.RELATIONSHIP_SPEAKER`.
+  speaker,
+}
+
+/// An Android attendee's `ATTENDEE_STATUS`, as `CalendarContract.Attendees`
+/// defines it.
+///
+/// Android's own value set, not the shared `AttendeeStatus`: it is written
+/// straight to the column, with Android's semantics.
+enum AttendeeStatusAndroid {
+  /// `CalendarContract.Attendees.ATTENDEE_STATUS_NONE`.
+  none,
+
+  /// `CalendarContract.Attendees.ATTENDEE_STATUS_ACCEPTED`.
+  accepted,
+
+  /// `CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED`.
+  declined,
+
+  /// `CalendarContract.Attendees.ATTENDEE_STATUS_INVITED`.
+  invited,
+
+  /// `CalendarContract.Attendees.ATTENDEE_STATUS_TENTATIVE`.
+  tentative,
+}
+
+/// One `CalendarContract.Attendees` row to write, Android only.
+///
+/// iOS EventKit can't add attendees to an event, so attendees are written
+/// only through [EventOptionsAndroid.attendees] and
+/// [EventUpdateOptionsAndroid.attendees]. Each field is the Attendees
+/// column of the same name, with Android's own semantics; reads come back
+/// through the shared, read-only `Event.attendees` on both platforms.
+///
+/// **Synced calendars send real invitations.** On a Google or Exchange
+/// calendar the account's sync adapter uploads these rows, and the server
+/// may email an invitation (or a cancellation, when a row is removed) to
+/// every [email]. It may also rewrite the rows on the next sync: fill in a
+/// [name], change a [status] as people respond, or drop an address it
+/// can't resolve. On a local calendar the rows stay as written and nobody
+/// is contacted.
+class AttendeeAndroid {
+  /// Creates an attendee row to write.
+  const AttendeeAndroid({
+    required this.email,
+    this.name,
+    this.type = AttendeeTypeAndroid.required,
+    this.relationship = AttendeeRelationshipAndroid.attendee,
+    this.status = AttendeeStatusAndroid.invited,
+  });
+
+  /// The attendee's `ATTENDEE_EMAIL`. Must not be blank.
+  ///
+  /// On a synced calendar the server may email an invitation to it.
+  final String email;
+
+  /// The attendee's `ATTENDEE_NAME`, or `null` to write none. A synced
+  /// calendar's server may fill one in from the address.
+  final String? name;
+
+  /// The attendee's `ATTENDEE_TYPE`. Defaults to
+  /// [AttendeeTypeAndroid.required], what Android's own calendar app writes
+  /// for a guest.
+  final AttendeeTypeAndroid type;
+
+  /// The attendee's `ATTENDEE_RELATIONSHIP`. Defaults to
+  /// [AttendeeRelationshipAndroid.attendee]. See
+  /// [AttendeeRelationshipAndroid.organizer] for how an organizer row is
+  /// treated.
+  final AttendeeRelationshipAndroid relationship;
+
+  /// The attendee's `ATTENDEE_STATUS`. Defaults to
+  /// [AttendeeStatusAndroid.invited], a guest who hasn't answered yet. On a
+  /// synced calendar the server changes it as the attendee responds.
+  final AttendeeStatusAndroid status;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AttendeeAndroid &&
+      other.email == email &&
+      other.name == name &&
+      other.type == type &&
+      other.relationship == relationship &&
+      other.status == status;
+
+  @override
+  int get hashCode => Object.hash(email, name, type, relationship, status);
+
+  @override
+  String toString() => 'AttendeeAndroid(email: $email, name: $name, '
+      'type: $type, relationship: $relationship, status: $status)';
+}
+
+/// Whether two attendee lists hold equal attendees in the same order.
+bool _attendeesEqual(List<AttendeeAndroid>? a, List<AttendeeAndroid>? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null || a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+int _attendeesHash(List<AttendeeAndroid>? attendees) =>
+    attendees == null ? null.hashCode : Object.hashAll(attendees);
+
 /// Android-only options for `createEvent`.
 ///
 /// Applies only on Android; ignored on iOS.
 class EventOptionsAndroid {
   /// Creates Android-only options for a new event.
-  const EventOptionsAndroid({this.status});
+  const EventOptionsAndroid({this.status, this.attendees});
 
   /// The new event's `CalendarContract.Events.STATUS`.
   ///
@@ -52,25 +202,37 @@ class EventOptionsAndroid {
   /// overwrite it on the next sync.
   final EventStatusAndroid? status;
 
+  /// The new event's `CalendarContract.Attendees` rows, one per entry, or
+  /// `null` (or empty) to write none.
+  ///
+  /// Android only: iOS EventKit can't add attendees. Written with the event
+  /// in one transaction. **On a synced calendar the server may email each
+  /// address an invitation**, and may rewrite the rows (see
+  /// [AttendeeAndroid]).
+  final List<AttendeeAndroid>? attendees;
+
   @override
   bool operator ==(Object other) =>
-      other is EventOptionsAndroid && other.status == status;
+      other is EventOptionsAndroid &&
+      other.status == status &&
+      _attendeesEqual(other.attendees, attendees);
 
   @override
-  int get hashCode => status.hashCode;
+  int get hashCode => Object.hash(status, _attendeesHash(attendees));
 
   @override
-  String toString() => 'EventOptionsAndroid(status: $status)';
+  String toString() =>
+      'EventOptionsAndroid(status: $status, attendees: $attendees)';
 }
 
 /// Android-only options for `updateEvent` and `updateRecurring`.
 ///
 /// Applies only on Android; ignored on iOS. A `null` field leaves the event's
-/// value unchanged. A field Android lets you remove would take a `Patch`, as
-/// `updateEvent`'s description does.
+/// value unchanged. A field Android lets you remove takes a `Patch`, as
+/// `updateEvent`'s description does: [attendees].
 class EventUpdateOptionsAndroid {
   /// Creates Android-only options for an event update.
-  const EventUpdateOptionsAndroid({this.status});
+  const EventUpdateOptionsAndroid({this.status, this.attendees});
 
   /// The event's new `CalendarContract.Events.STATUS`, or `null` to leave
   /// it unchanged.
@@ -90,19 +252,61 @@ class EventUpdateOptionsAndroid {
   /// occurrence out of listings (see there).
   final EventStatusAndroid? status;
 
+  /// The event's new `CalendarContract.Attendees` rows: `null` leaves them
+  /// unchanged, [Patch.set] replaces them with the list, [Patch.clear]
+  /// removes them.
+  ///
+  /// Android only: iOS EventKit can't add or remove attendees. A set or a
+  /// clear replaces every attendee row except the organizer's
+  /// (`RELATIONSHIP_ORGANIZER`), which the shared `Event.attendees` doesn't
+  /// read either: the event keeps its organizer. A set whose list holds an
+  /// [AttendeeRelationshipAndroid.organizer] entry replaces the organizer
+  /// row too. An empty set is a clear. **On a synced calendar the server may
+  /// email each new address an invitation, and each removed one a
+  /// cancellation**, and may rewrite the rows (see [AttendeeAndroid]).
+  ///
+  /// On one occurrence of a series (`updateEvent` with an instance ID) it
+  /// applies to that occurrence alone; an occurrence edited without it keeps
+  /// the series' attendees. On `updateRecurring` it applies to the scope:
+  /// the whole series for `allEvents`, the new series for
+  /// `thisAndFollowing`, which otherwise carries the original's attendees.
+  /// Occurrences edited on their own keep their own attendees either way.
+  final Patch<List<AttendeeAndroid>>? attendees;
+
   /// Whether no field is set, so the options change nothing.
-  bool get isEmpty => status == null;
+  bool get isEmpty => status == null && attendees == null;
 
   @override
   bool operator ==(Object other) =>
-      other is EventUpdateOptionsAndroid && other.status == status;
+      other is EventUpdateOptionsAndroid &&
+      other.status == status &&
+      _attendeePatchesEqual(other.attendees, attendees);
 
   @override
-  int get hashCode => status.hashCode;
+  int get hashCode => Object.hash(status, _attendeePatchHash(attendees));
 
   @override
-  String toString() => 'EventUpdateOptionsAndroid(status: $status)';
+  String toString() =>
+      'EventUpdateOptionsAndroid(status: $status, attendees: $attendees)';
 }
+
+/// Whether two attendee patches make the same edit: [PatchSet]s compare
+/// their lists by element, as [Patch]'s own equality would not.
+bool _attendeePatchesEqual(
+  Patch<List<AttendeeAndroid>>? a,
+  Patch<List<AttendeeAndroid>>? b,
+) =>
+    switch ((a, b)) {
+      (PatchSet(value: final x), PatchSet(value: final y)) =>
+        _attendeesEqual(x, y),
+      _ => a == b,
+    };
+
+int _attendeePatchHash(Patch<List<AttendeeAndroid>>? patch) =>
+    switch (patch) {
+      PatchSet(:final value) => _attendeesHash(value),
+      _ => patch.hashCode,
+    };
 
 /// Android-only options for `createCalendar`.
 ///

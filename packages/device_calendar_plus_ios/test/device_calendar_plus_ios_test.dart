@@ -175,6 +175,19 @@ void main() {
         expect(log, isEmpty);
         expect(result, 'event-123');
       });
+
+      test('updateEvent writes nothing when attendees are the only change',
+          () async {
+        await plugin.updateEvent(
+          'event-123',
+          timestamp: 1,
+          android: const EventUpdateOptionsAndroid(
+            attendees: Patch.set([AttendeeAndroid(email: 'ada@example.com')]),
+          ),
+        );
+
+        expect(log, isEmpty);
+      });
     });
   });
 }

@@ -1,3 +1,5 @@
+import 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart';
+
 /// Throws [ArgumentError] when [value] is empty or whitespace: an empty id
 /// or name targets nothing, so no correct behaviour exists (error-handling.md).
 ///
@@ -13,4 +15,20 @@ void requireNonBlank(
   if (value.trim().isEmpty) {
     throw ArgumentError.value(value, name, '$label cannot be empty');
   }
+}
+
+/// Throws [ArgumentError] when any of [attendees] has a blank email: an
+/// attendee row with no address invites no one, so no correct behaviour
+/// exists. Checked on every platform, though only Android writes them: the
+/// mistake is the caller's either way.
+void requireAttendeeEmails(List<AttendeeAndroid>? attendees) {
+  for (final attendee in attendees ?? const <AttendeeAndroid>[]) {
+    requireNonBlank(attendee.email, name: 'attendees', label: 'Attendee email');
+  }
+}
+
+/// [requireAttendeeEmails] for an update's attendees [patch]: the list a
+/// [PatchSet] writes. A clear or no patch writes no address to check.
+void requireAttendeePatchEmails(Patch<List<AttendeeAndroid>>? patch) {
+  if (patch case PatchSet(:final value)) requireAttendeeEmails(value);
 }

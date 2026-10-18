@@ -18,6 +18,10 @@ import 'src/recurrence_rule.dart';
 // Platform-only options (see doc/platform-options.md).
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
     show
+        AttendeeAndroid,
+        AttendeeRelationshipAndroid,
+        AttendeeStatusAndroid,
+        AttendeeTypeAndroid,
         CalendarOptionsAndroid,
         CalendarOptionsIos,
         EventOptionsAndroid,
@@ -489,6 +493,8 @@ class DeviceCalendar {
   /// [doc/reminders.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/reminders.md)).
   ///
   /// [android]: Android-only fields, ignored on iOS. See [EventOptionsAndroid].
+  /// An attendee in it with a blank email throws [ArgumentError] on either
+  /// platform.
   Future<String> createEvent({
     String? calendarId,
     required String title,
@@ -511,6 +517,7 @@ class DeviceCalendar {
     }
 
     requireNonBlank(title, name: 'title', label: 'Event title');
+    requireAttendeeEmails(android?.attendees);
 
     if (endDate.isBefore(startDate)) {
       throw ArgumentError(
@@ -615,6 +622,7 @@ class DeviceCalendar {
   ///
   /// [android]: Android-only fields, ignored on iOS (a call whose only change
   /// is [android] writes nothing there). See [EventUpdateOptionsAndroid].
+  /// An attendee with a blank email in a set throws [ArgumentError].
   Future<void> updateEvent({
     required String instanceId,
     String? title,
@@ -630,6 +638,7 @@ class DeviceCalendar {
     EventUpdateOptionsAndroid? android,
   }) async {
     requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
+    requireAttendeePatchEmails(android?.attendees);
 
     // No changed fields is a valid no-op (e.g. the user pressed Save without
     // editing): the event already matches the requested values, so there is
@@ -744,6 +753,7 @@ class DeviceCalendar {
   /// [android]: Android-only fields across the scope, ignored on iOS (a call
   /// whose only change is [android] writes nothing there and returns the
   /// targeted event ID). See [EventUpdateOptionsAndroid].
+  /// An attendee with a blank email in a set throws [ArgumentError].
   Future<String> updateRecurring(
     String instanceId,
     EventSpan span, {
@@ -762,6 +772,7 @@ class DeviceCalendar {
   }) async {
     // Validate instanceId
     requireNonBlank(instanceId, name: 'instanceId', label: 'Instance ID');
+    requireAttendeePatchEmails(android?.attendees);
 
     // Parse the ID — thisAndFollowing acts on a specific occurrence, so it
     // needs an occurrence timestamp.

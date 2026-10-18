@@ -5,7 +5,8 @@ import io.flutter.plugin.common.MethodCall
 
 /**
  * The field edits of an event update — title, description, location, url,
- * all-day flag, time zone and availability, plus the Android-only status.
+ * all-day flag, time zone and availability, plus the Android-only status
+ * and attendees.
  * Null fields are left untouched; fields named in [clearedFields] are
  * cleared.
  *
@@ -26,6 +27,8 @@ data class EventFieldPatch(
      * is no clear: the provider throws on a NULL STATUS in an update.
      */
     val status: Int?,
+    /** The Android-only attendees edit (see [AttendeesPatch]). */
+    val attendees: AttendeesPatch,
     val clearedFields: List<String>
 ) {
     /**
@@ -61,6 +64,7 @@ data class EventFieldPatch(
                 availability = call.argument<String>("availability"),
                 reminders = reminders,
                 status = call.statusArg(),
+                attendees = AttendeesPatch.fromCall(call, clearedFields),
                 clearedFields = clearedFields
             )
         }

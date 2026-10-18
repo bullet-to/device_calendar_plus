@@ -484,7 +484,8 @@ class EventsService(
         availability: String,
         recurrenceRule: String?,
         reminders: List<Int>?,
-        status: Int?
+        status: Int?,
+        attendees: List<AttendeeRow>
     ): Result<String> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -588,24 +589,24 @@ class EventsService(
                 put(CalendarContract.Events.HAS_ALARM, if (hasReminders) 1 else 0)
             }
 
-            val uri = context.contentResolver.insert(
+            // The caller's EventOptionsAndroid.attendees go in the event's
+            // own transaction: the event and its guest list, or neither.
+            val eventId = context.contentResolver.insertEventWithAttendees(
                 CalendarContract.Events.CONTENT_URI,
-                values
+                values,
+                attendees
             )
 
-            if (uri != null) {
-                val eventId = uri.lastPathSegment
-                if (eventId != null) {
-                    // Reminders attach as separate rows keyed by EVENT_ID — this
-                    // is the same whether or not the event recurs, so the
-                    // RRULE/DURATION handling above is untouched.
-                    if (reminders != null && reminders.isNotEmpty()) {
-                        insertReminderRows(eventId.toLong(), reminders)
-                    }
-                    return Result.success(eventId)
+            if (eventId != null) {
+                // Reminders attach as separate rows keyed by EVENT_ID — this
+                // is the same whether or not the event recurs, so the
+                // RRULE/DURATION handling above is untouched.
+                if (reminders != null && reminders.isNotEmpty()) {
+                    insertReminderRows(eventId.toLong(), reminders)
                 }
+                return Result.success(eventId)
             }
-            
+
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.OPERATION_FAILED,
@@ -818,7 +819,7 @@ class EventsService(
         // (or drops) the alarms. Unchanged leaves the column alone.
         applyRemindersHasAlarm(values, patch.reminders)
 
-        val updatedRows = store.updateEventRow(eventId, values)
+        val updatedRows = updateEventRowIfAny(eventId, values)
 
         if (updatedRows == 0) {
             return Result.failure(
@@ -832,9 +833,23 @@ class EventsService(
         // Reminder rows live in a separate table keyed by EVENT_ID — rewrite
         // them after the event row update (no-op when unchanged).
         applyRemindersRows(eventId.toLong(), patch.reminders)
+        // So do Attendees rows.
+        context.contentResolver.applyAttendeesPatch(eventId.toLong(), patch.attendees)
 
         return Result.success(Unit)
     }
+
+    /**
+     * Updates event row [eventId] with [values], as [SeriesRowStore.updateEventRow]
+     * does, unless [values] is empty: an edit of child rows alone (an
+     * attendees-only update) has no event column to write, and Android's
+     * SQLiteDatabase rejects an update with no values. The row was read just before, so
+     * an empty update counts it as the one row matched.
+     */
+    private fun updateEventRowIfAny(
+        eventId: String,
+        values: android.content.ContentValues
+    ): Int = if (values.size() == 0) 1 else store.updateEventRow(eventId, values)
 
     /**
      * Applies [patch] — title, description, location, url, all-day flag,
@@ -938,6 +953,9 @@ class EventsService(
             .getOrElse { return Result.failure(it) }
         // Reminder rows attach to the detached exception's own event id.
         applyRemindersRows(exceptionId.toLong(), patch.reminders)
+        // The provider seeds the exception with the series' guest list; an
+        // attendees edit applies to this occurrence's copy alone.
+        context.contentResolver.applyAttendeesPatch(exceptionId.toLong(), patch.attendees)
         return Result.success(Unit)
     }
 
@@ -1122,7 +1140,7 @@ class EventsService(
 
         applyRemindersHasAlarm(values, patch.reminders)
 
-        val updatedRows = store.updateEventRow(row.id, values)
+        val updatedRows = updateEventRowIfAny(row.id, values)
         if (updatedRows == 0) {
             return Result.failure(
                 CalendarException(
@@ -1135,6 +1153,9 @@ class EventsService(
         // Reminder rows attach to the (master) event row by EVENT_ID — the same
         // for recurring and non-recurring, so no DURATION/RRULE interaction.
         applyRemindersRows(row.id.toLong(), patch.reminders)
+        // Attendees too: the master's rows. Detached occurrences keep their
+        // own copies, as they keep their own status.
+        context.contentResolver.applyAttendeesPatch(row.id.toLong(), patch.attendees)
         return Result.success(row.id)
     }
 
@@ -1175,6 +1196,11 @@ class EventsService(
         val effectiveTimeZone = patch.timeZone ?: row.timeZone
         val effectiveAvailability = patch.availability ?: row.availability
         val effectiveStatus = patch.status ?: row.status
+        // The original series' guest list (organizer included) with the
+        // edit applied, as the series would hold it after an allEvents edit.
+        val effectiveAttendees = patch.attendees.applyTo(
+            context.contentResolver.readAttendeeRows(row.id.toLong()).map { it.second }
+        )
         val effectiveRrule = newSeriesRule(
             ruleEdit,
             existingRule = rrule,
@@ -1216,6 +1242,7 @@ class EventsService(
             timeZone = effectiveTimeZone,
             availability = effectiveAvailability,
             status = effectiveStatus,
+            attendees = effectiveAttendees,
             rrule = effectiveRrule
         )
         val newEventId = insertResult.getOrElse { return Result.failure(it) }
@@ -1426,7 +1453,8 @@ class EventsService(
     /**
      * Inserts a fresh event row, using DURATION when recurring and DTEND
      * otherwise: the new series of a `thisAndFollowing` split, which carries
-     * [status] (the edit's, else the original series') as it is.
+     * [status] (the edit's, else the original series') as it is, and
+     * [attendees] as its Attendees rows, in the same transaction.
      */
     private fun insertEvent(
         calendarId: String,
@@ -1440,6 +1468,7 @@ class EventsService(
         timeZone: String?,
         availability: String,
         status: Int?,
+        attendees: List<AttendeeRow>,
         rrule: String?
     ): Result<String> {
         val values = android.content.ContentValues().apply {
@@ -1475,8 +1504,11 @@ class EventsService(
         // Written even when null, so the new series has the status the edit
         // resolved to rather than whatever the provider fills in.
         values.putStatus(status)
-        val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
-        val newId = uri?.lastPathSegment
+        val newId = context.contentResolver.insertEventWithAttendees(
+            CalendarContract.Events.CONTENT_URI,
+            values,
+            attendees
+        )
         return if (newId != null) {
             Result.success(newId)
         } else {
