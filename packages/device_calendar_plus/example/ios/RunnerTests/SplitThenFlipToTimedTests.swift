@@ -86,8 +86,8 @@ final class SplitThenFlipToTimedTests: XCTestCase, DateFixtures {
     XCTAssertEqual(fake.saves.map(\.span), [.futureEvents, .futureEvents])
     XCTAssertEqual(fake.saves.map(\.commit), [false, true])
     XCTAssertEqual(fake.resets, 0)
-    let saves = try XCTUnwrap(fake.saves.count == 2 ? fake.saves : nil)
-    let (splitSave, flipSave) = (saves[0], saves[1])
+    guard fake.saves.count == 2 else { return XCTFail("expected two saves") }
+    let (splitSave, flipSave) = (fake.saves[0], fake.saves[1])
     XCTAssertEqual(splitSave.title, "Dentist")
     XCTAssertTrue(splitSave.hasRule)
     XCTAssertTrue(splitSave.isAllDay)
@@ -125,6 +125,9 @@ final class SplitThenFlipToTimedTests: XCTestCase, DateFixtures {
 
     XCTAssertEqual(fake.saves.count, 1)
     XCTAssertEqual(fake.resets, 1)
-    XCTAssertThrowsError(try result.get())
+    XCTAssertThrowsError(try result.get()) { error in
+      XCTAssertEqual(
+        (error as? CalendarError)?.code, PlatformExceptionCodes.operationFailed)
+    }
   }
 }

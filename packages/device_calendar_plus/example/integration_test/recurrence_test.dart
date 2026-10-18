@@ -3716,6 +3716,37 @@ void main() {
       await expectAllDayToTimedSplit('All-day To Timed Split DST', dstSeedDay);
     });
 
+    // thisAndFollowing from the first occurrence covers the whole series,
+    // so there is nothing to split, but iOS still routes it through
+    // splitThenFlipToTimed's two saves, both on the master.
+    test(
+        'thisAndFollowing toggling an all-day series timed from its first '
+        'occurrence keeps every occurrence on its calendar day', () async {
+      const title = 'All-day To Timed From First';
+      final seeded = await seedWeeklySeries(plugin, calendarId,
+          title: title, isAllDay: true, start: seedDay, count: seedCount);
+      final before = seeded.occurrences;
+
+      final newSeriesId = await plugin.updateRecurring(
+        before[0].instanceId,
+        EventSpan.thisAndFollowing,
+        isAllDay: false,
+      );
+
+      final from = seeded.start.subtract(const Duration(days: 1));
+      expectTimedOnOwnDays(
+        await occurrencesOf(plugin, calendarId!, newSeriesId, from,
+            windowDays: 31),
+        before,
+      );
+      expect(
+        (await eventsTitled(plugin, calendarId!, title, from, windowDays: 31))
+            .where((e) => e.isAllDay),
+        isEmpty,
+        reason: 'no all-day occurrence of the series may be left',
+      );
+    });
+
     /// 09:00 local on [day]'s local date.
     DateTime nineOn(DateTime day) {
       final d = day.toLocal();
@@ -3797,8 +3828,11 @@ void main() {
         final splitDay = localDay(r.split.startDate);
         expectTimedOnDays(r.newSeries, [splitDay, daysOn(splitDay, 14)]);
         final newEvent = await plugin.getEvent(r.newSeriesId);
-        expect(newEvent?.recurrenceRule, isA<WeeklyRecurrence>());
-        expect(newEvent!.recurrenceRule!.interval, 2,
+        expect(newEvent?.recurrenceRule, isA<WeeklyRecurrence>(),
+            reason: 'the new series must keep a weekly rule');
+        expect(newEvent!.recurrenceRule!.end, isA<UntilEnd>(),
+            reason: 'the new series must end on the replacing UNTIL');
+        expect(newEvent.recurrenceRule!.interval, 2,
             reason: 'the new series must run on the replacing rule');
         expectTruncatedMaster(r.remaining, before: r.split.startDate);
       });

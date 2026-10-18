@@ -78,7 +78,7 @@ The thin shims that call the OS permission APIs directly (`EventKitAuthorization
 - `thisAndFollowing toggling an all-day series timed with a new rule splits it onto the new rule` (and its `past a DST change` twin)
 - `thisAndFollowing day shift onto another listed weekday of an explicit-BYDAY rule that toggles an all-day series timed splits it there`
 
-The first three cover the rule left as loaded, the last two the rule set (`SeriesRuleWrite.set`), so the pass reaches both of the helper's rule paths. The first save is staged (`commit: false`) and the second commits both, unlike `detachThenFlipAllDay`'s two committed saves, so the pass also checks the staged first save on iCloud: each test's split must read back whole, with no half-applied split left behind. `SplitThenFlipToTimedTests` pins the sequence itself (two `.futureEvents` saves, staged then committed, the flip only in the second, a reset on failure).
+`SplitThenFlipToTimedTests` pins the sequence itself (two `.futureEvents` saves, staged then committed, the flip only in the second, a reset on failure).
 
 ```bash
 cd packages/device_calendar_plus/example
