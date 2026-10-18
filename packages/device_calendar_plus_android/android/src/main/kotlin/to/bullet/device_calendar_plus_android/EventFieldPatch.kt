@@ -4,19 +4,6 @@ import android.provider.CalendarContract
 import io.flutter.plugin.common.MethodCall
 
 /**
- * The [CalendarContract.Events.STATUS] value for an `EventStatusAndroid`
- * name from the method channel — Android's own value set, written as it is.
- * An unknown name breaks the channel contract (the Dart enum sends only these
- * three) and throws.
- */
-internal fun eventStatusFromName(name: String): Int = when (name) {
-    "tentative" -> CalendarContract.Events.STATUS_TENTATIVE
-    "confirmed" -> CalendarContract.Events.STATUS_CONFIRMED
-    "canceled" -> CalendarContract.Events.STATUS_CANCELED
-    else -> throw IllegalArgumentException("Unknown event status: $name")
-}
-
-/**
  * The field edits of an event update — title, description, location, url,
  * all-day flag, time zone and availability, plus the Android-only status.
  * Null fields are left untouched; fields named in [clearedFields] are
@@ -73,7 +60,7 @@ data class EventFieldPatch(
                 timeZone = call.argument<String>("timeZone"),
                 availability = call.argument<String>("availability"),
                 reminders = reminders,
-                status = call.argument<String>("status")?.let(::eventStatusFromName),
+                status = call.statusArg(),
                 clearedFields = clearedFields
             )
         }

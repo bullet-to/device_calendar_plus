@@ -195,9 +195,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     Patch<List<int>>? reminders,
     EventUpdateOptionsAndroid? android,
   }) async {
-    final args = <String, dynamic>{
-      'eventId': eventId,
-      'timestamp': timestamp,
+    final fields = <String, dynamic>{
       'title': title,
       'startDate': startDate?.millisecondsSinceEpoch,
       'endDate': endDate?.millisecondsSinceEpoch,
@@ -205,7 +203,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       'timeZone': timeZone,
       'availability': availability,
     };
-    writePatchFields(args, {
+    writePatchFields(fields, {
       'description': description,
       'location': location,
       'url': url,
@@ -213,8 +211,12 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     });
     // A call whose only change is Android-only has nothing for iOS to write.
     // Saving no change would still detach an occurrence, so write nothing.
-    if (_writesNothing(args)) return;
-    await methodChannel.invokeMethod<void>('updateEvent', args);
+    if (_writesNothing(fields)) return;
+    await methodChannel.invokeMethod<void>('updateEvent', <String, dynamic>{
+      'eventId': eventId,
+      'timestamp': timestamp,
+      ...fields,
+    });
   }
 
   @override
@@ -235,10 +237,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     Patch<List<int>>? reminders,
     EventUpdateOptionsAndroid? android,
   }) async {
-    final args = <String, dynamic>{
-      'eventId': eventId,
-      'timestamp': timestamp,
-      'span': span,
+    final fields = <String, dynamic>{
       'title': title,
       'newStartMillis': start?.millisecondsSinceEpoch,
       'durationMinutes': durationMinutes,
@@ -246,7 +245,7 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       'timeZone': timeZone,
       'availability': availability,
     };
-    writePatchFields(args, {
+    writePatchFields(fields, {
       'description': description,
       'location': location,
       'url': url,
@@ -255,25 +254,25 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     });
     // Nothing for iOS to write, and nothing to split for thisAndFollowing:
     // the targeted scope stands.
-    if (_writesNothing(args)) return eventId;
-    final result =
-        await methodChannel.invokeMethod<String>('updateRecurring', args);
+    if (_writesNothing(fields)) return eventId;
+    final result = await methodChannel.invokeMethod<String>(
+      'updateRecurring',
+      <String, dynamic>{
+        'eventId': eventId,
+        'timestamp': timestamp,
+        'span': span,
+        ...fields,
+      },
+    );
     return result!;
   }
 
-  /// Whether an update payload carries no field change. Judged from the
-  /// payload itself, so a new shared field is covered automatically.
-  static bool _writesNothing(Map<String, dynamic> args) =>
-      (args['clearedFields'] as List).isEmpty &&
-      args.entries
-          .every((e) => _identityKeys.contains(e.key) || e.value == null);
-
-  static const _identityKeys = {
-    'eventId',
-    'timestamp',
-    'span',
-    'clearedFields',
-  };
+  /// Whether an update's field changes (the payload minus the event's
+  /// identity and scope) are all empty. Judged from the field map itself, so
+  /// a new shared field is covered automatically.
+  static bool _writesNothing(Map<String, dynamic> fields) =>
+      (fields['clearedFields'] as List).isEmpty &&
+      fields.entries.every((e) => e.key == 'clearedFields' || e.value == null);
 
   @override
   Future<void> deleteRecurring(

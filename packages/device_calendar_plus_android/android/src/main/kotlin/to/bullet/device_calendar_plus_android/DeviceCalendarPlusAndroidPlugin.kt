@@ -446,7 +446,7 @@ class DeviceCalendarPlusAndroidPlugin internal constructor(
         // Reminders: minutes before start (already normalized by the Dart layer).
         val reminders = call.argument<List<Int>>("reminders")
         // EventOptionsAndroid.status, by EventStatusAndroid name.
-        val status = call.argument<String>("status")?.let(::eventStatusFromName)
+        val status = call.statusArg()
 
         // Validate required arguments.
         // calendarId is optional: null routes the event to the default calendar.
