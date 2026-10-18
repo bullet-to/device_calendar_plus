@@ -195,20 +195,6 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     Patch<List<int>>? reminders,
     EventUpdateOptionsAndroid? android,
   }) async {
-    // A call whose only change is Android-only has nothing for iOS to write.
-    // Saving no change would still detach an occurrence, so write nothing.
-    if (title == null &&
-        startDate == null &&
-        endDate == null &&
-        description == null &&
-        location == null &&
-        url == null &&
-        isAllDay == null &&
-        timeZone == null &&
-        availability == null &&
-        reminders == null) {
-      return;
-    }
     final args = <String, dynamic>{
       'eventId': eventId,
       'timestamp': timestamp,
@@ -225,6 +211,9 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       'url': url,
       'reminders': reminders,
     });
+    // A call whose only change is Android-only has nothing for iOS to write.
+    // Saving no change would still detach an occurrence, so write nothing.
+    if (_writesNothing(args)) return;
     await methodChannel.invokeMethod<void>('updateEvent', args);
   }
 
@@ -246,21 +235,6 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     Patch<List<int>>? reminders,
     EventUpdateOptionsAndroid? android,
   }) async {
-    // A call whose only change is Android-only has nothing for iOS to write,
-    // and nothing to split for thisAndFollowing: the targeted scope stands.
-    if (title == null &&
-        start == null &&
-        durationMinutes == null &&
-        description == null &&
-        location == null &&
-        url == null &&
-        isAllDay == null &&
-        timeZone == null &&
-        availability == null &&
-        recurrenceRule == null &&
-        reminders == null) {
-      return eventId;
-    }
     final args = <String, dynamic>{
       'eventId': eventId,
       'timestamp': timestamp,
@@ -279,10 +253,27 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
       'recurrenceRule': recurrenceRule,
       'reminders': reminders,
     });
+    // Nothing for iOS to write, and nothing to split for thisAndFollowing:
+    // the targeted scope stands.
+    if (_writesNothing(args)) return eventId;
     final result =
         await methodChannel.invokeMethod<String>('updateRecurring', args);
     return result!;
   }
+
+  /// Whether an update payload carries no field change. Judged from the
+  /// payload itself, so a new shared field is covered automatically.
+  static bool _writesNothing(Map<String, dynamic> args) =>
+      (args['clearedFields'] as List).isEmpty &&
+      args.entries
+          .every((e) => _identityKeys.contains(e.key) || e.value == null);
+
+  static const _identityKeys = {
+    'eventId',
+    'timestamp',
+    'span',
+    'clearedFields',
+  };
 
   @override
   Future<void> deleteRecurring(

@@ -488,10 +488,7 @@ class DeviceCalendar {
   /// must be non-negative (see
   /// [doc/reminders.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/reminders.md)).
   ///
-  /// [android] sets Android-only fields, such as the event's
-  /// [EventOptionsAndroid.status]. It applies only on Android and is ignored
-  /// on iOS, so shared code can pass it. See
-  /// [doc/platform-options.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/platform-options.md).
+  /// [android]: Android-only fields, ignored on iOS. See [EventOptionsAndroid].
   Future<String> createEvent({
     String? calendarId,
     required String title,
@@ -616,11 +613,8 @@ class DeviceCalendar {
   /// wall-clock time rather than preserving the instant. Passing no fields is a
   /// no-op. Requires full access.
   ///
-  /// [android] patches Android-only fields, such as the event's
-  /// [EventUpdateOptionsAndroid.status]. It applies only on Android and is
-  /// ignored on iOS, so shared code can pass it; on iOS a call whose only
-  /// change is [android] writes nothing. See
-  /// [doc/platform-options.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/platform-options.md).
+  /// [android]: Android-only fields, ignored on iOS (a call whose only change
+  /// is [android] writes nothing there). See [EventUpdateOptionsAndroid].
   Future<void> updateEvent({
     required String instanceId,
     String? title,
@@ -747,12 +741,9 @@ class DeviceCalendar {
   /// series' ID for `thisAndFollowing`). Passing no fields is a no-op. Requires
   /// full access.
   ///
-  /// [android] patches Android-only fields across the scope, such as the
-  /// series' [EventUpdateOptionsAndroid.status]. It applies only on Android
-  /// and is ignored on iOS, so shared code can pass it; on iOS a call whose
-  /// only change is [android] writes nothing and returns the targeted event
-  /// ID. See
-  /// [doc/platform-options.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/platform-options.md).
+  /// [android]: Android-only fields across the scope, ignored on iOS (a call
+  /// whose only change is [android] writes nothing there and returns the
+  /// targeted event ID). See [EventUpdateOptionsAndroid].
   Future<String> updateRecurring(
     String instanceId,
     EventSpan span, {

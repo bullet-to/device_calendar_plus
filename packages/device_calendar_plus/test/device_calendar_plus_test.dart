@@ -69,15 +69,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   /// callers keep their unchanged signature. Set to a sentinel before each
   /// captured call so "passed null" is distinguishable from "never called".
   Object? lastCreateEventReminders = 'unset';
-
-  /// The `android` options of the most recent createEvent call.
-  EventOptionsAndroid? lastCreateEventAndroid;
-  ({
-    String name,
-    String? colorHex,
-    CalendarOptionsAndroid? android,
-    CalendarOptionsIos? ios,
-  })? lastCreateCalendar;
+  ({String name, String? colorHex})? lastCreateCalendar;
   ({String calendarId, String? name, String? colorHex})? lastUpdateCalendar;
   ({String eventId, int? timestamp})? lastDeleteEvent;
 
@@ -199,8 +191,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     CalendarOptionsIos? ios,
   }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
-    lastCreateCalendar =
-        (name: name, colorHex: colorHex, android: android, ios: ios);
+    lastCreateCalendar = (name: name, colorHex: colorHex);
     return 'mock-calendar-id';
   }
 
@@ -260,7 +251,6 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
     lastCreateEventReminders = reminders;
-    lastCreateEventAndroid = android;
     if (_createEventCallback != null) {
       return _createEventCallback!(
         calendarId,

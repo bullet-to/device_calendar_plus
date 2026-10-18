@@ -495,7 +495,7 @@ class EventsService(
         availability: String,
         recurrenceRule: String?,
         reminders: List<Int>?,
-        status: Int? = null
+        status: Int?
     ): Result<String> {
         // Check for write calendar permission
         if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
@@ -942,15 +942,13 @@ class EventsService(
 
         // Insert an exception overriding this single occurrence. The provider
         // expects DURATION (not DTEND) on an exception of a recurring parent.
-        // The occurrence keeps the series' status unless the edit sets its
-        // own (applyEventFieldValues, below): writing a fixed one would
-        // change the status of every occurrence edited for anything else.
+        // The occurrence keeps the series' status unless the edit sets its own.
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, timestamp)
             put(CalendarContract.Events.DTSTART, newStart)
             put(CalendarContract.Events.DURATION, "P${(newEnd - newStart) / 1000}S")
         }
-        putStatus(values, series.row.status)
+        putStatus(values, patch.status ?: series.row.status)
         applyEventFieldValues(values, patch)
         if (patch.timeZone != null) {
             values.put(CalendarContract.Events.EVENT_TIMEZONE, patch.timeZone)

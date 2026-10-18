@@ -249,6 +249,41 @@ void main() {
       },
     );
 
+    testWidgets(
+      'updateRecurring allEvents canceled keeps a detached occurrence status',
+      (tester) async {
+        final series = await seedStatusSeries(EventStatusAndroid.confirmed);
+        final title = 'Status own ${DateTime.now().millisecondsSinceEpoch}';
+        await plugin.updateEvent(
+          instanceId: series.occurrences[2].instanceId,
+          title: title,
+          android: const EventUpdateOptionsAndroid(
+            status: EventStatusAndroid.tentative,
+          ),
+        );
+
+        await plugin.updateRecurring(
+          series.eventId,
+          EventSpan.allEvents,
+          android: const EventUpdateOptionsAndroid(
+            status: EventStatusAndroid.canceled,
+          ),
+        );
+
+        final detached = await eventsTitled(
+          plugin,
+          requireCalendar(calendarId),
+          title,
+          series.start,
+        );
+        expect(
+          detached.single.status,
+          EventStatus.tentative,
+          reason: 'the occurrence edited on its own keeps its own status',
+        );
+      },
+    );
+
     testWidgets('updateRecurring thisAndFollowing sets the new series status', (
       tester,
     ) async {
