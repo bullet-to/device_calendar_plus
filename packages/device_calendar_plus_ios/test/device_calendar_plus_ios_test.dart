@@ -150,5 +150,55 @@ void main() {
       expect(log[0].arguments['reminders'], isNull);
       expect(log[0].arguments['clearedFields'], contains('reminders'));
     });
+
+    group('android options', () {
+      const android = EventUpdateOptionsAndroid(
+        status: EventStatusAndroid.canceled,
+      );
+
+      test('updateEvent writes nothing when android is the only change',
+          () async {
+        await plugin.updateEvent('event-123', timestamp: 1, android: android);
+
+        expect(log, isEmpty);
+      });
+
+      test('updateRecurring writes nothing when android is the only change',
+          () async {
+        final result = await plugin.updateRecurring(
+          'event-123',
+          1,
+          'thisAndFollowing',
+          android: android,
+        );
+
+        expect(log, isEmpty);
+        expect(result, 'event-123');
+      });
+
+      test('updateEvent sends the other fields and drops android', () async {
+        await plugin.updateEvent(
+          'event-123',
+          title: 'New Title',
+          android: android,
+        );
+
+        expect(log.single.arguments['title'], 'New Title');
+        expect(log.single.arguments.containsKey('status'), isFalse);
+        expect(log.single.arguments['clearedFields'], isEmpty);
+      });
+
+      test('createCalendar sends ios options and ignores android', () async {
+        await plugin.createCalendar(
+          'Work',
+          null,
+          android: const CalendarOptionsAndroid(accountName: 'MyApp'),
+          ios: const CalendarOptionsIos(sourceId: 'source-1'),
+        );
+
+        expect(log.single.arguments['sourceId'], 'source-1');
+        expect(log.single.arguments.containsKey('accountName'), isFalse);
+      });
+    });
   });
 }

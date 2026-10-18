@@ -22,9 +22,10 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   @override
   Future<String> createCalendar(
     String name,
-    String? colorHex,
-    CreateCalendarPlatformOptions? platformOptions,
-  ) async =>
+    String? colorHex, {
+    CalendarOptionsAndroid? android,
+    CalendarOptionsIos? ios,
+  }) async =>
       'mock-calendar-id';
 
   @override
@@ -64,8 +65,9 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? timeZone,
     String availability,
     String? recurrenceRule,
-    List<int>? reminders,
-  ) async =>
+    List<int>? reminders, {
+    EventOptionsAndroid? android,
+  }) async =>
       'mock-event-id';
 
   @override
@@ -85,6 +87,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? timeZone,
     String? availability,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {}
 
   @override
@@ -103,6 +106,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? availability,
     Patch<String>? recurrenceRule,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async =>
       'mock-event-id';
 

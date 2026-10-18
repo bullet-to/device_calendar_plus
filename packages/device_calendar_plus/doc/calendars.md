@@ -35,21 +35,20 @@ final id = await plugin.createCalendar(name: 'My Calendar');
 // With a color.
 final colored = await plugin.createCalendar(name: 'Work', colorHex: '#FF5733');
 
-// Targeting a specific account.
-final scopedIos = await plugin.createCalendar(
+// Targeting a specific account. Each option applies only on its own
+// platform, so one call can carry both.
+final scoped = await plugin.createCalendar(
   name: 'Work',
-  platformOptions: CreateCalendarOptionsIos(sourceId: writable.id),
-);
-final scopedAndroid = await plugin.createCalendar(
-  name: 'Work',
-  platformOptions: CreateCalendarOptionsAndroid(
+  ios: CalendarOptionsIos(sourceId: writable.id),
+  android: CalendarOptionsAndroid(
     accountName: writable.accountName,
     accountType: writable.accountType,
   ),
 );
 ```
 
-Returns the new calendar's ID.
+Returns the new calendar's ID. See [Platform-only options](platform-options.md)
+for how `android:` and `ios:` work.
 
 Only a source with `supportsCalendarCreation` can hold a new calendar — on iOS
 that's the local source and iCloud, on Android the local account type. Any

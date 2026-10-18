@@ -1,11 +1,11 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
-import 'src/create_calendar_options.dart';
 import 'src/patch.dart';
+import 'src/platform_options.dart';
 
-export 'src/create_calendar_options.dart';
 export 'src/instance_id_parser.dart';
 export 'src/patch.dart';
+export 'src/platform_options.dart';
 
 /// The interface that implementations of device_calendar_plus must implement.
 ///
@@ -83,19 +83,21 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   ///
   /// [name] is the display name for the calendar (required).
   /// [colorHex] is an optional color in #RRGGBB format.
-  /// [platformOptions] is an optional platform-specific options object.
+  /// [android] and [ios] are platform-only options: each implementation reads
+  /// its own and ignores the other's.
   ///
   /// Returns the ID of the newly created calendar.
   ///
   /// The calendar is created in the device's local storage by default.
-  /// Platform-specific options can modify this behavior (e.g., Android
-  /// allows specifying a custom account name).
+  /// The platform options can target another account (an Android account
+  /// name and type, an iOS source).
   /// Requires calendar write permissions.
   Future<String> createCalendar(
     String name,
-    String? colorHex,
-    CreateCalendarPlatformOptions? platformOptions,
-  );
+    String? colorHex, {
+    CalendarOptionsAndroid? android,
+    CalendarOptionsIos? ios,
+  });
 
   /// Lists available calendar sources/accounts on the device.
   ///
@@ -181,6 +183,9 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// [calendarId] selects the target calendar. When `null`, the platform
   /// writes to its default calendar for new events (failing with
   /// `OPERATION_FAILED` if none is available).
+  ///
+  /// [android] carries Android-only fields; the iOS implementation ignores
+  /// it.
   Future<String> createEvent(
     String? calendarId,
     String title,
@@ -193,8 +198,9 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? timeZone,
     String availability,
     String? recurrenceRule,
-    List<int>? reminders,
-  );
+    List<int>? reminders, {
+    EventOptionsAndroid? android,
+  });
 
   /// Deletes an event from the device.
   ///
@@ -240,7 +246,10 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// [Patch.clear] removes all reminders. The shared Dart layer has already
   /// converted the public `Duration` values to whole minutes.
   ///
-  /// At least one field must be provided.
+  /// [android] carries Android-only fields, `null` ones left unchanged; the
+  /// iOS implementation ignores it. An implementation handed no field it acts
+  /// on writes nothing.
+  ///
   /// Requires calendar write permissions.
   Future<void> updateEvent(
     String eventId, {
@@ -255,6 +264,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? timeZone,
     String? availability,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   });
 
   /// Updates a recurring event's series, choosing which occurrences the edit
@@ -282,6 +292,10 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// in [updateEvent]: [Patch.set] replaces the scope's reminders,
   /// [Patch.clear] removes them.
   ///
+  /// [android] carries Android-only fields, as in [updateEvent]; the iOS
+  /// implementation ignores it. An implementation handed no field it acts on
+  /// writes nothing and returns [eventId].
+  ///
   /// Returns the event ID for the affected scope — the same ID for
   /// `allEvents`, the new series' ID for `thisAndFollowing`.
   Future<String> updateRecurring(
@@ -299,6 +313,7 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
     String? availability,
     Patch<String>? recurrenceRule,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   });
 
   /// Deletes a recurring event's series, choosing which occurrences are

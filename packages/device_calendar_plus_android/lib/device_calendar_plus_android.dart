@@ -2,10 +2,6 @@ import 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import 'src/create_calendar_options_android.dart';
-
-export 'src/create_calendar_options_android.dart';
-
 /// The Android implementation of [DeviceCalendarPlusPlatform].
 class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   /// The method channel used to interact with the native platform.
@@ -54,23 +50,17 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   @override
   Future<String> createCalendar(
     String name,
-    String? colorHex,
-    CreateCalendarPlatformOptions? platformOptions,
-  ) async {
-    String? accountName;
-    String? accountType;
-    if (platformOptions is CreateCalendarOptionsAndroid) {
-      accountName = platformOptions.accountName;
-      accountType = platformOptions.accountType;
-    }
-
+    String? colorHex, {
+    CalendarOptionsAndroid? android,
+    CalendarOptionsIos? ios,
+  }) async {
     final result = await methodChannel.invokeMethod<String>(
       'createCalendar',
       <String, dynamic>{
         'name': name,
         'colorHex': colorHex,
-        'accountName': accountName,
-        'accountType': accountType,
+        'accountName': android?.accountName,
+        'accountType': android?.accountType,
       },
     );
     return result!;
@@ -153,8 +143,9 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     String? timeZone,
     String availability,
     String? recurrenceRule,
-    List<int>? reminders,
-  ) async {
+    List<int>? reminders, {
+    EventOptionsAndroid? android,
+  }) async {
     final result = await methodChannel.invokeMethod<String>(
       'createEvent',
       <String, dynamic>{
@@ -170,6 +161,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
         'availability': availability,
         'recurrenceRule': recurrenceRule,
         'reminders': reminders,
+        'status': android?.status?.name,
       },
     );
     return result!;
@@ -200,6 +192,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     String? timeZone,
     String? availability,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {
     final args = <String, dynamic>{
       'eventId': eventId,
@@ -210,6 +203,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
       'isAllDay': isAllDay,
       'timeZone': timeZone,
       'availability': availability,
+      'status': android?.status?.name,
     };
     writePatchFields(args, {
       'description': description,
@@ -236,6 +230,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     String? availability,
     Patch<String>? recurrenceRule,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {
     final args = <String, dynamic>{
       'eventId': eventId,
@@ -247,6 +242,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
       'isAllDay': isAllDay,
       'timeZone': timeZone,
       'availability': availability,
+      'status': android?.status?.name,
     };
     writePatchFields(args, {
       'description': description,

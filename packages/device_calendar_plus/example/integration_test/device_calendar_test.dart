@@ -234,8 +234,7 @@ void main() {
 
         final calendarId = await plugin.createCalendar(
           name: calendarName,
-          platformOptions:
-              CreateCalendarOptionsAndroid(accountName: customAccountName),
+          android: CalendarOptionsAndroid(accountName: customAccountName),
         );
         createdCalendarIds.add(calendarId);
 

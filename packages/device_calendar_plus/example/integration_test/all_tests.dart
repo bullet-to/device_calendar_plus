@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'attendee_test.dart' as attendee;
 import 'device_calendar_test.dart' as device_calendar;
 import 'edge_cases_test.dart' as edge_cases;
+import 'platform_options_test.dart' as platform_options;
 import 'range_test.dart' as range;
 import 'recurrence_read_test.dart' as recurrence_read;
 import 'recurrence_test.dart' as recurrence;
@@ -26,6 +27,7 @@ void main() {
   range.main();
   edge_cases.main();
   reminders.main();
+  platform_options.main();
   tombstone.main();
   synced_calendar.main();
 }

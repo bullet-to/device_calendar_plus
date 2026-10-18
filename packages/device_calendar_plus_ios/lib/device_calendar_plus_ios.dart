@@ -2,10 +2,10 @@ import 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-import 'src/create_calendar_options_ios.dart';
-export 'src/create_calendar_options_ios.dart';
-
 /// The iOS implementation of [DeviceCalendarPlusPlatform].
+///
+/// Android-only options (the `android:` parameters) are ignored: iOS has no
+/// counterpart to write them to.
 class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   /// The method channel used to interact with the native platform.
   @visibleForTesting
@@ -53,20 +53,16 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
   @override
   Future<String> createCalendar(
     String name,
-    String? colorHex,
-    CreateCalendarPlatformOptions? platformOptions,
-  ) async {
-    String? sourceId;
-    if (platformOptions is CreateCalendarOptionsIos) {
-      sourceId = platformOptions.sourceId;
-    }
-
+    String? colorHex, {
+    CalendarOptionsAndroid? android,
+    CalendarOptionsIos? ios,
+  }) async {
     final result = await methodChannel.invokeMethod<String>(
       'createCalendar',
       <String, dynamic>{
         'name': name,
         'colorHex': colorHex,
-        'sourceId': sourceId,
+        'sourceId': ios?.sourceId,
       },
     );
     return result!;
@@ -149,8 +145,9 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     String? timeZone,
     String availability,
     String? recurrenceRule,
-    List<int>? reminders,
-  ) async {
+    List<int>? reminders, {
+    EventOptionsAndroid? android,
+  }) async {
     final result = await methodChannel.invokeMethod<String>(
       'createEvent',
       <String, dynamic>{
@@ -196,7 +193,22 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     String? timeZone,
     String? availability,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {
+    // A call whose only change is Android-only has nothing for iOS to write.
+    // Saving no change would still detach an occurrence, so write nothing.
+    if (title == null &&
+        startDate == null &&
+        endDate == null &&
+        description == null &&
+        location == null &&
+        url == null &&
+        isAllDay == null &&
+        timeZone == null &&
+        availability == null &&
+        reminders == null) {
+      return;
+    }
     final args = <String, dynamic>{
       'eventId': eventId,
       'timestamp': timestamp,
@@ -232,7 +244,23 @@ class DeviceCalendarPlusIos extends DeviceCalendarPlusPlatform {
     String? availability,
     Patch<String>? recurrenceRule,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {
+    // A call whose only change is Android-only has nothing for iOS to write,
+    // and nothing to split for thisAndFollowing: the targeted scope stands.
+    if (title == null &&
+        start == null &&
+        durationMinutes == null &&
+        description == null &&
+        location == null &&
+        url == null &&
+        isAllDay == null &&
+        timeZone == null &&
+        availability == null &&
+        recurrenceRule == null &&
+        reminders == null) {
+      return eventId;
+    }
     final args = <String, dynamic>{
       'eventId': eventId,
       'timestamp': timestamp,

@@ -1,11 +1,26 @@
 package to.bullet.device_calendar_plus_android
 
+import android.provider.CalendarContract
 import io.flutter.plugin.common.MethodCall
 
 /**
- * The shared field edits of an event update — title, description, location,
- * url, all-day flag, time zone and availability. Null fields are left
- * untouched; fields named in [clearedFields] are cleared.
+ * The [CalendarContract.Events.STATUS] value for an `EventStatusAndroid`
+ * name from the method channel — Android's own value set, written as it is.
+ * An unknown name breaks the channel contract (the Dart enum sends only these
+ * three) and throws.
+ */
+internal fun eventStatusFromName(name: String): Int = when (name) {
+    "tentative" -> CalendarContract.Events.STATUS_TENTATIVE
+    "confirmed" -> CalendarContract.Events.STATUS_CONFIRMED
+    "canceled" -> CalendarContract.Events.STATUS_CANCELED
+    else -> throw IllegalArgumentException("Unknown event status: $name")
+}
+
+/**
+ * The field edits of an event update — title, description, location, url,
+ * all-day flag, time zone and availability, plus the Android-only status.
+ * Null fields are left untouched; fields named in [clearedFields] are
+ * cleared.
  *
  * Shared by [EventsService.updateEvent] and [EventsService.updateRecurring],
  * whose remaining parameters are the ones that differ per operation.
@@ -19,6 +34,11 @@ data class EventFieldPatch(
     val timeZone: String?,
     val availability: String?,
     val reminders: RemindersPatch,
+    /**
+     * The new [CalendarContract.Events.STATUS], or null to leave it. There
+     * is no clear: the provider throws on a NULL STATUS in an update.
+     */
+    val status: Int?,
     val clearedFields: List<String>
 ) {
     /**
@@ -53,6 +73,7 @@ data class EventFieldPatch(
                 timeZone = call.argument<String>("timeZone"),
                 availability = call.argument<String>("availability"),
                 reminders = reminders,
+                status = call.argument<String>("status")?.let(::eventStatusFromName),
                 clearedFields = clearedFields
             )
         }

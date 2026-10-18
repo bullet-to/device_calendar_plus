@@ -67,6 +67,8 @@ internal data class EventRow(
     val allDay: Boolean,
     val timeZone: String?,
     val availability: String,
+    /** The STATUS column as stored; NULL (no status) stays null, not 0. */
+    val status: Int?,
     val rrule: String?,
     val syncId: String?
 )
@@ -158,6 +160,7 @@ internal class SeriesRowStore(private val context: Context) {
             CalendarContract.Events.ALL_DAY,
             CalendarContract.Events.EVENT_TIMEZONE,
             CalendarContract.Events.AVAILABILITY,
+            CalendarContract.Events.STATUS,
             CalendarContract.Events.RRULE,
             CalendarContract.Events._SYNC_ID
         )
@@ -185,6 +188,7 @@ internal class SeriesRowStore(private val context: Context) {
                 availability = availabilityToString(
                     cursor.longOrNull(CalendarContract.Events.AVAILABILITY)?.toInt()
                 ),
+                status = cursor.longOrNull(CalendarContract.Events.STATUS)?.toInt(),
                 rrule = cursor.stringOrNull(CalendarContract.Events.RRULE),
                 syncId = cursor.stringOrNull(CalendarContract.Events._SYNC_ID)
             ))

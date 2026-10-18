@@ -19,6 +19,7 @@ typedef UpdateEventCall = ({
   String? timeZone,
   String? availability,
   Patch<List<int>>? reminders,
+  EventUpdateOptionsAndroid? android,
 });
 
 /// Arguments captured from the last
@@ -38,6 +39,7 @@ typedef UpdateRecurringCall = ({
   String? availability,
   Patch<String>? recurrenceRule,
   Patch<List<int>>? reminders,
+  EventUpdateOptionsAndroid? android,
 });
 
 class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
@@ -67,7 +69,15 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   /// callers keep their unchanged signature. Set to a sentinel before each
   /// captured call so "passed null" is distinguishable from "never called".
   Object? lastCreateEventReminders = 'unset';
-  ({String name, String? colorHex})? lastCreateCalendar;
+
+  /// The `android` options of the most recent createEvent call.
+  EventOptionsAndroid? lastCreateEventAndroid;
+  ({
+    String name,
+    String? colorHex,
+    CalendarOptionsAndroid? android,
+    CalendarOptionsIos? ios,
+  })? lastCreateCalendar;
   ({String calendarId, String? name, String? colorHex})? lastUpdateCalendar;
   ({String eventId, int? timestamp})? lastDeleteEvent;
 
@@ -184,11 +194,13 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
   @override
   Future<String> createCalendar(
     String name,
-    String? colorHex,
-    CreateCalendarPlatformOptions? platformOptions,
-  ) async {
+    String? colorHex, {
+    CalendarOptionsAndroid? android,
+    CalendarOptionsIos? ios,
+  }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
-    lastCreateCalendar = (name: name, colorHex: colorHex);
+    lastCreateCalendar =
+        (name: name, colorHex: colorHex, android: android, ios: ios);
     return 'mock-calendar-id';
   }
 
@@ -243,10 +255,12 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? timeZone,
     String availability,
     String? recurrenceRule,
-    List<int>? reminders,
-  ) async {
+    List<int>? reminders, {
+    EventOptionsAndroid? android,
+  }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
     lastCreateEventReminders = reminders;
+    lastCreateEventAndroid = android;
     if (_createEventCallback != null) {
       return _createEventCallback!(
         calendarId,
@@ -285,6 +299,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? timeZone,
     String? availability,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
     lastUpdateEvent = (
@@ -300,6 +315,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       timeZone: timeZone,
       availability: availability,
       reminders: reminders,
+      android: android,
     );
   }
 
@@ -319,6 +335,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
     String? availability,
     Patch<String>? recurrenceRule,
     Patch<List<int>>? reminders,
+    EventUpdateOptionsAndroid? android,
   }) async {
     if (_exceptionToThrow != null) throw _exceptionToThrow!;
     lastUpdateRecurring = (
@@ -336,6 +353,7 @@ class MockDeviceCalendarPlusPlatform extends DeviceCalendarPlusPlatform
       availability: availability,
       recurrenceRule: recurrenceRule,
       reminders: reminders,
+      android: android,
     );
     return updateRecurringResult;
   }
@@ -1270,6 +1288,27 @@ void main() {
         expect(mockPlatform.lastUpdateEvent, isNotNull);
       });
 
+      test('android options with a field are enough to not be a no-op',
+          () async {
+        const android = EventUpdateOptionsAndroid(
+          status: EventStatusAndroid.tentative,
+        );
+        await DeviceCalendar.instance.updateEvent(
+          instanceId: 'event-123',
+          android: android,
+        );
+        expect(mockPlatform.lastUpdateEvent?.android, android);
+      });
+
+      test('is a no-op when the only field is empty android options',
+          () async {
+        await DeviceCalendar.instance.updateEvent(
+          instanceId: 'event-123',
+          android: const EventUpdateOptionsAndroid(),
+        );
+        expect(mockPlatform.lastUpdateEvent, isNull);
+      });
+
       test('throws ArgumentError on a negative reminder in Patch.set',
           () async {
         expect(
@@ -1491,6 +1530,30 @@ void main() {
           mockPlatform.lastUpdateRecurring?.reminders,
           isA<PatchClear<List<int>>>(),
         );
+      });
+
+      test('android options with a field are enough to not be a no-op',
+          () async {
+        const android = EventUpdateOptionsAndroid(
+          status: EventStatusAndroid.canceled,
+        );
+        await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventSpan.allEvents,
+          android: android,
+        );
+        expect(mockPlatform.lastUpdateRecurring?.android, android);
+      });
+
+      test('is a no-op when the only field is empty android options',
+          () async {
+        final result = await DeviceCalendar.instance.updateRecurring(
+          'event-123',
+          EventSpan.allEvents,
+          android: const EventUpdateOptionsAndroid(),
+        );
+        expect(result, 'event-123');
+        expect(mockPlatform.lastUpdateRecurring, isNull);
       });
 
       test('throws ArgumentError on a negative reminder in Patch.set', () {

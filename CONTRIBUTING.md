@@ -30,9 +30,9 @@ These conventions apply across the entire plugin. Any new feature that deals wit
 
 Both platform implementations must return data in the **same map shape**. The platform interface defines this contract — if a field exists in the Dart model's `fromMap()`, both platforms must populate it.
 
-- Don't add a field to the Dart model unless both platforms return it. **Read-only data is exempt:** a value that only one platform provides may be exposed as a nullable platform-specific field (e.g. `Event.colorHex`, which Android reads from `EVENT_COLOR` and iOS always reports as `null`). Document the per-platform behaviour on the field, and don't add write support unless both platforms have it.
+- Don't add a field to the Dart model unless both platforms return it. **Read-only data is exempt:** a value that only one platform provides may be exposed as a nullable platform-specific field (e.g. `Event.colorHex`, which Android reads from `EVENT_COLOR` and iOS always reports as `null`). Document the per-platform behaviour on the field. A shared write needs both platforms; a write only one platform can do goes through its options type (below).
 - Don't change the map shape for one platform without updating the other.
-- If a platform-specific field needs write configuration, handle it through typed platform option classes (see `CreateCalendarOptionsAndroid` for an example).
+- A write only one platform can do goes through that platform's typed options, passed as an `android:` or `ios:` parameter (see `EventOptionsAndroid` and `CalendarOptionsAndroid`). Its fields use that platform's own semantics and values, with no mapping to the other platform. See `.claude/rules/api-design.md`.
 
 ## Architecture
 

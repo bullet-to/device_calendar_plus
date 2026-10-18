@@ -1,3 +1,22 @@
+## Unreleased
+
+### Changed
+- **Breaking:** implements the platform interface's new `android:` / `ios:`
+  options. `CreateCalendarOptionsAndroid` moves to the platform interface as
+  `CalendarOptionsAndroid`.
+
+### Added
+- `createEvent`, `updateEvent` and `updateRecurring` write
+  `EventOptionsAndroid` / `EventUpdateOptionsAndroid.status` to
+  `CalendarContract.Events.STATUS`: on a one-off event, a detached
+  occurrence's exception row, the whole series (`allEvents`), and the new
+  series of a `thisAndFollowing` split (which carries the original's when the
+  call sets none). Carried occurrences keep their own (#70).
+
+### Fixed
+- `updateEvent` on one occurrence wrote its exception row as
+  `STATUS_CONFIRMED` whatever the series' status; it now keeps the series'.
+
 ## 0.9.3 - 2026-10-18
 
 ### Fixed

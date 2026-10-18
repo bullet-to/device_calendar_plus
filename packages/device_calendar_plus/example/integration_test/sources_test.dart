@@ -83,7 +83,7 @@ void main() {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
         name: 'Source Test iOS $timestamp',
-        platformOptions: CreateCalendarOptionsIos(sourceId: source.id),
+        ios: CalendarOptionsIos(sourceId: source.id),
       );
       createdCalendarIds.add(calendarId);
 
@@ -108,7 +108,7 @@ void main() {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
         name: 'Source Test Android $timestamp',
-        platformOptions: CreateCalendarOptionsAndroid(
+        android: CalendarOptionsAndroid(
           accountName: source.accountName,
           accountType: source.accountType,
         ),
@@ -135,7 +135,7 @@ void main() {
       try {
         final calendarId = await plugin.createCalendar(
           name: 'Phantom $timestamp',
-          platformOptions: const CreateCalendarOptionsAndroid(
+          android: const CalendarOptionsAndroid(
             accountName: 'someone@example.com',
             accountType: 'com.google',
           ),

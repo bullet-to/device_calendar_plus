@@ -38,6 +38,10 @@ Omitting `calendarId` writes to the device's default calendar. See
 [recurring-events.md](recurring-events.md) for `recurrenceRule` and
 [reminders.md](reminders.md) for `reminders`.
 
+Android-only fields, such as the event's status, go through `android:` on
+`createEvent`, `updateEvent` and `updateRecurring`. See
+[platform-options.md](platform-options.md).
+
 ## List
 
 ```dart

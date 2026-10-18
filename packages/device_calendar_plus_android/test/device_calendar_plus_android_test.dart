@@ -47,6 +47,8 @@ void main() {
             return 'android-event-id-789';
           case 'updateEvent':
             return null;
+          case 'updateRecurring':
+            return 'android-event-id-789';
           default:
             return null;
         }
@@ -63,13 +65,15 @@ void main() {
       final calendarId = await plugin.createCalendar(
         'My App Calendar',
         null,
-        CreateCalendarOptionsAndroid(accountName: 'MyApp'),
+        android: const CalendarOptionsAndroid(accountName: 'MyApp'),
+        ios: const CalendarOptionsIos(sourceId: 'ignored'),
       );
 
       expect(log.length, equals(1));
       expect(log[0].method, equals('createCalendar'));
       expect(log[0].arguments['name'], equals('My App Calendar'));
       expect(log[0].arguments['accountName'], equals('MyApp'));
+      expect(log[0].arguments.containsKey('sourceId'), isFalse);
       expect(calendarId, equals('android-calendar-id-456'));
     });
 
@@ -164,6 +168,83 @@ void main() {
 
       expect(log[0].arguments['reminders'], isNull);
       expect(log[0].arguments['clearedFields'], contains('reminders'));
+    });
+
+    group('android status', () {
+      test('createEvent sends the status by name', () async {
+        await plugin.createEvent(
+          null,
+          'Title',
+          DateTime(2024, 3, 15, 14),
+          DateTime(2024, 3, 15, 15),
+          false,
+          null,
+          null,
+          null,
+          null,
+          'busy',
+          null,
+          null,
+          android: const EventOptionsAndroid(
+            status: EventStatusAndroid.tentative,
+          ),
+        );
+
+        expect(log.single.arguments['status'], 'tentative');
+      });
+
+      test('createEvent without android options sends no status', () async {
+        await plugin.createEvent(
+          null,
+          'Title',
+          DateTime(2024, 3, 15, 14),
+          DateTime(2024, 3, 15, 15),
+          false,
+          null,
+          null,
+          null,
+          null,
+          'busy',
+          null,
+          null,
+        );
+
+        expect(log.single.arguments['status'], isNull);
+      });
+
+      test('updateEvent sends the status by name', () async {
+        await plugin.updateEvent(
+          'event-123',
+          android: const EventUpdateOptionsAndroid(
+            status: EventStatusAndroid.canceled,
+          ),
+        );
+
+        expect(log.single.arguments['status'], 'canceled');
+      });
+
+      test('updateEvent without a status sends none', () async {
+        await plugin.updateEvent(
+          'event-123',
+          title: 'New Title',
+          android: const EventUpdateOptionsAndroid(),
+        );
+
+        expect(log.single.arguments['status'], isNull);
+      });
+
+      test('updateRecurring sends the status by name', () async {
+        await plugin.updateRecurring(
+          'event-123',
+          1000,
+          'thisAndFollowing',
+          android: const EventUpdateOptionsAndroid(
+            status: EventStatusAndroid.confirmed,
+          ),
+        );
+
+        expect(log.single.arguments['status'], 'confirmed');
+      });
     });
   });
 }

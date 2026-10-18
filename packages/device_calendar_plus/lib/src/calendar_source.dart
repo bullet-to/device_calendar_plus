@@ -43,15 +43,15 @@ enum CalendarSourceType {
 /// Represents a calendar source/account that can own calendars.
 ///
 /// Use [DeviceCalendar.listSources] to discover available sources, then pass
-/// a source's [id] to [CreateCalendarOptionsIos] or use [accountName] +
-/// [accountType] with [CreateCalendarOptionsAndroid] to create calendars under
+/// a source's [id] to [CalendarOptionsIos] or use [accountName] +
+/// [accountType] with [CalendarOptionsAndroid] to create calendars under
 /// a specific account.
 class CalendarSource {
   /// Stable identifier for this source.
   ///
-  /// On iOS, pass it to [CreateCalendarOptionsIos]. On Android it is
+  /// On iOS, pass it to [CalendarOptionsIos]. On Android it is
   /// informational only — use [accountName] + [accountType] with
-  /// [CreateCalendarOptionsAndroid] to create a calendar.
+  /// [CalendarOptionsAndroid] to create a calendar.
   final String id;
 
   /// Display name or account identifier (e.g. "iCloud", "user@gmail.com").
