@@ -2820,59 +2820,77 @@ void main() {
           reason: 'a refused split must leave the series as it was');
     });
 
+    /// The #194 split: seeds the Mon/Wed/Fri series ([createMwfSeries],
+    /// all-day when [isAllDay]), asserts it expands onto [seedDay]s, splits
+    /// it at Wed 11 Nov onto Fri 13 Nov as [newDay] gives it (with
+    /// `isAllDay: false` and an hour's duration when [flipToTimed]), and
+    /// asserts the old series ends before the Wednesday, the new one runs
+    /// from the Friday on the kept rule for the two occurrences the count had
+    /// left, and nothing else of the series is left. Returns both halves for
+    /// the caller's own checks.
+    Future<({List<Event> remaining, List<Event> newSeries})>
+        expectMwfSplitOntoFriday({
+      required bool isAllDay,
+      required DateTime Function(int dayOfMonth) seedDay,
+      required DateTime Function(int dayOfMonth) newDay,
+      bool flipToTimed = false,
+    }) async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createMwfSeries(isAllDay: isAllDay);
+      final before = series.occurrences;
+      expect(startsOf(before), millisOf([2, 4, 6, 9, 11, 13].map(seedDay)),
+          reason: 'the series must expand onto its six Mondays, Wednesdays '
+              'and Fridays');
+      final wednesday = before[4];
+
+      final newSeriesId = await plugin.updateRecurring(
+        wednesday.instanceId,
+        EventSpan.thisAndFollowing,
+        isAllDay: flipToTimed ? false : null,
+        start: newDay(13),
+        duration: flipToTimed ? const Duration(hours: 1) : null,
+      );
+      expect(newSeriesId, isNot(series.eventId),
+          reason: 'the split must leave a new series');
+
+      final remaining = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.anchor,
+          windowDays: 30);
+      expect(startsOf(remaining), millisOf([2, 4, 6, 9].map(seedDay)),
+          reason: 'the occurrences before the split must stay where they '
+              'were');
+      final newSeries = await occurrencesOf(
+          plugin, calendarId!, newSeriesId, series.anchor,
+          windowDays: 30);
+      expect(startsOf(newSeries), millisOf([13, 16].map(newDay)),
+          reason: 'the new series must start on the Friday and continue '
+              'on the kept rule for the occurrences the count had left');
+      expect(
+        startsOf(await eventsTitled(
+            plugin, calendarId!, series.title, series.anchor,
+            windowDays: 30)),
+        [...startsOf(remaining), ...startsOf(newSeries)],
+        reason: 'nothing of the series may be left beside the two halves',
+      );
+      return (remaining: remaining, newSeries: newSeries);
+    }
+
     for (final allDay in [true, false]) {
+      // Weekly on Mon/Wed/Fri, six occurrences from Mon 2 Nov 2026.
+      // Splitting at Wed 11 Nov and moving it +2 days lands on Fri 13 Nov,
+      // a day the rule generates. EventKit's .futureEvents save detached the
+      // occurrence instead of splitting a series whose rule pins days, so
+      // iOS sets the kept rule on the event again, which makes EventKit
+      // split it (see SeriesRuleWrite.set, #194). The all-day series takes
+      // that path in the device-zone frame, at local midnights.
       test(
           'thisAndFollowing day shift onto another listed weekday of an '
           'explicit-BYDAY rule splits the ${allDay ? 'all-day' : 'timed'} '
           'series there (#194)', () async {
-        expect(calendarId, isNotNull,
-            reason: 'setUpAll must create a calendar');
-        // Weekly on Mon/Wed/Fri, six occurrences from Mon 2 Nov 2026.
-        // Splitting at Wed 11 Nov and moving it +2 days lands on Fri 13 Nov,
-        // a day the rule generates: the old series ends before the
-        // Wednesday, and the new one starts on the Friday and runs on the
-        // kept rule for the two occurrences the count had left. EventKit's
-        // .futureEvents save detached the occurrence instead of splitting a
-        // series whose rule pins days, so iOS sets the kept rule on the
-        // event again, which makes EventKit split it (see
-        // SeriesRuleWrite.set, #194). The all-day series takes that path in
-        // the device-zone frame, at local midnights.
         DateTime day(int dayOfMonth) =>
             seriesDay(11, dayOfMonth, allDay: allDay);
-        final series = await createMwfSeries(isAllDay: allDay);
-        final before = series.occurrences;
-        expect(startsOf(before), millisOf([2, 4, 6, 9, 11, 13].map(day)),
-            reason: 'the series must expand onto its six Mondays, '
-                'Wednesdays and Fridays');
-        final wednesday = before[4];
-
-        final newSeriesId = await plugin.updateRecurring(
-          wednesday.instanceId,
-          EventSpan.thisAndFollowing,
-          start: day(13),
-        );
-        expect(newSeriesId, isNot(series.eventId),
-            reason: 'the split must leave a new series');
-
-        final remaining = await occurrencesOf(
-            plugin, calendarId!, series.eventId, series.anchor,
-            windowDays: 30);
-        expect(startsOf(remaining), millisOf([2, 4, 6, 9].map(day)),
-            reason: 'the occurrences before the split must stay where they '
-                'were');
-        final newSeries = await occurrencesOf(
-            plugin, calendarId!, newSeriesId, series.anchor,
-            windowDays: 30);
-        expect(startsOf(newSeries), millisOf([13, 16].map(day)),
-            reason: 'the new series must start on the Friday and continue '
-                'on the kept rule for the occurrences the count had left');
-        expect(
-          startsOf(await eventsTitled(
-              plugin, calendarId!, series.title, series.anchor,
-              windowDays: 30)),
-          [...startsOf(remaining), ...startsOf(newSeries)],
-          reason: 'nothing of the series may be left beside the two halves',
-        );
+        await expectMwfSplitOntoFriday(
+            isAllDay: allDay, seedDay: day, newDay: day);
       });
     }
 
@@ -2885,50 +2903,16 @@ void main() {
         'thisAndFollowing day shift onto another listed weekday of an '
         'explicit-BYDAY rule that toggles an all-day series timed splits it '
         'there', () async {
-      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
-      DateTime allDay(int dayOfMonth) => DateTime(2026, 11, dayOfMonth);
-      DateTime nine(int dayOfMonth) => DateTime(2026, 11, dayOfMonth, 9);
-      final series = await createMwfSeries(isAllDay: true);
-      final before = series.occurrences;
-      expect(startsOf(before), millisOf([2, 4, 6, 9, 11, 13].map(allDay)),
-          reason: 'the series must expand onto its six Mondays, Wednesdays '
-              'and Fridays');
-      final wednesday = before[4];
-
-      final newSeriesId = await plugin.updateRecurring(
-        wednesday.instanceId,
-        EventSpan.thisAndFollowing,
-        isAllDay: false,
-        start: nine(13),
-        duration: const Duration(hours: 1),
+      final (:remaining, :newSeries) = await expectMwfSplitOntoFriday(
+        isAllDay: true,
+        seedDay: (dayOfMonth) => DateTime(2026, 11, dayOfMonth),
+        newDay: (dayOfMonth) => DateTime(2026, 11, dayOfMonth, 9),
+        flipToTimed: true,
       );
-      expect(newSeriesId, isNot(series.eventId),
-          reason: 'the split must leave a new series');
-
-      final remaining = await occurrencesOf(
-          plugin, calendarId!, series.eventId, series.anchor,
-          windowDays: 30);
-      expect(startsOf(remaining), millisOf([2, 4, 6, 9].map(allDay)),
-          reason: 'the occurrences before the split must stay where they '
-              'were');
       expect(remaining.every((e) => e.isAllDay), isTrue,
           reason: 'the original series must stay all-day');
-      final newSeries = await occurrencesOf(
-          plugin, calendarId!, newSeriesId, series.anchor,
-          windowDays: 30);
-      expect(startsOf(newSeries), millisOf([13, 16].map(nine)),
-          reason: 'the new series must start at 09:00 on the Friday and '
-              'continue on the kept rule for the occurrences the count had '
-              'left');
       expect(newSeries.every((e) => !e.isAllDay), isTrue,
           reason: 'the new series must be timed');
-      expect(
-        startsOf(await eventsTitled(
-            plugin, calendarId!, series.title, series.anchor,
-            windowDays: 30)),
-        [...startsOf(remaining), ...startsOf(newSeries)],
-        reason: 'nothing of the series may be left beside the two halves',
-      );
     });
 
     test(
@@ -3653,11 +3637,28 @@ void main() {
       );
     });
 
-    /// Splits an all-day weekly series seeded on [day] at its third
-    /// occurrence with a bare toggle to timed, and asserts the new series
-    /// holds every occurrence from the split on, each timed on its own
-    /// calendar day, and the original only those before the split.
-    Future<void> expectAllDayToTimedSplit(String title, DateTime day) async {
+    /// Splits an all-day weekly series titled [title], seeded on [day], at
+    /// its third occurrence with a toggle to timed, plus [newTitle],
+    /// [duration], and the [start] and [recurrenceRule] built from the split
+    /// occurrence, when given. Reads back the new series and the original
+    /// over [windowDays] from a day before the seed, so a local midnight
+    /// east of UTC is still in the window.
+    Future<
+        ({
+          List<Event> before,
+          Event split,
+          String newSeriesId,
+          List<Event> newSeries,
+          List<Event> remaining,
+        })> allDayToTimedSplit(
+      String title,
+      DateTime day, {
+      String? newTitle,
+      DateTime Function(Event split)? start,
+      Duration? duration,
+      Patch<RecurrenceRule> Function(Event split)? recurrenceRule,
+      int windowDays = 31,
+    }) async {
       final seeded = await seedWeeklySeries(plugin, calendarId,
           title: title, isAllDay: true, start: day, count: seedCount);
       final before = seeded.occurrences;
@@ -3666,21 +3667,34 @@ void main() {
       final newSeriesId = await plugin.updateRecurring(
         split.instanceId,
         EventSpan.thisAndFollowing,
+        title: newTitle,
         isAllDay: false,
+        start: start?.call(split),
+        duration: duration,
+        recurrenceRule: recurrenceRule?.call(split),
       );
 
-      // A day early so a local midnight east of UTC is still in the window.
       final from = seeded.start.subtract(const Duration(days: 1));
-      expectTimedOnOwnDays(
-        await occurrencesOf(plugin, calendarId!, newSeriesId, from,
-            windowDays: 31),
-        before.sublist(2),
+      return (
+        before: before,
+        split: split,
+        newSeriesId: newSeriesId,
+        newSeries: await occurrencesOf(plugin, calendarId!, newSeriesId, from,
+            windowDays: windowDays),
+        remaining: await occurrencesOf(
+            plugin, calendarId!, seeded.eventId, from,
+            windowDays: windowDays),
       );
-      expectTruncatedMaster(
-        await occurrencesOf(plugin, calendarId!, seeded.eventId, from,
-            windowDays: 31),
-        before: split.startDate,
-      );
+    }
+
+    /// Splits an all-day weekly series seeded on [day] at its third
+    /// occurrence with a bare toggle to timed, and asserts the new series
+    /// holds every occurrence from the split on, each timed on its own
+    /// calendar day, and the original only those before the split.
+    Future<void> expectAllDayToTimedSplit(String title, DateTime day) async {
+      final r = await allDayToTimedSplit(title, day);
+      expectTimedOnOwnDays(r.newSeries, r.before.sublist(2));
+      expectTruncatedMaster(r.remaining, before: r.split.startDate);
     }
 
     test(
@@ -3721,24 +3735,11 @@ void main() {
           'day', () async {
         final title = 'All-day To Timed Dated Split$label';
         final movedTitle = '$title (timed)';
-        final seeded = await seedWeeklySeries(plugin, calendarId,
-            title: title, isAllDay: true, start: day, count: seedCount);
-        final before = seeded.occurrences;
-        final split = before[2];
-
-        final newSeriesId = await plugin.updateRecurring(
-          split.instanceId,
-          EventSpan.thisAndFollowing,
-          title: movedTitle,
-          isAllDay: false,
-          start: nineOn(split.startDate),
-          duration: const Duration(hours: 1),
-        );
-
-        final from = seeded.start.subtract(const Duration(days: 1));
-        final newSeries = await occurrencesOf(
-            plugin, calendarId!, newSeriesId, from,
-            windowDays: 31);
+        final r = await allDayToTimedSplit(title, day,
+            newTitle: movedTitle,
+            start: (split) => nineOn(split.startDate),
+            duration: const Duration(hours: 1));
+        final newSeries = r.newSeries;
         expect(newSeries.every((e) => !e.isAllDay), isTrue,
             reason: 'every new occurrence must be timed');
         expect(
@@ -3750,7 +3751,7 @@ void main() {
               ),
           ],
           [
-            for (final e in before.sublist(2))
+            for (final e in r.before.sublist(2))
               (
                 nineOn(e.startDate).millisecondsSinceEpoch,
                 nineOn(e.startDate)
@@ -3764,10 +3765,8 @@ void main() {
         expect(newSeries.every((e) => e.title == movedTitle), isTrue,
             reason: 'the new series must carry the new title');
 
-        final remaining = await occurrencesOf(
-            plugin, calendarId!, seeded.eventId, from,
-            windowDays: 31);
-        expectTruncatedMaster(remaining, before: split.startDate);
+        final remaining = r.remaining;
+        expectTruncatedMaster(remaining, before: r.split.startDate);
         expect(remaining.every((e) => e.isAllDay && e.title == title), isTrue,
             reason: 'the original series must stay all-day under its old '
                 'title');
@@ -3781,40 +3780,27 @@ void main() {
       test(
           'thisAndFollowing toggling an all-day series timed with a new rule'
           '$label splits it onto the new rule', () async {
-        final seeded = await seedWeeklySeries(plugin, calendarId,
-            title: 'All-day To Timed Rule Split$label',
-            isAllDay: true,
-            start: day,
-            count: seedCount);
-        final before = seeded.occurrences;
-        final split = before[2];
-        final splitDay = localDay(split.startDate);
-
-        final newSeriesId = await plugin.updateRecurring(
-          split.instanceId,
-          EventSpan.thisAndFollowing,
-          isAllDay: false,
-          recurrenceRule: Patch.set(WeeklyRecurrence(
-            interval: 2,
-            end: UntilEnd(DateTime.utc(
-                splitDay.year, splitDay.month, splitDay.day + 20)),
-          )),
+        final r = await allDayToTimedSplit(
+          'All-day To Timed Rule Split$label',
+          day,
+          recurrenceRule: (split) {
+            final splitDay = localDay(split.startDate);
+            return Patch.set(WeeklyRecurrence(
+              interval: 2,
+              end: UntilEnd(DateTime.utc(
+                  splitDay.year, splitDay.month, splitDay.day + 20)),
+            ));
+          },
+          windowDays: 50,
         );
 
-        final from = seeded.start.subtract(const Duration(days: 1));
-        final newSeries = await occurrencesOf(
-            plugin, calendarId!, newSeriesId, from,
-            windowDays: 50);
-        expectTimedOnDays(newSeries, [splitDay, daysOn(splitDay, 14)]);
-        final newEvent = await plugin.getEvent(newSeriesId);
+        final splitDay = localDay(r.split.startDate);
+        expectTimedOnDays(r.newSeries, [splitDay, daysOn(splitDay, 14)]);
+        final newEvent = await plugin.getEvent(r.newSeriesId);
         expect(newEvent?.recurrenceRule, isA<WeeklyRecurrence>());
         expect(newEvent!.recurrenceRule!.interval, 2,
             reason: 'the new series must run on the replacing rule');
-        expectTruncatedMaster(
-          await occurrencesOf(plugin, calendarId!, seeded.eventId, from,
-              windowDays: 50),
-          before: split.startDate,
-        );
+        expectTruncatedMaster(r.remaining, before: r.split.startDate);
       });
     }
   });

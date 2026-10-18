@@ -21,6 +21,7 @@
 		3A1C4F2629B100E100134001 /* EventDatesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1C4F2729B100E100134001 /* EventDatesTests.swift */; };
 		3A1C4F2829B100E100134001 /* DateFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1C4F2929B100E100134001 /* DateFixtures.swift */; };
 		3A1C4F2A29B100E100134001 /* DetachThenFlipAllDayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1C4F2B29B100E100134001 /* DetachThenFlipAllDayTests.swift */; };
+		3A1C4F2C29B100E100134001 /* SplitThenFlipToTimedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1C4F2D29B100E100134001 /* SplitThenFlipToTimedTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
@@ -68,6 +69,7 @@
 		3A1C4F2729B100E100134001 /* EventDatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDatesTests.swift; sourceTree = "<group>"; };
 		3A1C4F2929B100E100134001 /* DateFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateFixtures.swift; sourceTree = "<group>"; };
 		3A1C4F2B29B100E100134001 /* DetachThenFlipAllDayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetachThenFlipAllDayTests.swift; sourceTree = "<group>"; };
+		3A1C4F2D29B100E100134001 /* SplitThenFlipToTimedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitThenFlipToTimedTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -118,6 +120,7 @@
 				3A1C4F2729B100E100134001 /* EventDatesTests.swift */,
 				3A1C4F2929B100E100134001 /* DateFixtures.swift */,
 				3A1C4F2B29B100E100134001 /* DetachThenFlipAllDayTests.swift */,
+				3A1C4F2D29B100E100134001 /* SplitThenFlipToTimedTests.swift */,
 			);
 			path = RunnerTests;
 			sourceTree = "<group>";
@@ -327,6 +330,7 @@
 				3A1C4F2629B100E100134001 /* EventDatesTests.swift in Sources */,
 				3A1C4F2829B100E100134001 /* DateFixtures.swift in Sources */,
 				3A1C4F2A29B100E100134001 /* DetachThenFlipAllDayTests.swift in Sources */,
+				3A1C4F2C29B100E100134001 /* SplitThenFlipToTimedTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
