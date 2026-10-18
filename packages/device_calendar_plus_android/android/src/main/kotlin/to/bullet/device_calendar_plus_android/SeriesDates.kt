@@ -33,7 +33,7 @@ internal fun calendarDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone)
  * calendar-day count from before #224 and hasn't been checked against
  * EventKit.
  */
-internal fun wholeWallClockDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone): Int =
+private fun wholeWallClockDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone): Int =
     (((toMillis + tz.getOffset(toMillis)) - (fromMillis + tz.getOffset(fromMillis))) /
         AllDayDates.MILLIS_PER_DAY).toInt()
 
