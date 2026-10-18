@@ -4,15 +4,15 @@ import android.content.ContentProviderOperation
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.ContentValues
-import android.net.Uri
 import android.provider.CalendarContract
 import android.provider.CalendarContract.Attendees
 import io.flutter.plugin.common.MethodCall
 
-// The write side of CalendarContract.Attendees: `AttendeeAndroid` from the
-// method channel, Android's own columns and value sets written as they are
-// (#71). iOS can't write attendees, so nothing here is mapped onto the
-// shared, read-only `Attendee`.
+// CalendarContract.Attendees as the plugin reads and writes it: every read
+// and insert of its rows, and `AttendeeAndroid` from the method channel,
+// Android's own columns and value sets written as they are (#71). iOS
+// can't write attendees, so nothing here is mapped onto the shared,
+// read-only `Attendee`; EventsService does that for its reads.
 
 /**
  * One [Attendees] row as the plugin writes or carries it, each column as
@@ -137,34 +137,19 @@ internal fun MethodCall.attendeesArg(): List<AttendeeRow>? =
     argument<List<Map<*, *>>>("attendees")?.map(::attendeeRowFromArg)
 
 /**
- * Inserts of [rows] as Attendees rows of the event whose insert is batch
- * operation [eventOp]: its EVENT_ID is a back-reference to that result.
+ * Inserts of [rows] as Attendees rows, the one builder of every Attendees
+ * insert the plugin makes. [keyToEvent] sets each row's EVENT_ID: a fixed
+ * ID (`withValue`) or a back-reference to an event insert earlier in the
+ * same batch (`withValueBackReference`).
  */
 internal fun attendeeInsertOps(
     rows: List<AttendeeRow>,
-    eventOp: Int
+    keyToEvent: ContentProviderOperation.Builder.() -> ContentProviderOperation.Builder
 ): List<ContentProviderOperation> = rows.map { row ->
     ContentProviderOperation.newInsert(Attendees.CONTENT_URI)
         .withValues(row.toValues())
-        .withValueBackReference(Attendees.EVENT_ID, eventOp)
+        .keyToEvent()
         .build()
-}
-
-/**
- * Inserts event [values] through [uri] and [attendees] as its Attendees rows
- * in one [ContentResolver.applyBatch], which the Calendar Provider applies
- * in one transaction: the event and its guest list, or neither. Returns the
- * new event's ID, or null when the provider returned none.
- */
-internal fun ContentResolver.insertEventWithAttendees(
-    uri: Uri,
-    values: ContentValues,
-    attendees: List<AttendeeRow>
-): String? {
-    val eventOp = 0
-    val ops = arrayListOf(ContentProviderOperation.newInsert(uri).withValues(values).build())
-    ops += attendeeInsertOps(attendees, eventOp)
-    return applyBatch(CalendarContract.AUTHORITY, ops)[eventOp].uri?.lastPathSegment
 }
 
 /**
@@ -221,12 +206,7 @@ internal fun ContentResolver.applyAttendeesPatch(eventId: Long, patch: Attendees
             .build()
     }
     if (patch is AttendeesPatch.Set) {
-        for (row in patch.rows) {
-            ops += ContentProviderOperation.newInsert(Attendees.CONTENT_URI)
-                .withValues(row.toValues())
-                .withValue(Attendees.EVENT_ID, eventId)
-                .build()
-        }
+        ops += attendeeInsertOps(patch.rows) { withValue(Attendees.EVENT_ID, eventId) }
     }
     if (ops.isNotEmpty()) applyBatch(CalendarContract.AUTHORITY, ops)
 }

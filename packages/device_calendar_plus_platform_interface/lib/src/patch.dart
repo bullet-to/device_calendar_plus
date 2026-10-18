@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show listEquals;
+
 /// A partial-update instruction for an optional, clearable field.
 ///
 /// `updateEvent` follows the convention that a `null` argument means "leave
@@ -18,6 +20,9 @@ sealed class Patch<T> {
 }
 
 /// A [Patch] that sets the field to [value].
+///
+/// Two sets are equal when their values are: a [List] value (reminder
+/// offsets, attendees…) compares element by element, in order.
 final class PatchSet<T> extends Patch<T> {
   const PatchSet(this.value);
 
@@ -25,11 +30,18 @@ final class PatchSet<T> extends Patch<T> {
   final T value;
 
   @override
-  bool operator ==(Object other) =>
-      other is PatchSet<T> && other.value == value;
+  bool operator ==(Object other) {
+    if (other is! PatchSet<T>) return false;
+    final a = value;
+    final b = other.value;
+    return a is List && b is List ? listEquals(a, b) : a == b;
+  }
 
   @override
-  int get hashCode => value.hashCode;
+  int get hashCode {
+    final v = value;
+    return v is List ? Object.hashAll(v) : v.hashCode;
+  }
 }
 
 /// A [Patch] that clears the field.

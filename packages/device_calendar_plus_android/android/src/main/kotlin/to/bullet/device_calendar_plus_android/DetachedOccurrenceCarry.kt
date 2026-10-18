@@ -347,11 +347,8 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             .withSelection("${CalendarContract.Attendees.EVENT_ID} = ?", arrayOf(""))
             .withSelectionBackReference(eventIdArg, copyOp)
             .build()
-        for (attendee in readAttendeeRows(oldId)) {
-            ops += ContentProviderOperation.newInsert(CalendarContract.Attendees.CONTENT_URI)
-                .withValues(attendee)
-                .withValueBackReference(CalendarContract.Attendees.EVENT_ID, copyOp)
-                .build()
+        ops += attendeeInsertOps(resolver.readAttendeeRows(oldId).map { it.second }) {
+            withValueBackReference(CalendarContract.Attendees.EVENT_ID, copyOp)
         }
 
         ops += ContentProviderOperation.newDelete(store.deleteUri(account))
@@ -419,26 +416,6 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             CalendarContract.Reminders.EVENT_ID,
             eventId,
             arrayOf(CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD)
-        )
-
-    /**
-     * Event [eventId]'s [CalendarContract.Attendees] rows, organizer row
-     * included, as insert values without their EVENT_ID.
-     */
-    private fun readAttendeeRows(eventId: Long): List<ContentValues> =
-        readChildRows(
-            CalendarContract.Attendees.CONTENT_URI,
-            CalendarContract.Attendees.EVENT_ID,
-            eventId,
-            arrayOf(
-                CalendarContract.Attendees.ATTENDEE_NAME,
-                CalendarContract.Attendees.ATTENDEE_EMAIL,
-                CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
-                CalendarContract.Attendees.ATTENDEE_TYPE,
-                CalendarContract.Attendees.ATTENDEE_STATUS,
-                CalendarContract.Attendees.ATTENDEE_IDENTITY,
-                CalendarContract.Attendees.ATTENDEE_ID_NAMESPACE
-            )
         )
 
     /**

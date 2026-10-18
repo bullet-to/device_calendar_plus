@@ -14,6 +14,8 @@
 // equality, so adding a field later is not a breaking change. The values they
 // carry (such as AttendeeAndroid) are immutable with value equality too.
 
+import 'package:flutter/foundation.dart' show listEquals;
+
 import 'patch.dart';
 
 /// An Android event's `STATUS` column, as `CalendarContract.Events` defines
@@ -174,19 +176,6 @@ class AttendeeAndroid {
       'type: $type, relationship: $relationship, status: $status)';
 }
 
-/// Whether two attendee lists hold equal attendees in the same order.
-bool _attendeesEqual(List<AttendeeAndroid>? a, List<AttendeeAndroid>? b) {
-  if (identical(a, b)) return true;
-  if (a == null || b == null || a.length != b.length) return false;
-  for (var i = 0; i < a.length; i++) {
-    if (a[i] != b[i]) return false;
-  }
-  return true;
-}
-
-int _attendeesHash(List<AttendeeAndroid>? attendees) =>
-    attendees == null ? null.hashCode : Object.hashAll(attendees);
-
 /// Android-only options for `createEvent`.
 ///
 /// Applies only on Android; ignored on iOS.
@@ -215,10 +204,13 @@ class EventOptionsAndroid {
   bool operator ==(Object other) =>
       other is EventOptionsAndroid &&
       other.status == status &&
-      _attendeesEqual(other.attendees, attendees);
+      listEquals(other.attendees, attendees);
 
   @override
-  int get hashCode => Object.hash(status, _attendeesHash(attendees));
+  int get hashCode => Object.hash(
+        status,
+        attendees == null ? null : Object.hashAll(attendees!),
+      );
 
   @override
   String toString() =>
@@ -261,9 +253,10 @@ class EventUpdateOptionsAndroid {
   /// (`RELATIONSHIP_ORGANIZER`), which the shared `Event.attendees` doesn't
   /// read either: the event keeps its organizer. A set whose list holds an
   /// [AttendeeRelationshipAndroid.organizer] entry replaces the organizer
-  /// row too. An empty set is a clear. **On a synced calendar the server may
-  /// email each new address an invitation, and each removed one a
-  /// cancellation**, and may rewrite the rows (see [AttendeeAndroid]).
+  /// row too. An empty set removes the same rows as a clear (though the two
+  /// patches aren't equal). **On a synced calendar the server may email
+  /// each new address an invitation, and each removed one a cancellation**,
+  /// and may rewrite the rows (see [AttendeeAndroid]).
   ///
   /// On one occurrence of a series (`updateEvent` with an instance ID) it
   /// applies to that occurrence alone; an occurrence edited without it keeps
@@ -280,33 +273,15 @@ class EventUpdateOptionsAndroid {
   bool operator ==(Object other) =>
       other is EventUpdateOptionsAndroid &&
       other.status == status &&
-      _attendeePatchesEqual(other.attendees, attendees);
+      other.attendees == attendees;
 
   @override
-  int get hashCode => Object.hash(status, _attendeePatchHash(attendees));
+  int get hashCode => Object.hash(status, attendees);
 
   @override
   String toString() =>
       'EventUpdateOptionsAndroid(status: $status, attendees: $attendees)';
 }
-
-/// Whether two attendee patches make the same edit: [PatchSet]s compare
-/// their lists by element, as [Patch]'s own equality would not.
-bool _attendeePatchesEqual(
-  Patch<List<AttendeeAndroid>>? a,
-  Patch<List<AttendeeAndroid>>? b,
-) =>
-    switch ((a, b)) {
-      (PatchSet(value: final x), PatchSet(value: final y)) =>
-        _attendeesEqual(x, y),
-      _ => a == b,
-    };
-
-int _attendeePatchHash(Patch<List<AttendeeAndroid>>? patch) =>
-    switch (patch) {
-      PatchSet(:final value) => _attendeesHash(value),
-      _ => patch.hashCode,
-    };
 
 /// Android-only options for `createCalendar`.
 ///

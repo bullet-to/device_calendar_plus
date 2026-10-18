@@ -1,5 +1,6 @@
 package to.bullet.device_calendar_plus_android
 
+import android.content.ContentProviderOperation
 import android.content.Context
 import android.provider.CalendarContract
 import java.util.Date
@@ -312,56 +313,22 @@ class EventsService(
         return minutes
     }
 
-    private fun queryAttendees(eventId: Long): List<Map<String, Any?>> {
-        val attendees = mutableListOf<Map<String, Any?>>()
-
-        try {
-            context.contentResolver.query(
-                CalendarContract.Attendees.CONTENT_URI,
-                arrayOf(
-                    CalendarContract.Attendees.ATTENDEE_NAME,
-                    CalendarContract.Attendees.ATTENDEE_EMAIL,
-                    CalendarContract.Attendees.ATTENDEE_TYPE,
-                    CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
-                    CalendarContract.Attendees.ATTENDEE_STATUS,
-                ),
-                "${CalendarContract.Attendees.EVENT_ID} = ?",
-                arrayOf(eventId.toString()),
-                null
-            )?.use { cursor ->
-                while (cursor.moveToNext()) {
-                    val relationship = cursor.getInt(
-                        cursor.getColumnIndexOrThrow(CalendarContract.Attendees.ATTENDEE_RELATIONSHIP)
-                    )
-                    // Skip the organizer
-                    if (relationship == CalendarContract.Attendees.RELATIONSHIP_ORGANIZER) continue
-
-                    val name = cursor.getString(
-                        cursor.getColumnIndexOrThrow(CalendarContract.Attendees.ATTENDEE_NAME)
-                    )
-                    val email = cursor.getString(
-                        cursor.getColumnIndexOrThrow(CalendarContract.Attendees.ATTENDEE_EMAIL)
-                    )
-                    val type = cursor.getInt(
-                        cursor.getColumnIndexOrThrow(CalendarContract.Attendees.ATTENDEE_TYPE)
-                    )
-                    val status = cursor.getInt(
-                        cursor.getColumnIndexOrThrow(CalendarContract.Attendees.ATTENDEE_STATUS)
-                    )
-
-                    attendees.add(mapOf(
-                        "name" to name,
-                        "emailAddress" to email,
-                        "role" to attendeeTypeToRole(type),
-                        "status" to attendeeStatusToString(status),
-                    ))
-                }
+    private fun queryAttendees(eventId: Long): List<Map<String, Any?>> = try {
+        context.contentResolver.readAttendeeRows(eventId)
+            .map { it.second }
+            .filterNot { it.isOrganizer }
+            .map { row ->
+                // A NULL type or status reads as 0, as Cursor.getInt has it.
+                mapOf(
+                    "name" to row.name,
+                    "emailAddress" to row.email,
+                    "role" to attendeeTypeToRole(row.type ?: 0),
+                    "status" to attendeeStatusToString(row.status ?: 0),
+                )
             }
-        } catch (_: Exception) {
-            // Silently return empty if attendee query fails
-        }
-
-        return attendees
+    } catch (_: Exception) {
+        // Silently return empty if attendee query fails
+        emptyList()
     }
 
     private fun attendeeTypeToRole(type: Int): String {
@@ -589,21 +556,17 @@ class EventsService(
                 put(CalendarContract.Events.HAS_ALARM, if (hasReminders) 1 else 0)
             }
 
-            // The caller's EventOptionsAndroid.attendees go in the event's
-            // own transaction: the event and its guest list, or neither.
-            val eventId = context.contentResolver.insertEventWithAttendees(
-                CalendarContract.Events.CONTENT_URI,
+            // Reminders and the caller's EventOptionsAndroid.attendees attach
+            // as separate rows keyed by EVENT_ID, in the event's own
+            // transaction — the same whether or not the event recurs, so the
+            // RRULE/DURATION handling above is untouched.
+            val eventId = insertEventWithChildren(
                 values,
+                reminders.orEmpty(),
                 attendees
             )
 
             if (eventId != null) {
-                // Reminders attach as separate rows keyed by EVENT_ID — this
-                // is the same whether or not the event recurs, so the
-                // RRULE/DURATION handling above is untouched.
-                if (reminders != null && reminders.isNotEmpty()) {
-                    insertReminderRows(eventId.toLong(), reminders)
-                }
                 return Result.success(eventId)
             }
 
@@ -819,9 +782,10 @@ class EventsService(
         // (or drops) the alarms. Unchanged leaves the column alone.
         applyRemindersHasAlarm(values, patch.reminders)
 
-        val updatedRows = updateEventRowIfAny(eventId, values)
-
-        if (updatedRows == 0) {
+        // An attendees-only edit has no event column to write (and Android's
+        // SQLiteDatabase rejects an update with no values), so the write is
+        // skipped; the row was read just before, so it is still there.
+        if (values.size() > 0 && store.updateEventRow(eventId, values) == 0) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.NOT_FOUND,
@@ -838,18 +802,6 @@ class EventsService(
 
         return Result.success(Unit)
     }
-
-    /**
-     * Updates event row [eventId] with [values], as [SeriesRowStore.updateEventRow]
-     * does, unless [values] is empty: an edit of child rows alone (an
-     * attendees-only update) has no event column to write, and Android's
-     * SQLiteDatabase rejects an update with no values. The row was read just before, so
-     * an empty update counts it as the one row matched.
-     */
-    private fun updateEventRowIfAny(
-        eventId: String,
-        values: android.content.ContentValues
-    ): Int = if (values.size() == 0) 1 else store.updateEventRow(eventId, values)
 
     /**
      * Applies [patch] — title, description, location, url, all-day flag,
@@ -1140,8 +1092,8 @@ class EventsService(
 
         applyRemindersHasAlarm(values, patch.reminders)
 
-        val updatedRows = updateEventRowIfAny(row.id, values)
-        if (updatedRows == 0) {
+        // Skipped when there is no event column to write, as in updateOneOff.
+        if (values.size() > 0 && store.updateEventRow(row.id, values) == 0) {
             return Result.failure(
                 CalendarException(
                     PlatformExceptionCodes.NOT_FOUND,
@@ -1196,6 +1148,13 @@ class EventsService(
         val effectiveTimeZone = patch.timeZone ?: row.timeZone
         val effectiveAvailability = patch.availability ?: row.availability
         val effectiveStatus = patch.status ?: row.status
+        // The new series carries the patch's reminders when set/cleared, else
+        // it inherits the original series' reminders.
+        val effectiveReminders = when (val r = patch.reminders) {
+            is EventFieldPatch.RemindersPatch.Set -> r.minutes
+            is EventFieldPatch.RemindersPatch.Clear -> emptyList()
+            EventFieldPatch.RemindersPatch.Unchanged -> queryReminderMinutes(row.id.toLong())
+        }
         // The original series' guest list (organizer included) with the
         // edit applied, as the series would hold it after an allEvents edit.
         val effectiveAttendees = patch.attendees.applyTo(
@@ -1242,22 +1201,11 @@ class EventsService(
             timeZone = effectiveTimeZone,
             availability = effectiveAvailability,
             status = effectiveStatus,
+            reminders = effectiveReminders,
             attendees = effectiveAttendees,
             rrule = effectiveRrule
         )
         val newEventId = insertResult.getOrElse { return Result.failure(it) }
-
-        // The new series carries the patch's reminders when set/cleared, else
-        // it inherits the original series' reminders.
-        val effectiveReminders = when (val r = patch.reminders) {
-            is EventFieldPatch.RemindersPatch.Set -> r.minutes
-            is EventFieldPatch.RemindersPatch.Clear -> emptyList()
-            EventFieldPatch.RemindersPatch.Unchanged -> queryReminderMinutes(row.id.toLong())
-        }
-        if (effectiveReminders.isNotEmpty()) {
-            insertReminderRows(newEventId.toLong(), effectiveReminders)
-            setHasAlarm(newEventId.toLong(), row.calendarId, true)
-        }
 
         // Truncate the original series to end just before the anchor. UNTIL is
         // inclusive, so cutting it one second early keeps the anchor occurrence
@@ -1454,7 +1402,7 @@ class EventsService(
      * Inserts a fresh event row, using DURATION when recurring and DTEND
      * otherwise: the new series of a `thisAndFollowing` split, which carries
      * [status] (the edit's, else the original series') as it is, and
-     * [attendees] as its Attendees rows, in the same transaction.
+     * [reminders] and [attendees] as its child rows, in the same transaction.
      */
     private fun insertEvent(
         calendarId: String,
@@ -1468,6 +1416,7 @@ class EventsService(
         timeZone: String?,
         availability: String,
         status: Int?,
+        reminders: List<Int>,
         attendees: List<AttendeeRow>,
         rrule: String?
     ): Result<String> {
@@ -1500,15 +1449,14 @@ class EventsService(
                 else (timeZone ?: java.util.TimeZone.getDefault().id)
             )
             put(CalendarContract.Events.AVAILABILITY, availabilityToInt(availability))
+            if (reminders.isNotEmpty()) {
+                put(CalendarContract.Events.HAS_ALARM, 1)
+            }
         }
         // Written even when null, so the new series has the status the edit
         // resolved to rather than whatever the provider fills in.
         values.putStatus(status)
-        val newId = context.contentResolver.insertEventWithAttendees(
-            CalendarContract.Events.CONTENT_URI,
-            values,
-            attendees
-        )
+        val newId = insertEventWithChildren(values, reminders, attendees)
         return if (newId != null) {
             Result.success(newId)
         } else {
@@ -1519,6 +1467,41 @@ class EventsService(
                 )
             )
         }
+    }
+
+    /**
+     * Inserts event [values] with [reminders] (one alert per minute value)
+     * and [attendees] as its child rows, in one
+     * [android.content.ContentResolver.applyBatch], which the Calendar
+     * Provider applies in one transaction: the event and all its rows, or
+     * none of it. Returns the new event's ID, or null when the provider
+     * returned none.
+     */
+    private fun insertEventWithChildren(
+        values: android.content.ContentValues,
+        reminders: List<Int>,
+        attendees: List<AttendeeRow>
+    ): String? {
+        // Each child row is keyed to the event by a back-reference to the
+        // result of this first operation, the event's insert.
+        val eventOp = 0
+        val ops = arrayListOf(
+            ContentProviderOperation.newInsert(CalendarContract.Events.CONTENT_URI)
+                .withValues(values)
+                .build()
+        )
+        for (m in reminders) {
+            ops += ContentProviderOperation.newInsert(CalendarContract.Reminders.CONTENT_URI)
+                .withValueBackReference(CalendarContract.Reminders.EVENT_ID, eventOp)
+                .withValue(CalendarContract.Reminders.MINUTES, m)
+                .withValue(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
+                .build()
+        }
+        ops += attendeeInsertOps(attendees) {
+            withValueBackReference(CalendarContract.Attendees.EVENT_ID, eventOp)
+        }
+        return context.contentResolver
+            .applyBatch(CalendarContract.AUTHORITY, ops)[eventOp].uri?.lastPathSegment
     }
 
     /**
@@ -1585,14 +1568,6 @@ class EventsService(
                     if (patch.minutes.isNotEmpty()) 1 else 0
                 )
         }
-    }
-
-    /** Sets HAS_ALARM for an event row (used when reminders are added later). */
-    private fun setHasAlarm(eventId: Long, calendarId: String, hasAlarm: Boolean) {
-        val values = android.content.ContentValues().apply {
-            put(CalendarContract.Events.HAS_ALARM, if (hasAlarm) 1 else 0)
-        }
-        store.updateEventRow(eventId.toString(), values)
     }
 
     private fun availabilityToInt(availability: String): Int {

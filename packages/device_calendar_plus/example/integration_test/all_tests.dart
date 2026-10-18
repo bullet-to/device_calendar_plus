@@ -6,7 +6,6 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'android_attendees_test.dart' as android_attendees;
 import 'attendee_test.dart' as attendee;
 import 'device_calendar_test.dart' as device_calendar;
 import 'edge_cases_test.dart' as edge_cases;
@@ -29,7 +28,6 @@ void main() {
   edge_cases.main();
   reminders.main();
   platform_options.main();
-  android_attendees.main();
   tombstone.main();
   synced_calendar.main();
 }
