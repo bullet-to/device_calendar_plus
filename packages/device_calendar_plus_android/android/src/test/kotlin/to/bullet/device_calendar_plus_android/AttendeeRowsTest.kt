@@ -20,12 +20,12 @@ internal class AttendeeRowsTest {
 
     @Test
     fun applyTo_unchanged_keepsEveryRow() {
-        assertEquals(existing, AttendeesPatch.Unchanged.applyTo(existing))
+        assertEquals(existing, RowsPatch.Unchanged.applyTo(existing))
     }
 
     @Test
     fun applyTo_clear_keepsOnlyTheOrganizer() {
-        assertEquals(listOf(organizer), AttendeesPatch.Clear.applyTo(existing))
+        assertEquals(listOf(organizer), RowsPatch.Clear.applyTo(existing))
     }
 
     @Test
@@ -34,7 +34,7 @@ internal class AttendeeRowsTest {
 
         assertEquals(
             listOf(organizer, newGuest),
-            AttendeesPatch.Set(listOf(newGuest)).applyTo(existing)
+            RowsPatch.Set(listOf(newGuest)).applyTo(existing)
         )
     }
 
@@ -44,7 +44,7 @@ internal class AttendeeRowsTest {
 
         assertEquals(
             listOf(newOrganizer),
-            AttendeesPatch.Set(listOf(newOrganizer)).applyTo(existing)
+            RowsPatch.Set(listOf(newOrganizer)).applyTo(existing)
         )
     }
 

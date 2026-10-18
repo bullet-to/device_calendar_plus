@@ -347,7 +347,7 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             .withSelection("${CalendarContract.Attendees.EVENT_ID} = ?", arrayOf(""))
             .withSelectionBackReference(eventIdArg, copyOp)
             .build()
-        ops += attendeeInsertOps(resolver.readAttendeeRows(oldId).map { it.second }) {
+        ops += attendeeInsertOps(resolver.readAttendeeRows(oldId).values) {
             withValueBackReference(CalendarContract.Attendees.EVENT_ID, copyOp)
         }
 

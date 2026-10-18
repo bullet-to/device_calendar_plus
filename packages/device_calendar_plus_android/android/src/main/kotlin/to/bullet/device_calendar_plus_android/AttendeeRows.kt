@@ -4,7 +4,6 @@ import android.content.ContentProviderOperation
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.ContentValues
-import android.provider.CalendarContract
 import android.provider.CalendarContract.Attendees
 import io.flutter.plugin.common.MethodCall
 
@@ -45,45 +44,21 @@ data class AttendeeRow(
 }
 
 /**
- * An attendees edit: leave the rows, replace them, or remove them. Mirrors
- * the Dart `Patch<List<AttendeeAndroid>>` over the method channel.
+ * Whether existing [row] survives this attendees edit.
  *
  * A set or a clear spares the organizer row (RELATIONSHIP_ORGANIZER), which
  * the plugin's reads skip, so the event keeps its organizer; a set whose
  * list holds an organizer replaces that row too.
  */
-sealed class AttendeesPatch {
-    object Unchanged : AttendeesPatch()
-    data class Set(val rows: List<AttendeeRow>) : AttendeesPatch()
-    object Clear : AttendeesPatch()
-
-    /** Whether existing [row] survives this edit. */
-    fun keeps(row: AttendeeRow): Boolean = when (this) {
-        Unchanged -> true
-        Clear -> row.isOrganizer
-        is Set -> row.isOrganizer && rows.none { it.isOrganizer }
-    }
-
-    /** The rows an event holding [existing] holds after this edit. */
-    fun applyTo(existing: List<AttendeeRow>): List<AttendeeRow> =
-        existing.filter(::keeps) + ((this as? Set)?.rows ?: emptyList())
-
-    companion object {
-        /**
-         * Reads the edit from a method-channel [call]: a present
-         * `attendees` key sets, the key named in [clearedFields] clears,
-         * neither leaves the rows unchanged.
-         */
-        fun fromCall(call: MethodCall, clearedFields: List<String>): AttendeesPatch {
-            val rows = call.attendeesArg()
-            return when {
-                rows != null -> Set(rows)
-                "attendees" in clearedFields -> Clear
-                else -> Unchanged
-            }
-        }
-    }
+internal fun RowsPatch<AttendeeRow>.keeps(row: AttendeeRow): Boolean = when (this) {
+    RowsPatch.Unchanged -> true
+    RowsPatch.Clear -> row.isOrganizer
+    is RowsPatch.Set -> row.isOrganizer && rows.none { it.isOrganizer }
 }
+
+/** The rows an event holding [existing] holds after this attendees edit. */
+internal fun RowsPatch<AttendeeRow>.applyTo(existing: Collection<AttendeeRow>): List<AttendeeRow> =
+    existing.filter(::keeps) + ((this as? RowsPatch.Set)?.rows ?: emptyList())
 
 /**
  * The [Attendees.ATTENDEE_TYPE] value for an `AttendeeTypeAndroid` name. An
@@ -143,7 +118,7 @@ internal fun MethodCall.attendeesArg(): List<AttendeeRow>? =
  * same batch (`withValueBackReference`).
  */
 internal fun attendeeInsertOps(
-    rows: List<AttendeeRow>,
+    rows: Collection<AttendeeRow>,
     keyToEvent: ContentProviderOperation.Builder.() -> ContentProviderOperation.Builder
 ): List<ContentProviderOperation> = rows.map { row ->
     ContentProviderOperation.newInsert(Attendees.CONTENT_URI)
@@ -153,11 +128,11 @@ internal fun attendeeInsertOps(
 }
 
 /**
- * Event [eventId]'s Attendees rows, organizer included, each with its own
- * `_ID`.
+ * Event [eventId]'s Attendees rows, organizer included, by their own `_ID`,
+ * in the provider's order.
  */
-internal fun ContentResolver.readAttendeeRows(eventId: Long): List<Pair<Long, AttendeeRow>> {
-    val rows = mutableListOf<Pair<Long, AttendeeRow>>()
+internal fun ContentResolver.readAttendeeRows(eventId: Long): Map<Long, AttendeeRow> {
+    val rows = linkedMapOf<Long, AttendeeRow>()
     query(
         Attendees.CONTENT_URI,
         arrayOf(
@@ -175,7 +150,7 @@ internal fun ContentResolver.readAttendeeRows(eventId: Long): List<Pair<Long, At
         null
     )?.use { cursor ->
         while (cursor.moveToNext()) {
-            rows += cursor.getLong(cursor.getColumnIndexOrThrow(Attendees._ID)) to AttendeeRow(
+            rows[cursor.getLong(cursor.getColumnIndexOrThrow(Attendees._ID))] = AttendeeRow(
                 email = cursor.stringOrNull(Attendees.ATTENDEE_EMAIL),
                 name = cursor.stringOrNull(Attendees.ATTENDEE_NAME),
                 type = cursor.longOrNull(Attendees.ATTENDEE_TYPE)?.toInt(),
@@ -190,13 +165,16 @@ internal fun ContentResolver.readAttendeeRows(eventId: Long): List<Pair<Long, At
 }
 
 /**
- * Applies [patch] to event [eventId]'s Attendees rows in one
- * [ContentResolver.applyBatch]: deletes the rows it doesn't keep, then
- * inserts a set's rows. All of it or none. Unchanged writes nothing.
+ * The operations that apply [patch] to event [eventId]'s Attendees rows:
+ * deletes of the rows it doesn't keep, then inserts of a set's rows.
+ * Unchanged needs none and reads nothing.
  */
-internal fun ContentResolver.applyAttendeesPatch(eventId: Long, patch: AttendeesPatch) {
-    if (patch == AttendeesPatch.Unchanged) return
-    val ops = arrayListOf<ContentProviderOperation>()
+internal fun ContentResolver.attendeesPatchOps(
+    eventId: Long,
+    patch: RowsPatch<AttendeeRow>
+): List<ContentProviderOperation> {
+    if (patch == RowsPatch.Unchanged) return emptyList()
+    val ops = mutableListOf<ContentProviderOperation>()
     for ((id, row) in readAttendeeRows(eventId)) {
         if (patch.keeps(row)) continue
         // By the row's own URI: the provider joins Attendees with Events
@@ -205,8 +183,8 @@ internal fun ContentResolver.applyAttendeesPatch(eventId: Long, patch: Attendees
             .newDelete(ContentUris.withAppendedId(Attendees.CONTENT_URI, id))
             .build()
     }
-    if (patch is AttendeesPatch.Set) {
+    if (patch is RowsPatch.Set) {
         ops += attendeeInsertOps(patch.rows) { withValue(Attendees.EVENT_ID, eventId) }
     }
-    if (ops.isNotEmpty()) applyBatch(CalendarContract.AUTHORITY, ops)
+    return ops
 }

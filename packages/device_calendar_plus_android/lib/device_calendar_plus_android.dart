@@ -273,11 +273,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
   static Patch<List<Map<String, dynamic>>>? _attendeesPatchArg(
     Patch<List<AttendeeAndroid>>? patch,
   ) =>
-      switch (patch) {
-        null => null,
-        PatchSet(:final value) => Patch.set(value.map(_attendeeArg).toList()),
-        PatchClear() => const Patch.clear(),
-      };
+      patch?.map((attendees) => attendees.map(_attendeeArg).toList());
 
   @override
   Future<void> deleteRecurring(

@@ -842,11 +842,8 @@ class DeviceCalendar {
     final reminderMinutes = _reminderMinutesPatch(reminders);
 
     // The platform layer works in RRULE strings; map the typed Patch across.
-    final Patch<String>? recurrenceRulePatch = switch (recurrenceRule) {
-      null => null,
-      PatchSet(:final value) => Patch.set(value.toRruleString()),
-      PatchClear() => const Patch.clear(),
-    };
+    final Patch<String>? recurrenceRulePatch =
+        recurrenceRule?.map((rule) => rule.toRruleString());
 
     await _ensurePermission(CalendarAccessLevel.full);
     try {
@@ -1021,9 +1018,5 @@ class DeviceCalendar {
   static Patch<List<int>>? _reminderMinutesPatch(
     Patch<List<Duration>>? reminders,
   ) =>
-      switch (reminders) {
-        null => null,
-        PatchSet(:final value) => Patch.set(_remindersToMinutes(value)),
-        PatchClear() => const Patch.clear(),
-      };
+      reminders?.map(_remindersToMinutes);
 }

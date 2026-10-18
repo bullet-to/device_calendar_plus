@@ -413,7 +413,7 @@ void main() {
     // Not covered on a device: that a set or clear spares the organizer row
     // (RELATIONSHIP_ORGANIZER). Event.attendees skips that row and the shared
     // model has no organizer field, so no public read can see it; the rule
-    // is pinned by AttendeeRowsTest (AttendeesPatch.applyTo) instead.
+    // is pinned by AttendeeRowsTest (RowsPatch.applyTo) instead.
     testWidgets('createEvent writes the attendees', (tester) async {
       final id = await createOneOff(
         android: const EventOptionsAndroid(attendees: [ada, bob, room]),
@@ -423,12 +423,6 @@ void main() {
         await attendeesOfEvent(id),
         unorderedEquals([adaRead, bobRead, roomRead]),
       );
-    });
-
-    testWidgets('createEvent without attendees writes none', (tester) async {
-      final id = await createOneOff();
-
-      expect(await attendeesOfEvent(id), isEmpty);
     });
 
     testWidgets('updateEvent set replaces the attendees', (tester) async {

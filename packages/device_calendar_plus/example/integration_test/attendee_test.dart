@@ -1,16 +1,17 @@
+import 'dart:io';
+
 import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 /// Integration tests for attendee reading.
 ///
-/// These tests verify that attendees are correctly read from events on both
-/// platforms. Since neither platform supports programmatic attendee creation
-/// through this plugin, the test creates an event and verifies the attendees
-/// field is either null (no attendees) or a valid list.
-///
-/// For full attendee verification, manually add attendees to an event via the
-/// native calendar app, then run these tests.
+/// On Android the plugin writes attendees (`EventOptionsAndroid.attendees`),
+/// so platform_options_test.dart's 'Android attendee writes (#71)' group is
+/// the deterministic read and write coverage there. iOS can't write
+/// attendees, so the field-type check below scans the existing events and
+/// skips when none has attendees; to run it fully, add attendees to an event
+/// in the native Calendar app first.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final plugin = DeviceCalendar.instance;
@@ -86,5 +87,5 @@ void main() {
         );
       }
     }
-  });
+  }, skip: !Platform.isIOS);
 }

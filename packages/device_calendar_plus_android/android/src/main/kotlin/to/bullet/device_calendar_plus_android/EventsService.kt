@@ -314,8 +314,7 @@ class EventsService(
     }
 
     private fun queryAttendees(eventId: Long): List<Map<String, Any?>> = try {
-        context.contentResolver.readAttendeeRows(eventId)
-            .map { it.second }
+        context.contentResolver.readAttendeeRows(eventId).values
             .filterNot { it.isOrganizer }
             .map { row ->
                 // A NULL type or status reads as 0, as Cursor.getInt has it.
@@ -782,9 +781,22 @@ class EventsService(
         // (or drops) the alarms. Unchanged leaves the column alone.
         applyRemindersHasAlarm(values, patch.reminders)
 
-        // An attendees-only edit has no event column to write (and Android's
-        // SQLiteDatabase rejects an update with no values), so the write is
-        // skipped; the row was read just before, so it is still there.
+        return writeEventEdit(eventId, values, patch)
+    }
+
+    /**
+     * Writes an edit to existing event [eventId]: its row's [values], then
+     * the [patch]'s reminders and attendees child rows (see
+     * [applyChildRowPatches]). Fails with NOT_FOUND when the row is gone.
+     */
+    private fun writeEventEdit(
+        eventId: String,
+        values: android.content.ContentValues,
+        patch: EventFieldPatch
+    ): Result<Unit> {
+        // An edit of child rows alone has no event column to write (and
+        // Android's SQLiteDatabase rejects an update with no values), so the
+        // write is skipped; every caller read the row just before.
         if (values.size() > 0 && store.updateEventRow(eventId, values) == 0) {
             return Result.failure(
                 CalendarException(
@@ -793,14 +805,21 @@ class EventsService(
                 )
             )
         }
-
-        // Reminder rows live in a separate table keyed by EVENT_ID — rewrite
-        // them after the event row update (no-op when unchanged).
-        applyRemindersRows(eventId.toLong(), patch.reminders)
-        // So do Attendees rows.
-        context.contentResolver.applyAttendeesPatch(eventId.toLong(), patch.attendees)
-
+        applyChildRowPatches(eventId.toLong(), patch)
         return Result.success(Unit)
+    }
+
+    /**
+     * Applies the [patch]'s reminders and attendees edits to event
+     * [eventId]'s child rows, which live in their own tables keyed by
+     * EVENT_ID, in one [android.content.ContentResolver.applyBatch]: all of
+     * it or none. Unchanged edits write nothing.
+     */
+    private fun applyChildRowPatches(eventId: Long, patch: EventFieldPatch) {
+        val resolver = context.contentResolver
+        val ops = remindersPatchOps(eventId, patch.reminders) +
+            resolver.attendeesPatchOps(eventId, patch.attendees)
+        if (ops.isNotEmpty()) resolver.applyBatch(CalendarContract.AUTHORITY, ArrayList(ops))
     }
 
     /**
@@ -903,11 +922,10 @@ class EventsService(
 
         val exceptionId = insertException(series, values)
             .getOrElse { return Result.failure(it) }
-        // Reminder rows attach to the detached exception's own event id.
-        applyRemindersRows(exceptionId.toLong(), patch.reminders)
-        // The provider seeds the exception with the series' guest list; an
-        // attendees edit applies to this occurrence's copy alone.
-        context.contentResolver.applyAttendeesPatch(exceptionId.toLong(), patch.attendees)
+        // Child rows attach to the detached exception's own event id. The
+        // provider seeds it with the series' guest list, so an attendees edit
+        // applies to this occurrence's copy alone.
+        applyChildRowPatches(exceptionId.toLong(), patch)
         return Result.success(Unit)
     }
 
@@ -1092,23 +1110,10 @@ class EventsService(
 
         applyRemindersHasAlarm(values, patch.reminders)
 
-        // Skipped when there is no event column to write, as in updateOneOff.
-        if (values.size() > 0 && store.updateEventRow(row.id, values) == 0) {
-            return Result.failure(
-                CalendarException(
-                    PlatformExceptionCodes.NOT_FOUND,
-                    "Event with ID ${row.id} not found"
-                )
-            )
-        }
-
-        // Reminder rows attach to the (master) event row by EVENT_ID — the same
-        // for recurring and non-recurring, so no DURATION/RRULE interaction.
-        applyRemindersRows(row.id.toLong(), patch.reminders)
-        // Attendees too: the master's rows. Detached occurrences keep their
-        // own copies, as they keep their own status.
-        context.contentResolver.applyAttendeesPatch(row.id.toLong(), patch.attendees)
-        return Result.success(row.id)
+        // Child rows attach to the master by EVENT_ID, as for a one-off.
+        // Detached occurrences keep their own reminders and attendees, as
+        // they keep their own status.
+        return writeEventEdit(row.id, values, patch).map { row.id }
     }
 
     private fun updateRecurringThisAndFollowing(
@@ -1151,14 +1156,14 @@ class EventsService(
         // The new series carries the patch's reminders when set/cleared, else
         // it inherits the original series' reminders.
         val effectiveReminders = when (val r = patch.reminders) {
-            is EventFieldPatch.RemindersPatch.Set -> r.minutes
-            is EventFieldPatch.RemindersPatch.Clear -> emptyList()
-            EventFieldPatch.RemindersPatch.Unchanged -> queryReminderMinutes(row.id.toLong())
+            is RowsPatch.Set -> r.rows
+            RowsPatch.Clear -> emptyList()
+            RowsPatch.Unchanged -> queryReminderMinutes(row.id.toLong())
         }
         // The original series' guest list (organizer included) with the
         // edit applied, as the series would hold it after an allEvents edit.
         val effectiveAttendees = patch.attendees.applyTo(
-            context.contentResolver.readAttendeeRows(row.id.toLong()).map { it.second }
+            context.contentResolver.readAttendeeRows(row.id.toLong()).values
         )
         val effectiveRrule = newSeriesRule(
             ruleEdit,
@@ -1490,12 +1495,8 @@ class EventsService(
                 .withValues(values)
                 .build()
         )
-        for (m in reminders) {
-            ops += ContentProviderOperation.newInsert(CalendarContract.Reminders.CONTENT_URI)
-                .withValueBackReference(CalendarContract.Reminders.EVENT_ID, eventOp)
-                .withValue(CalendarContract.Reminders.MINUTES, m)
-                .withValue(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
-                .build()
+        ops += reminderInsertOps(reminders) {
+            withValueBackReference(CalendarContract.Reminders.EVENT_ID, eventOp)
         }
         ops += attendeeInsertOps(attendees) {
             withValueBackReference(CalendarContract.Attendees.EVENT_ID, eventOp)
@@ -1505,67 +1506,22 @@ class EventsService(
     }
 
     /**
-     * Inserts one [CalendarContract.Reminders] row per minute value, each a
-     * relative METHOD_ALERT reminder that many minutes before the event start.
-     */
-    private fun insertReminderRows(eventId: Long, minutes: List<Int>) {
-        for (m in minutes) {
-            val values = android.content.ContentValues().apply {
-                put(CalendarContract.Reminders.EVENT_ID, eventId)
-                put(CalendarContract.Reminders.MINUTES, m)
-                put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
-            }
-            context.contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, values)
-        }
-    }
-
-    /** Removes all reminder rows for [eventId]. */
-    private fun deleteReminderRows(eventId: Long) {
-        context.contentResolver.delete(
-            CalendarContract.Reminders.CONTENT_URI,
-            "${CalendarContract.Reminders.EVENT_ID} = ?",
-            arrayOf(eventId.toString())
-        )
-    }
-
-    /**
-     * Applies a reminders [patch] to the rows of [eventId]: a set replaces the
-     * whole reminder set (delete then re-insert), a clear removes them all, and
-     * unchanged leaves the rows untouched.
-     */
-    private fun applyRemindersRows(
-        eventId: Long,
-        patch: EventFieldPatch.RemindersPatch
-    ) {
-        when (patch) {
-            EventFieldPatch.RemindersPatch.Unchanged -> {}
-            EventFieldPatch.RemindersPatch.Clear -> deleteReminderRows(eventId)
-            is EventFieldPatch.RemindersPatch.Set -> {
-                deleteReminderRows(eventId)
-                if (patch.minutes.isNotEmpty()) {
-                    insertReminderRows(eventId, patch.minutes)
-                }
-            }
-        }
-    }
-
-    /**
      * Writes HAS_ALARM into [values] to match a reminders [patch]: a non-empty
      * set flips it on, an empty set or clear flips it off, unchanged leaves the
      * column out so the existing flag stands.
      */
     private fun applyRemindersHasAlarm(
         values: android.content.ContentValues,
-        patch: EventFieldPatch.RemindersPatch
+        patch: RowsPatch<Int>
     ) {
         when (patch) {
-            EventFieldPatch.RemindersPatch.Unchanged -> {}
-            EventFieldPatch.RemindersPatch.Clear ->
+            RowsPatch.Unchanged -> {}
+            RowsPatch.Clear ->
                 values.put(CalendarContract.Events.HAS_ALARM, 0)
-            is EventFieldPatch.RemindersPatch.Set ->
+            is RowsPatch.Set ->
                 values.put(
                     CalendarContract.Events.HAS_ALARM,
-                    if (patch.minutes.isNotEmpty()) 1 else 0
+                    if (patch.rows.isNotEmpty()) 1 else 0
                 )
         }
     }

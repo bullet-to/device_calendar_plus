@@ -17,6 +17,13 @@ sealed class Patch<T> {
 
   /// Clears the field, removing any existing value.
   const factory Patch.clear() = PatchClear<T>;
+
+  /// This patch with a set's value mapped through [f]: a set of `f(value)`,
+  /// or a clear.
+  Patch<R> map<R>(R Function(T value) f) => switch (this) {
+        PatchSet(:final value) => Patch.set(f(value)),
+        PatchClear() => const Patch.clear(),
+      };
 }
 
 /// A [Patch] that sets the field to [value].
