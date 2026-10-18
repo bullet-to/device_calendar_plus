@@ -68,6 +68,52 @@ internal class SplitShiftTest {
         assertEquals(instantAt(utc, 2026, 6, 11), shift.start(instantAt(utc, 2026, 6, 10)))
     }
 
+    // A sub-day shift across the series zone's midnight: 23:30 to 00:30 the
+    // next day is one calendar day but under 24h. The slots move to the next
+    // day at 00:30, as the new series generates them, but a detached
+    // occurrence's own start moves by the whole 24h days in the shift, none
+    // here, as EventKit moves it (#224).
+    @Test
+    fun start_subDayShiftAcrossMidnight_keepsTheOccurrencesStart() {
+        val shift = untoggled(
+            instantAt(utc, 2026, 6, 4, 23, 30), instantAt(utc, 2026, 6, 5, 0, 30),
+            utc, isAllDay = false,
+        )
+        assertEquals(instantAt(utc, 2026, 6, 8, 0, 30), shift.slot(instantAt(utc, 2026, 6, 7, 23, 30)))
+        assertEquals(instantAt(utc, 2026, 6, 8, 1, 30), shift.start(instantAt(utc, 2026, 6, 8, 1, 30)))
+    }
+
+    // Back across midnight, 00:30 to 23:30 the day before, is under 24h too.
+    @Test
+    fun start_negativeSubDayShiftAcrossMidnight_keepsTheOccurrencesStart() {
+        val shift = untoggled(
+            instantAt(utc, 2026, 6, 5, 0, 30), instantAt(utc, 2026, 6, 4, 23, 30),
+            utc, isAllDay = false,
+        )
+        assertEquals(instantAt(utc, 2026, 6, 7, 23, 30), shift.slot(instantAt(utc, 2026, 6, 8, 0, 30)))
+        assertEquals(instantAt(utc, 2026, 6, 8, 2, 30), shift.start(instantAt(utc, 2026, 6, 8, 2, 30)))
+    }
+
+    // 14:00 to 15:00 the next day is a whole 24h day and an hour: one day.
+    @Test
+    fun start_shiftOfMoreThanADay_movesTheOccurrenceByItsWholeDays() {
+        val shift = untoggled(
+            instantAt(utc, 2026, 6, 4, 14), instantAt(utc, 2026, 6, 5, 15),
+            utc, isAllDay = false,
+        )
+        assertEquals(instantAt(utc, 2026, 6, 9, 16), shift.start(instantAt(utc, 2026, 6, 8, 16)))
+    }
+
+    // Read on the wall clock, a shift across a DST change still counts its
+    // whole days: 9:00 to 9:30 three days on, across the spring-forward, is
+    // three days and half an hour on the clock but only 71h30m elapsed,
+    // which counted raw would be two days.
+    @Test
+    fun start_shiftAcrossSpringForward_countsWallClockDays() {
+        val shift = untoggled(ny(3, 6, 9), ny(3, 9, 9, 30), newYork, isAllDay = false)
+        assertEquals(ny(3, 13, 16), shift.start(ny(3, 10, 16)))
+    }
+
     // No move leaves every date where it was.
     @Test
     fun slotAndStart_sameAnchor_areIdentity() {

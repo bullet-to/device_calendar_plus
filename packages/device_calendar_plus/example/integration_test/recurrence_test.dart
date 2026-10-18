@@ -1281,13 +1281,14 @@ void main() {
     /// The start shift of a [splitAfterDrags] split.
     const splitShift = Duration(hours: 1);
 
-    /// Seeds a daily series mid-UTC-day (so [splitShift] stays a time-only
-    /// move, #222), moves each of [drags]' occurrences (`index`) by its
-    /// `move`, retitled `'<label> <tag>'` so it can be found, then splits
-    /// the series at [3] with a thisAndFollowing update that shifts the start
-    /// by [splitShift] and sets the rule [ruleFor] gives for the series, if
-    /// any. The series has [count] occurrences. Returns the moved occurrences
-    /// and their titles in [drags]' order, and the new series' starts.
+    /// Seeds a daily series with [create] (mid-UTC-day by default, so
+    /// [splitShift] stays a time-only move, #222), moves each of [drags]'
+    /// occurrences (`index`) by its `move`, retitled `'<label> <tag>'` so it
+    /// can be found, then splits the series at [3] with a thisAndFollowing
+    /// update that shifts the start by [splitShift] and sets the rule
+    /// [ruleFor] gives for the series, if any. The series has [count]
+    /// occurrences. Returns the moved occurrences and their titles in
+    /// [drags]' order, and the new series' starts.
     Future<
         ({
           SeededSeries series,
@@ -1299,11 +1300,12 @@ void main() {
       List<(int index, Duration move, String label)> drags, {
       Patch<RecurrenceRule>? Function(SeededSeries series)? ruleFor,
       int count = 10,
+      SeriesFactory create = createMidUtcDayDailySeries,
     }) async {
       final series = await seedSeries(
         plugin,
         calendarId,
-        create: createMidUtcDayDailySeries,
+        create: create,
         count: count,
         minOccurrences: count,
       );
@@ -1620,6 +1622,54 @@ void main() {
           reason: 'the detached occurrence must move by three calendar days, '
               'keeping its own time of day',
         );
+      },
+    );
+
+    test(
+      'thisAndFollowing update whose sub-day shift crosses midnight keeps a '
+      'detached occurrence past the split where it is',
+      () async {
+        // Seeded at 23:30 UTC, the split's 1h shift moves the anchor to
+        // 00:30 the next UTC day: a calendar day on, but no whole 24h day.
+        // iOS moves a detached occurrence by the whole 24h days in the
+        // shift, so it stays where it was dragged, and Android matches
+        // (#224). Android used to move it the calendar day too.
+        //
+        // Which slot the new series skips for it is left unasserted: the
+        // platforms differ. Android skips [6]'s own slot, shifted. iOS pairs
+        // the kept occurrence with the slot before: it skips [5]'s and
+        // generates [6]'s beside it. Asserted here is only what both agree
+        // on.
+        final split = await splitAfterDrags(
+          [(6, const Duration(hours: 2), 'Detached past midnight split')],
+          create: createLateUtcDayDailySeries,
+        );
+        final series = split.series;
+        final id = calendarId!;
+
+        await expectDetachedOnce(plugin, id, split.titles.single,
+            split.moved.single, series.start,
+            reason: 'the detached occurrence must keep its own start: the '
+                'shift has no whole 24h day in it');
+        expect(
+          split.newStarts,
+          containsAll([3, 4, 7, 8].map((i) => series.occurrences[i]
+              .startDate
+              .add(splitShift)
+              .millisecondsSinceEpoch)),
+          reason: 'the new series must carry the slots away from the '
+              'detached occurrence, shifted',
+        );
+        expect(split.newStarts, hasLength(6),
+            reason: 'the new series must skip one of the seven slots from '
+                '[3] on for the detached occurrence, not generate a '
+                'duplicate beside it');
+
+        await plugin.deleteRecurring(split.newSeriesId, EventSpan.allEvents);
+        expect(
+            await eventsTitled(plugin, id, split.titles.single, series.start),
+            isEmpty,
+            reason: 'the detached occurrence must belong to the new series');
       },
     );
 

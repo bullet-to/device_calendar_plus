@@ -15,7 +15,8 @@ String requireCalendar(String? calendarId) {
 
 /// A series factory: creates a recurring event of [count] occurrences in the
 /// calendar and returns its event ID and start: [createDailySeries],
-/// [createAllDayDailySeries], [createMidUtcDayDailySeries], or a closure
+/// [createAllDayDailySeries], [createMidUtcDayDailySeries],
+/// [createLateUtcDayDailySeries], or a closure
 /// over [createWeeklySeries].
 typedef SeriesFactory = Future<({String eventId, DateTime start})> Function(
   DeviceCalendar plugin,
@@ -43,6 +44,24 @@ Future<({String eventId, DateTime start})> createMidUtcDayDailySeries(
 }) =>
     createDailySeries(plugin, calendarId,
         count: count, start: _midUtcDayTomorrow());
+
+/// Tomorrow (by the UTC date) at 23:30 UTC: the start for a series stored
+/// in UTC whose test needs a shift of an hour or so to cross UTC midnight,
+/// as [_midUtcDayTomorrow] makes sure it doesn't (#224).
+DateTime _lateUtcDayTomorrow() {
+  final now = DateTime.now().toUtc();
+  return DateTime.utc(now.year, now.month, now.day + 1, 23, 30);
+}
+
+/// A daily series factory that starts at [_lateUtcDayTomorrow], for
+/// [seedSeries].
+Future<({String eventId, DateTime start})> createLateUtcDayDailySeries(
+  DeviceCalendar plugin,
+  String calendarId, {
+  int count = 10,
+}) =>
+    createDailySeries(plugin, calendarId,
+        count: count, start: _lateUtcDayTomorrow());
 
 /// A seeded series: its event ID and start, and its occurrences as listed
 /// right after it was created — the baseline a per-occurrence test compares

@@ -1,6 +1,12 @@
 ## Unreleased
 
 ### Fixed
+- `updateRecurring` with `EventSpan.thisAndFollowing` moves a detached
+  occurrence past the split by the whole 24h days in the anchor's shift
+  (read on the wall clock, truncated toward zero), as EventKit does, not by
+  the calendar days the series moved. A sub-day shift across the series
+  zone's midnight (23:30 to 00:30) moved it a day; it now stays put. Whole
+  day moves, all-day series and all-day toggles count days as before (#224).
 - `updateEvent` with `isAllDay: false` and no `startDate` or `endDate`
   keeps an all-day one-off event, or a detached occurrence of an all-day
   series, on its own days: local midnight of the first through the last

@@ -40,12 +40,30 @@ internal fun calendarDaysBetween(fromMillis: Long, toMillis: Long, tz: TimeZone)
  * the frame after the edit ([FrameChange], for an all-day toggle), then
  * that many days on, at the new anchor's wall-clock time of day (midnight
  * for all-day, which is stored as UTC midnight). [start] is where a
- * detached occurrence's own start goes: that many days on, at its own time
- * of day, in its own frame (the occurrence keeps its own all-day flag).
+ * detached occurrence's own start goes: on by [startDayDelta] days, at its
+ * own time of day, in its own frame (the occurrence keeps its own all-day
+ * flag).
+ *
+ * The two day counts differ only when a timed series' anchor changes its
+ * time of day too. EventKit moves a detached occurrence by the whole 24h
+ * days in the anchor's shift, not by the calendar days: a +1h shift from
+ * 23:30 to 00:30 the next day moves the slots a day but leaves the
+ * occurrence where it is, and a +25h one moves it a day (#224). So
+ * [startDayDelta] is the anchor's wall-clock shift (the calendar days plus
+ * the change in time of day) in whole days, truncated toward zero. Read on
+ * the wall clock rather than raw, a DST change between the anchors doesn't
+ * turn a whole-day move into a day less. A move that keeps the time of day,
+ * an all-day series and an all-day toggle ([FrameChange]) all count the
+ * calendar days, as before.
+ *
+ * EventKit also pairs the kept occurrence with the slot before its own on
+ * such a shift (it skips [5]'s slot, not [6]'s, for [6]): Android doesn't
+ * copy that, and pairs it with its own slot, [slot] (#224).
  */
 internal class SplitShift private constructor(
     private val frameChange: FrameChange,
     private val dayDelta: Int,
+    private val startDayDelta: Int,
     private val tz: TimeZone,
     private val hour: Int,
     private val minute: Int,
@@ -58,7 +76,7 @@ internal class SplitShift private constructor(
      * moved by the anchor's days, at the new anchor's time of day.
      */
     fun slot(old: Long): Long {
-        val cal = addDays(frameChange.convert(old))
+        val cal = addDays(frameChange.convert(old), dayDelta)
         cal.set(Calendar.HOUR_OF_DAY, hour)
         cal.set(Calendar.MINUTE, minute)
         cal.set(Calendar.SECOND, second)
@@ -66,13 +84,16 @@ internal class SplitShift private constructor(
         return cal.timeInMillis
     }
 
-    /** [old] moved by the anchor's days, keeping its own time of day. */
-    fun start(old: Long): Long = addDays(old).timeInMillis
+    /**
+     * [old], a detached occurrence's own start, moved by the whole days in
+     * the anchor's shift ([startDayDelta]), keeping its own time of day.
+     */
+    fun start(old: Long): Long = addDays(old, startDayDelta).timeInMillis
 
-    private fun addDays(millis: Long): Calendar =
+    private fun addDays(millis: Long, days: Int): Calendar =
         Calendar.getInstance(tz).apply {
             timeInMillis = millis
-            add(Calendar.DAY_OF_YEAR, dayDelta)
+            add(Calendar.DAY_OF_YEAR, days)
         }
 
     companion object {
@@ -97,15 +118,35 @@ internal class SplitShift private constructor(
             frameChange: FrameChange,
         ): SplitShift {
             val target = Calendar.getInstance(tz).apply { timeInMillis = toAnchor }
+            val from = frameChange.convert(fromAnchor)
+            val dayDelta = calendarDaysBetween(from, toAnchor, tz)
+            // Only a timed shift that stays in its frame can change its time
+            // of day: an all-day one is at midnight on both sides, and a
+            // toggle's converted anchor is at its frame's midnight (#186).
+            val startDayDelta = if (isAllDay || frameChange != FrameChange.None) {
+                dayDelta
+            } else {
+                val wallClockShift = dayDelta * AllDayDates.MILLIS_PER_DAY +
+                    wallClockTimeOfDay(toAnchor, tz) - wallClockTimeOfDay(from, tz)
+                (wallClockShift / AllDayDates.MILLIS_PER_DAY).toInt()
+            }
             return SplitShift(
                 frameChange = frameChange,
-                dayDelta = calendarDaysBetween(frameChange.convert(fromAnchor), toAnchor, tz),
+                dayDelta = dayDelta,
+                startDayDelta = startDayDelta,
                 tz = tz,
                 hour = if (isAllDay) 0 else target.get(Calendar.HOUR_OF_DAY),
                 minute = if (isAllDay) 0 else target.get(Calendar.MINUTE),
                 second = if (isAllDay) 0 else target.get(Calendar.SECOND),
                 millisecond = if (isAllDay) 0 else target.get(Calendar.MILLISECOND),
             )
+        }
+
+        /** Millis since local midnight of [millis]'s wall-clock time in [tz]. */
+        private fun wallClockTimeOfDay(millis: Long, tz: TimeZone): Long {
+            val cal = Calendar.getInstance(tz).apply { timeInMillis = millis }
+            return ((cal.get(Calendar.HOUR_OF_DAY) * 60L + cal.get(Calendar.MINUTE)) * 60L +
+                cal.get(Calendar.SECOND)) * 1000L + cal.get(Calendar.MILLISECOND)
         }
     }
 }
