@@ -1098,15 +1098,22 @@ class EventsService {
     // An occurrence edit that flips the all-day flag either way saves in two
     // steps (detachThenFlipAllDay); every other edit saves once.
     if timestamp != nil && newIsAllDay != foundEvent.isAllDay {
-      completion(detachThenFlipAllDay(
-        foundEvent, to: newIsAllDay, patch: patch, dates: dates))
+      completion(EventsService.detachThenFlipAllDay(
+        foundEvent, to: newIsAllDay, patch: patch, dates: dates,
+        save: commitSave, reset: eventStore.reset, isDetached: \.isDetached))
       return
     }
     patch.apply(to: foundEvent, start: dates.start, end: dates.end)
 
     // One thing only: an occurrence edit detaches it as an exception, and a
     // one-off saves as itself (a bare series ID was refused above).
-    completion(saveThisEvent(foundEvent))
+    completion(EventsService.saveThisEvent(foundEvent, save: commitSave))
+  }
+
+  /// The store's committed save of `event` at `span`: the one `save` that
+  /// production hands `saveThisEvent` and `detachThenFlipAllDay`.
+  private func commitSave(_ event: EKEvent, _ span: EKSpan) throws {
+    try eventStore.save(event, span: span, commit: true)
   }
 
   /// Flips the all-day flag of the occurrence `event` to `allDay` in two
@@ -1114,9 +1121,9 @@ class EventsService {
   /// occurrence, then the flip with the dates. EventKit's iCloud store gets
   /// a detach and a flip in one save wrong in both directions (#210, #212);
   /// the local store, and so the simulator, gets it right, so only a
-  /// signed-in iPhone can see a regression here. CONTRIBUTING ("The iCloud
-  /// two-step save needs a signed-in iPhone") has the symptoms, the tests
-  /// and the run.
+  /// signed-in iPhone can see the bug; `DetachThenFlipAllDayTests` pins the
+  /// two-save sequence. CONTRIBUTING ("The iCloud two-step save needs a
+  /// signed-in iPhone") has the symptoms, the tests and the run.
   ///
   /// The first save detaches only if it carries a change: EventKit saves
   /// nothing for an occurrence with none. What carries it differs by
@@ -1131,11 +1138,19 @@ class EventsService {
   /// on failure (as detachThisAndFollowing does) is untried on the device.
   /// The price is a half-state when the second save fails: the occurrence is
   /// detached but unflipped; its error says so.
-  private func detachThenFlipAllDay(
+  ///
+  /// The store sits behind three closures so a Swift test can drive the
+  /// sequence: `save` is a committed save at the given span (`commitSave` in
+  /// production), `reset` the store's reset, and `isDetached` reads
+  /// `EKEvent.isDetached`, which EventKit owns and a test can't set.
+  static func detachThenFlipAllDay(
     _ event: EKEvent,
     to allDay: Bool,
     patch: EventFieldPatch,
-    dates: (start: Date?, end: Date?)
+    dates: (start: Date?, end: Date?),
+    save: (EKEvent, EKSpan) throws -> Void,
+    reset: () -> Void,
+    isDetached: (EKEvent) -> Bool
   ) -> Result<Void, CalendarError> {
     // Step 1: detach. The fields, plus the timing this direction can carry
     // before the flip: the all-day span as timed dates (timed -> all-day),
@@ -1147,11 +1162,11 @@ class EventsService {
       to: event, isAllDay: nil,
       start: allDay ? dates.start : nil,
       end: allDay ? dates.end : nil)
-    if case .failure(let error) = saveThisEvent(event) {
+    if case .failure(let error) = saveThisEvent(event, save: save) {
       return .failure(error)
     }
-    guard event.isDetached else {
-      eventStore.reset()
+    guard isDetached(event) else {
+      reset()
       return .failure(CalendarError(
         code: PlatformExceptionCodes.operationFailed,
         message: "The occurrence did not detach before its all-day flag could be flipped; it is unchanged"
@@ -1163,19 +1178,22 @@ class EventsService {
       to: event, isAllDay: allDay, start: dates.start, end: dates.end)
     return saveThisEvent(
       event,
-      orFail: "Failed to flip the detached occurrence's all-day flag (it is detached, flag unchanged)"
+      orFail: "Failed to flip the detached occurrence's all-day flag (it is detached, flag unchanged)",
+      save: save
     )
   }
 
-  /// Saves `event` alone — `.thisEvent`, committed: a one-off as itself, an
+  /// Saves `event` alone through `save`, a committed save at the given span
+  /// (`commitSave` in production) — `.thisEvent`: a one-off as itself, an
   /// occurrence as a detached exception. A throw becomes `operationFailed`,
   /// its message led by `failure`.
-  private func saveThisEvent(
+  private static func saveThisEvent(
     _ event: EKEvent,
-    orFail failure: String = "Failed to update event"
+    orFail failure: String = "Failed to update event",
+    save: (EKEvent, EKSpan) throws -> Void
   ) -> Result<Void, CalendarError> {
     do {
-      try eventStore.save(event, span: .thisEvent, commit: true)
+      try save(event, .thisEvent)
       return .success(())
     } catch {
       return .failure(CalendarError(
