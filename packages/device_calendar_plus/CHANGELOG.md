@@ -4,7 +4,9 @@
 - Android: `updateRecurring` with `EventSpan.thisAndFollowing` on a series
   with a `CountEnd`, keeping its rule, no longer runs the new series past
   the original's end when occurrences before the split were deleted.
-  Deleted occurrences count towards the `CountEnd`, as on iOS. See
+  Deleted occurrences count towards the `CountEnd`, as on iOS, except for
+  a rule from another app with parts the plugin can't expand (`BYHOUR`,
+  `BYWEEKNO`, a daily or weekly `BYSETPOS`). See
   [Changing the rule](doc/recurring-events.md#changing-the-rule) (#220).
 - Android: `updateRecurring` with `EventSpan.thisAndFollowing` and a
   sub-day `start` shift across midnight (23:30 to 00:30, say) no longer

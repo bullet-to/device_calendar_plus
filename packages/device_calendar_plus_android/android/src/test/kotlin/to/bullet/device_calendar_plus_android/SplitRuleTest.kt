@@ -6,8 +6,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * [newSeriesRule], [keptRuleAfterSplit] and [replacedRuleAfterSplit]: the
- * rule a `thisAndFollowing` split gives the new series. A kept rule's COUNT
+ * [keptRuleAfterSplit] and [replacedRuleAfterSplit]: the rule a
+ * `thisAndFollowing` split gives the new series. A kept rule's COUNT
  * drops by the occurrences the rule generates before the split, deleted ones
  * included (#220), and keeps at least one; the provider's count is only the
  * fallback for a rule that can't be expanded. A replacing rule is
@@ -231,27 +231,6 @@ internal class SplitRuleTest {
         )
     }
 
-    private fun splitWith(
-        ruleEdit: SeriesRuleEdit,
-        existingRule: String = "FREQ=DAILY;COUNT=5",
-        providerCountBefore: () -> Int = { error("a countable rule needs no provider count") },
-    ) = newSeriesRule(
-        ruleEdit,
-        existingRule = existingRule,
-        seriesStart = seriesStart,
-        splitAt = fifth,
-        tz = utc,
-        providerCountBefore = providerCountBefore
-    )
-
-    @Test
-    fun newSeriesRule_keep_dropsTheOccurrencesBeforeTheSplit() {
-        assertEquals(
-            "FREQ=DAILY;COUNT=6",
-            splitWith(SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=10"), "FREQ=DAILY;COUNT=10")
-        )
-    }
-
     // Two of the four occurrences before the split were deleted, so the
     // provider's Instances (which leave EXDATE'd and cancelled occurrences
     // out) list only two. COUNT counts them anyway (RFC 5545), and an iOS
@@ -306,8 +285,12 @@ internal class SplitRuleTest {
             "FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=3",
             keep("FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=6", at = day(62))
         )
-        // The last weekday of each October: a split on 16 October 2027 has
-        // the start and 30 October 2026 before it.
+    }
+
+    // The last weekday of each October: a split on 16 October 2027 has the
+    // start and 30 October 2026 before it.
+    @Test
+    fun keptRuleAfterSplit_yearlyBySetPos_countsTheRule() {
         assertEquals(
             "FREQ=YEARLY;BYMONTH=10;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=4",
             keep("FREQ=YEARLY;BYMONTH=10;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1;COUNT=6", at = day(366))
@@ -317,25 +300,15 @@ internal class SplitRuleTest {
     // Unlike a replacing rule, a kept one always leaves the split's own
     // occurrence: it is one of the series' own.
     @Test
-    fun newSeriesRule_keepWithTheCountUsedUp_keepsOne() {
-        assertEquals(
-            "FREQ=DAILY;COUNT=1",
-            splitWith(SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=3"), "FREQ=DAILY;COUNT=3")
-        )
+    fun keptRuleAfterSplit_countUsedUp_keepsOne() {
+        assertEquals("FREQ=DAILY;COUNT=1", keep("FREQ=DAILY;COUNT=3"))
     }
 
     @Test
-    fun newSeriesRule_keepWithoutCount_isUnchangedAndCountsNothing() {
+    fun keptRuleAfterSplit_noCount_isUnchanged() {
         assertEquals(
             "FREQ=DAILY",
-            newSeriesRule(
-                SeriesRuleEdit.Keep("FREQ=DAILY"),
-                existingRule = "FREQ=DAILY",
-                seriesStart = seriesStart,
-                splitAt = fifth,
-                tz = utc,
-                providerCountBefore = { error("a rule without COUNT needs no count") }
-            )
+            keep("FREQ=DAILY", providerCountBefore = { error("a rule without COUNT needs no count") })
         )
     }
 }
