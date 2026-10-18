@@ -104,4 +104,40 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
     XCTAssertEqual(flipSave.endDate, end)
     XCTAssertNil(flipSave.timeZone)
   }
+
+  // MARK: - all-day to timed
+
+  /// Step 1 carries the fields and no timing change — the occurrence stays
+  /// all-day on its own day, zone cleared; step 2 is the flag, with the
+  /// timed hours and the zone.
+  func testAllDayToTimedDetachesWithoutTheHoursThenFlipsTheFlag() throws {
+    let event = EKEvent(eventStore: EKEventStore())
+    event.title = "Holiday"
+    event.isAllDay = true
+    event.startDate = at(losAngeles, 3, 10)
+    event.endDate = endOfDay(losAngeles, 3, 10)
+    let allDayStart = event.startDate
+    let allDayEnd = event.endDate
+    let start = at(losAngeles, 3, 10, hour: 9)
+    let end = at(losAngeles, 3, 10, hour: 10)
+
+    try flip(
+      event, to: false,
+      patch: ["title": "Dentist", "timeZone": "America/Los_Angeles"],
+      dates: (start, end)
+    ).get()
+
+    XCTAssertEqual(fake.saves.map(\.span), [.thisEvent, .thisEvent])
+    let detach = fake.saves[0]
+    XCTAssertEqual(detach.title, "Dentist")
+    XCTAssertTrue(detach.isAllDay)
+    XCTAssertEqual(detach.startDate, allDayStart)
+    XCTAssertEqual(detach.endDate, allDayEnd)
+    XCTAssertNil(detach.timeZone)
+    let flipSave = fake.saves[1]
+    XCTAssertFalse(flipSave.isAllDay)
+    XCTAssertEqual(flipSave.startDate, start)
+    XCTAssertEqual(flipSave.endDate, end)
+    XCTAssertEqual(flipSave.timeZone, losAngeles)
+  }
 }
