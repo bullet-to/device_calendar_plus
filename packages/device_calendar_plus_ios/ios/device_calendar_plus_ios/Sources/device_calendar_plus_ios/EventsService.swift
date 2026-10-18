@@ -1511,6 +1511,12 @@ class EventsService {
     let moveStart = newEnd == nil ? nil : newStart
     let splitAt = span == "thisAndFollowing" ? timestamp : nil
     let flipsToTimed = foundEvent.isAllDay && !effectiveIsAllDay
+    func splitToTimed(on rule: EKRecurrenceRule) {
+      completion(EventsService.splitThenFlipToTimed(
+        foundEvent, patch: patch, splitRule: rule,
+        start: moveStart, end: newEnd, fallbackId: eventId,
+        save: eventStore.save(_:span:commit:), reset: eventStore.reset))
+    }
     switch (resolved.rule, splitAt) {
     case (.clear, let timestamp?):
       // Clearing the rule on a `thisAndFollowing` split is the one case
@@ -1525,10 +1531,7 @@ class EventsService {
         completion: completion
       )
     case (.set(let rule), _?) where flipsToTimed:
-      completion(EventsService.splitThenFlipToTimed(
-        foundEvent, patch: patch, splitRule: rule,
-        start: moveStart, end: newEnd, fallbackId: eventId,
-        save: eventStore.save(_:span:commit:), reset: eventStore.reset))
+      splitToTimed(on: rule)
     case (.leaveAsLoaded, _?) where flipsToTimed:
       // A series target always has a rule (`resolveSeriesTarget` refuses a
       // one-off); the split carries a fresh copy of it.
@@ -1537,10 +1540,7 @@ class EventsService {
           code: PlatformExceptionCodes.operationFailed,
           message: "The series has no recurrence rule to split on")))
       }
-      completion(EventsService.splitThenFlipToTimed(
-        foundEvent, patch: patch, splitRule: SeriesDates.ruleCopy(loaded),
-        start: moveStart, end: newEnd, fallbackId: eventId,
-        save: eventStore.save(_:span:commit:), reset: eventStore.reset))
+      splitToTimed(on: SeriesDates.ruleCopy(loaded))
     default:
       // Apply the field changes, and the new times when the change moves
       // them.

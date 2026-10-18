@@ -3695,6 +3695,8 @@ void main() {
       final r = await allDayToTimedSplit(title, day);
       expectTimedOnOwnDays(r.newSeries, r.before.sublist(2));
       expectTruncatedMaster(r.remaining, before: r.split.startDate);
+      expect(r.remaining.every((e) => e.isAllDay), isTrue,
+          reason: 'the original series must stay all-day');
     }
 
     test(
@@ -3748,7 +3750,7 @@ void main() {
     },
         skip: Platform.isAndroid
             ? 'Android: a first-occurrence thisAndFollowing toggle leaves the '
-                'first occurrence all-day (pre-dates #232, follow-up to file)'
+                'first occurrence all-day (#234)'
             : false);
 
     /// 09:00 local on [day]'s local date.

@@ -74,6 +74,7 @@ The thin shims that call the OS permission APIs directly (`EventKitAuthorization
 
 - `thisAndFollowing toggling an all-day series timed with no start keeps every new occurrence on its calendar day`
 - `thisAndFollowing toggling an all-day series timed with no start from an occurrence past a DST change keeps every new occurrence on its calendar day`
+- `thisAndFollowing toggling an all-day series timed from its first occurrence keeps every occurrence on its calendar day` (both saves land on the master)
 - `thisAndFollowing toggling an all-day series timed with a start and duration moves every new occurrence to that time on its own day` (and its `past a DST change` twin)
 - `thisAndFollowing toggling an all-day series timed with a new rule splits it onto the new rule` (and its `past a DST change` twin)
 - `thisAndFollowing day shift onto another listed weekday of an explicit-BYDAY rule that toggles an all-day series timed splits it there`
