@@ -165,7 +165,9 @@ new series keeps only the occurrences the rule would still have left: split a
 daily series at its fifth occurrence with `DailyRecurrence(end: CountEnd(20))`
 and the new series has 16. A count used up before the split leaves a single
 non-recurring event at the split point. A kept rule's count is shared the same
-way: the two series together have as many occurrences as the original.
+way, and occurrences you deleted before the split still count, as they do in
+an RRULE's `COUNT`: the two series together cover exactly the original's
+occurrences, ending where it ended.
 
 ### Moving the day of a pinned rule
 

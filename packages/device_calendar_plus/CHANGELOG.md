@@ -1,6 +1,11 @@
 ## Unreleased
 
 ### Fixed
+- Android: `updateRecurring` with `EventSpan.thisAndFollowing` on a series
+  with a `CountEnd`, keeping its rule, no longer runs the new series past
+  the original's end when occurrences before the split were deleted.
+  Deleted occurrences count towards the `CountEnd`, as on iOS. See
+  [Changing the rule](doc/recurring-events.md#changing-the-rule) (#220).
 - Android: `updateRecurring` with `EventSpan.thisAndFollowing` and a
   sub-day `start` shift across midnight (23:30 to 00:30, say) no longer
   moves the occurrences the user had moved past the split a day, matching

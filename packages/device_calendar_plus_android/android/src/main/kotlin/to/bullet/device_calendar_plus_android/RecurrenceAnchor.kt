@@ -15,8 +15,8 @@ import java.util.TimeZone
  * `RecurrenceAnchor.swift`; the two must agree.
  *
  * It also counts a rule's occurrences before an instant ([countBefore]),
- * for the COUNT a `thisAndFollowing` split gives a new rule. That has no
- * Swift counterpart: iOS gets the count from EventKit, so the "must agree"
+ * for the COUNT a `thisAndFollowing` split gives a new or a kept rule. That
+ * has no Swift counterpart: iOS gets the count from EventKit, so the "must agree"
  * above covers [firstMatch] and [generates] only.
  *
  * Covers the RRULE subset the plugin models: FREQ, BYDAY (with ordinals),
@@ -24,8 +24,8 @@ import java.util.TimeZone
  * [firstMatch] and [generates], INTERVAL and WKST don't affect which days a
  * rule can generate from a given anchor (the anchor itself fixes the
  * interval's phase), so both are ignored there; [countBefore] reads both. A
- * BYSETPOS on a daily or weekly rule is outside the modelled subset and is
- * ignored everywhere.
+ * BYSETPOS on a daily or weekly rule is outside the modelled subset:
+ * [firstMatch] and [generates] ignore it, and [countBefore] declines it.
  */
 internal object RecurrenceAnchor {
     private enum class Freq { DAILY, WEEKLY, MONTHLY, YEARLY }
@@ -96,13 +96,14 @@ internal object RecurrenceAnchor {
      * leaves implicit filled in from the anchor and its INTERVAL counted
      * from the anchor's day, week (from WKST, Monday by default), month or
      * year. 0 when [beforeMillis] is on or before the anchor; null for a
-     * rule outside the modelled subset, which can't be expanded here. The
-     * COUNT a `thisAndFollowing` split takes off a new rule
-     * ([replacedRuleAfterSplit]).
+     * rule outside the modelled subset, or with a part it doesn't model
+     * ([countable]), which can't be expanded here. The COUNT a
+     * `thisAndFollowing` split takes off a new or a kept rule
+     * ([replacedRuleAfterSplit], [keptRuleAfterSplit]).
      */
     fun countBefore(rrule: String, anchorMillis: Long, beforeMillis: Long, tz: TimeZone): Int? {
         if (anchorMillis >= beforeMillis) return 0
-        val rule = parse(rrule) ?: return null
+        val rule = parse(rrule)?.takeIf { countable(rrule, it) } ?: return null
         val anchor = Calendar.getInstance(tz).apply { timeInMillis = anchorMillis }
         val matcher = Matcher(rule.impliedBy(anchor))
         // How far the anchor's day is into its week, so a day [daysOn] after
@@ -129,6 +130,21 @@ internal object RecurrenceAnchor {
         }
         return count
     }
+
+    /** The parts [countBefore] reads, or that don't change which days a rule generates. */
+    private val countedParts = setOf(
+        "FREQ", "COUNT", "UNTIL", "INTERVAL", "WKST", "BYDAY", "BYMONTHDAY", "BYMONTH", "BYSETPOS"
+    )
+
+    /**
+     * Whether [countBefore] can count [rrule] ([rule] parsed): every part is
+     * one it models, so a rule from another app with, say, BYHOUR (more than
+     * one occurrence a day) or a BYSETPOS on a daily or weekly rule isn't
+     * counted as if those parts weren't there.
+     */
+    private fun countable(rrule: String, rule: Rule): Boolean =
+        RruleString.params(rrule).keys.all { it.uppercase() in countedParts } &&
+            (rule.bySetPos.isEmpty() || rule.freq == Freq.MONTHLY || rule.freq == Freq.YEARLY)
 
     /**
      * The matcher for [rrule] anchored at [anchor], with the parts the rule

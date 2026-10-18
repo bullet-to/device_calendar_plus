@@ -6,10 +6,12 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * [newSeriesRule] and [replacedRuleAfterSplit]: the rule a
- * `thisAndFollowing` split gives the new series. A kept rule's COUNT drops
- * by the occurrences the provider has before the split, and keeps at least
- * one. A replacing rule is [replacedRuleAfterSplit]: EventKit counts a new
+ * [newSeriesRule], [keptRuleAfterSplit] and [replacedRuleAfterSplit]: the
+ * rule a `thisAndFollowing` split gives the new series. A kept rule's COUNT
+ * drops by the occurrences the rule generates before the split, deleted ones
+ * included (#220), and keeps at least one; the provider's count is only the
+ * fallback for a rule that can't be expanded. A replacing rule is
+ * [replacedRuleAfterSplit]: EventKit counts a new
  * rule's COUNT from the original series' start, so the new series loses the
  * occurrences the new rule would have had before the split, and doesn't
  * recur at all when that leaves none (#124). The daily, weekly, monthly and yearly counts are what
@@ -214,6 +216,40 @@ internal class SplitRuleTest {
         assertEquals(
             "FREQ=DAILY;COUNT=6",
             splitWith(SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=10"), "FREQ=DAILY;COUNT=10")
+        )
+    }
+
+    // Two of the four occurrences before the split were deleted, so the
+    // provider's Instances (which leave EXDATE'd and cancelled occurrences
+    // out) list only two. COUNT counts them anyway (RFC 5545), and an iOS
+    // simulator saves the new series with COUNT=6 for this split all the
+    // same; the provider's two gave it eight, running past the original's
+    // end (#220).
+    @Test
+    fun newSeriesRule_keepWithDeletedOccurrencesBeforeTheSplit_stillCountsThem() {
+        assertEquals(
+            "FREQ=DAILY;COUNT=6",
+            splitWith(
+                SeriesRuleEdit.Keep("FREQ=DAILY;COUNT=10"),
+                "FREQ=DAILY;COUNT=10",
+                providerCountBefore = 2
+            )
+        )
+    }
+
+    // A kept rule can come from another app, with parts the rule count
+    // doesn't model: here two occurrences a day, eight before the split.
+    // Counting it as one a day would leave the new series six, not two, so
+    // the provider's count is used instead.
+    @Test
+    fun newSeriesRule_keepWithAPartTheCountDoesNotModel_usesTheProviderCount() {
+        assertEquals(
+            "FREQ=DAILY;BYHOUR=10,14;COUNT=2",
+            splitWith(
+                SeriesRuleEdit.Keep("FREQ=DAILY;BYHOUR=10,14;COUNT=10"),
+                "FREQ=DAILY;BYHOUR=10,14;COUNT=10",
+                providerCountBefore = 8
+            )
         )
     }
 

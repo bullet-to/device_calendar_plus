@@ -1580,7 +1580,11 @@ class EventsService(
     private fun eventDurationMillis(row: EventRow): Long =
         storedEndMillis(row.dtstart, row.dtend, row.duration)?.let { it - row.dtstart } ?: 3_600_000L
 
-    /** Number of occurrences of series [row] that start before [beforeMillis]. */
+    /**
+     * Number of occurrences of series [row] that start before [beforeMillis],
+     * as the provider's Instances list them: deleted ones left out. Only the
+     * fallback for a kept rule [keptRuleAfterSplit] can't count itself (#220).
+     */
     private fun countInstancesBefore(row: EventRow, beforeMillis: Long): Int {
         // From the series' own DTSTART, so a series of any age is counted
         // whole: a fixed look-back (five years, once) under-counted an older
