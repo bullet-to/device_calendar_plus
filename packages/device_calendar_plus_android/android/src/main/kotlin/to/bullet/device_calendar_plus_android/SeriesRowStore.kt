@@ -307,9 +307,10 @@ internal class SeriesRowStore(private val context: Context) {
 
     /**
      * Updates event row [eventId] with [values]: the one update-by-ID in
-     * the plugin (with [updateEventRowOp], its batch form). A plain caller's write on every account, so on a synced
-     * calendar the provider marks the row DIRTY and the adapter uploads the
-     * change (#132). Returns the rows updated.
+     * the plugin (with [updateEventRowOp], its batch form). A plain
+     * caller's write on every account, so on a synced calendar the provider
+     * marks the row DIRTY and the adapter uploads the change (#132).
+     * Returns the rows updated.
      *
      * The series writers send RRULE, DTSTART and DURATION this way. A
      * plain update keeps them all: the provider throws on the sync

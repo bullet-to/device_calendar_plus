@@ -820,18 +820,6 @@ class EventsService(
     }
 
     /**
-     * Applies the [patch]'s reminders and attendees edits to event
-     * [eventId]'s child rows in one [android.content.ContentResolver.applyBatch]:
-     * all of it or none. Unchanged edits write nothing.
-     */
-    private fun applyChildRowPatches(eventId: Long, patch: EventFieldPatch) {
-        val ops = childRowPatchOps(eventId, patch)
-        if (ops.isNotEmpty()) {
-            context.contentResolver.applyBatch(CalendarContract.AUTHORITY, ArrayList(ops))
-        }
-    }
-
-    /**
      * The operations that apply the [patch]'s reminders and attendees edits
      * to event [eventId]'s child rows, which live in their own tables keyed
      * by EVENT_ID. Unchanged edits need none.
@@ -942,9 +930,10 @@ class EventsService(
             .getOrElse { return Result.failure(it) }
         // Child rows attach to the detached exception's own event id. The
         // provider seeds it with the series' guest list, so an attendees edit
-        // applies to this occurrence's copy alone.
-        applyChildRowPatches(exceptionId.toLong(), patch)
-        return Result.success(Unit)
+        // applies to this occurrence's copy alone. This batch is separate
+        // from insertException's: if it fails, the occurrence stays detached
+        // with the series' reminders and guests, not the edit's.
+        return writeEventEdit(exceptionId, android.content.ContentValues(), patch)
     }
 
     // -- updateRecurring (issue #36) --

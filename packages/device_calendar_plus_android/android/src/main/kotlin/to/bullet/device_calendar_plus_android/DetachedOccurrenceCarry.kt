@@ -2,7 +2,6 @@ package to.bullet.device_calendar_plus_android
 
 import android.content.ContentProviderOperation
 import android.content.ContentValues
-import android.net.Uri
 import android.provider.CalendarContract
 
 /**
@@ -408,31 +407,16 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
 
     /**
      * Event [eventId]'s [CalendarContract.Reminders] rows, whatever the
-     * method, as insert values without their EVENT_ID.
+     * method, as insert values without their EVENT_ID: MINUTES and METHOD
+     * copied as stored (nulls included).
      */
-    private fun readReminderRows(eventId: Long): List<ContentValues> =
-        readChildRows(
-            CalendarContract.Reminders.CONTENT_URI,
-            CalendarContract.Reminders.EVENT_ID,
-            eventId,
-            arrayOf(CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD)
-        )
-
-    /**
-     * The [columns] of every row of child table [uri] whose [eventIdColumn]
-     * is [eventId], copied as stored (nulls included) into insert values.
-     */
-    private fun readChildRows(
-        uri: Uri,
-        eventIdColumn: String,
-        eventId: Long,
-        columns: Array<String>
-    ): List<ContentValues> {
+    private fun readReminderRows(eventId: Long): List<ContentValues> {
+        val columns = arrayOf(CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD)
         val rows = mutableListOf<ContentValues>()
         resolver.query(
-            uri,
+            CalendarContract.Reminders.CONTENT_URI,
             columns,
-            "$eventIdColumn = ?",
+            "${CalendarContract.Reminders.EVENT_ID} = ?",
             arrayOf(eventId.toString()),
             null
         )?.use { cursor ->
