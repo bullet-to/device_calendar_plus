@@ -3610,6 +3610,39 @@ void main() {
         before.sublist(2),
       );
     });
+
+    // thisAndFollowing from the first occurrence covers the whole series,
+    // so it must flip every occurrence timed and leave none all-day.
+    test(
+        'thisAndFollowing toggling an all-day series timed from its first '
+        'occurrence keeps every occurrence on its calendar day', () async {
+      const title = 'All-day To Timed From First';
+      final seeded = await seedWeeklySeries(plugin, calendarId,
+          title: title, isAllDay: true, start: seedDay, count: seedCount);
+      final before = seeded.occurrences;
+
+      final newSeriesId = await plugin.updateRecurring(
+        before[0].instanceId,
+        EventSpan.thisAndFollowing,
+        isAllDay: false,
+      );
+
+      final from = seeded.start.subtract(const Duration(days: 1));
+      expectTimedOnOwnDays(
+        await occurrencesOf(plugin, calendarId!, newSeriesId, from,
+            windowDays: 31),
+        before,
+      );
+      expect(
+        (await eventsTitled(plugin, calendarId!, title, from, windowDays: 31))
+            .where((e) => e.isAllDay),
+        isEmpty,
+        reason: 'no all-day occurrence of the series may be left',
+      );
+    },
+        skip: Platform.isAndroid
+            ? 'Android: the first occurrence is left all-day (#234)'
+            : false);
   });
 
   group('Recurrence Delete Tests', () {
