@@ -1,4 +1,4 @@
-## Unreleased
+## 0.11.0 - 2026-10-18
 
 ### Changed
 - **Breaking:** `createCalendar`'s `platformOptions:` parameter is replaced
