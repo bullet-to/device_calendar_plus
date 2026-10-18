@@ -3,8 +3,9 @@ import Foundation
 /// Shared date fixtures for the date-driven tests (the pure date arithmetic
 /// of `EventDates` and `SeriesDates`, and the save sequencing in
 /// `DetachThenFlipAllDayTests`): the zones they drive, and dates built in a
-/// given zone in 2026. Conform a test case to pick them up. `RecurrenceFixtures` is the
-/// fixed-zone sibling for the recurrence-rule tests.
+/// given zone in 2026. Conform a test case to pick them up.
+/// `RecurrenceFixtures` is the fixed-zone sibling for the recurrence-rule
+/// tests.
 protocol DateFixtures {}
 
 extension DateFixtures {

@@ -71,16 +71,42 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
       save: fake.save, reset: fake.reset, isDetached: fake.isDetached)
   }
 
-  // MARK: - timed to all-day
-
-  func testTimedToAllDaySavesTwiceEachThisEvent() {
-    let result = flip(
-      timedOccurrence(), to: true, patch: ["title": "Offsite"],
+  /// A bare flip of `timedOccurrence()` to all-day on its own day.
+  private func flipTimedToAllDay() -> Result<Void, CalendarError> {
+    flip(
+      timedOccurrence(), to: true, patch: [:],
       dates: (at(losAngeles, 3, 10), endOfDay(losAngeles, 3, 10)))
-
-    XCTAssertNoThrow(try result.get())
-    XCTAssertEqual(fake.saves.map(\.span), [.thisEvent, .thisEvent])
   }
+
+  /// The detach and flip saves, or a failure (not an out-of-range trap) when
+  /// the sequence didn't save exactly twice, each `.thisEvent`.
+  private func twoSaves(
+    file: StaticString = #filePath, line: UInt = #line
+  ) -> (detach: FakeSaves.Save, flip: FakeSaves.Save)? {
+    XCTAssertEqual(
+      fake.saves.map(\.span), [.thisEvent, .thisEvent],
+      file: file, line: line)
+    guard fake.saves.count == 2 else { return nil }
+    return (fake.saves[0], fake.saves[1])
+  }
+
+  private func assertOperationFailed(
+    _ result: Result<Void, CalendarError>,
+    file: StaticString = #filePath, line: UInt = #line,
+    _ check: (CalendarError) -> Void = { _ in }
+  ) {
+    XCTAssertThrowsError(try result.get(), file: file, line: line) { error in
+      guard let error = error as? CalendarError else {
+        return XCTFail("not a CalendarError: \(error)", file: file, line: line)
+      }
+      XCTAssertEqual(
+        error.code, PlatformExceptionCodes.operationFailed,
+        file: file, line: line)
+      check(error)
+    }
+  }
+
+  // MARK: - timed to all-day
 
   /// Step 1 carries the fields and the all-day span as timed dates, still
   /// timed in its zone; step 2 is the flag, with the span and no zone.
@@ -93,13 +119,12 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
       dates: (start, end)
     ).get()
 
-    let detach = fake.saves[0]
+    guard case let (detach, flipSave)? = twoSaves() else { return }
     XCTAssertEqual(detach.title, "Offsite")
     XCTAssertFalse(detach.isAllDay)
     XCTAssertEqual(detach.startDate, start)
     XCTAssertEqual(detach.endDate, end)
     XCTAssertEqual(detach.timeZone, losAngeles)
-    let flipSave = fake.saves[1]
     XCTAssertTrue(flipSave.isAllDay)
     XCTAssertEqual(flipSave.startDate, start)
     XCTAssertEqual(flipSave.endDate, end)
@@ -128,14 +153,12 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
       dates: (start, end)
     ).get()
 
-    XCTAssertEqual(fake.saves.map(\.span), [.thisEvent, .thisEvent])
-    let detach = fake.saves[0]
+    guard case let (detach, flipSave)? = twoSaves() else { return }
     XCTAssertEqual(detach.title, "Dentist")
     XCTAssertTrue(detach.isAllDay)
     XCTAssertEqual(detach.startDate, allDayStart)
     XCTAssertEqual(detach.endDate, allDayEnd)
     XCTAssertNil(detach.timeZone)
-    let flipSave = fake.saves[1]
     XCTAssertFalse(flipSave.isAllDay)
     XCTAssertEqual(flipSave.startDate, start)
     XCTAssertEqual(flipSave.endDate, end)
@@ -149,29 +172,21 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
   func testFailsAfterAResetWithoutFlippingWhenStepOneDoesNotDetach() {
     fake.firstSaveDetaches = false
 
-    let result = flip(
-      timedOccurrence(), to: true, patch: [:],
-      dates: (at(losAngeles, 3, 10), endOfDay(losAngeles, 3, 10)))
+    let result = flipTimedToAllDay()
 
     XCTAssertEqual(fake.saves.count, 1)
     XCTAssertEqual(fake.resets, 1)
-    XCTAssertThrowsError(try result.get()) { error in
-      XCTAssertEqual((error as? CalendarError)?.code, PlatformExceptionCodes.operationFailed)
-    }
+    assertOperationFailed(result)
   }
 
   /// A throwing first save fails the update and never reaches the flip.
   func testFailsWithoutFlippingWhenStepOneThrows() {
     fake.throwingSave = 1
 
-    let result = flip(
-      timedOccurrence(), to: true, patch: [:],
-      dates: (at(losAngeles, 3, 10), endOfDay(losAngeles, 3, 10)))
+    let result = flipTimedToAllDay()
 
     XCTAssertEqual(fake.saves.count, 1)
-    XCTAssertThrowsError(try result.get()) { error in
-      XCTAssertEqual((error as? CalendarError)?.code, PlatformExceptionCodes.operationFailed)
-    }
+    assertOperationFailed(result)
   }
 
   /// A throwing second save fails the update, saying the occurrence was left
@@ -179,15 +194,11 @@ final class DetachThenFlipAllDayTests: XCTestCase, DateFixtures {
   func testFailsSayingTheOccurrenceIsDetachedWhenStepTwoThrows() {
     fake.throwingSave = 2
 
-    let result = flip(
-      timedOccurrence(), to: true, patch: [:],
-      dates: (at(losAngeles, 3, 10), endOfDay(losAngeles, 3, 10)))
+    let result = flipTimedToAllDay()
 
     XCTAssertEqual(fake.saves.count, 2)
-    XCTAssertThrowsError(try result.get()) { error in
-      let error = error as? CalendarError
-      XCTAssertEqual(error?.code, PlatformExceptionCodes.operationFailed)
-      XCTAssertTrue(error?.message.contains("it is detached") ?? false, error?.message ?? "")
+    assertOperationFailed(result) { error in
+      XCTAssertTrue(error.message.contains("it is detached"), error.message)
     }
   }
 }
