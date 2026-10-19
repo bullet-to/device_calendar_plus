@@ -65,9 +65,11 @@ struct EventFieldPatch {
   /// The timing alone, in the order `apply(to:start:end:)` describes: the
   /// all-day flag (`nil` leaves the event's), the dates (`nil` leaves a
   /// bound), then the time zone — cleared on an all-day event, the patch's
-  /// (if any) on a timed one. `EventsService.detachThenFlipAllDay` writes
-  /// this alone in its second save: the fields are already saved with the
-  /// detach.
+  /// (if any) on a timed one. The two-save all-day flips
+  /// (`EventsService.detachThenFlipAllDay` for one occurrence,
+  /// `EventsService.splitThenFlipToTimed` for a series split) write this
+  /// alone in their second save: the fields are already saved with the
+  /// detach or the split.
   func applyTiming(
     to event: EKEvent, isAllDay: Bool?, start: Date?, end: Date?
   ) {
@@ -83,8 +85,9 @@ struct EventFieldPatch {
 
   /// The field edits alone: everything but the all-day flag, the dates and
   /// the time zone, which `applyTiming(to:isAllDay:start:end:)` orders.
-  /// `EventsService.detachThenFlipAllDay` writes these in its first save,
-  /// with the timing its direction allows.
+  /// The two-save all-day flips write these in their first save:
+  /// `EventsService.detachThenFlipAllDay` with the timing its direction
+  /// allows, `EventsService.splitThenFlipToTimed` with the split.
   func applyFields(to event: EKEvent) {
     if let title = title { event.title = title }
     if clearedFields.contains("description") {

@@ -70,6 +70,17 @@ The thin shims that call the OS permission APIs directly (`EventKitAuthorization
 - `updateEvent toggling a timed occurrence all-day with a two-day span detaches it onto exactly those days`
 - `updateEvent making an all-day occurrence timed with dates detaches it onto those hours`
 
+`EventsService.splitThenFlipToTimed` (iOS) is the series twin. `updateRecurring` with `thisAndFollowing` that flips an all-day series timed saves twice, split first and flip second, because EventKit counts a split that flips in the same save in the wrong frame (#232). That bug reproduces on the simulator's local store, so the integration tests cover it, but the iCloud store has handled a one-save flip differently from the local store before (#210, #212), so anything that touches it also needs the same signed-in iPhone pass, on these tests in `recurrence_test.dart`:
+
+- `thisAndFollowing toggling an all-day series timed with no start keeps every new occurrence on its calendar day`
+- `thisAndFollowing toggling an all-day series timed with no start from an occurrence past a DST change keeps every new occurrence on its calendar day`
+- `thisAndFollowing toggling an all-day series timed from its first occurrence keeps every occurrence on its calendar day` (both saves land on the master)
+- `thisAndFollowing toggling an all-day series timed with a start and duration moves every new occurrence to that time on its own day` (and its `past a DST change` twin)
+- `thisAndFollowing toggling an all-day series timed with a new rule splits it onto the new rule` (and its `past a DST change` twin)
+- `thisAndFollowing day shift onto another listed weekday of an explicit-BYDAY rule that toggles an all-day series timed splits it there`
+
+`SplitThenFlipToTimedTests` pins the sequence itself (two `.futureEvents` saves, staged then committed, the flip only in the second, a reset on failure).
+
 ```bash
 cd packages/device_calendar_plus/example
 flutter build ios --config-only --debug
