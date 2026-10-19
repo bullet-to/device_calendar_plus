@@ -1658,77 +1658,49 @@ void main() {
       },
     );
 
-    test(
-      'thisAndFollowing update that moves the series from its first '
-      'occurrence keeps a detached occurrence once, with its own edits (#234)',
-      () async {
-        // From the first occurrence the edit is one in place on the whole
-        // series rather than a split (#234), so nothing is carried: the
-        // series' own detached occurrence must still stand in for its slot,
-        // moved with the series, rather than sit beside a duplicate there.
+    // A whole-series move, by either entry point: allEvents, or
+    // thisAndFollowing from the first occurrence, which is the same
+    // in-place edit rather than a split (#234), as EventKit's
+    // `.futureEvents` save from the master is. Nothing is carried: the
+    // series' own detached occurrence must still stand in for its slot,
+    // moved with the series, rather than sit beside a duplicate there.
+    for (final (span, label, target, tagWord) in [
+      (
+        EventSpan.thisAndFollowing,
+        'thisAndFollowing update that moves the series from its first '
+            'occurrence keeps a detached occurrence once, with its own '
+            'edits (#234)',
+        (SeededSeries s) => s.occurrences.first.instanceId,
+        'first',
+      ),
+      (
+        EventSpan.allEvents,
+        'allEvents update that moves the series keeps a detached occurrence '
+            'once, with its own edits',
+        (SeededSeries s) => s.eventId,
+        'allEvents',
+      ),
+    ]) {
+      test(label, () async {
         final series = await seedSeries(plugin, calendarId,
             create: createMidUtcDayDailySeries, count: 6, minOccurrences: 6);
         final id = calendarId!;
         final tag = DateTime.now().microsecondsSinceEpoch;
-        final detachedTitle = 'Detached before first move $tag';
+        final detachedTitle = 'Detached before $tagWord move $tag';
         final moved = await moveOccurrence(plugin, id, series, 3,
             const Duration(hours: 2), detachedTitle);
-        final newTitle = 'Moved from first $tag';
-        final first = series.occurrences.first;
+        final newTitle = 'Moved $tagWord $tag';
 
         final returnedId = await plugin.updateRecurring(
-          first.instanceId,
-          EventSpan.thisAndFollowing,
-          title: newTitle,
-          start: first.startDate.add(splitShift),
-        );
-
-        expect(returnedId, series.eventId,
-            reason: 'from the first occurrence the edit is in place and '
-                'keeps the series ID');
-        expect(
-          startsOf(await eventsTitled(plugin, id, newTitle, series.start)),
-          startsExcept(series.occurrences, {3})
-              .map((ms) => ms + splitShift.inMilliseconds)
-              .toList(),
-          reason: 'the series must carry every other slot, moved, and skip '
-              'the one its detached occurrence stands in for',
-        );
-        await expectDetachedOnce(plugin, id, detachedTitle, moved, series.start,
-            reason: 'the detached occurrence must survive once, with its own '
-                'title and time');
-
-        await plugin.deleteRecurring(returnedId, EventSpan.allEvents);
-        expect(await eventsTitled(plugin, id, detachedTitle, series.start),
-            isEmpty,
-            reason: 'the detached occurrence must still belong to the series');
-      },
-    );
-
-    test(
-      'allEvents update that moves the series keeps a detached occurrence '
-      'once, with its own edits',
-      () async {
-        // The same whole-series edit as a thisAndFollowing one from the
-        // first occurrence (#234): EventKit's `.futureEvents` save from the
-        // master, which keeps a detached occurrence standing in for its slot.
-        final series = await seedSeries(plugin, calendarId,
-            create: createMidUtcDayDailySeries, count: 6, minOccurrences: 6);
-        final id = calendarId!;
-        final tag = DateTime.now().microsecondsSinceEpoch;
-        final detachedTitle = 'Detached before allEvents move $tag';
-        final moved = await moveOccurrence(plugin, id, series, 3,
-            const Duration(hours: 2), detachedTitle);
-        final newTitle = 'Moved allEvents $tag';
-
-        final returnedId = await plugin.updateRecurring(
-          series.eventId,
-          EventSpan.allEvents,
+          target(series),
+          span,
           title: newTitle,
           start: series.start.add(splitShift),
         );
 
-        expect(returnedId, series.eventId);
+        expect(returnedId, series.eventId,
+            reason: 'a whole-series edit is in place and keeps the series '
+                'ID');
         expect(
           startsOf(await eventsTitled(plugin, id, newTitle, series.start)),
           startsExcept(series.occurrences, {3})
@@ -1745,8 +1717,8 @@ void main() {
         expect(await eventsTitled(plugin, id, detachedTitle, series.start),
             isEmpty,
             reason: 'the detached occurrence must still belong to the series');
-      },
-    );
+      });
+    }
 
     test(
       'thisAndFollowing update that clears the rule from the first '

@@ -7,10 +7,11 @@ import android.provider.CalendarContract
 
 /**
  * Settles a series' detached occurrences after [EventsService.updateRecurring]
- * rewrites it: past a `thisAndFollowing` split, the second half of the
- * split, and its counterpart to the delete path's sweep of the same rows
- * (#158); after a whole-series edit that moves the anchor or clears the
- * rule, the same series' own occurrences, re-pointed in place (#234).
+ * rewrites it, in one of two modes: [settleAfterSplit] carries those past a
+ * `thisAndFollowing` split onto the second half of the split, the
+ * counterpart to the delete path's sweep of the same rows (#158);
+ * [settleInPlace] re-points a whole-series edit's own occurrences at their
+ * moved slots on the same series (#234).
  *
  * iOS's EKSpan.futureEvents save re-parents them: each keeps its own
  * edits (title, moved time), and the series it ends up on skips its slot
@@ -25,11 +26,10 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
     private val resolver get() = store.resolver
 
     /**
-     * Carries the detached occurrences of [master] whose original slot is
-     * at or after [fromInstant] onto the series [newMasterId], or removes
-     * them when the new event doesn't recur. [newMasterId] is [master]'s
-     * own ID after a whole-series edit: the series is then its own target,
-     * and each occurrence is re-pointed at its moved slot on it.
+     * After a `thisAndFollowing` split: carries the detached occurrences of
+     * the old series [master] whose original slot is at or after
+     * [fromInstant] (the split point) onto the new series [newMasterId], or
+     * removes them when the new event doesn't recur.
      *
      * Each carried occurrence and its slot move as [shift] says, because
      * the new series generates every slot moved by the edit: the slot by
@@ -50,10 +50,7 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
      *   first (#153): the provider pairs an exception with its slot by
      *   ORIGINAL_SYNC_ID, not ORIGINAL_ID.
      * - Synced: the occurrence is copied to a fresh exception of the new
-     *   master and the old row deleted ([copyException]), on the same
-     *   master too: whether a plain re-point there survives the server
-     *   once the master's DTSTART moves is unverified, so it takes the
-     *   path known to. An uploaded
+     *   master and the old row deleted ([copyException]). An uploaded
      *   exception's `_sync_id` is the server's name for "this occurrence of
      *   the OLD series", and rewriting ORIGINAL_ID/ORIGINAL_SYNC_ID locally
      *   does not rename it: once the truncated old series reaches the
@@ -64,33 +61,77 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
      *   gone.
      *
      * Best-effort, like the delete path's sweep: by the time it runs the
-     * series rewrite is committed (on a split, the new series inserted and
-     * the old one truncated), and the caller is told so whatever happens
-     * here. Reporting a failure instead would invite a retry that rewrites
-     * the series again. Each occurrence carries on its own: one that fails
-     * stays where it was (on a split, on the old series past its UNTIL, as
-     * before #158), and the rest still carry. Never throws; failures go to
-     * logcat.
+     * split is committed (the new series inserted and the old one
+     * truncated), and the caller is told so whatever happens here.
+     * Reporting a failure instead would invite a retry that splits the
+     * series again. Each occurrence carries on its own: one that fails
+     * stays on the old series past its UNTIL, as before #158, and the rest
+     * still carry. Never throws; failures go to logcat.
      *
      * A null [shift] means the new event doesn't recur: one turned into a
      * single event has no slots for an exception to stand in, and iOS
      * drops them, so they go by the delete path's sweep
      * ([SeriesRowStore.deleteDetachedOccurrencesFrom]) instead.
      */
-    fun settleAfterRewrite(
+    fun settleAfterSplit(
         master: EventRow,
         fromInstant: Long,
         newMasterId: String,
         shift: SplitShift?
+    ) = settle(master, fromInstant, CarryTarget.Split(newMasterId), shift)
+
+    /**
+     * After a whole-series edit of [series] that moves its anchor or clears
+     * its rule (#234): its detached occurrences, all of them, stay on
+     * [series] and are re-pointed at their slots moved by [shift], or
+     * removed when [shift] is null because the series no longer recurs.
+     * [series] is the row as read before the edit; the carry reads the
+     * edited row back itself.
+     *
+     * Everything else is [settleAfterSplit]'s contract, with [series] as
+     * both the old and the new series: the same slot rule, the same
+     * per-occurrence best effort (one that fails stays at its old slot),
+     * the same re-expand. One decision is the same for a different reason:
+     * on a synced calendar each occurrence is still copied afresh rather
+     * than re-pointed, because whether a plain re-point survives the server
+     * once the master's DTSTART moves is unverified, and the copy is the
+     * path known to.
+     */
+    fun settleInPlace(series: EventRow, shift: SplitShift?) =
+        settle(series, series.dtstart, CarryTarget.InPlace, shift)
+
+    /**
+     * The series a carry lands on: the new half of a split, or the series
+     * it came from.
+     */
+    private sealed interface CarryTarget {
+        fun id(master: EventRow): String
+
+        data class Split(val newMasterId: String) : CarryTarget {
+            override fun id(master: EventRow) = newMasterId
+        }
+
+        object InPlace : CarryTarget {
+            override fun id(master: EventRow) = master.id
+        }
+    }
+
+    /** The shared body of [settleAfterSplit] and [settleInPlace]. */
+    private fun settle(
+        master: EventRow,
+        fromInstant: Long,
+        target: CarryTarget,
+        shift: SplitShift?
     ) {
         try {
             if (shift != null) {
-                carryOrThrow(master, fromInstant, newMasterId, shift)
+                carryOrThrow(master, fromInstant, target, shift)
             } else {
                 store.deleteDetachedOccurrencesFrom(master, fromInstant)
             }
         } catch (e: Exception) {
-            val outcome = if (shift != null) "carried to $newMasterId" else "removed"
+            val outcome =
+                if (shift != null) "carried to ${target.id(master)}" else "removed"
             android.util.Log.w(
                 LOG_TAG,
                 "Rewrite of series ${master.id} committed, but its detached " +
@@ -100,16 +141,19 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
         }
     }
 
-    /** The carry half of [settleAfterRewrite], which owns its failure contract. */
+    /** The carry half of [settle], which owns its failure contract. */
     private fun carryOrThrow(
         master: EventRow,
         fromInstant: Long,
-        newMasterId: String,
+        target: CarryTarget,
         shift: SplitShift
     ) {
         val exceptions = detachedOccurrencesFrom(master, fromInstant, shift)
         if (exceptions.isEmpty()) return
 
+        val newMasterId = target.id(master)
+        // Read back in place too: [master] is the row before the edit, and
+        // the re-expand below must rewrite the edited one.
         val newSeries = store.readRecurringRow(newMasterId).getOrThrow()
         if (master.account.isLocal) {
             // A local series always comes back keyed: the one it had or the
@@ -123,6 +167,8 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
                 }
             }
         } else {
+            // Copied on a split and in place alike: see [settleInPlace] for
+            // why the in-place carry doesn't re-point instead.
             for (exception in exceptions) {
                 carryOne(exception.id, newMasterId) {
                     copyException(exception, newSeries, shift, master.account)
@@ -176,8 +222,9 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
      * deleted occurrence ([EventsService.deleteEvent]'s cancelled row) is
      * iOS's deleted date, which stays at its old time: it carries over only
      * while the split leaves its slot where it was, and a moved slot brings
-     * the occurrence back. Left on the old master, past its UNTIL, it
-     * cancels nothing, as before #158.
+     * the occurrence back. Left where it was, it cancels nothing: on a
+     * split it sits on the old master past its UNTIL, as before #158; in
+     * place it stays at a slot the moved series no longer generates.
      */
     private fun detachedOccurrencesFrom(
         master: EventRow,

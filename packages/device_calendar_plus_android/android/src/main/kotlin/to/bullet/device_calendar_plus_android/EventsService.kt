@@ -1140,12 +1140,9 @@ class EventsService(
         // `.futureEvents` save from the master keeps them: moved with their
         // slots when the anchor moves, dropped when the series stops
         // recurring. Left keyed to their old slots, the provider would list
-        // each one beside the moved slot it should stand in for. The series
-        // is its own target, so the carry re-points each one at its moved
-        // slot on the same master.
+        // each one beside the moved slot it should stand in for.
         if (wasRecurring && (newStart != row.dtstart || !willBeRecurring)) {
-            detachedOccurrenceCarry.settleAfterRewrite(
-                row, row.dtstart, row.id, carry.takeIf { willBeRecurring })
+            detachedOccurrenceCarry.settleInPlace(row, carry.takeIf { willBeRecurring })
         }
         return Result.success(row.id)
     }
@@ -1290,12 +1287,12 @@ class EventsService(
         // after it (see deleteRecurringThisAndFollowing): a failure here
         // leaves the exceptions on the old series rather than losing them.
         // The split is committed by now, so this is best-effort and reports
-        // nothing (see DetachedOccurrenceCarry.settleAfterRewrite). A new
+        // nothing (see DetachedOccurrenceCarry.settleAfterSplit). A new
         // series moves them by the very shift resolveSeriesTimes moved its
         // anchor by, in the same frame (#186); a new event that doesn't
         // recur drops them.
         val shift = carry.takeIf { effectiveRrule != null }
-        detachedOccurrenceCarry.settleAfterRewrite(row, timestamp, newEventId, shift)
+        detachedOccurrenceCarry.settleAfterSplit(row, timestamp, newEventId, shift)
 
         return Result.success(newEventId)
     }
