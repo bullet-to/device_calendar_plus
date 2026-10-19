@@ -78,7 +78,23 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
         fromInstant: Long,
         newMasterId: String,
         shift: SplitShift?
-    ) = settle(master, fromInstant, newMasterId, shift)
+    ) {
+        try {
+            if (shift != null) {
+                carryOrThrow(master, fromInstant, newMasterId, shift)
+            } else {
+                store.deleteDetachedOccurrencesFrom(master, fromInstant)
+            }
+        } catch (e: Exception) {
+            val outcome = if (shift != null) "carried to $newMasterId" else "removed"
+            android.util.Log.w(
+                LOG_TAG,
+                "Rewrite of series ${master.id} committed, but its detached " +
+                    "occurrences from $fromInstant could not be $outcome",
+                e
+            )
+        }
+    }
 
     /**
      * After a whole-series edit of [before] (the row as read before the
@@ -106,34 +122,10 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
     fun settleInPlace(before: EventRow, newStart: Long, shift: SplitShift?) {
         if (before.rrule == null) return
         if (shift != null && newStart == before.dtstart) return
-        settle(before, before.dtstart, before.id, shift)
+        settleAfterSplit(before, before.dtstart, before.id, shift)
     }
 
-    /** The shared body of [settleAfterSplit] and [settleInPlace]. */
-    private fun settle(
-        master: EventRow,
-        fromInstant: Long,
-        newMasterId: String,
-        shift: SplitShift?
-    ) {
-        try {
-            if (shift != null) {
-                carryOrThrow(master, fromInstant, newMasterId, shift)
-            } else {
-                store.deleteDetachedOccurrencesFrom(master, fromInstant)
-            }
-        } catch (e: Exception) {
-            val outcome = if (shift != null) "carried to $newMasterId" else "removed"
-            android.util.Log.w(
-                LOG_TAG,
-                "Rewrite of series ${master.id} committed, but its detached " +
-                    "occurrences from $fromInstant could not be $outcome",
-                e
-            )
-        }
-    }
-
-    /** The carry half of [settle], which owns its failure contract. */
+    /** The carry half of [settleAfterSplit], which owns its failure contract. */
     private fun carryOrThrow(
         master: EventRow,
         fromInstant: Long,

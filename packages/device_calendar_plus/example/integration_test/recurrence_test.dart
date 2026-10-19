@@ -937,7 +937,10 @@ void main() {
     // before it, the whole series becomes the one event at its start, in
     // place, as a `.futureEvents` save from the master clears it. iOS's
     // hand-made split (#93) once truncated the master before its own start
-    // and saved a standalone beside it (#234).
+    // and saved a standalone beside it (#234). This pins the path with no
+    // detached occurrence, and counts by title rather than by series ID, so
+    // a standalone saved beside the master under a new ID is caught; the
+    // detached-occurrence rule-clear tests below look up by series ID only.
     test(
         'thisAndFollowing with Patch.clear from the first occurrence leaves '
         'the series as one event at its start (#234)', () async {
