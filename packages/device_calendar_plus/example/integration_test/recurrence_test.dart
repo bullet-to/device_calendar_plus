@@ -3943,6 +3943,12 @@ void main() {
         'thisAndFollowing from the first occurrence leaves no occurrence '
         'behind', () async {
       final series = await seedSeries(plugin, calendarId);
+      final detachedTitle =
+          'Detached first-split ${DateTime.now().microsecondsSinceEpoch}';
+
+      // A detached occurrence must go with the series too: this path skips
+      // the truncate's own exception cleanup.
+      await detachOccurrence(plugin, calendarId!, series, 4, detachedTitle);
 
       await plugin.deleteRecurring(
         series.occurrences[0].instanceId,
@@ -3952,6 +3958,13 @@ void main() {
       final after = await occurrencesOf(
           plugin, calendarId!, series.eventId, series.start);
       expect(after, isEmpty, reason: 'the whole series should be gone');
+      expect(await plugin.getEvent(series.eventId), isNull,
+          reason: 'the series itself should be deleted, not left empty');
+      expect(
+        await eventsTitled(plugin, calendarId!, detachedTitle, series.start),
+        isEmpty,
+        reason: 'deleting the series must remove its detached occurrence',
+      );
     });
 
     test('deleteEvent with an instance ID removes only the one occurrence',

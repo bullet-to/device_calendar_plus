@@ -1157,14 +1157,10 @@ class EventsService(
 
         val (_, rrule) = row.asSeries().getOrElse { return Result.failure(it) }
 
-        // From the first occurrence there is nothing before the split, so
-        // the edit covers the whole series and is one in place, as
-        // EventKit's `.futureEvents` save from the master is (#234). The
-        // split below can't express it: its truncating UNTIL would fall
-        // before DTSTART, and the provider always lists DTSTART as an
-        // occurrence, so the original series kept its first one beside the
-        // new series' copy.
-        if (timestamp <= row.dtstart) {
+        // From the first occurrence the edit covers the whole series and is
+        // one in place, as EventKit's `.futureEvents` save from the master
+        // is. See [splitsAtStart] for why the split below can't do it.
+        if (row.splitsAtStart(timestamp)) {
             return updateRecurringAllEvents(row, timestamp, timeEdit, ruleEdit, patch)
         }
 
