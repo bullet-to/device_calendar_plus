@@ -103,7 +103,7 @@ Android's Calendar Provider lets an app write an event's guest list (the
 read-only, so on iOS attendees stay read-only. Reading is unchanged on both
 platforms, through the shared `Event.attendees`.
 
-Each `AttendeeAndroid` is one Attendees row, with Android's own columns and
+Each `AttendeeWriteAndroid` is one Attendees row, with Android's own columns and
 value sets: `email` (required), `name`, `type` (`AttendeeTypeAndroid`, the
 `ATTENDEE_TYPE` column), `relationship` (`AttendeeRelationshipAndroid`,
 `ATTENDEE_RELATIONSHIP`) and `status` (`AttendeeStatusAndroid`,
@@ -119,8 +119,8 @@ final id = await plugin.createEvent(
   endDate: end,
   android: const EventOptionsAndroid(
     attendees: [
-      AttendeeAndroid(email: 'ada@example.com', name: 'Ada'),
-      AttendeeAndroid(
+      AttendeeWriteAndroid(email: 'ada@example.com', name: 'Ada'),
+      AttendeeWriteAndroid(
         email: 'room-4@example.com',
         type: AttendeeTypeAndroid.resource,
       ),
@@ -134,7 +134,7 @@ await plugin.updateEvent(
   instanceId: id,
   android: EventUpdateOptionsAndroid(
     attendees: Patch.set([
-      AttendeeAndroid(email: 'ada@example.com', name: 'Ada'),
+      AttendeeWriteAndroid(email: 'ada@example.com', name: 'Ada'),
     ]),
   ),
 );

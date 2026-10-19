@@ -86,7 +86,7 @@ enum AttendeeStatus {
 ///
 /// Attendees are populated when fetching events, on both platforms. Writing
 /// them is Android only, since iOS EventKit can't add attendees: pass
-/// `AttendeeAndroid` rows through `EventOptionsAndroid.attendees` or
+/// `AttendeeWriteAndroid` rows through `EventOptionsAndroid.attendees` or
 /// `EventUpdateOptionsAndroid.attendees`, which use Android's own column
 /// values rather than [AttendeeRole] and [AttendeeStatus]. On iOS, use
 /// [DeviceCalendar.showCreateEventModal] to let users add attendees via the

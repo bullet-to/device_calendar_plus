@@ -259,9 +259,9 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
     return result!;
   }
 
-  /// An [AttendeeAndroid] as the method channel carries it: each column by
+  /// An [AttendeeWriteAndroid] as the method channel carries it: each column by
   /// its Android enum's name.
-  static Map<String, dynamic> _attendeeArg(AttendeeAndroid attendee) => {
+  static Map<String, dynamic> _attendeeArg(AttendeeWriteAndroid attendee) => {
         'email': attendee.email,
         'name': attendee.name,
         'type': attendee.type.name,
@@ -271,7 +271,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
 
   /// An attendees patch with each attendee as [_attendeeArg] carries it.
   static Patch<List<Map<String, dynamic>>>? _attendeesPatchArg(
-    Patch<List<AttendeeAndroid>>? patch,
+    Patch<List<AttendeeWriteAndroid>>? patch,
   ) =>
       patch?.map((attendees) => attendees.map(_attendeeArg).toList());
 

@@ -18,7 +18,7 @@ import 'src/recurrence_rule.dart';
 // Platform-only options (see doc/platform-options.md).
 export 'package:device_calendar_plus_platform_interface/device_calendar_plus_platform_interface.dart'
     show
-        AttendeeAndroid,
+        AttendeeWriteAndroid,
         AttendeeRelationshipAndroid,
         AttendeeStatusAndroid,
         AttendeeTypeAndroid,

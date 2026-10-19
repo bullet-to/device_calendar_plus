@@ -21,14 +21,14 @@ void requireNonBlank(
 /// attendee row with no address invites no one, so no correct behaviour
 /// exists. Checked on every platform, though only Android writes them: the
 /// mistake is the caller's either way.
-void requireAttendeeEmails(List<AttendeeAndroid>? attendees) {
-  for (final attendee in attendees ?? const <AttendeeAndroid>[]) {
+void requireAttendeeEmails(List<AttendeeWriteAndroid>? attendees) {
+  for (final attendee in attendees ?? const <AttendeeWriteAndroid>[]) {
     requireNonBlank(attendee.email, name: 'attendees', label: 'Attendee email');
   }
 }
 
 /// [requireAttendeeEmails] for an update's attendees [patch]: the list a
 /// [PatchSet] writes. A clear or no patch writes no address to check.
-void requireAttendeePatchEmails(Patch<List<AttendeeAndroid>>? patch) {
+void requireAttendeePatchEmails(Patch<List<AttendeeWriteAndroid>>? patch) {
   if (patch case PatchSet(:final value)) requireAttendeeEmails(value);
 }

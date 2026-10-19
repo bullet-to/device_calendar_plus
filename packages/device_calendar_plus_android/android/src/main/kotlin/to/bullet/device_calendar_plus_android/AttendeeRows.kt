@@ -8,7 +8,7 @@ import android.provider.CalendarContract.Attendees
 import io.flutter.plugin.common.MethodCall
 
 // CalendarContract.Attendees as the plugin reads and writes it: every read
-// and insert of its rows, and `AttendeeAndroid` from the method channel,
+// and insert of its rows, and `AttendeeWriteAndroid` from the method channel,
 // Android's own columns and value sets written as they are (#71). iOS
 // can't write attendees, so nothing here is mapped onto the shared,
 // read-only `Attendee`; EventsService does that for its reads.
@@ -98,7 +98,7 @@ internal fun attendeeStatusFromName(name: String): Int = when (name) {
     else -> throw IllegalArgumentException("Unknown attendee status: $name")
 }
 
-/** One `AttendeeAndroid` from the method channel as the row it writes. */
+/** One `AttendeeWriteAndroid` from the method channel as the row it writes. */
 internal fun attendeeRowFromArg(arg: Map<*, *>): AttendeeRow = AttendeeRow(
     email = arg["email"] as String,
     name = arg["name"] as String?,

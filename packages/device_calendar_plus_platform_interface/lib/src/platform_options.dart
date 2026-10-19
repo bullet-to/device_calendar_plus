@@ -12,7 +12,7 @@
 //
 // Every options class is immutable, with optional named fields and value
 // equality, so adding a field later is not a breaking change. The values they
-// carry (such as AttendeeAndroid) are immutable with value equality too.
+// carry (such as AttendeeWriteAndroid) are immutable with value equality too.
 
 import 'package:flutter/foundation.dart' show listEquals;
 
@@ -111,11 +111,14 @@ enum AttendeeStatusAndroid {
 
 /// One `CalendarContract.Attendees` row to write, Android only.
 ///
+/// Write-only: an event's attendees are read back as the shared `Attendee`
+/// through `Event.attendees`, on both platforms, with the shared role and
+/// status values rather than these columns.
+///
 /// iOS EventKit can't add attendees to an event, so attendees are written
 /// only through [EventOptionsAndroid.attendees] and
 /// [EventUpdateOptionsAndroid.attendees]. Each field is the Attendees
-/// column of the same name, with Android's own semantics; reads come back
-/// through the shared, read-only `Event.attendees` on both platforms.
+/// column of the same name, with Android's own semantics.
 ///
 /// **Synced calendars send real invitations.** On a Google or Exchange
 /// calendar the account's sync adapter uploads these rows, and the server
@@ -124,9 +127,9 @@ enum AttendeeStatusAndroid {
 /// [name], change a [status] as people respond, or drop an address it
 /// can't resolve. On a local calendar the rows stay as written and nobody
 /// is contacted.
-class AttendeeAndroid {
+class AttendeeWriteAndroid {
   /// Creates an attendee row to write.
-  const AttendeeAndroid({
+  const AttendeeWriteAndroid({
     required this.email,
     this.name,
     this.type = AttendeeTypeAndroid.required,
@@ -161,7 +164,7 @@ class AttendeeAndroid {
 
   @override
   bool operator ==(Object other) =>
-      other is AttendeeAndroid &&
+      other is AttendeeWriteAndroid &&
       other.email == email &&
       other.name == name &&
       other.type == type &&
@@ -172,7 +175,7 @@ class AttendeeAndroid {
   int get hashCode => Object.hash(email, name, type, relationship, status);
 
   @override
-  String toString() => 'AttendeeAndroid(email: $email, name: $name, '
+  String toString() => 'AttendeeWriteAndroid(email: $email, name: $name, '
       'type: $type, relationship: $relationship, status: $status)';
 }
 
@@ -197,8 +200,8 @@ class EventOptionsAndroid {
   /// Android only: iOS EventKit can't add attendees. Written with the event
   /// in one transaction. **On a synced calendar the server may email each
   /// address an invitation**, and may rewrite the rows (see
-  /// [AttendeeAndroid]).
-  final List<AttendeeAndroid>? attendees;
+  /// [AttendeeWriteAndroid]).
+  final List<AttendeeWriteAndroid>? attendees;
 
   @override
   bool operator ==(Object other) =>
@@ -256,7 +259,7 @@ class EventUpdateOptionsAndroid {
   /// row too. An empty set removes the same rows as a clear (though the two
   /// patches aren't equal). **On a synced calendar the server may email
   /// each new address an invitation, and each removed one a cancellation**,
-  /// and may rewrite the rows (see [AttendeeAndroid]).
+  /// and may rewrite the rows (see [AttendeeWriteAndroid]).
   ///
   /// On one occurrence of a series (`updateEvent` with an instance ID) it
   /// applies to that occurrence alone; an occurrence edited without it keeps
@@ -264,7 +267,7 @@ class EventUpdateOptionsAndroid {
   /// the whole series for `allEvents`, the new series for
   /// `thisAndFollowing`, which otherwise carries the original's attendees.
   /// Occurrences edited on their own keep their own attendees either way.
-  final Patch<List<AttendeeAndroid>>? attendees;
+  final Patch<List<AttendeeWriteAndroid>>? attendees;
 
   /// Whether no field is set, so the options change nothing.
   bool get isEmpty => status == null && attendees == null;

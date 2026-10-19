@@ -79,7 +79,8 @@ void main() {
       seedOptionSeries(EventOptionsAndroid(status: status));
 
   /// A daily series of six occurrences with Android [attendees].
-  Future<SeededSeries> seedAttendeeSeries(List<AttendeeAndroid> attendees) =>
+  Future<SeededSeries> seedAttendeeSeries(
+          List<AttendeeWriteAndroid> attendees) =>
       seedOptionSeries(EventOptionsAndroid(attendees: attendees));
 
   /// The occurrences of [eventId] (by default [series] itself) listed from
@@ -105,14 +106,14 @@ void main() {
   Future<List<Event>> detachedTitled(SeededSeries series, String title) =>
       eventsTitled(plugin, requireCalendar(calendarId), title, series.start);
 
-  const ada = AttendeeAndroid(email: 'ada@example.com', name: 'Ada');
-  const bob = AttendeeAndroid(
+  const ada = AttendeeWriteAndroid(email: 'ada@example.com', name: 'Ada');
+  const bob = AttendeeWriteAndroid(
     email: 'bob@example.com',
     name: 'Bob',
     type: AttendeeTypeAndroid.optional,
     status: AttendeeStatusAndroid.accepted,
   );
-  const room = AttendeeAndroid(
+  const room = AttendeeWriteAndroid(
     email: 'room@example.com',
     type: AttendeeTypeAndroid.resource,
     relationship: AttendeeRelationshipAndroid.none,

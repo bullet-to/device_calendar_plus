@@ -2,8 +2,8 @@ import 'package:device_calendar_plus_platform_interface/device_calendar_plus_pla
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  const ada = AttendeeAndroid(email: 'ada@example.com', name: 'Ada');
-  const bob = AttendeeAndroid(email: 'bob@example.com');
+  const ada = AttendeeWriteAndroid(email: 'ada@example.com', name: 'Ada');
+  const bob = AttendeeWriteAndroid(email: 'bob@example.com');
 
   group('EventOptionsAndroid', () {
     group('==', () {

@@ -955,8 +955,8 @@ void main() {
             endDate: DateTime.now().add(Duration(hours: 1)),
             android: const EventOptionsAndroid(
               attendees: [
-                AttendeeAndroid(email: 'ada@example.com'),
-                AttendeeAndroid(email: '  '),
+                AttendeeWriteAndroid(email: 'ada@example.com'),
+                AttendeeWriteAndroid(email: '  '),
               ],
             ),
           ),
@@ -1323,7 +1323,7 @@ void main() {
           () => DeviceCalendar.instance.updateEvent(
             instanceId: 'event-123',
             android: const EventUpdateOptionsAndroid(
-              attendees: Patch.set([AttendeeAndroid(email: '')]),
+              attendees: Patch.set([AttendeeWriteAndroid(email: '')]),
             ),
           ),
           throwsArgumentError,
@@ -1585,7 +1585,7 @@ void main() {
             'event-123',
             EventSpan.allEvents,
             android: const EventUpdateOptionsAndroid(
-              attendees: Patch.set([AttendeeAndroid(email: ' ')]),
+              attendees: Patch.set([AttendeeWriteAndroid(email: ' ')]),
             ),
           ),
           throwsArgumentError,
