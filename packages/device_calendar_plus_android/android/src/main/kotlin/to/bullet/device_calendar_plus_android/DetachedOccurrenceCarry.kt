@@ -2,7 +2,6 @@ package to.bullet.device_calendar_plus_android
 
 import android.content.ContentProviderOperation
 import android.content.ContentValues
-import android.net.Uri
 import android.provider.CalendarContract
 
 /**
@@ -373,11 +372,8 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             .withSelection("${CalendarContract.Reminders.EVENT_ID} = ?", arrayOf(""))
             .withSelectionBackReference(eventIdArg, copyOp)
             .build()
-        for (reminder in readReminderRows(oldId)) {
-            ops += ContentProviderOperation.newInsert(CalendarContract.Reminders.CONTENT_URI)
-                .withValues(reminder)
-                .withValueBackReference(CalendarContract.Reminders.EVENT_ID, copyOp)
-                .build()
+        ops += reminderRowInsertOps(resolver.readReminderRows(oldId)) {
+            withValueBackReference(CalendarContract.Reminders.EVENT_ID, copyOp)
         }
 
         // The provider seeds an exception with its master's guest list, and
@@ -386,11 +382,8 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             .withSelection("${CalendarContract.Attendees.EVENT_ID} = ?", arrayOf(""))
             .withSelectionBackReference(eventIdArg, copyOp)
             .build()
-        for (attendee in readAttendeeRows(oldId)) {
-            ops += ContentProviderOperation.newInsert(CalendarContract.Attendees.CONTENT_URI)
-                .withValues(attendee)
-                .withValueBackReference(CalendarContract.Attendees.EVENT_ID, copyOp)
-                .build()
+        ops += attendeeInsertOps(resolver.readAttendeeRows(oldId).values) {
+            withValueBackReference(CalendarContract.Attendees.EVENT_ID, copyOp)
         }
 
         ops += ContentProviderOperation.newDelete(store.deleteUri(account))
@@ -447,61 +440,4 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             if (!cursor.moveToFirst()) return@use null
             ContentValues().apply { cursor.copyColumnsInto(this, carriedOccurrenceColumns) }
         }
-
-    /**
-     * Event [eventId]'s [CalendarContract.Reminders] rows, whatever the
-     * method, as insert values without their EVENT_ID.
-     */
-    private fun readReminderRows(eventId: Long): List<ContentValues> =
-        readChildRows(
-            CalendarContract.Reminders.CONTENT_URI,
-            CalendarContract.Reminders.EVENT_ID,
-            eventId,
-            arrayOf(CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD)
-        )
-
-    /**
-     * Event [eventId]'s [CalendarContract.Attendees] rows, organizer row
-     * included, as insert values without their EVENT_ID.
-     */
-    private fun readAttendeeRows(eventId: Long): List<ContentValues> =
-        readChildRows(
-            CalendarContract.Attendees.CONTENT_URI,
-            CalendarContract.Attendees.EVENT_ID,
-            eventId,
-            arrayOf(
-                CalendarContract.Attendees.ATTENDEE_NAME,
-                CalendarContract.Attendees.ATTENDEE_EMAIL,
-                CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
-                CalendarContract.Attendees.ATTENDEE_TYPE,
-                CalendarContract.Attendees.ATTENDEE_STATUS,
-                CalendarContract.Attendees.ATTENDEE_IDENTITY,
-                CalendarContract.Attendees.ATTENDEE_ID_NAMESPACE
-            )
-        )
-
-    /**
-     * The [columns] of every row of child table [uri] whose [eventIdColumn]
-     * is [eventId], copied as stored (nulls included) into insert values.
-     */
-    private fun readChildRows(
-        uri: Uri,
-        eventIdColumn: String,
-        eventId: Long,
-        columns: Array<String>
-    ): List<ContentValues> {
-        val rows = mutableListOf<ContentValues>()
-        resolver.query(
-            uri,
-            columns,
-            "$eventIdColumn = ?",
-            arrayOf(eventId.toString()),
-            null
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                rows += ContentValues().apply { cursor.copyColumnsInto(this, columns) }
-            }
-        }
-        return rows
-    }
 }

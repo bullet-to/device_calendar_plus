@@ -32,7 +32,8 @@ is not read-only, it always offers an edit affordance.
 ## Create an event in the native editor
 
 Useful when you want the user to review before saving, or to add attendees
-(which can't be done programmatically).
+(which iOS can't do programmatically; Android can, see
+[Platform-only options](platform-options.md#attendees-android)).
 
 ```dart
 // Blank editor.

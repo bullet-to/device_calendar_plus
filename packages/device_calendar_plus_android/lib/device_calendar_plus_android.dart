@@ -162,6 +162,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
         'recurrenceRule': recurrenceRule,
         'reminders': reminders,
         'status': android?.status?.name,
+        'attendees': android?.attendees?.map(_attendeeArg).toList(),
       },
     );
     return result!;
@@ -210,6 +211,7 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
       'location': location,
       'url': url,
       'reminders': reminders,
+      'attendees': _attendeesPatchArg(android?.attendees),
     });
     await methodChannel.invokeMethod<void>('updateEvent', args);
   }
@@ -250,11 +252,28 @@ class DeviceCalendarPlusAndroid extends DeviceCalendarPlusPlatform {
       'url': url,
       'recurrenceRule': recurrenceRule,
       'reminders': reminders,
+      'attendees': _attendeesPatchArg(android?.attendees),
     });
     final result =
         await methodChannel.invokeMethod<String>('updateRecurring', args);
     return result!;
   }
+
+  /// An [AttendeeWriteAndroid] as the method channel carries it: each column by
+  /// its Android enum's name.
+  static Map<String, dynamic> _attendeeArg(AttendeeWriteAndroid attendee) => {
+        'email': attendee.email,
+        'name': attendee.name,
+        'type': attendee.type.name,
+        'relationship': attendee.relationship.name,
+        'status': attendee.status.name,
+      };
+
+  /// An attendees patch with each attendee as [_attendeeArg] carries it.
+  static Patch<List<Map<String, dynamic>>>? _attendeesPatchArg(
+    Patch<List<AttendeeWriteAndroid>>? patch,
+  ) =>
+      patch?.map((attendees) => attendees.map(_attendeeArg).toList());
 
   @override
   Future<void> deleteRecurring(

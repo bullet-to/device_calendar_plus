@@ -184,7 +184,7 @@ Passing a recurring series' bare ID to `updateEvent` or `deleteEvent` throws `De
 - [Recurring events](doc/recurring-events.md) - rules, series edits, occurrences
 - [Reminders](doc/reminders.md) - relative before-start alarms
 - [Native UI](doc/native-ui.md) - view, edit, and create modals
-- [Platform-only options](doc/platform-options.md) - `android:` / `ios:` fields, Android event status
+- [Platform-only options](doc/platform-options.md) - `android:` / `ios:` fields, Android event status and attendees
 
 ## Contributing
 
