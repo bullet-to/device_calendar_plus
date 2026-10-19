@@ -447,6 +447,8 @@ class DeviceCalendarPlusAndroidPlugin internal constructor(
         val reminders = call.argument<List<Int>>("reminders")
         // EventOptionsAndroid.status, by EventStatusAndroid name.
         val status = call.statusArg()
+        // EventOptionsAndroid.attendees, each column by its Android name.
+        val attendees = call.attendeesArg()
 
         // Validate required arguments.
         // calendarId is optional: null routes the event to the default calendar.
@@ -477,7 +479,8 @@ class DeviceCalendarPlusAndroidPlugin internal constructor(
                 availability,
                 recurrenceRule,
                 reminders,
-                status
+                status,
+                attendees.orEmpty()
             )
         }
     }

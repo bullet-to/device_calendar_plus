@@ -96,6 +96,78 @@ Quirks worth knowing:
   nothing (and `updateRecurring` returns the ID you passed, splitting
   nothing).
 
+## Attendees (Android)
+
+Android's Calendar Provider lets an app write an event's guest list (the
+`CalendarContract.Attendees` rows). EventKit can't: `EKEvent.attendees` is
+read-only, so on iOS attendees stay read-only. Reading is unchanged on both
+platforms, through the shared `Event.attendees`.
+
+Each `AttendeeWriteAndroid` is one Attendees row, with Android's own columns and
+value sets: `email` (required), `name`, `type` (`AttendeeTypeAndroid`, the
+`ATTENDEE_TYPE` column), `relationship` (`AttendeeRelationshipAndroid`,
+`ATTENDEE_RELATIONSHIP`) and `status` (`AttendeeStatusAndroid`,
+`ATTENDEE_STATUS`). They're not the shared `AttendeeRole` / `AttendeeStatus`
+in disguise. Leave the optional ones out and you get what Android's own
+calendar app writes for a guest: `required`, `attendee`, `invited`.
+
+```dart
+// Create.
+final id = await plugin.createEvent(
+  title: 'Planning',
+  startDate: start,
+  endDate: end,
+  android: const EventOptionsAndroid(
+    attendees: [
+      AttendeeWriteAndroid(email: 'ada@example.com', name: 'Ada'),
+      AttendeeWriteAndroid(
+        email: 'room-4@example.com',
+        type: AttendeeTypeAndroid.resource,
+      ),
+    ],
+  ),
+);
+
+// Update: Patch.set replaces the guest list, Patch.clear empties it, and
+// leaving it out keeps it.
+await plugin.updateEvent(
+  instanceId: id,
+  android: EventUpdateOptionsAndroid(
+    attendees: Patch.set([
+      AttendeeWriteAndroid(email: 'ada@example.com', name: 'Ada'),
+    ]),
+  ),
+);
+```
+
+Quirks worth knowing:
+
+- **Synced calendars send real invitations.** On a Google or Exchange
+  calendar the sync adapter uploads the rows, and the server may email an
+  invitation to every address you add (and a cancellation to every one you
+  remove). It can also rewrite the rows on the next sync: fill in names,
+  change statuses as people respond, or drop an address it can't resolve.
+  On a local calendar nobody is contacted. Test against a local calendar
+  with addresses you own, or `@example.com` ones.
+- **The organizer row stays.** `Event.attendees` skips the organizer row
+  (`RELATIONSHIP_ORGANIZER`), and a set or clear leaves it alone, so an event
+  keeps its organizer. A set whose list holds an
+  `AttendeeRelationshipAndroid.organizer` entry replaces the organizer row
+  too, and that entry isn't read back through `Event.attendees`.
+- **Blank emails throw.** An attendee whose `email` is empty or whitespace
+  throws `ArgumentError` before anything is written, on either platform.
+- **Series follow Android's rows**, as status does. `updateRecurring` with
+  `EventSpan.allEvents` sets the series' guest list. With
+  `EventSpan.thisAndFollowing` the new series gets the original's guest list
+  with your edit applied, or the original's as it is when you pass none; on
+  a synced calendar that means the new series' guests may be invited to it.
+  Occurrences edited on their own keep their own guest list either way.
+- **One occurrence.** `updateEvent` on an instance ID sets that occurrence's
+  guest list alone. Edit an occurrence without passing attendees and it
+  keeps the series' guests.
+- **iOS ignores it.** On iOS, `EventOptionsAndroid.attendees` writes nothing,
+  and a call whose only change is `android:` is a no-op.
+
 ## Calendar account (Android) and source (iOS)
 
 `CalendarOptionsAndroid` picks the account a new calendar is created under
