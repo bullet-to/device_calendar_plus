@@ -737,9 +737,10 @@ class DeviceCalendar {
   /// time-only changes follow the anchor freely. See
   /// [doc/recurring-events.md](https://github.com/bullet-to/device_calendar_plus/blob/main/packages/device_calendar_plus/doc/recurring-events.md).
   ///
-  /// Returns the affected scope's event ID (the same ID for `allEvents`, the new
-  /// series' ID for `thisAndFollowing`). Passing no fields is a no-op. Requires
-  /// full access.
+  /// Returns the affected scope's event ID: the same ID for `allEvents`, and
+  /// the new series' ID for `thisAndFollowing`, or the series' own ID when the
+  /// occurrence is the series' first, since nothing comes before it to split
+  /// off. Passing no fields is a no-op. Requires full access.
   ///
   /// [android]: Android-only fields across the scope, ignored on iOS (a call
   /// whose only change is [android] writes nothing there and returns the

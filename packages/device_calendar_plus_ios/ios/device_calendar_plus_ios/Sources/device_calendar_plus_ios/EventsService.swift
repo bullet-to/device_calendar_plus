@@ -1421,7 +1421,8 @@ class EventsService {
   /// `span` is "allEvents" (the whole series) or "thisAndFollowing" (split the
   /// series at `timestamp`). On success returns the event ID for the affected
   /// scope — the same ID for "allEvents", the new series' ID for
-  /// "thisAndFollowing".
+  /// "thisAndFollowing", or the series' own ID from its first occurrence,
+  /// where nothing comes before it to split off.
   func updateRecurring(
     eventId: String,
     timestamp: Int64?,
@@ -1517,8 +1518,17 @@ class EventsService {
         start: moveStart, end: newEnd, fallbackId: eventId,
         save: eventStore.save(_:span:commit:), reset: eventStore.reset))
     }
+    // From the series' first occurrence nothing precedes the split, and a
+    // `.futureEvents` save from the master with the rule cleared collapses
+    // the whole series into the one event at its start: the right result
+    // there, which the hand-made split below can't give, as its truncating
+    // UNTIL would fall before the master's own start (#234).
+    let seriesStart = eventStore.event(withIdentifier: eventId)?.startDate
+    func splitsFromFirst(_ timestamp: Int64) -> Bool {
+      seriesStart.map { Date(millis: timestamp) <= $0 } ?? false
+    }
     switch (resolved.rule, splitAt) {
-    case (.clear, let timestamp?):
+    case (.clear, let timestamp?) where !splitsFromFirst(timestamp):
       // Clearing the rule on a `thisAndFollowing` split is the one case
       // EventKit gets wrong natively (it collapses the whole series), so it
       // splits the series by hand, from the patched occurrence — mirror

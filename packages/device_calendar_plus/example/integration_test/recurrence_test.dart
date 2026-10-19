@@ -896,6 +896,78 @@ void main() {
           reason: 'the anchor occurrence must receive the change');
     });
 
+    // From the first occurrence nothing comes before the split, so the
+    // edit is one in place on the whole series and keeps its ID, as
+    // EventKit's `.futureEvents` save from the master is. Android's split
+    // once kept the first occurrence on the original series under the old
+    // title, beside the new series' copy (#234).
+    test(
+        'thisAndFollowing retitling a timed series from its first occurrence '
+        'edits it in place, leaving no occurrence under the old title (#234)',
+        () async {
+      const title = 'Timed Retitle From First';
+      final seeded =
+          await seedWeeklySeries(plugin, calendarId, title: title);
+      final before = seeded.occurrences;
+
+      final returnedId = await plugin.updateRecurring(
+        before[0].instanceId,
+        EventSpan.thisAndFollowing,
+        title: '$title (new)',
+      );
+
+      expect(returnedId, seeded.eventId,
+          reason: 'from the first occurrence the edit is in place and keeps '
+              'the series ID, as iOS does');
+      final from = seeded.start.subtract(const Duration(days: 1));
+      expect(
+        startsOf(await occurrencesOf(plugin, calendarId!, returnedId, from,
+            windowDays: 31)),
+        startsOf(before),
+        reason: 'the edit must cover every occurrence',
+      );
+      expect(
+        await eventsTitled(plugin, calendarId!, title, from, windowDays: 31),
+        isEmpty,
+        reason: 'no occurrence may be left under the old title',
+      );
+    });
+
+    // The rule-clearing split from the first occurrence: with nothing
+    // before it, the whole series becomes the one event at its start, in
+    // place, as a `.futureEvents` save from the master clears it. iOS's
+    // hand-made split (#93) once truncated the master before its own start
+    // and saved a standalone beside it (#234).
+    test(
+        'thisAndFollowing with Patch.clear from the first occurrence leaves '
+        'the series as one event at its start (#234)', () async {
+      const title = 'Rule Clear From First';
+      final seeded =
+          await seedWeeklySeries(plugin, calendarId, title: title);
+      final first = seeded.occurrences.first;
+
+      final returnedId = await plugin.updateRecurring(
+        first.instanceId,
+        EventSpan.thisAndFollowing,
+        recurrenceRule: const Patch.clear(),
+      );
+
+      expect(returnedId, seeded.eventId,
+          reason: 'from the first occurrence the edit is in place and keeps '
+              'the series ID');
+      final from = seeded.start.subtract(const Duration(days: 1));
+      expect(
+        startsOf(await eventsTitled(plugin, calendarId!, title, from,
+            windowDays: 31)),
+        startsOf([first]),
+        reason: 'exactly one event must remain, at the first occurrence',
+      );
+      final event = await plugin.getEvent(returnedId);
+      expect(event, isNotNull);
+      expect(event!.isRecurring, isFalse,
+          reason: 'the event left must carry no recurrence rule');
+    });
+
     test('thisAndFollowing can change the rule from the split point onward',
         () async {
       final series = await seedSeries(plugin, calendarId);
@@ -1554,6 +1626,48 @@ void main() {
             plugin, id, beforeTitle, movedBefore, split.series.start,
             reason: 'the detached occurrence before the split must survive '
                 'untouched');
+      },
+    );
+
+    test(
+      'thisAndFollowing update that moves the series from its first '
+      'occurrence keeps a detached occurrence once, with its own edits (#234)',
+      () async {
+        // From the first occurrence the edit is one in place on the whole
+        // series rather than a split (#234), so nothing is carried: the
+        // series' own detached occurrence must still stand in for its slot,
+        // moved with the series, rather than sit beside a duplicate there.
+        final series = await seedSeries(plugin, calendarId,
+            create: createMidUtcDayDailySeries, count: 6, minOccurrences: 6);
+        final id = calendarId!;
+        final tag = DateTime.now().microsecondsSinceEpoch;
+        final detachedTitle = 'Detached before first move $tag';
+        final moved = await moveOccurrence(plugin, id, series, 3,
+            const Duration(hours: 2), detachedTitle);
+        final newTitle = 'Moved from first $tag';
+        final first = series.occurrences.first;
+
+        final returnedId = await plugin.updateRecurring(
+          first.instanceId,
+          EventSpan.thisAndFollowing,
+          title: newTitle,
+          start: first.startDate.add(splitShift),
+        );
+
+        expect(returnedId, series.eventId,
+            reason: 'from the first occurrence the edit is in place and '
+                'keeps the series ID');
+        expect(
+          startsOf(await eventsTitled(plugin, id, newTitle, series.start)),
+          startsExcept(series.occurrences, {3})
+              .map((ms) => ms + splitShift.inMilliseconds)
+              .toList(),
+          reason: 'the series must carry every other slot, moved, and skip '
+              'the one its detached occurrence stands in for',
+        );
+        await expectDetachedOnce(plugin, id, detachedTitle, moved, series.start,
+            reason: 'the detached occurrence must survive once, with its own '
+                'title and time');
       },
     );
 
@@ -3730,15 +3844,18 @@ void main() {
           title: title, isAllDay: true, start: seedDay, count: seedCount);
       final before = seeded.occurrences;
 
-      final newSeriesId = await plugin.updateRecurring(
+      final returnedId = await plugin.updateRecurring(
         before[0].instanceId,
         EventSpan.thisAndFollowing,
         isAllDay: false,
       );
 
+      expect(returnedId, seeded.eventId,
+          reason: 'from the first occurrence the edit is in place and keeps '
+              'the series ID, as iOS does');
       final from = seeded.start.subtract(const Duration(days: 1));
       expectTimedOnOwnDays(
-        await occurrencesOf(plugin, calendarId!, newSeriesId, from,
+        await occurrencesOf(plugin, calendarId!, returnedId, from,
             windowDays: 31),
         before,
       );
@@ -3747,37 +3864,6 @@ void main() {
             .where((e) => e.isAllDay),
         isEmpty,
         reason: 'no all-day occurrence of the series may be left',
-      );
-    });
-
-    // The same for a timed series and a field edit: Android's split from the
-    // first occurrence kept it on the original series under the old title,
-    // beside the new series' copy (#234).
-    test(
-        'thisAndFollowing retitling a timed series from its first occurrence '
-        'leaves no occurrence under the old title', () async {
-      const title = 'Timed Retitle From First';
-      final seeded = await seedWeeklySeries(plugin, calendarId,
-          title: title, start: seedDay, count: seedCount);
-      final before = seeded.occurrences;
-
-      final newSeriesId = await plugin.updateRecurring(
-        before[0].instanceId,
-        EventSpan.thisAndFollowing,
-        title: '$title (new)',
-      );
-
-      final from = seeded.start.subtract(const Duration(days: 1));
-      expect(
-        startsOf(await occurrencesOf(plugin, calendarId!, newSeriesId, from,
-            windowDays: 31)),
-        startsOf(before),
-        reason: 'the edit must cover every occurrence',
-      );
-      expect(
-        await eventsTitled(plugin, calendarId!, title, from, windowDays: 31),
-        isEmpty,
-        reason: 'no occurrence may be left under the old title',
       );
     });
 

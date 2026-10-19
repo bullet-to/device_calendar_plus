@@ -1049,7 +1049,8 @@ class EventsService(
         timestamp: Long?,
         timeEdit: SeriesTimeEdit,
         ruleEdit: SeriesRuleEdit,
-        patch: EventFieldPatch
+        patch: EventFieldPatch,
+        settleDetached: Boolean = false
     ): Result<String> {
         val values = android.content.ContentValues()
         applyEventFieldValues(values, patch)
@@ -1074,7 +1075,7 @@ class EventsService(
         // The anchor shifts relative to the occurrence the caller pointed at
         // (timestamp), or the series anchor itself when none was given — and
         // then onto the new rule, when one is given (#140).
-        val (newStart, newDurationMs) = resolveSeriesTimes(
+        val (newStart, newDurationMs, carry) = resolveSeriesTimes(
             baseMillis = row.dtstart,
             referenceMillis = timestamp ?: row.dtstart,
             existingDurationMillis = eventDurationMillis(row),
@@ -1135,6 +1136,17 @@ class EventsService(
         // Reminder rows attach to the (master) event row by EVENT_ID — the same
         // for recurring and non-recurring, so no DURATION/RRULE interaction.
         applyRemindersRows(row.id.toLong(), patch.reminders)
+
+        // A thisAndFollowing edit from the first occurrence lands here, and
+        // settles the series' detached occurrences as the split would have
+        // (see updateRecurringThisAndFollowing): moved with the slots when
+        // the anchor moves, dropped when the series stops recurring. The
+        // series is its own "new series", so the carry re-points each one at
+        // its moved slot on the same master.
+        if (settleDetached && (newStart != row.dtstart || !willBeRecurring)) {
+            detachedOccurrenceCarry.settleAfterSplit(
+                row, row.dtstart, row.id, carry.takeIf { willBeRecurring })
+        }
         return Result.success(row.id)
     }
 
@@ -1156,15 +1168,16 @@ class EventsService(
 
         val (_, rrule) = row.asSeries().getOrElse { return Result.failure(it) }
 
-        // From the first occurrence there is nothing before the split, so
-        // the edit covers the whole series and is one in place, as
-        // EventKit's `.futureEvents` save from the master is (#234). The
-        // split below can't express it: its truncating UNTIL would fall
-        // before DTSTART, and the provider always lists DTSTART as an
-        // occurrence, so the original series kept its first one beside the
-        // new series' copy.
+        // From the first occurrence nothing precedes the split, so this is
+        // a whole-series edit in place, as EventKit's `.futureEvents` save
+        // from the master is (#234). The split below can't express it: its
+        // truncating UNTIL would fall before DTSTART, and the provider
+        // always lists DTSTART as an occurrence. `<=`, not `==`: a timestamp
+        // before DTSTART names no occurrence, and the split would hit the
+        // same UNTIL-before-DTSTART bug.
         if (timestamp <= row.dtstart) {
-            return updateRecurringAllEvents(row, timestamp, timeEdit, ruleEdit, patch)
+            return updateRecurringAllEvents(
+                row, timestamp, timeEdit, ruleEdit, patch, settleDetached = true)
         }
 
         // Effective field values for the new series: the patch value when one
