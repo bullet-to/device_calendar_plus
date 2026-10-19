@@ -3720,7 +3720,8 @@ void main() {
 
     // thisAndFollowing from the first occurrence covers the whole series,
     // so there is nothing to split, but iOS still routes it through
-    // splitThenFlipToTimed's two saves, both on the master.
+    // splitThenFlipToTimed's two saves, both on the master. Android's split
+    // left the original series its first occurrence, all-day (#234).
     test(
         'thisAndFollowing toggling an all-day series timed from its first '
         'occurrence keeps every occurrence on its calendar day', () async {
@@ -3747,11 +3748,38 @@ void main() {
         isEmpty,
         reason: 'no all-day occurrence of the series may be left',
       );
-    },
-        skip: Platform.isAndroid
-            ? 'Android: a first-occurrence thisAndFollowing toggle leaves the '
-                'first occurrence all-day (#234)'
-            : false);
+    });
+
+    // The same for a timed series and a field edit: Android's split from the
+    // first occurrence kept it on the original series under the old title,
+    // beside the new series' copy (#234).
+    test(
+        'thisAndFollowing retitling a timed series from its first occurrence '
+        'leaves no occurrence under the old title', () async {
+      const title = 'Timed Retitle From First';
+      final seeded = await seedWeeklySeries(plugin, calendarId,
+          title: title, start: seedDay, count: seedCount);
+      final before = seeded.occurrences;
+
+      final newSeriesId = await plugin.updateRecurring(
+        before[0].instanceId,
+        EventSpan.thisAndFollowing,
+        title: '$title (new)',
+      );
+
+      final from = seeded.start.subtract(const Duration(days: 1));
+      expect(
+        startsOf(await occurrencesOf(plugin, calendarId!, newSeriesId, from,
+            windowDays: 31)),
+        startsOf(before),
+        reason: 'the edit must cover every occurrence',
+      );
+      expect(
+        await eventsTitled(plugin, calendarId!, title, from, windowDays: 31),
+        isEmpty,
+        reason: 'no occurrence may be left under the old title',
+      );
+    });
 
     /// 09:00 local on [day]'s local date.
     DateTime nineOn(DateTime day) {

@@ -1156,6 +1156,17 @@ class EventsService(
 
         val (_, rrule) = row.asSeries().getOrElse { return Result.failure(it) }
 
+        // From the first occurrence there is nothing before the split, so
+        // the edit covers the whole series and is one in place, as
+        // EventKit's `.futureEvents` save from the master is (#234). The
+        // split below can't express it: its truncating UNTIL would fall
+        // before DTSTART, and the provider always lists DTSTART as an
+        // occurrence, so the original series kept its first one beside the
+        // new series' copy.
+        if (timestamp <= row.dtstart) {
+            return updateRecurringAllEvents(row, timestamp, timeEdit, ruleEdit, patch)
+        }
+
         // Effective field values for the new series: the patch value when one
         // is given, otherwise the master's existing value.
         val effectiveIsAllDay = patch.isAllDay ?: row.allDay
