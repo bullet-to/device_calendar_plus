@@ -678,7 +678,8 @@ class EventsService(
      * Deletes event row [eventId] and any detached occurrences keyed to it by
      * `original_id`, through [account]'s delete URI (null when the row is gone
      * altogether) — the shared primitive behind [deleteOneOff] and
-     * [deleteRecurring]'s `allEvents` span, where it removes the whole series.
+     * [deleteRecurring]'s whole-series deletes (`allEvents`, and
+     * `thisAndFollowing` from the first occurrence).
      *
      * The exceptions have to be named here because the provider cascades a
      * series delete only to a master with no `_sync_id`, and both a synced
@@ -1330,6 +1331,12 @@ class EventsService(
 
         val (row, rrule) = store.readRecurringRow(eventId).getOrElse { return Result.failure(it) }
 
+        // From the first occurrence the span is the whole series, as on iOS,
+        // where a `.futureEvents` delete from the master removes it all.
+        if (row.splitsAtStart(timestamp)) {
+            return deleteEventWithExceptions(eventId, row.account)
+        }
+
         // Truncate the series so the anchor occurrence and every later one
         // stop generating. UNTIL is inclusive, so cutting one second early
         // drops the anchor too — "this and following" removes the anchor.
@@ -1353,6 +1360,17 @@ class EventsService(
         store.deleteDetachedOccurrencesFrom(row, timestamp)
         return Result.success(Unit)
     }
+
+    /**
+     * Whether a `thisAndFollowing` split at [timestamp] falls at or before
+     * this series' first occurrence, leaving nothing before it, so the span
+     * is the whole series. The `UNTIL = timestamp - 1s` truncate can't
+     * express that: its UNTIL would sit before DTSTART, and the provider
+     * always lists DTSTART as an occurrence (RFC 5545 counts it as the
+     * first instance), so the original series would keep its first
+     * occurrence (#234). Callers take the whole-series path instead.
+     */
+    private fun EventRow.splitsAtStart(timestamp: Long) = timestamp <= dtstart
 
     /**
      * The instance-ID path of [deleteEvent]: removes the single occurrence

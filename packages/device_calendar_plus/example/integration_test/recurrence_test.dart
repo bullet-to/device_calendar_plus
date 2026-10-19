@@ -3908,6 +3908,24 @@ void main() {
           reason: 'occurrences before the anchor must survive');
     });
 
+    // From the first occurrence the span is the whole series. Android's
+    // truncate put UNTIL before DTSTART, and the provider still listed
+    // DTSTART, so the first occurrence was left behind.
+    test(
+        'thisAndFollowing from the first occurrence leaves no occurrence '
+        'behind', () async {
+      final series = await seedSeries(plugin, calendarId);
+
+      await plugin.deleteRecurring(
+        series.occurrences[0].instanceId,
+        EventSpan.thisAndFollowing,
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(after, isEmpty, reason: 'the whole series should be gone');
+    });
+
     test('deleteEvent with an instance ID removes only the one occurrence',
         () async {
       final series = await seedSeries(plugin, calendarId);
