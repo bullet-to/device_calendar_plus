@@ -78,60 +78,52 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
         fromInstant: Long,
         newMasterId: String,
         shift: SplitShift?
-    ) = settle(master, fromInstant, CarryTarget.Split(newMasterId), shift)
+    ) = settle(master, fromInstant, newMasterId, shift)
 
     /**
-     * After a whole-series edit of [series] that moves its anchor or clears
-     * its rule (#234): its detached occurrences, all of them, stay on
-     * [series] and are re-pointed at their slots moved by [shift], or
-     * removed when [shift] is null because the series no longer recurs.
-     * [series] is the row as read before the edit; the carry reads the
-     * edited row back itself.
+     * After a whole-series edit of [before] (the row as read before the
+     * edit) that starts it at [newStart] (#234): its detached occurrences,
+     * all of them, stay on the series and are re-pointed at their slots
+     * moved by [shift], or removed when [shift] is null because the series
+     * no longer recurs. The carry reads the edited row back itself.
      *
-     * Everything else is [settleAfterSplit]'s contract, with [series] as
+     * Only an edit that moves the anchor or clears the rule settles
+     * anything. One that leaves a recurring series at [before]'s DTSTART
+     * leaves every slot where it was, so it returns without a write: on a
+     * synced calendar a settle would copy every occurrence afresh for
+     * nothing. Nor does an edit of a series that wasn't recurring, which
+     * has no detached occurrences.
+     *
+     * Everything else is [settleAfterSplit]'s contract, with [before] as
      * both the old and the new series: the same slot rule, the same
      * per-occurrence best effort (one that fails stays at its old slot),
      * the same re-expand. One decision is the same for a different reason:
      * on a synced calendar each occurrence is still copied afresh rather
      * than re-pointed, because whether a plain re-point survives the server
      * once the master's DTSTART moves is unverified, and the copy is the
-     * path known to.
+     * path known to survive it.
      */
-    fun settleInPlace(series: EventRow, shift: SplitShift?) =
-        settle(series, series.dtstart, CarryTarget.InPlace, shift)
-
-    /**
-     * The series a carry lands on: the new half of a split, or the series
-     * it came from.
-     */
-    private sealed interface CarryTarget {
-        fun id(master: EventRow): String
-
-        data class Split(val newMasterId: String) : CarryTarget {
-            override fun id(master: EventRow) = newMasterId
-        }
-
-        object InPlace : CarryTarget {
-            override fun id(master: EventRow) = master.id
-        }
+    fun settleInPlace(before: EventRow, newStart: Long, shift: SplitShift?) {
+        if (before.rrule == null) return
+        if (shift != null && newStart == before.dtstart) return
+        settle(before, before.dtstart, before.id, shift)
     }
 
     /** The shared body of [settleAfterSplit] and [settleInPlace]. */
     private fun settle(
         master: EventRow,
         fromInstant: Long,
-        target: CarryTarget,
+        newMasterId: String,
         shift: SplitShift?
     ) {
         try {
             if (shift != null) {
-                carryOrThrow(master, fromInstant, target, shift)
+                carryOrThrow(master, fromInstant, newMasterId, shift)
             } else {
                 store.deleteDetachedOccurrencesFrom(master, fromInstant)
             }
         } catch (e: Exception) {
-            val outcome =
-                if (shift != null) "carried to ${target.id(master)}" else "removed"
+            val outcome = if (shift != null) "carried to $newMasterId" else "removed"
             android.util.Log.w(
                 LOG_TAG,
                 "Rewrite of series ${master.id} committed, but its detached " +
@@ -145,13 +137,12 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
     private fun carryOrThrow(
         master: EventRow,
         fromInstant: Long,
-        target: CarryTarget,
+        newMasterId: String,
         shift: SplitShift
     ) {
         val exceptions = detachedOccurrencesFrom(master, fromInstant, shift)
         if (exceptions.isEmpty()) return
 
-        val newMasterId = target.id(master)
         // Read back in place too: [master] is the row before the edit, and
         // the re-expand below must rewrite the edited one.
         val newSeries = store.readRecurringRow(newMasterId).getOrThrow()

@@ -1151,6 +1151,44 @@ void main() {
       );
     });
 
+    // The same re-anchor through thisAndFollowing from the first
+    // occurrence, which edits the series in place rather than splitting it
+    // (#234): the series keeps its ID and moves wholly onto the new weekday.
+    test(
+        'thisAndFollowing with a rule on a new weekday from the first '
+        'occurrence re-anchors the series in place (#234)', () async {
+      expect(calendarId, isNotNull, reason: 'setUpAll must create a calendar');
+      final series = await createWeeklySeriesOnOwnWeekday(plugin, calendarId!);
+      final before = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start,
+          windowDays: 50);
+      expect(before, isNotEmpty,
+          reason: 'the weekly series should have expanded into occurrences');
+      final oldStart = before.first.startDate;
+
+      // Weekly on the new weekday until 20 days past the start: exactly three
+      // occurrences (start + 1, + 8, + 15 days).
+      final result = await plugin.updateRecurring(
+        before.first.instanceId,
+        EventSpan.thisAndFollowing,
+        recurrenceRule: Patch.set(WeeklyRecurrence(
+          daysOfWeek: [series.newDay],
+          end: UntilEnd(oldStart.add(const Duration(days: 20))),
+        )),
+      );
+      expect(result, series.eventId,
+          reason: 'from the first occurrence the edit is in place and keeps '
+              'the series ID');
+
+      expectReanchoredWeekly(
+        await occurrencesOf(plugin, calendarId!, series.eventId, series.start,
+            windowDays: 50),
+        on: series.newDay,
+        firstAt: oldStart.add(const Duration(days: 1)),
+        orphanAt: oldStart,
+      );
+    });
+
     test(
         'thisAndFollowing with a rule on a new weekday re-anchors an all-day '
         'series on that weekday', () async {
@@ -1720,39 +1758,51 @@ void main() {
       });
     }
 
-    test(
-      'thisAndFollowing update that clears the rule from the first '
-      'occurrence drops a detached occurrence (#234)',
-      () async {
-        // In place on the whole series, as a `.futureEvents` save from the
-        // master clears it: the event no longer recurs, so its detached
-        // occurrence has no slot left to stand in for.
+    // A whole-series rule clear, by either entry point, in place as a
+    // `.futureEvents` save from the master clears it: the event no longer
+    // recurs, so its detached occurrence has no slot left to stand in for.
+    for (final (span, label, target, tagWord) in [
+      (
+        EventSpan.thisAndFollowing,
+        'thisAndFollowing update that clears the rule from the first '
+            'occurrence drops a detached occurrence (#234)',
+        (SeededSeries s) => s.occurrences.first.instanceId,
+        'first',
+      ),
+      (
+        EventSpan.allEvents,
+        'allEvents update that clears the rule drops a detached occurrence',
+        (SeededSeries s) => s.eventId,
+        'allEvents',
+      ),
+    ]) {
+      test(label, () async {
         final series = await seedSeries(plugin, calendarId,
             create: createMidUtcDayDailySeries, count: 6, minOccurrences: 6);
         final id = calendarId!;
         final tag = DateTime.now().microsecondsSinceEpoch;
-        final detachedTitle = 'Detached before first rule clear $tag';
+        final detachedTitle = 'Detached before $tagWord rule clear $tag';
         final moved = await moveOccurrence(plugin, id, series, 3,
             const Duration(hours: 2), detachedTitle);
         final first = series.occurrences.first;
 
         final returnedId = await plugin.updateRecurring(
-          first.instanceId,
-          EventSpan.thisAndFollowing,
+          target(series),
+          span,
           recurrenceRule: const Patch.clear(),
         );
 
         expect(returnedId, series.eventId,
-            reason: 'from the first occurrence the edit is in place and '
-                'keeps the series ID');
+            reason: 'a whole-series edit is in place and keeps the series '
+                'ID');
         await expectDetachedGone(plugin, id, detachedTitle, series, moved);
         expect(
           startsOf(await occurrencesOf(plugin, id, returnedId, series.start)),
           startsOf([first]),
           reason: 'exactly one event must remain, at the first occurrence',
         );
-      },
-    );
+      });
+    }
 
     test(
       'thisAndFollowing update across a DST change carries a detached '

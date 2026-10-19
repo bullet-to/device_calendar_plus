@@ -1141,9 +1141,7 @@ class EventsService(
         // slots when the anchor moves, dropped when the series stops
         // recurring. Left keyed to their old slots, the provider would list
         // each one beside the moved slot it should stand in for.
-        if (wasRecurring && (newStart != row.dtstart || !willBeRecurring)) {
-            detachedOccurrenceCarry.settleInPlace(row, carry.takeIf { willBeRecurring })
-        }
+        detachedOccurrenceCarry.settleInPlace(row, newStart, carry.takeIf { willBeRecurring })
         return Result.success(row.id)
     }
 
@@ -1179,9 +1177,11 @@ class EventsService(
         // the whole-series edit in place, as EventKit's `.futureEvents` save
         // from the master is (#234). The split below can't express it: its
         // truncating UNTIL would fall before DTSTART, and the provider
-        // always lists DTSTART as an occurrence.
+        // always lists DTSTART as an occurrence. Compared raw: an instance ID
+        // carries its occurrence's exact start, and the split below anchors
+        // the new series at the raw timestamp as well.
         if (timestamp == row.dtstart) {
-            return updateRecurringAllEvents(row, timestamp, timeEdit, ruleEdit, patch)
+            return updateRecurringAllEvents(row, null, timeEdit, ruleEdit, patch)
         }
 
         // Effective field values for the new series: the patch value when one

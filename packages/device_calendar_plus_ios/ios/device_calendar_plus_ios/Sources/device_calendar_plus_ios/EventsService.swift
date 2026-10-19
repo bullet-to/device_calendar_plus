@@ -943,16 +943,6 @@ class EventsService {
     return .success(event)
   }
 
-  /// What `resolveSeriesTarget` resolves a series operation to.
-  private struct SeriesTarget {
-    /// The master for "allEvents", the occurrence for "thisAndFollowing".
-    let event: EKEvent
-    /// Whether the operation starts at the series' first occurrence:
-    /// always for "allEvents", and for "thisAndFollowing" when the
-    /// resolved occurrence is the first one, so nothing precedes it.
-    let fromSeriesStart: Bool
-  }
-
   /// Resolves the event `updateRecurring` / `deleteRecurring` act on for
   /// `span`. "allEvents" works from the master (the whole series);
   /// "thisAndFollowing" works from the specific occurrence at `timestamp`,
@@ -963,10 +953,9 @@ class EventsService {
     eventId: String,
     timestamp: Int64?,
     span: String
-  ) -> Result<SeriesTarget, CalendarError> {
+  ) -> Result<EKEvent, CalendarError> {
     guard span == "thisAndFollowing" else {
       return resolveTarget(eventId: eventId, timestamp: nil)
-        .map { SeriesTarget(event: $0, fromSeriesStart: true) }
     }
     guard let timestamp = timestamp else {
       return .failure(CalendarError(
@@ -979,7 +968,6 @@ class EventsService {
     // event itself, before the occurrence lookup: `findOccurrence` matches by
     // overlap, so a timestamp inside a one-off would resolve to the whole
     // event and the split would edit or delete it (#124). As Android does.
-    let series: EKEvent
     switch resolveTarget(eventId: eventId, timestamp: nil) {
     case .failure(let error):
       return .failure(error)
@@ -989,15 +977,22 @@ class EventsService {
         message: "Event \(eventId) is not recurring, so it has no single occurrence "
           + "to address; edit or delete the event itself instead"
       ))
-    case .success(let event):
-      series = event
+    case .success:
+      break
     }
-    // Compared by the resolved occurrence, not the raw timestamp: any
-    // timestamp findOccurrence matches to the first occurrence counts.
-    let seriesStart = series.occurrenceDate ?? series.startDate
-    return resolveTarget(eventId: eventId, timestamp: timestamp).map {
-      SeriesTarget(event: $0, fromSeriesStart: $0.occurrenceDate == seriesStart)
+    return resolveTarget(eventId: eventId, timestamp: timestamp)
+  }
+
+  /// Whether `occurrence` is the first occurrence of series `eventId`, so
+  /// nothing precedes it. Compared by the resolved occurrence, not the raw
+  /// timestamp, though the two agree in practice: an instance ID carries its
+  /// occurrence's exact start, which is also what Android compares against
+  /// DTSTART. Off-slot timestamps are outside `updateRecurring`'s contract.
+  private func isFirstOccurrence(_ occurrence: EKEvent, of eventId: String) -> Bool {
+    guard case .success(let series) = resolveTarget(eventId: eventId, timestamp: nil) else {
+      return false
     }
+    return occurrence.occurrenceDate == (series.occurrenceDate ?? series.startDate)
   }
 
   /// Deletes one thing. With a `timestamp`, removes only the occurrence at
@@ -1460,14 +1455,12 @@ class EventsService {
     }
 
     let foundEvent: EKEvent
-    let fromSeriesStart: Bool
     switch resolveSeriesTarget(eventId: eventId, timestamp: timestamp, span: span) {
     case .failure(let error):
       completion(.failure(error))
       return
-    case .success(let target):
-      foundEvent = target.event
-      fromSeriesStart = target.fromSeriesStart
+    case .success(let event):
+      foundEvent = event
     }
 
     let effectiveIsAllDay = patch.isAllDay ?? foundEvent.isAllDay
@@ -1543,7 +1536,7 @@ class EventsService {
     // there, which the hand-made split below can't give, as its truncating
     // UNTIL would fall before the master's own start (#234).
     switch (resolved.rule, splitAt) {
-    case (.clear, let timestamp?) where !fromSeriesStart:
+    case (.clear, let timestamp?) where !isFirstOccurrence(foundEvent, of: eventId):
       // Clearing the rule on a `thisAndFollowing` split is the one case
       // EventKit gets wrong natively (it collapses the whole series), so it
       // splits the series by hand, from the patched occurrence — mirror
@@ -1627,8 +1620,8 @@ class EventsService {
     case .failure(let error):
       completion(.failure(error))
       return
-    case .success(let target):
-      foundEvent = target.event
+    case .success(let event):
+      foundEvent = event
     }
 
     // Both spans remove with .futureEvents: from the master that removes the
