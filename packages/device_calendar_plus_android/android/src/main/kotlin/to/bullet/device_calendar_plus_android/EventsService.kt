@@ -1049,8 +1049,7 @@ class EventsService(
         timestamp: Long?,
         timeEdit: SeriesTimeEdit,
         ruleEdit: SeriesRuleEdit,
-        patch: EventFieldPatch,
-        settleDetached: Boolean = false
+        patch: EventFieldPatch
     ): Result<String> {
         val values = android.content.ContentValues()
         applyEventFieldValues(values, patch)
@@ -1137,14 +1136,15 @@ class EventsService(
         // for recurring and non-recurring, so no DURATION/RRULE interaction.
         applyRemindersRows(row.id.toLong(), patch.reminders)
 
-        // A thisAndFollowing edit from the first occurrence lands here, and
-        // settles the series' detached occurrences as the split would have
-        // (see updateRecurringThisAndFollowing): moved with the slots when
-        // the anchor moves, dropped when the series stops recurring. The
-        // series is its own "new series", so the carry re-points each one at
-        // its moved slot on the same master.
-        if (settleDetached && (newStart != row.dtstart || !willBeRecurring)) {
-            detachedOccurrenceCarry.settleAfterSplit(
+        // The series' detached occurrences follow the edit, as EventKit's
+        // `.futureEvents` save from the master keeps them: moved with their
+        // slots when the anchor moves, dropped when the series stops
+        // recurring. Left keyed to their old slots, the provider would list
+        // each one beside the moved slot it should stand in for. The series
+        // is its own target, so the carry re-points each one at its moved
+        // slot on the same master.
+        if (wasRecurring && (newStart != row.dtstart || !willBeRecurring)) {
+            detachedOccurrenceCarry.settleAfterRewrite(
                 row, row.dtstart, row.id, carry.takeIf { willBeRecurring })
         }
         return Result.success(row.id)
@@ -1168,16 +1168,23 @@ class EventsService(
 
         val (_, rrule) = row.asSeries().getOrElse { return Result.failure(it) }
 
+        // A timestamp before DTSTART names no occurrence of the series, as
+        // iOS's occurrence lookup refuses it.
+        if (timestamp < row.dtstart) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event ${row.id} has no occurrence at $timestamp"
+                )
+            )
+        }
         // From the first occurrence nothing precedes the split, so this is
-        // a whole-series edit in place, as EventKit's `.futureEvents` save
+        // the whole-series edit in place, as EventKit's `.futureEvents` save
         // from the master is (#234). The split below can't express it: its
         // truncating UNTIL would fall before DTSTART, and the provider
-        // always lists DTSTART as an occurrence. `<=`, not `==`: a timestamp
-        // before DTSTART names no occurrence, and the split would hit the
-        // same UNTIL-before-DTSTART bug.
-        if (timestamp <= row.dtstart) {
-            return updateRecurringAllEvents(
-                row, timestamp, timeEdit, ruleEdit, patch, settleDetached = true)
+        // always lists DTSTART as an occurrence.
+        if (timestamp == row.dtstart) {
+            return updateRecurringAllEvents(row, timestamp, timeEdit, ruleEdit, patch)
         }
 
         // Effective field values for the new series: the patch value when one
@@ -1283,12 +1290,12 @@ class EventsService(
         // after it (see deleteRecurringThisAndFollowing): a failure here
         // leaves the exceptions on the old series rather than losing them.
         // The split is committed by now, so this is best-effort and reports
-        // nothing (see DetachedOccurrenceCarry.settleAfterSplit). A new
+        // nothing (see DetachedOccurrenceCarry.settleAfterRewrite). A new
         // series moves them by the very shift resolveSeriesTimes moved its
         // anchor by, in the same frame (#186); a new event that doesn't
         // recur drops them.
         val shift = carry.takeIf { effectiveRrule != null }
-        detachedOccurrenceCarry.settleAfterSplit(row, timestamp, newEventId, shift)
+        detachedOccurrenceCarry.settleAfterRewrite(row, timestamp, newEventId, shift)
 
         return Result.success(newEventId)
     }

@@ -131,8 +131,9 @@ await plugin.updateRecurring(
   reminders: Patch.set([Duration(minutes: 15)]),
 );
 
-// Split: this occurrence and later ones move; returns the new series' ID.
-final newSeriesId = await plugin.updateRecurring(
+// Split: this occurrence and later ones move; returns the new series' ID
+// (the series' own ID when the occurrence is its first).
+final seriesId = await plugin.updateRecurring(
   event.instanceId,
   EventSpan.thisAndFollowing,
   start: DateTime(2024, 3, 18, 15, 0),
@@ -141,7 +142,9 @@ final newSeriesId = await plugin.updateRecurring(
 ```
 
 `updateRecurring` returns the affected scope's event ID — the same ID for
-`allEvents`, the new series' ID for `thisAndFollowing`.
+`allEvents`, the new series' ID for `thisAndFollowing`, or the series' own ID
+when the occurrence is the series' first, since nothing comes before it to
+split off.
 
 ### Changing the rule
 

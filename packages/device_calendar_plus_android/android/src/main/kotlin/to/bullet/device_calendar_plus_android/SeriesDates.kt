@@ -292,7 +292,7 @@ internal data class SeriesTimes(
     val durationMillis: Long,
     /**
      * The shift that took the anchor to [start]: where a split's detached
-     * occurrences go ([DetachedOccurrenceCarry.settleAfterSplit]).
+     * occurrences go ([DetachedOccurrenceCarry.settleAfterRewrite]).
      */
     val carry: SplitShift,
 )

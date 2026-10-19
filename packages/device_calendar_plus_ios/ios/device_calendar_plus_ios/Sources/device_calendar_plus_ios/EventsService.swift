@@ -1522,10 +1522,16 @@ class EventsService {
     // `.futureEvents` save from the master with the rule cleared collapses
     // the whole series into the one event at its start: the right result
     // there, which the hand-made split below can't give, as its truncating
-    // UNTIL would fall before the master's own start (#234).
-    let seriesStart = eventStore.event(withIdentifier: eventId)?.startDate
+    // UNTIL would fall before the master's own start (#234). Only the
+    // `.clear` split's `where` calls it, so no other route pays its read.
+    // `<=` covers a timestamp up to a second before the first occurrence,
+    // which findOccurrence's ±1s overlap match still resolves to it; one
+    // naming no occurrence was refused above with notFound.
     func splitsFromFirst(_ timestamp: Int64) -> Bool {
-      seriesStart.map { Date(millis: timestamp) <= $0 } ?? false
+      guard let seriesStart = eventStore.event(withIdentifier: eventId)?.startDate else {
+        return false
+      }
+      return Date(millis: timestamp) <= seriesStart
     }
     switch (resolved.rule, splitAt) {
     case (.clear, let timestamp?) where !splitsFromFirst(timestamp):

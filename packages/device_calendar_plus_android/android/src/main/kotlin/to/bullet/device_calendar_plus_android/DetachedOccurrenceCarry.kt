@@ -6,14 +6,16 @@ import android.net.Uri
 import android.provider.CalendarContract
 
 /**
- * Settles the detached occurrences past a `thisAndFollowing` update split:
- * the second half of [EventsService.updateRecurring]'s split, and its
- * counterpart to the delete path's sweep of the same rows (#158).
+ * Settles a series' detached occurrences after [EventsService.updateRecurring]
+ * rewrites it: past a `thisAndFollowing` split, the second half of the
+ * split, and its counterpart to the delete path's sweep of the same rows
+ * (#158); after a whole-series edit that moves the anchor or clears the
+ * rule, the same series' own occurrences, re-pointed in place (#234).
  *
  * iOS's EKSpan.futureEvents save re-parents them: each keeps its own
- * edits (title, moved time), and the new series skips its slot instead
- * of generating a second occurrence beside it. Left keyed to the old
- * master, Android would list both.
+ * edits (title, moved time), and the series it ends up on skips its slot
+ * instead of generating a second occurrence beside it. Left keyed to the
+ * old master, or to the old slot, Android would list both.
  *
  * Writes through [store], the same series-row paths as every other
  * series write.
@@ -25,10 +27,12 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
     /**
      * Carries the detached occurrences of [master] whose original slot is
      * at or after [fromInstant] onto the series [newMasterId], or removes
-     * them when the new event doesn't recur.
+     * them when the new event doesn't recur. [newMasterId] is [master]'s
+     * own ID after a whole-series edit: the series is then its own target,
+     * and each occurrence is re-pointed at its moved slot on it.
      *
      * Each carried occurrence and its slot move as [shift] says, because
-     * the new series generates every slot moved by the split: the slot by
+     * the new series generates every slot moved by the edit: the slot by
      * [SplitShift.slot] and the occurrence's own start by
      * [SplitShift.start], which moves it as EventKit does (#224). See
      * [SplitShift] for where Android's slot pairing differs from iOS's. The
@@ -46,7 +50,10 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
      *   first (#153): the provider pairs an exception with its slot by
      *   ORIGINAL_SYNC_ID, not ORIGINAL_ID.
      * - Synced: the occurrence is copied to a fresh exception of the new
-     *   master and the old row deleted ([copyException]). An uploaded
+     *   master and the old row deleted ([copyException]), on the same
+     *   master too: whether a plain re-point there survives the server
+     *   once the master's DTSTART moves is unverified, so it takes the
+     *   path known to. An uploaded
      *   exception's `_sync_id` is the server's name for "this occurrence of
      *   the OLD series", and rewriting ORIGINAL_ID/ORIGINAL_SYNC_ID locally
      *   does not rename it: once the truncated old series reaches the
@@ -57,19 +64,20 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
      *   gone.
      *
      * Best-effort, like the delete path's sweep: by the time it runs the
-     * new series is inserted and the old one truncated, so the split has
-     * happened and the caller is told so whatever happens here. Reporting
-     * a failure instead would invite a retry that splits the series again.
-     * Each occurrence carries on its own: one that fails stays on the old
-     * series, past its UNTIL, as it was before #158, and the rest still
-     * carry. Never throws; failures go to logcat.
+     * series rewrite is committed (on a split, the new series inserted and
+     * the old one truncated), and the caller is told so whatever happens
+     * here. Reporting a failure instead would invite a retry that rewrites
+     * the series again. Each occurrence carries on its own: one that fails
+     * stays where it was (on a split, on the old series past its UNTIL, as
+     * before #158), and the rest still carry. Never throws; failures go to
+     * logcat.
      *
      * A null [shift] means the new event doesn't recur: one turned into a
      * single event has no slots for an exception to stand in, and iOS
      * drops them, so they go by the delete path's sweep
      * ([SeriesRowStore.deleteDetachedOccurrencesFrom]) instead.
      */
-    fun settleAfterSplit(
+    fun settleAfterRewrite(
         master: EventRow,
         fromInstant: Long,
         newMasterId: String,
@@ -85,14 +93,14 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             val outcome = if (shift != null) "carried to $newMasterId" else "removed"
             android.util.Log.w(
                 LOG_TAG,
-                "Split of event ${master.id} committed, but its detached " +
-                    "occurrences past it could not be $outcome",
+                "Rewrite of series ${master.id} committed, but its detached " +
+                    "occurrences from $fromInstant could not be $outcome",
                 e
             )
         }
     }
 
-    /** The carry half of [settleAfterSplit], which owns its failure contract. */
+    /** The carry half of [settleAfterRewrite], which owns its failure contract. */
     private fun carryOrThrow(
         master: EventRow,
         fromInstant: Long,
@@ -122,8 +130,9 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             }
         }
 
-        // The new series was expanded when it was inserted, before it had
-        // any exceptions, and moving them onto it does not re-expand it: it
+        // The new series was expanded when it was written (inserted, or
+        // rewritten in place), before the exceptions were re-pointed at its
+        // slots, and moving them onto it does not re-expand it: it
         // would still generate the slots they now stand in for. (After a
         // copy it is needed too: the new synced master is not keyed yet, so
         // the copy's exception insert drops its occurrences from the
