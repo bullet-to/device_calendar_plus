@@ -6,6 +6,7 @@ import 'attendee.dart';
 import 'color_hex.dart';
 import 'event_availability.dart';
 import 'event_status.dart';
+import 'organizer.dart';
 import 'recurrence_rule.dart';
 
 /// Represents a calendar event.
@@ -87,6 +88,30 @@ class Event {
   /// supports programmatic write via this plugin.
   final List<Attendee>? attendees;
 
+  /// The organizer of this event (read-only), or null when it has none.
+  ///
+  /// Null when the event has no attendees or organizer, such as one created
+  /// by this plugin without attendees, on both platforms. A blank
+  /// (empty or whitespace-only) name or email is left out, and an organizer
+  /// with neither reads as null.
+  ///
+  /// [attendees] leaves out the organizer row on Android and `.chair`
+  /// participants on iOS, but the organizer may still appear there: on
+  /// Android when the `Events.ORGANIZER` fallback address is also an
+  /// ordinary attendee row, and on iOS when EventKit reports the organizer
+  /// with a role other than `.chair`.
+  ///
+  /// - **iOS** reads `EKEvent.organizer`, which EventKit leaves nil on an
+  ///   event without guests.
+  /// - **Android** reads the event's `RELATIONSHIP_ORGANIZER` attendee row,
+  ///   falling back to `Events.ORGANIZER` (email only, [Organizer.name]
+  ///   null) when the event has attendees but no organizer row. On a local
+  ///   calendar that column holds the calendar's owner account, which
+  ///   needn't be an email address. Android fills `Events.ORGANIZER` in on
+  ///   every event, so an event with no attendee rows at all reports null,
+  ///   as on iOS.
+  final Organizer? organizer;
+
   /// Relative-time reminders for this event, each a lead time **before** start
   /// (e.g. `Duration(minutes: 15)`). Null when there are none.
   ///
@@ -127,6 +152,7 @@ class Event {
     required this.isRecurring,
     this.recurrenceRule,
     this.attendees,
+    this.organizer,
     this.reminders,
     this.url,
     this.colorHex,
@@ -137,6 +163,7 @@ class Event {
     final rruleString = map['recurrenceRule'] as String?;
     final attendeesList = map['attendees'] as List<dynamic>?;
     final remindersList = map['reminders'] as List<dynamic>?;
+    final organizerMap = map['organizer'] as Map<dynamic, dynamic>?;
     return Event(
       eventId: map['eventId'] as String,
       instanceId: map['instanceId'] as String,
@@ -157,6 +184,9 @@ class Event {
       attendees: attendeesList
           ?.map((a) => Attendee.fromMap(Map<String, dynamic>.from(a as Map)))
           .toList(),
+      organizer: organizerMap != null
+          ? Organizer.fromMap(Map<String, dynamic>.from(organizerMap))
+          : null,
       reminders: remindersList
           ?.map((m) => Duration(minutes: (m as num).toInt()))
           .toList(),
@@ -191,6 +221,7 @@ class Event {
     if (attendees != null) {
       map['attendees'] = attendees!.map((a) => a.toMap()).toList();
     }
+    if (organizer != null) map['organizer'] = organizer!.toMap();
     if (reminders != null) {
       map['reminders'] =
           reminders!.map((d) => (d.inSeconds / 60).round()).toList();
@@ -225,6 +256,7 @@ class Event {
         other.isRecurring == isRecurring &&
         other.recurrenceRule == recurrenceRule &&
         listEquals(other.attendees, attendees) &&
+        other.organizer == organizer &&
         listEquals(other.reminders, reminders) &&
         other.url == url &&
         other.colorHex == colorHex;
@@ -248,6 +280,7 @@ class Event {
       isRecurring,
       recurrenceRule,
       attendees != null ? Object.hashAll(attendees!) : null,
+      organizer,
       reminders != null ? Object.hashAll(reminders!) : null,
       url,
       colorHex,

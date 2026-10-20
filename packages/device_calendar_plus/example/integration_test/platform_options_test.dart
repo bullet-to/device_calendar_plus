@@ -415,10 +415,6 @@ void main() {
   }, skip: !Platform.isAndroid);
 
   group('Android attendee writes (#71)', () {
-    // Not covered on a device: that a set or clear spares the organizer row
-    // (RELATIONSHIP_ORGANIZER). Event.attendees skips that row and the shared
-    // model has no organizer field, so no public read can see it; the rule
-    // is pinned by AttendeeRowsTest (RowsPatch.applyTo) instead.
     testWidgets('createEvent writes the attendees', (tester) async {
       final id = await createOneOff(
         android: const EventOptionsAndroid(attendees: [ada, bob, room]),
@@ -731,6 +727,146 @@ void main() {
         );
       },
     );
+  }, skip: !Platform.isAndroid);
+
+  group('Android organizer reads (#236)', () {
+    const owner = AttendeeWriteAndroid(
+      email: 'owner@example.com',
+      name: 'Owner',
+      relationship: AttendeeRelationshipAndroid.organizer,
+      status: AttendeeStatusAndroid.accepted,
+    );
+    const ownerRead = Organizer(
+      name: 'Owner',
+      emailAddress: 'owner@example.com',
+    );
+
+    testWidgets('the organizer row reads as the organizer, not an attendee', (
+      tester,
+    ) async {
+      final id = await createOneOff(
+        android: const EventOptionsAndroid(attendees: [owner, ada]),
+      );
+
+      final event = await plugin.getEvent(id);
+      expect(event!.organizer, ownerRead);
+      expect(attendeesOf(event), [adaRead]);
+    });
+
+    testWidgets(
+      'without an organizer row it falls back to the ORGANIZER column',
+      (tester) async {
+        final id = await createOneOff(
+          android: const EventOptionsAndroid(attendees: [ada]),
+        );
+
+        // The provider fills ORGANIZER in with the calendar's owner account,
+        // which createCalendar sets to its account name.
+        final calendar = (await plugin.listCalendars()).singleWhere(
+          (c) => c.id == calendarId,
+        );
+        expect(
+          (await plugin.getEvent(id))!.organizer,
+          Organizer(emailAddress: calendar.accountName),
+        );
+      },
+    );
+
+    testWidgets('updateEvent clear keeps the organizer', (tester) async {
+      final id = await createOneOff(
+        android: const EventOptionsAndroid(attendees: [owner, ada]),
+      );
+
+      await plugin.updateEvent(
+        instanceId: id,
+        android: const EventUpdateOptionsAndroid(attendees: Patch.clear()),
+      );
+
+      final event = await plugin.getEvent(id);
+      expect(event!.organizer, ownerRead);
+      expect(attendeesOf(event), isEmpty);
+    });
+
+    testWidgets('updateEvent set keeps the organizer', (tester) async {
+      final id = await createOneOff(
+        android: const EventOptionsAndroid(attendees: [owner, ada]),
+      );
+
+      await plugin.updateEvent(
+        instanceId: id,
+        android: const EventUpdateOptionsAndroid(attendees: Patch.set([bob])),
+      );
+
+      final event = await plugin.getEvent(id);
+      expect(event!.organizer, ownerRead);
+      expect(attendeesOf(event), [bobRead]);
+    });
+
+    testWidgets('updateEvent set with an organizer replaces it', (
+      tester,
+    ) async {
+      const newOwner = AttendeeWriteAndroid(
+        email: 'new-owner@example.com',
+        name: 'New Owner',
+        relationship: AttendeeRelationshipAndroid.organizer,
+        status: AttendeeStatusAndroid.accepted,
+      );
+      final id = await createOneOff(
+        android: const EventOptionsAndroid(attendees: [owner, ada]),
+      );
+
+      await plugin.updateEvent(
+        instanceId: id,
+        android: const EventUpdateOptionsAndroid(
+          attendees: Patch.set([newOwner, bob]),
+        ),
+      );
+
+      final event = await plugin.getEvent(id);
+      expect(
+        event!.organizer,
+        const Organizer(
+          name: 'New Owner',
+          emailAddress: 'new-owner@example.com',
+        ),
+      );
+      expect(attendeesOf(event), [bobRead]);
+    });
+
+    testWidgets(
+      'the owner account as an ordinary attendee is the organizer too',
+      (tester) async {
+        // Event.attendees leaves out only the organizer row, so the
+        // ORGANIZER fallback can name someone who is also an attendee.
+        final calendar = (await plugin.listCalendars()).singleWhere(
+          (c) => c.id == calendarId,
+        );
+        final account = calendar.accountName!;
+        final id = await createOneOff(
+          android: EventOptionsAndroid(
+            attendees: [AttendeeWriteAndroid(email: account)],
+          ),
+        );
+
+        final event = await plugin.getEvent(id);
+        expect(event!.organizer, Organizer(emailAddress: account));
+        expect(
+          attendeesOf(event).map((a) => a.emailAddress),
+          [account],
+        );
+      },
+    );
+
+    testWidgets('listed occurrences of a series carry its organizer', (
+      tester,
+    ) async {
+      final series = await seedAttendeeSeries([owner, ada]);
+
+      expect(
+        series.occurrences.map((e) => e.organizer),
+        everyElement(ownerRead),
+      );
+    });
   }, skip: !Platform.isAndroid);
 
   group('Android options on iOS', () {

@@ -170,6 +170,7 @@ class EventsService(
         val recurrenceRuleIndex = cursor.getColumnIndexOrThrow(columns.recurrenceRule)
         val urlIndex = cursor.getColumnIndexOrThrow(columns.url)
         val eventColorIndex = cursor.getColumnIndexOrThrow(columns.eventColor)
+        val organizerIndex = cursor.getColumnIndexOrThrow(columns.organizer)
 
         val eventId = cursor.getString(eventIdIndex)
         val calendarId = cursor.getString(calendarIdIndex)
@@ -193,7 +194,8 @@ class EventsService(
         val recurrenceRule = if (!cursor.isNull(recurrenceRuleIndex)) cursor.getString(recurrenceRuleIndex) else null
         val url = if (!cursor.isNull(urlIndex)) cursor.getString(urlIndex) else null
         val eventColor = if (!cursor.isNull(eventColorIndex)) cursor.getInt(eventColorIndex) else null
-        
+        val eventOrganizer = if (!cursor.isNull(organizerIndex)) cursor.getString(organizerIndex) else null
+
         // Generate instanceId using RAW timestamps before any modifications
         val instanceId: String = if (recurrenceRule != null) {
             "$eventId@$rawStart"
@@ -251,11 +253,13 @@ class EventsService(
             eventMap["colorHex"] = ColorHelper.colorToHex(eventColor)
         }
 
-        // Query attendees
-        val attendees = queryAttendees(eventId.toLong())
+        // Query attendees, and the organizer from the same rows
+        val attendeeRows = queryAttendeeRows(eventId.toLong())
+        val attendees = attendeeMaps(attendeeRows)
         if (attendees.isNotEmpty()) {
             eventMap["attendees"] = attendees
         }
+        organizerOf(attendeeRows, eventOrganizer)?.let { eventMap["organizer"] = it }
 
         // Query relative reminders (minutes before start)
         val reminders = queryReminderMinutes(eventId.toLong())
@@ -313,42 +317,16 @@ class EventsService(
         return minutes
     }
 
-    private fun queryAttendees(eventId: Long): List<Map<String, Any?>> = try {
+    /**
+     * Event [eventId]'s Attendees rows, organizer included, or none when the
+     * query fails (the event then reads with no attendees or organizer).
+     */
+    private fun queryAttendeeRows(eventId: Long): Collection<AttendeeRow> = try {
         context.contentResolver.readAttendeeRows(eventId).values
-            .filterNot { it.isOrganizer }
-            .map { row ->
-                // A NULL type or status reads as 0, as Cursor.getInt has it.
-                mapOf(
-                    "name" to row.name,
-                    "emailAddress" to row.email,
-                    "role" to attendeeTypeToRole(row.type ?: 0),
-                    "status" to attendeeStatusToString(row.status ?: 0),
-                )
-            }
     } catch (_: Exception) {
-        // Silently return empty if attendee query fails
         emptyList()
     }
 
-    private fun attendeeTypeToRole(type: Int): String {
-        return when (type) {
-            CalendarContract.Attendees.TYPE_REQUIRED -> "required"
-            CalendarContract.Attendees.TYPE_OPTIONAL -> "optional"
-            CalendarContract.Attendees.TYPE_RESOURCE -> "nonParticipant"
-            else -> "required"
-        }
-    }
-
-    private fun attendeeStatusToString(status: Int): String {
-        return when (status) {
-            CalendarContract.Attendees.ATTENDEE_STATUS_ACCEPTED -> "accepted"
-            CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED -> "declined"
-            CalendarContract.Attendees.ATTENDEE_STATUS_TENTATIVE -> "tentative"
-            CalendarContract.Attendees.ATTENDEE_STATUS_INVITED -> "pending"
-            else -> "none"
-        }
-    }
-    
     /**
      * Reads one event: the master row for a bare [eventId], or the occurrence
      * that starts at [timestamp] when one is given. Null when nothing matches.

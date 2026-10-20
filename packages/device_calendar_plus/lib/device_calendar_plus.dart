@@ -44,6 +44,7 @@ export 'src/event.dart';
 export 'src/event_availability.dart';
 export 'src/event_status.dart';
 export 'src/event_span.dart';
+export 'src/organizer.dart';
 export 'src/platform_exception_codes.dart';
 export 'src/recurrence_rule.dart';
 

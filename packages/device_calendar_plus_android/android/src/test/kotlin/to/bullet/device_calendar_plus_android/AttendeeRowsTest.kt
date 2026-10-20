@@ -6,18 +6,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 internal class AttendeeRowsTest {
-    private fun row(email: String, relationship: Int?) = AttendeeRow(
-        email = email,
-        name = null,
-        type = Attendees.TYPE_REQUIRED,
-        relationship = relationship,
-        status = Attendees.ATTENDEE_STATUS_INVITED
-    )
-
-    private val organizer = row("owner@example.com", Attendees.RELATIONSHIP_ORGANIZER)
-    private val guest = row("guest@example.com", Attendees.RELATIONSHIP_ATTENDEE)
-    private val unknown = row("unknown@example.com", null)
-    private val existing = listOf(organizer, guest, unknown)
+    private val unknown = attendeeRow("unknown@example.com", null)
+    private val existing = listOf(organizerRow, guestRow, unknown)
 
     @Test
     fun applyTo_unchanged_keepsEveryRow() {
@@ -26,22 +16,22 @@ internal class AttendeeRowsTest {
 
     @Test
     fun applyTo_clear_keepsOnlyTheOrganizer() {
-        assertEquals(listOf(organizer), RowsPatch.Clear.applyTo(existing))
+        assertEquals(listOf(organizerRow), RowsPatch.Clear.applyTo(existing))
     }
 
     @Test
     fun applyTo_set_replacesEveryRowButTheOrganizer() {
-        val newGuest = row("new@example.com", Attendees.RELATIONSHIP_SPEAKER)
+        val newGuest = attendeeRow("new@example.com", Attendees.RELATIONSHIP_SPEAKER)
 
         assertEquals(
-            listOf(organizer, newGuest),
+            listOf(organizerRow, newGuest),
             RowsPatch.Set(listOf(newGuest)).applyTo(existing)
         )
     }
 
     @Test
     fun applyTo_setWithAnOrganizer_replacesTheOrganizerToo() {
-        val newOrganizer = row("chair@example.com", Attendees.RELATIONSHIP_ORGANIZER)
+        val newOrganizer = attendeeRow("chair@example.com", Attendees.RELATIONSHIP_ORGANIZER)
 
         assertEquals(
             listOf(newOrganizer),

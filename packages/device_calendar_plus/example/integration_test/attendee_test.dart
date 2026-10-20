@@ -11,7 +11,10 @@ import 'package:integration_test/integration_test.dart';
 /// the deterministic read and write coverage there. iOS can't write
 /// attendees, so the field-type check below scans the existing events and
 /// skips when none has attendees; to run it fully, add attendees to an event
-/// in the native Calendar app first.
+/// in the native Calendar app first. Its `Event.organizer` check works the
+/// same way and passes without checking anything until an event has guests:
+/// invite someone to an event in the native Calendar app (e.g. on the
+/// physical iPhone) to run it.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final plugin = DeviceCalendar.instance;
@@ -54,6 +57,8 @@ void main() {
     final event = events.firstWhere((e) => e.eventId == eventId);
     // Event created without attendees should have null or empty attendees
     expect(event.attendees == null || event.attendees!.isEmpty, isTrue);
+    // ...and no organizer, on both platforms (#236).
+    expect(event.organizer, isNull);
   });
 
   testWidgets('Attendees have correct field types when present',
@@ -84,6 +89,15 @@ void main() {
           attendee.name != null || attendee.emailAddress != null,
           isTrue,
           reason: 'Attendee should have at least a name or email: $attendee',
+        );
+      }
+      // The organizer, when there is one, carries a name or an email too.
+      final organizer = event.organizer;
+      if (organizer != null) {
+        expect(
+          organizer.name != null || organizer.emailAddress != null,
+          isTrue,
+          reason: 'Organizer should have at least a name or email: $organizer',
         );
       }
     }

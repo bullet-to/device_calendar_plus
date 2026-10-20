@@ -11,7 +11,7 @@ import io.flutter.plugin.common.MethodCall
 // and insert of its rows, and `AttendeeWriteAndroid` from the method channel,
 // Android's own columns and value sets written as they are (#71). iOS
 // can't write attendees, so nothing here is mapped onto the shared,
-// read-only `Attendee`; EventsService does that for its reads.
+// read-only `Attendee`; AttendeeReads.kt does that for EventsService's reads.
 
 /**
  * One [Attendees] row as the plugin writes or carries it, each column as

@@ -153,7 +153,8 @@ Quirks worth knowing:
   (`RELATIONSHIP_ORGANIZER`), and a set or clear leaves it alone, so an event
   keeps its organizer. A set whose list holds an
   `AttendeeRelationshipAndroid.organizer` entry replaces the organizer row
-  too, and that entry isn't read back through `Event.attendees`.
+  too. That entry reads back through `Event.organizer`, not
+  `Event.attendees`.
 - **Blank emails throw.** An attendee whose `email` is empty or whitespace
   throws `ArgumentError` before anything is written, on either platform.
 - **Series follow Android's rows**, as status does. `updateRecurring` with
