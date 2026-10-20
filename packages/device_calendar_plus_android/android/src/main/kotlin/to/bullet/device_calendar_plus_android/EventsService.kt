@@ -1065,7 +1065,7 @@ class EventsService(
         // The anchor shifts relative to the occurrence the caller pointed at
         // (timestamp), or the series anchor itself when none was given — and
         // then onto the new rule, when one is given (#140).
-        val (newStart, newDurationMs) = resolveSeriesTimes(
+        val (newStart, newDurationMs, carry) = resolveSeriesTimes(
             baseMillis = row.dtstart,
             referenceMillis = timestamp ?: row.dtstart,
             existingDurationMillis = eventDurationMillis(row),
@@ -1116,7 +1116,15 @@ class EventsService(
         // Child rows attach to the master by EVENT_ID, as for a one-off.
         // Detached occurrences keep their own reminders and attendees, as
         // they keep their own status.
-        return writeEventEdit(row.id, values, patch).map { row.id }
+        writeEventEdit(row.id, values, patch).getOrElse { return Result.failure(it) }
+
+        // The series' detached occurrences follow the edit, as EventKit's
+        // `.futureEvents` save from the master keeps them: moved with their
+        // slots when the anchor moves, dropped when the series stops
+        // recurring. Left keyed to their old slots, the provider would list
+        // each one beside the moved slot it should stand in for.
+        detachedOccurrenceCarry.settleInPlace(row, newStart, carry.takeIf { willBeRecurring })
+        return Result.success(row.id)
     }
 
     private fun updateRecurringThisAndFollowing(
@@ -1136,6 +1144,27 @@ class EventsService(
         }
 
         val (_, rrule) = row.asSeries().getOrElse { return Result.failure(it) }
+
+        // A timestamp before DTSTART names no occurrence of the series, as
+        // iOS's occurrence lookup refuses it.
+        if (timestamp < row.dtstart) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event ${row.id} has no occurrence at $timestamp"
+                )
+            )
+        }
+        // From the first occurrence nothing precedes the split, so this is
+        // the whole-series edit in place, as EventKit's `.futureEvents` save
+        // from the master is (#234). The split below can't express it: its
+        // truncating UNTIL would fall before DTSTART, and the provider
+        // always lists DTSTART as an occurrence. Compared raw: an instance ID
+        // carries its occurrence's exact start, and the split below anchors
+        // the new series at the raw timestamp as well.
+        if (timestamp == row.dtstart) {
+            return updateRecurringAllEvents(row, null, timeEdit, ruleEdit, patch)
+        }
 
         // Effective field values for the new series: the patch value when one
         // is given, otherwise the master's existing value.
