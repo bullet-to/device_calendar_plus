@@ -4,6 +4,7 @@ import android.provider.CalendarContract.Attendees
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 
 internal class AttendeeRowsTest {
     private fun row(email: String, relationship: Int?) = AttendeeRow(
@@ -112,5 +113,60 @@ internal class AttendeeRowsTest {
             ),
             parsed
         )
+    }
+
+    @Test
+    fun organizerOf_readsTheOrganizerRow() {
+        val named = organizer.copy(name = "Owner")
+
+        assertEquals(
+            mapOf("name" to "Owner", "emailAddress" to "owner@example.com"),
+            organizerOf(listOf(guest, named), eventOrganizer = "other@example.com")
+        )
+    }
+
+    @Test
+    fun organizerOf_leavesOutAMissingName() {
+        assertEquals(
+            mapOf("emailAddress" to "owner@example.com"),
+            organizerOf(existing, eventOrganizer = null)
+        )
+    }
+
+    @Test
+    fun organizerOf_fallsBackToTheEventsColumnWithoutAnOrganizerRow() {
+        assertEquals(
+            mapOf("emailAddress" to "fallback@example.com"),
+            organizerOf(listOf(guest), eventOrganizer = "fallback@example.com")
+        )
+    }
+
+    @Test
+    fun organizerOf_fallsBackWhenTheOrganizerRowIsBlank() {
+        val blank = AttendeeRow(
+            email = " ",
+            name = null,
+            type = null,
+            relationship = Attendees.RELATIONSHIP_ORGANIZER,
+            status = null
+        )
+
+        assertEquals(
+            mapOf("emailAddress" to "fallback@example.com"),
+            organizerOf(listOf(blank, guest), eventOrganizer = "fallback@example.com")
+        )
+    }
+
+    @Test
+    fun organizerOf_isNullWithoutAttendeeRows() {
+        // The provider fills Events.ORGANIZER in on every insert, so the
+        // column alone doesn't mean the event has an organizer.
+        assertNull(organizerOf(emptyList(), eventOrganizer = "owner@example.com"))
+    }
+
+    @Test
+    fun organizerOf_isNullWithoutAnOrganizerRowOrColumn() {
+        assertNull(organizerOf(listOf(guest), eventOrganizer = null))
+        assertNull(organizerOf(listOf(guest), eventOrganizer = ""))
     }
 }

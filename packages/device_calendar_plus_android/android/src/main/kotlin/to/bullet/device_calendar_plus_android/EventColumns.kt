@@ -32,6 +32,7 @@ internal data class EventColumns(
     val recurrenceRule: String,
     val url: String,
     val eventColor: String,
+    val organizer: String,
 ) {
     /** Query projection covering every column this preset reads. */
     val projection: Array<String> = arrayOf(
@@ -50,6 +51,7 @@ internal data class EventColumns(
         recurrenceRule,
         url,
         eventColor,
+        organizer,
     )
 
     companion object {
@@ -70,6 +72,7 @@ internal data class EventColumns(
             recurrenceRule = CalendarContract.Events.RRULE,
             url = CalendarContract.Events.CUSTOM_APP_URI,
             eventColor = CalendarContract.Events.EVENT_COLOR,
+            organizer = CalendarContract.Events.ORGANIZER,
         )
 
         /**

@@ -76,8 +76,9 @@ enum AttendeeRelationshipAndroid {
   /// `CalendarContract.Attendees.RELATIONSHIP_ORGANIZER`.
   ///
   /// The provider takes an organizer row's email as the event's
-  /// `ORGANIZER`. The shared `Event.attendees` skips organizer rows, so an
-  /// attendee written with this relationship isn't read back there.
+  /// `ORGANIZER`. The shared `Event.attendees` skips organizer rows: an
+  /// attendee written with this relationship reads back as the shared
+  /// `Event.organizer` instead.
   organizer,
 
   /// `CalendarContract.Attendees.RELATIONSHIP_PERFORMER`.
@@ -253,8 +254,8 @@ class EventUpdateOptionsAndroid {
   ///
   /// Android only: iOS EventKit can't add or remove attendees. A set or a
   /// clear replaces every attendee row except the organizer's
-  /// (`RELATIONSHIP_ORGANIZER`), which the shared `Event.attendees` doesn't
-  /// read either: the event keeps its organizer. A set whose list holds an
+  /// (`RELATIONSHIP_ORGANIZER`, read as the shared `Event.organizer`, not in
+  /// `Event.attendees`): the event keeps its organizer. A set whose list holds an
   /// [AttendeeRelationshipAndroid.organizer] entry replaces the organizer
   /// row too. An empty set removes the same rows as a clear (though the two
   /// patches aren't equal). **On a synced calendar the server may email

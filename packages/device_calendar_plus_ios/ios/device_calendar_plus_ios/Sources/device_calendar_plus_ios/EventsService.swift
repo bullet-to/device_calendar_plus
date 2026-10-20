@@ -227,10 +227,8 @@ class EventsService {
           attendeeMap["name"] = name
         }
 
-        // Email is embedded in the URL property as mailto:
-        let urlString = participant.url.absoluteString
-        if urlString.hasPrefix("mailto:") {
-          attendeeMap["emailAddress"] = String(urlString.dropFirst(7))
+        if let email = participantEmail(participant) {
+          attendeeMap["emailAddress"] = email
         }
 
         return attendeeMap
@@ -238,6 +236,20 @@ class EventsService {
 
       if !attendees.isEmpty {
         eventMap["attendees"] = attendees
+      }
+    }
+
+    // Serialize the organizer (nil on an event without guests)
+    if let organizer = event.organizer {
+      var organizerMap: [String: Any] = [:]
+      if let name = organizer.name, !name.isEmpty {
+        organizerMap["name"] = name
+      }
+      if let email = participantEmail(organizer), !email.isEmpty {
+        organizerMap["emailAddress"] = email
+      }
+      if !organizerMap.isEmpty {
+        eventMap["organizer"] = organizerMap
       }
     }
 
@@ -257,6 +269,14 @@ class EventsService {
     }
 
     return eventMap
+  }
+
+  /// The participant's email, embedded in its URL as `mailto:`; nil for any
+  /// other URL.
+  private func participantEmail(_ participant: EKParticipant) -> String? {
+    let urlString = participant.url.absoluteString
+    guard urlString.hasPrefix("mailto:") else { return nil }
+    return String(urlString.dropFirst(7))
   }
 
   private func participantRoleToString(_ role: EKParticipantRole) -> String {

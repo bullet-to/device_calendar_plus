@@ -78,6 +78,32 @@ final event = await plugin.getEvent(id); // null if not found
 There is no write support; `createEvent`/`updateEvent` don't accept a color.
 For the calendar's own color, see [calendars.md](calendars.md).
 
+## Attendees and organizer (read-only)
+
+`Event.attendees` lists the event's guests, and `Event.organizer` is who
+organized it, with a `name` and `emailAddress` (either may be `null`). The
+organizer is never one of the attendees.
+
+```dart
+final event = await plugin.getEvent(id);
+final organizer = event?.organizer;
+if (organizer != null) {
+  print('Organized by ${organizer.name ?? organizer.emailAddress}');
+}
+```
+
+`organizer` is `null` for an event with no guests, on both platforms.
+
+- **iOS** reads `EKEvent.organizer`.
+- **Android** reads the event's organizer attendee row
+  (`RELATIONSHIP_ORGANIZER`). When the event has guests but no organizer row,
+  it falls back to the event's `ORGANIZER` column, which has an email only
+  (`name` is `null`). On a local calendar that column holds the calendar's
+  owner account, which needn't be an email address.
+
+Writing attendees is Android only; see
+[platform-options.md](platform-options.md#attendees-android).
+
 ## Update
 
 `updateEvent` and `deleteEvent` act on one thing: a one-off event, or one

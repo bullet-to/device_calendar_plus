@@ -1,3 +1,11 @@
+## Unreleased
+
+### Added
+- Event reads report the organizer, from the event's `RELATIONSHIP_ORGANIZER`
+  attendee row or, without one, `Events.ORGANIZER` (email only). An event
+  with no attendee rows reports none, as on iOS, since the provider fills
+  `Events.ORGANIZER` in on every event (#236).
+
 ## 0.10.0 - 2026-10-18
 
 ### Changed

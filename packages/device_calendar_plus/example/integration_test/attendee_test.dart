@@ -54,6 +54,8 @@ void main() {
     final event = events.firstWhere((e) => e.eventId == eventId);
     // Event created without attendees should have null or empty attendees
     expect(event.attendees == null || event.attendees!.isEmpty, isTrue);
+    // ...and no organizer, on both platforms (#236).
+    expect(event.organizer, isNull);
   });
 
   testWidgets('Attendees have correct field types when present',
@@ -84,6 +86,15 @@ void main() {
           attendee.name != null || attendee.emailAddress != null,
           isTrue,
           reason: 'Attendee should have at least a name or email: $attendee',
+        );
+      }
+      // The organizer, when there is one, carries a name or an email too.
+      final organizer = event.organizer;
+      if (organizer != null) {
+        expect(
+          organizer.name != null || organizer.emailAddress != null,
+          isTrue,
+          reason: 'Organizer should have at least a name or email: $organizer',
         );
       }
     }

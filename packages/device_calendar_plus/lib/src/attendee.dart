@@ -12,7 +12,9 @@ enum AttendeeRole {
 
   /// Attendee is the chair/organizer of the event.
   ///
-  /// Available on: Android, iOS
+  /// Not currently reported by either platform: iOS leaves `.chair`
+  /// participants out of `Event.attendees`, and Android has no chair
+  /// attendee type. Read the organizer from `Event.organizer` instead.
   chair,
 
   /// Attendee is a non-participant (e.g. room resource, FYI).
@@ -83,6 +85,9 @@ enum AttendeeStatus {
 }
 
 /// A participant in a calendar event (read-only).
+///
+/// The event's organizer is not one of its attendees; read it from
+/// `Event.organizer`.
 ///
 /// Attendees are populated when fetching events, on both platforms. Writing
 /// them is Android only, since iOS EventKit can't add attendees: pass
