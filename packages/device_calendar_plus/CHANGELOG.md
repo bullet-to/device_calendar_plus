@@ -1,3 +1,38 @@
+## 0.12.0 - 2026-10-19
+
+### Added
+- Android: write attendees with `AttendeeWriteAndroid`, through
+  `EventOptionsAndroid(attendees:)` on `createEvent` and
+  `EventUpdateOptionsAndroid(attendees: Patch.set([...]))` on `updateEvent` and
+  `updateRecurring`. iOS can't write attendees, so it ignores them. Values
+  are Android's own; they read back through the shared `Event.attendees`.
+  **On a synced calendar the server may email each address an invitation.**
+  See [Attendees (Android)](doc/platform-options.md#attendees-android) (#71).
+- `Event.organizer`: who organized the event, as an `Organizer` with a
+  `name` and `emailAddress` (read-only, `null` when the event has no
+  attendees or organizer). `Event.attendees` is unchanged. See
+  [Attendees and organizer](doc/events.md#attendees-and-organizer-read-only)
+  (#236).
+
+### Changed
+- `updateRecurring` with `thisAndFollowing` from a series' first
+  occurrence now returns the series' own ID, since nothing comes before it
+  to split off.
+- `updateRecurring` and `deleteRecurring` with `thisAndFollowing` at a
+  time before the series' start throw `notFound` on both platforms.
+- A blank attendee email throws `ArgumentError`, on both platforms.
+- Two `Patch.set`s holding equal lists are now `==`.
+
+### Fixed
+- iOS: an iCloud account listed under its email (e.g. `user@me.com`) can
+  create calendars again. Thanks @eikob (#233).
+- iOS: `thisAndFollowing` making an all-day series timed lost an
+  occurrence across a DST change, or doubled the split day (#232).
+- Android: `thisAndFollowing` edits and deletes from a series' first
+  occurrence left that occurrence behind (#234).
+- Android: an `allEvents` edit that moves the series' start keeps each
+  detached occurrence once, moved with it.
+
 ## 0.11.0 - 2026-10-18
 
 ### Changed

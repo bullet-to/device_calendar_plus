@@ -1,3 +1,16 @@
+## 0.10.0 - 2026-10-19
+
+### Added
+- `AttendeeWriteAndroid` (with `AttendeeTypeAndroid`,
+  `AttendeeRelationshipAndroid` and `AttendeeStatusAndroid`), and an
+  `attendees` field on `EventOptionsAndroid` and
+  `EventUpdateOptionsAndroid` (#71).
+- `Patch.map`, to map a set's value and keep a clear.
+
+### Changed
+- Two `Patch.set`s holding lists are now equal when the lists hold the same
+  items in the same order. Before, only the same list object was equal.
+
 ## 0.9.0 - 2026-10-18
 
 ### Changed
