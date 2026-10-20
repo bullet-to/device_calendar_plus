@@ -88,10 +88,12 @@ class CalendarService {
       }
       source = found
     } else {
-      // No sourceId provided — prefer iCloud (syncs across devices), then local.
-      let icloud = eventStore.sources.first(where: isICloud)
-      let local = eventStore.sources.first(where: { $0.sourceType == .local })
-      guard let fallback = icloud ?? local else {
+      // No sourceId provided — take a source that accepts new calendars,
+      // preferring CalDAV (iCloud, which syncs across devices) over local.
+      let creatable = eventStore.sources.filter(sourceSupportsCreation)
+      guard let fallback = creatable.first(where: { $0.sourceType == .calDAV })
+        ?? creatable.first
+      else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.calendarUnavailable,
           message: "Could not find a writable calendar source"
@@ -283,14 +285,10 @@ class CalendarService {
   }
 
   /// Whether a source accepts new calendars: the local source and iCloud.
-  /// This one rule drives `listSources`' `supportsCalendarCreation` and the
-  /// source check in `createCalendar`; its no-source fallback picks iCloud
-  /// through `isICloud`, then local, so the three can't disagree.
-  static func sourceSupportsCreation(sourceType: EKSourceType, title: String) -> Bool {
-    return sourceType == .local || isICloud(sourceType: sourceType, title: title)
-  }
-
-  /// Whether a source is the iCloud account.
+  /// This one rule drives `listSources`' `supportsCalendarCreation`, the
+  /// source check in `createCalendar`, and its no-source fallback, which
+  /// filters sources by this rule and prefers CalDAV, so the three can't
+  /// disagree.
   ///
   /// iCloud is recognised by its title because EventKit gives nothing else to
   /// go on. Google (and Yahoo, etc.) are `.calDAV` too but reject new
@@ -309,13 +307,17 @@ class CalendarService {
   /// Pure so the title cases can be pinned in
   /// `RunnerTests/CalendarServiceTests.swift`: no simulator has an iCloud
   /// source, so no integration test can reach them.
-  static func isICloud(sourceType: EKSourceType, title: String) -> Bool {
-    guard sourceType == .calDAV else {
+  static func sourceSupportsCreation(sourceType: EKSourceType, title: String) -> Bool {
+    switch sourceType {
+    case .local:
+      return true
+    case .calDAV:
+      let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      return normalized == "icloud"
+        || appleIdEmailDomains.contains { normalized.hasSuffix("@\($0)") }
+    default:
       return false
     }
-    let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    return normalized == "icloud"
-      || appleIdEmailDomains.contains { normalized.hasSuffix("@\($0)") }
   }
 
   private static let appleIdEmailDomains = ["icloud.com", "me.com", "mac.com"]
@@ -323,10 +325,6 @@ class CalendarService {
   private func sourceSupportsCreation(_ source: EKSource) -> Bool {
     return CalendarService.sourceSupportsCreation(
       sourceType: source.sourceType, title: source.title)
-  }
-
-  private func isICloud(_ source: EKSource) -> Bool {
-    return CalendarService.isICloud(sourceType: source.sourceType, title: source.title)
   }
 
   private func sourceTypeToString(sourceType: EKSourceType) -> String {

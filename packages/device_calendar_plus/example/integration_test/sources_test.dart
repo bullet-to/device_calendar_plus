@@ -4,6 +4,18 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+/// Mirrors the native iOS no-source fallback: prefer iCloud (the calDav source
+/// that supports creation), then local. Other calDav sources (e.g. Google)
+/// don't allow programmatic calendar creation.
+CalendarSource expectedIosDefaultSource(List<CalendarSource> sources) =>
+    sources
+        .where(
+          (s) =>
+              s.type == CalendarSourceType.calDav && s.supportsCalendarCreation,
+        )
+        .followedBy(sources.where((s) => s.type == CalendarSourceType.local))
+        .first;
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final plugin = DeviceCalendar.instance;
@@ -63,17 +75,8 @@ void main() {
 
     if (Platform.isIOS) {
       // The fallback and listSources share one rule, so the calendar lands
-      // under the source listSources says it would: iCloud (the calDav source
-      // that supports creation), then local.
-      final sources = await plugin.listSources();
-      final icloud = sources.where(
-        (s) =>
-            s.type == CalendarSourceType.calDav && s.supportsCalendarCreation,
-      );
-      final local = sources.where(
-        (s) => s.type == CalendarSourceType.local,
-      );
-      final expected = icloud.followedBy(local).first;
+      // under the source listSources says it would.
+      final expected = expectedIosDefaultSource(await plugin.listSources());
       expect(created.accountName, equals(expected.accountName));
     }
   });
@@ -83,17 +86,7 @@ void main() {
     (tester) async {
       final sources = await plugin.listSources();
 
-      // Mirror the native fallback: prefer iCloud (the calDav source that
-      // supports creation), then local. Other calDav sources (e.g. Google)
-      // don't allow programmatic calendar creation.
-      final icloud = sources.where(
-        (s) =>
-            s.type == CalendarSourceType.calDav && s.supportsCalendarCreation,
-      );
-      final local = sources.where(
-        (s) => s.type == CalendarSourceType.local,
-      );
-      final source = icloud.followedBy(local).first;
+      final source = expectedIosDefaultSource(sources);
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
