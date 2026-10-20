@@ -58,6 +58,10 @@ final class CalendarServiceTests: XCTestCase {
     XCTAssertTrue(supports(.calDAV, "x@mac.com"))
   }
 
+  func testSupportsCreationOnCalDavSourceTitledWithAnAppleIdWithSurroundingWhitespace() {
+    XCTAssertTrue(supports(.calDAV, " user@me.com "))
+  }
+
   func testDoesNotSupportCreationOnGoogleCalDavSource() {
     XCTAssertFalse(supports(.calDAV, "user@gmail.com"))
   }

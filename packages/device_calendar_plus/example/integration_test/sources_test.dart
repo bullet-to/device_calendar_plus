@@ -4,17 +4,16 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-/// Mirrors the native iOS no-source fallback: prefer iCloud (the calDav source
-/// that supports creation), then local. Other calDav sources (e.g. Google)
-/// don't allow programmatic calendar creation.
-CalendarSource expectedIosDefaultSource(List<CalendarSource> sources) =>
-    sources
-        .where(
-          (s) =>
-              s.type == CalendarSourceType.calDav && s.supportsCalendarCreation,
-        )
-        .followedBy(sources.where((s) => s.type == CalendarSourceType.local))
-        .first;
+/// Mirrors the native iOS no-source fallback: of the sources that support
+/// creation, prefer calDav (iCloud), otherwise the first one (local). Other
+/// calDav sources (e.g. Google) don't allow programmatic calendar creation.
+CalendarSource expectedIosDefaultSource(List<CalendarSource> sources) {
+  final creatable = sources.where((s) => s.supportsCalendarCreation);
+  return creatable.firstWhere(
+    (s) => s.type == CalendarSourceType.calDav,
+    orElse: () => creatable.first,
+  );
+}
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -86,7 +85,7 @@ void main() {
     (tester) async {
       final sources = await plugin.listSources();
 
-      final source = expectedIosDefaultSource(sources);
+      final source = sources.firstWhere((s) => s.supportsCalendarCreation);
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(

@@ -53,7 +53,9 @@ for how `android:` and `ios:` work.
 Only a source with `supportsCalendarCreation` can hold a new calendar — on iOS
 that's the local source and iCloud, on Android the local account type. Any
 other source or account type throws `DeviceCalendarException(readOnly)` before
-anything is written.
+anything is written. One known iOS gap: an iCloud account titled with an
+iCloud+ custom-domain email (`me@mydomain.com`) isn't recognised as iCloud, so
+it reports `supportsCalendarCreation == false`.
 
 `colorHex` takes `#RRGGBB` (the `#` is optional). Anything else throws
 `ArgumentError`.
