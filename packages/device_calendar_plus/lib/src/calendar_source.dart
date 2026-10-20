@@ -72,7 +72,10 @@ class CalendarSource {
   ///
   /// - **iOS**: true for the local source and iCloud. Other CalDAV accounts
   ///   (Google, Fastmail…) and Exchange refuse third-party calendars at save
-  ///   time with an opaque EventKit error.
+  ///   time with an opaque EventKit error. EventKit can't tell iCloud from
+  ///   other CalDAV accounts, so iCloud is recognised by its title: "iCloud",
+  ///   or an `@icloud.com`, `@me.com` or `@mac.com` Apple ID. An iCloud
+  ///   account titled with an iCloud+ custom-domain email reports `false`.
   /// - **Android**: true only for the local account type. Other account types
   ///   belong to their sync adapters, which can wipe a calendar they didn't
   ///   create on their next sync.

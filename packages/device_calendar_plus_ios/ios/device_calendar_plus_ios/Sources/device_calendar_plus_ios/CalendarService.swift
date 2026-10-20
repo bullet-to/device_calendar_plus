@@ -88,12 +88,12 @@ class CalendarService {
       }
       source = found
     } else {
-      // No sourceId provided — prefer iCloud (syncs across devices), then local.
-      let icloud = eventStore.sources.first(where: {
-        $0.sourceType == .calDAV && $0.title.lowercased() == "icloud"
-      })
-      let local = eventStore.sources.first(where: { $0.sourceType == .local })
-      guard let fallback = icloud ?? local else {
+      // No sourceId provided — take a source that accepts new calendars,
+      // preferring CalDAV (iCloud, which syncs across devices) over local.
+      let creatable = eventStore.sources.filter(sourceSupportsCreation)
+      guard let fallback = creatable.first(where: { $0.sourceType == .calDAV })
+        ?? creatable.first
+      else {
         completion(.failure(CalendarError(
           code: PlatformExceptionCodes.calendarUnavailable,
           message: "Could not find a writable calendar source"
@@ -284,12 +284,47 @@ class CalendarService {
     }
   }
 
-  private func sourceSupportsCreation(_ source: EKSource) -> Bool {
-    switch source.sourceType {
-    case .local: return true
-    case .calDAV: return source.title.lowercased() == "icloud"
-    default: return false
+  /// Whether a source accepts new calendars: the local source and iCloud.
+  /// This one rule drives `listSources`' `supportsCalendarCreation`, the
+  /// source check in `createCalendar`, and its no-source fallback, which
+  /// filters sources by this rule and prefers CalDAV, so the three can't
+  /// disagree.
+  ///
+  /// iCloud is recognised by its title because EventKit gives nothing else to
+  /// go on. Google (and Yahoo, etc.) are `.calDAV` too but reject new
+  /// calendars with EKError 500, and on a device the two look alike in every
+  /// public property: same source type, same calendar types, entity types and
+  /// availabilities, and `defaultCalendarForNewEvents` is whichever calendar
+  /// the user picked, often a Google one. So a `.calDAV` source counts as
+  /// iCloud when its title, trimmed and ignoring case, is "iCloud" or an
+  /// Apple ID email on an Apple domain: some iCloud accounts are titled with
+  /// the email rather than "iCloud" (#233).
+  ///
+  /// Known gap: an iCloud account titled with an iCloud+ custom-domain email
+  /// (`me@mydomain.com`) isn't recognised, so it reports
+  /// `supportsCalendarCreation == false` and is skipped by the fallback.
+  ///
+  /// Pure so the title cases can be pinned in
+  /// `RunnerTests/CalendarServiceTests.swift`: no simulator has an iCloud
+  /// source, so no integration test can reach them.
+  static func sourceSupportsCreation(sourceType: EKSourceType, title: String) -> Bool {
+    switch sourceType {
+    case .local:
+      return true
+    case .calDAV:
+      let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      return normalized == "icloud"
+        || appleIdEmailDomains.contains { normalized.hasSuffix("@\($0)") }
+    default:
+      return false
     }
+  }
+
+  private static let appleIdEmailDomains = ["icloud.com", "me.com", "mac.com"]
+
+  private func sourceSupportsCreation(_ source: EKSource) -> Bool {
+    return CalendarService.sourceSupportsCreation(
+      sourceType: source.sourceType, title: source.title)
   }
 
   private func sourceTypeToString(sourceType: EKSourceType) -> String {

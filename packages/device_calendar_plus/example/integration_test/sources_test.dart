@@ -4,6 +4,17 @@ import 'package:device_calendar_plus/device_calendar_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+/// Mirrors the native iOS no-source fallback: of the sources that support
+/// creation, prefer calDav (iCloud), otherwise the first one (local). Other
+/// calDav sources (e.g. Google) don't allow programmatic calendar creation.
+CalendarSource expectedIosDefaultSource(List<CalendarSource> sources) {
+  final creatable = sources.where((s) => s.supportsCalendarCreation);
+  return creatable.firstWhere(
+    (s) => s.type == CalendarSourceType.calDav,
+    orElse: () => creatable.first,
+  );
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final plugin = DeviceCalendar.instance;
@@ -60,6 +71,13 @@ void main() {
     final calendars = await plugin.listCalendars();
     final created = calendars.firstWhere((c) => c.id == calendarId);
     expect(created.name, contains('Source Test Default'));
+
+    if (Platform.isIOS) {
+      // The fallback and listSources share one rule, so the calendar lands
+      // under the source listSources says it would.
+      final expected = expectedIosDefaultSource(await plugin.listSources());
+      expect(created.accountName, equals(expected.accountName));
+    }
   });
 
   testWidgets(
@@ -67,18 +85,7 @@ void main() {
     (tester) async {
       final sources = await plugin.listSources();
 
-      // Mirror the native fallback: prefer iCloud (calDav with "icloud"
-      // account name), then local. Other calDav sources (e.g. Exchange)
-      // may not allow programmatic calendar creation.
-      final icloud = sources.where(
-        (s) =>
-            s.type == CalendarSourceType.calDav &&
-            s.accountName.toLowerCase() == 'icloud',
-      );
-      final local = sources.where(
-        (s) => s.type == CalendarSourceType.local,
-      );
-      final source = icloud.followedBy(local).first;
+      final source = sources.firstWhere((s) => s.supportsCalendarCreation);
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final calendarId = await plugin.createCalendar(
