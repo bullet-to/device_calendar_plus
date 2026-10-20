@@ -1,3 +1,4 @@
+import EventKit
 import XCTest
 
 @testable import device_calendar_plus_ios
@@ -24,5 +25,53 @@ final class CalendarServiceTests: XCTestCase {
       CalendarService.readOnlyRefusal(
         isImmutable: true, allowsContentModifications: true, title: "Work")?.code,
       PlatformExceptionCodes.readOnly)
+  }
+
+  // MARK: - sourceSupportsCreation(sourceType:title:)
+
+  /// The one rule behind both `listSources`' `supportsCalendarCreation` and
+  /// `createCalendar`'s source check and fallback (#233). EventKit exposes no
+  /// "accepts new calendars" flag, and Google is `.calDAV` too but rejects
+  /// them, so a CalDAV source is recognised as iCloud by its title. Some
+  /// iCloud accounts are titled with the Apple ID email rather than "iCloud",
+  /// and no simulator has an iCloud source, so those titles are pinned here.
+  private func supports(_ type: EKSourceType, _ title: String) -> Bool {
+    CalendarService.sourceSupportsCreation(sourceType: type, title: title)
+  }
+
+  func testSupportsCreationOnCalDavSourceTitledICloud() {
+    XCTAssertTrue(supports(.calDAV, "iCloud"))
+  }
+
+  func testSupportsCreationOnCalDavSourceTitledICloudWithSurroundingWhitespace() {
+    XCTAssertTrue(supports(.calDAV, " iCloud "))
+  }
+
+  func testSupportsCreationOnCalDavSourceTitledWithAMeDotComAppleId() {
+    XCTAssertTrue(supports(.calDAV, "user@me.com"))
+  }
+
+  func testSupportsCreationOnCalDavSourceTitledWithAnICloudDotComAppleIdInAnyCase() {
+    XCTAssertTrue(supports(.calDAV, "USER@iCloud.com"))
+  }
+
+  func testSupportsCreationOnCalDavSourceTitledWithAMacDotComAppleId() {
+    XCTAssertTrue(supports(.calDAV, "x@mac.com"))
+  }
+
+  func testDoesNotSupportCreationOnGoogleCalDavSource() {
+    XCTAssertFalse(supports(.calDAV, "user@gmail.com"))
+  }
+
+  func testDoesNotSupportCreationOnCalDavSourceWhoseTitleOnlyContainsAnAppleDomain() {
+    XCTAssertFalse(supports(.calDAV, "user@me.com.example.org"))
+  }
+
+  func testSupportsCreationOnLocalSource() {
+    XCTAssertTrue(supports(.local, "Default"))
+  }
+
+  func testDoesNotSupportCreationOnExchangeSource() {
+    XCTAssertFalse(supports(.exchange, "user@icloud.com"))
   }
 }

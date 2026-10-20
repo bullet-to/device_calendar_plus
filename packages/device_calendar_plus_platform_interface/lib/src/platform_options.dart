@@ -345,7 +345,9 @@ class CalendarOptionsAndroid {
 ///
 /// ```dart
 /// final sources = await plugin.listSources();
-/// final icloud = sources.firstWhere((s) => s.accountName == 'iCloud');
+/// final icloud = sources.firstWhere(
+///   (s) => s.type == CalendarSourceType.calDav && s.supportsCalendarCreation,
+/// );
 ///
 /// await plugin.createCalendar(
 ///   name: 'Work Calendar',

@@ -67,13 +67,12 @@ void main() {
     (tester) async {
       final sources = await plugin.listSources();
 
-      // Mirror the native fallback: prefer iCloud (calDav with "icloud"
-      // account name), then local. Other calDav sources (e.g. Exchange)
-      // may not allow programmatic calendar creation.
+      // Mirror the native fallback: prefer iCloud (the calDav source that
+      // supports creation), then local. Other calDav sources (e.g. Google)
+      // don't allow programmatic calendar creation.
       final icloud = sources.where(
         (s) =>
-            s.type == CalendarSourceType.calDav &&
-            s.accountName.toLowerCase() == 'icloud',
+            s.type == CalendarSourceType.calDav && s.supportsCalendarCreation,
       );
       final local = sources.where(
         (s) => s.type == CalendarSourceType.local,
