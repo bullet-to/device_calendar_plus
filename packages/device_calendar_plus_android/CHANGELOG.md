@@ -1,3 +1,30 @@
+## 0.11.0 - 2026-10-19
+
+### Added
+- Writes attendees from `EventOptionsAndroid.attendees` and
+  `EventUpdateOptionsAndroid.attendees` to `CalendarContract.Attendees`,
+  on one-off events, single occurrences, `allEvents` and the new series of a
+  `thisAndFollowing` split. A set or clear keeps the organizer row (#71).
+- Event reads report the organizer, from the event's
+  `RELATIONSHIP_ORGANIZER` attendee row or, without one, `Events.ORGANIZER`
+  (email only). An event with no attendee rows reports none, as on iOS (#236).
+
+### Changed
+- An event's row, reminders and attendees are written in one transaction on
+  create, and on edits of a one-off event or a whole series.
+- An `allEvents` edit that moves the series' start, or clears its rule,
+  moves or drops its detached occurrences with it, as on iOS.
+
+### Fixed
+- `updateRecurring` with `thisAndFollowing` from a series' first
+  occurrence left that occurrence behind next to the new series. It now
+  edits the whole series in place and returns its own ID, as on iOS (#234).
+- `deleteRecurring` with `thisAndFollowing` from a series' first
+  occurrence left that occurrence behind. It now deletes the whole series
+  and its detached occurrences.
+- `updateRecurring` and `deleteRecurring` with `thisAndFollowing` at a
+  time before the series' start are now `notFound`, as on iOS.
+
 ## 0.10.0 - 2026-10-18
 
 ### Changed

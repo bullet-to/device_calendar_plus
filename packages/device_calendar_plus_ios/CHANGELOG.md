@@ -1,3 +1,21 @@
+## 0.11.0 - 2026-10-19
+
+### Added
+- Event reads report the organizer from `EKEvent.organizer` (#236).
+
+### Fixed
+- An iCloud source titled with the account's email (`user@me.com`,
+  `@icloud.com`, `@mac.com`) is now recognised: `listSources` reports it
+  can create calendars, and `createCalendar` without a source uses it.
+  Thanks @eikob (#233). An iCloud+ custom-domain title still isn't
+  recognised, since EventKit gives no other way to tell iCloud from Google.
+- `updateRecurring` with `thisAndFollowing` that makes an all-day series
+  timed lost the new series' last occurrence across a DST change, and west
+  of UTC left the split occurrence on the original series too. It now splits
+  first and makes the new series timed in a second save (#232).
+- `updateRecurring` with `thisAndFollowing` that clears the rule from a
+  series' first occurrence now edits the series in place and keeps its ID.
+
 ## 0.10.0 - 2026-10-18
 
 ### Changed
