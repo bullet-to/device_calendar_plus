@@ -302,7 +302,9 @@ abstract class DeviceCalendarPlusPlatform extends PlatformInterface {
   /// nothing and returns [eventId].
   ///
   /// Returns the event ID for the affected scope — the same ID for
-  /// `allEvents`, the new series' ID for `thisAndFollowing`.
+  /// `allEvents`, the new series' ID for `thisAndFollowing`, or the series'
+  /// own ID when the occurrence is the series' first, since nothing comes
+  /// before it to split off.
   Future<String> updateRecurring(
     String eventId,
     int? timestamp,

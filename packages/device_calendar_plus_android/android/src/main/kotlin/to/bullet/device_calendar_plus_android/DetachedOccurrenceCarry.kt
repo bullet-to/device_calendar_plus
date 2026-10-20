@@ -2,18 +2,20 @@ package to.bullet.device_calendar_plus_android
 
 import android.content.ContentProviderOperation
 import android.content.ContentValues
-import android.net.Uri
 import android.provider.CalendarContract
 
 /**
- * Settles the detached occurrences past a `thisAndFollowing` update split:
- * the second half of [EventsService.updateRecurring]'s split, and its
- * counterpart to the delete path's sweep of the same rows (#158).
+ * Settles a series' detached occurrences after [EventsService.updateRecurring]
+ * rewrites it, in one of two modes: [settleAfterSplit] carries those past a
+ * `thisAndFollowing` split onto the second half of the split, the
+ * counterpart to the delete path's sweep of the same rows (#158);
+ * [settleInPlace] re-points a whole-series edit's own occurrences at their
+ * moved slots on the same series (#234).
  *
  * iOS's EKSpan.futureEvents save re-parents them: each keeps its own
- * edits (title, moved time), and the new series skips its slot instead
- * of generating a second occurrence beside it. Left keyed to the old
- * master, Android would list both.
+ * edits (title, moved time), and the series it ends up on skips its slot
+ * instead of generating a second occurrence beside it. Left keyed to the
+ * old master, or to the old slot, Android would list both.
  *
  * Writes through [store], the same series-row paths as every other
  * series write.
@@ -23,12 +25,13 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
     private val resolver get() = store.resolver
 
     /**
-     * Carries the detached occurrences of [master] whose original slot is
-     * at or after [fromInstant] onto the series [newMasterId], or removes
-     * them when the new event doesn't recur.
+     * After a `thisAndFollowing` split: carries the detached occurrences of
+     * the old series [master] whose original slot is at or after
+     * [fromInstant] (the split point) onto the new series [newMasterId], or
+     * removes them when the new event doesn't recur.
      *
      * Each carried occurrence and its slot move as [shift] says, because
-     * the new series generates every slot moved by the split: the slot by
+     * the new series generates every slot moved by the edit: the slot by
      * [SplitShift.slot] and the occurrence's own start by
      * [SplitShift.start], which moves it as EventKit does (#224). See
      * [SplitShift] for where Android's slot pairing differs from iOS's. The
@@ -57,12 +60,12 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
      *   gone.
      *
      * Best-effort, like the delete path's sweep: by the time it runs the
-     * new series is inserted and the old one truncated, so the split has
-     * happened and the caller is told so whatever happens here. Reporting
-     * a failure instead would invite a retry that splits the series again.
-     * Each occurrence carries on its own: one that fails stays on the old
-     * series, past its UNTIL, as it was before #158, and the rest still
-     * carry. Never throws; failures go to logcat.
+     * split is committed (the new series inserted and the old one
+     * truncated), and the caller is told so whatever happens here.
+     * Reporting a failure instead would invite a retry that splits the
+     * series again. Each occurrence carries on its own: one that fails
+     * stays on the old series past its UNTIL, as before #158, and the rest
+     * still carry. Never throws; failures go to logcat.
      *
      * A null [shift] means the new event doesn't recur: one turned into a
      * single event has no slots for an exception to stand in, and iOS
@@ -85,11 +88,40 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             val outcome = if (shift != null) "carried to $newMasterId" else "removed"
             android.util.Log.w(
                 LOG_TAG,
-                "Split of event ${master.id} committed, but its detached " +
-                    "occurrences past it could not be $outcome",
+                "Rewrite of series ${master.id} committed, but its detached " +
+                    "occurrences from $fromInstant could not be $outcome",
                 e
             )
         }
+    }
+
+    /**
+     * After a whole-series edit of [before] (the row as read before the
+     * edit) that starts it at [newStart] (#234): its detached occurrences,
+     * all of them, stay on the series and are re-pointed at their slots
+     * moved by [shift], or removed when [shift] is null because the series
+     * no longer recurs. The carry reads the edited row back itself.
+     *
+     * Only an edit that moves the anchor or clears the rule settles
+     * anything. One that leaves a recurring series at [before]'s DTSTART
+     * leaves every slot where it was, so it returns without a write: on a
+     * synced calendar a settle would copy every occurrence afresh for
+     * nothing. Nor does an edit of a series that wasn't recurring, which
+     * has no detached occurrences.
+     *
+     * Everything else is [settleAfterSplit]'s contract, with [before] as
+     * both the old and the new series: the same slot rule, the same
+     * per-occurrence best effort (one that fails stays at its old slot),
+     * the same re-expand. One decision is the same for a different reason:
+     * on a synced calendar each occurrence is still copied afresh rather
+     * than re-pointed, because whether a plain re-point survives the server
+     * once the master's DTSTART moves is unverified, and the copy is the
+     * path known to survive it.
+     */
+    fun settleInPlace(before: EventRow, newStart: Long, shift: SplitShift?) {
+        if (before.rrule == null) return
+        if (shift != null && newStart == before.dtstart) return
+        settleAfterSplit(before, before.dtstart, before.id, shift)
     }
 
     /** The carry half of [settleAfterSplit], which owns its failure contract. */
@@ -102,6 +134,8 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
         val exceptions = detachedOccurrencesFrom(master, fromInstant, shift)
         if (exceptions.isEmpty()) return
 
+        // Read back in place too: [master] is the row before the edit, and
+        // the re-expand below must rewrite the edited one.
         val newSeries = store.readRecurringRow(newMasterId).getOrThrow()
         if (master.account.isLocal) {
             // A local series always comes back keyed: the one it had or the
@@ -115,6 +149,8 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
                 }
             }
         } else {
+            // Copied on a split and in place alike: see [settleInPlace] for
+            // why the in-place carry doesn't re-point instead.
             for (exception in exceptions) {
                 carryOne(exception.id, newMasterId) {
                     copyException(exception, newSeries, shift, master.account)
@@ -122,8 +158,9 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             }
         }
 
-        // The new series was expanded when it was inserted, before it had
-        // any exceptions, and moving them onto it does not re-expand it: it
+        // The new series was expanded when it was written (inserted, or
+        // rewritten in place), before the exceptions were re-pointed at its
+        // slots, and moving them onto it does not re-expand it: it
         // would still generate the slots they now stand in for. (After a
         // copy it is needed too: the new synced master is not keyed yet, so
         // the copy's exception insert drops its occurrences from the
@@ -167,8 +204,9 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
      * deleted occurrence ([EventsService.deleteEvent]'s cancelled row) is
      * iOS's deleted date, which stays at its old time: it carries over only
      * while the split leaves its slot where it was, and a moved slot brings
-     * the occurrence back. Left on the old master, past its UNTIL, it
-     * cancels nothing, as before #158.
+     * the occurrence back. Left where it was, it cancels nothing: on a
+     * split it sits on the old master past its UNTIL, as before #158; in
+     * place it stays at a slot the moved series no longer generates.
      */
     private fun detachedOccurrencesFrom(
         master: EventRow,
@@ -334,11 +372,8 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             .withSelection("${CalendarContract.Reminders.EVENT_ID} = ?", arrayOf(""))
             .withSelectionBackReference(eventIdArg, copyOp)
             .build()
-        for (reminder in readReminderRows(oldId)) {
-            ops += ContentProviderOperation.newInsert(CalendarContract.Reminders.CONTENT_URI)
-                .withValues(reminder)
-                .withValueBackReference(CalendarContract.Reminders.EVENT_ID, copyOp)
-                .build()
+        ops += reminderRowInsertOps(resolver.readReminderRows(oldId)) {
+            withValueBackReference(CalendarContract.Reminders.EVENT_ID, copyOp)
         }
 
         // The provider seeds an exception with its master's guest list, and
@@ -347,11 +382,8 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             .withSelection("${CalendarContract.Attendees.EVENT_ID} = ?", arrayOf(""))
             .withSelectionBackReference(eventIdArg, copyOp)
             .build()
-        for (attendee in readAttendeeRows(oldId)) {
-            ops += ContentProviderOperation.newInsert(CalendarContract.Attendees.CONTENT_URI)
-                .withValues(attendee)
-                .withValueBackReference(CalendarContract.Attendees.EVENT_ID, copyOp)
-                .build()
+        ops += attendeeInsertOps(resolver.readAttendeeRows(oldId).values) {
+            withValueBackReference(CalendarContract.Attendees.EVENT_ID, copyOp)
         }
 
         ops += ContentProviderOperation.newDelete(store.deleteUri(account))
@@ -408,61 +440,4 @@ internal class DetachedOccurrenceCarry(private val store: SeriesRowStore) {
             if (!cursor.moveToFirst()) return@use null
             ContentValues().apply { cursor.copyColumnsInto(this, carriedOccurrenceColumns) }
         }
-
-    /**
-     * Event [eventId]'s [CalendarContract.Reminders] rows, whatever the
-     * method, as insert values without their EVENT_ID.
-     */
-    private fun readReminderRows(eventId: Long): List<ContentValues> =
-        readChildRows(
-            CalendarContract.Reminders.CONTENT_URI,
-            CalendarContract.Reminders.EVENT_ID,
-            eventId,
-            arrayOf(CalendarContract.Reminders.MINUTES, CalendarContract.Reminders.METHOD)
-        )
-
-    /**
-     * Event [eventId]'s [CalendarContract.Attendees] rows, organizer row
-     * included, as insert values without their EVENT_ID.
-     */
-    private fun readAttendeeRows(eventId: Long): List<ContentValues> =
-        readChildRows(
-            CalendarContract.Attendees.CONTENT_URI,
-            CalendarContract.Attendees.EVENT_ID,
-            eventId,
-            arrayOf(
-                CalendarContract.Attendees.ATTENDEE_NAME,
-                CalendarContract.Attendees.ATTENDEE_EMAIL,
-                CalendarContract.Attendees.ATTENDEE_RELATIONSHIP,
-                CalendarContract.Attendees.ATTENDEE_TYPE,
-                CalendarContract.Attendees.ATTENDEE_STATUS,
-                CalendarContract.Attendees.ATTENDEE_IDENTITY,
-                CalendarContract.Attendees.ATTENDEE_ID_NAMESPACE
-            )
-        )
-
-    /**
-     * The [columns] of every row of child table [uri] whose [eventIdColumn]
-     * is [eventId], copied as stored (nulls included) into insert values.
-     */
-    private fun readChildRows(
-        uri: Uri,
-        eventIdColumn: String,
-        eventId: Long,
-        columns: Array<String>
-    ): List<ContentValues> {
-        val rows = mutableListOf<ContentValues>()
-        resolver.query(
-            uri,
-            columns,
-            "$eventIdColumn = ?",
-            arrayOf(eventId.toString()),
-            null
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                rows += ContentValues().apply { cursor.copyColumnsInto(this, columns) }
-            }
-        }
-        return rows
-    }
 }

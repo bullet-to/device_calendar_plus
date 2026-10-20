@@ -946,6 +946,24 @@ void main() {
         );
       });
 
+      test('throws ArgumentError when an Android attendee email is blank',
+          () async {
+        expect(
+          () => DeviceCalendar.instance.createEvent(
+            title: 'Meeting',
+            startDate: DateTime.now(),
+            endDate: DateTime.now().add(Duration(hours: 1)),
+            android: const EventOptionsAndroid(
+              attendees: [
+                AttendeeWriteAndroid(email: 'ada@example.com'),
+                AttendeeWriteAndroid(email: '  '),
+              ],
+            ),
+          ),
+          throwsArgumentError,
+        );
+      });
+
       test('forwards null calendarId to the platform when omitted', () async {
         const sentinel = 'unset';
         Object? capturedCalendarId = sentinel;
@@ -1299,6 +1317,20 @@ void main() {
         expect(mockPlatform.lastUpdateEvent, isNull);
       });
 
+      test('throws ArgumentError when a set Android attendee email is blank',
+          () async {
+        expect(
+          () => DeviceCalendar.instance.updateEvent(
+            instanceId: 'event-123',
+            android: const EventUpdateOptionsAndroid(
+              attendees: Patch.set([AttendeeWriteAndroid(email: '')]),
+            ),
+          ),
+          throwsArgumentError,
+        );
+        expect(mockPlatform.lastUpdateEvent, isNull);
+      });
+
       test('throws ArgumentError on a negative reminder in Patch.set',
           () async {
         expect(
@@ -1543,6 +1575,21 @@ void main() {
           android: const EventUpdateOptionsAndroid(),
         );
         expect(result, 'event-123');
+        expect(mockPlatform.lastUpdateRecurring, isNull);
+      });
+
+      test('throws ArgumentError when a set Android attendee email is blank',
+          () async {
+        expect(
+          () => DeviceCalendar.instance.updateRecurring(
+            'event-123',
+            EventSpan.allEvents,
+            android: const EventUpdateOptionsAndroid(
+              attendees: Patch.set([AttendeeWriteAndroid(email: ' ')]),
+            ),
+          ),
+          throwsArgumentError,
+        );
         expect(mockPlatform.lastUpdateRecurring, isNull);
       });
 
