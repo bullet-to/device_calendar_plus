@@ -60,6 +60,22 @@ void main() {
     final calendars = await plugin.listCalendars();
     final created = calendars.firstWhere((c) => c.id == calendarId);
     expect(created.name, contains('Source Test Default'));
+
+    if (Platform.isIOS) {
+      // The fallback and listSources share one rule, so the calendar lands
+      // under the source listSources says it would: iCloud (the calDav source
+      // that supports creation), then local.
+      final sources = await plugin.listSources();
+      final icloud = sources.where(
+        (s) =>
+            s.type == CalendarSourceType.calDav && s.supportsCalendarCreation,
+      );
+      final local = sources.where(
+        (s) => s.type == CalendarSourceType.local,
+      );
+      final expected = icloud.followedBy(local).first;
+      expect(created.accountName, equals(expected.accountName));
+    }
   });
 
   testWidgets(

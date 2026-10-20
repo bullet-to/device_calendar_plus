@@ -89,9 +89,7 @@ class CalendarService {
       source = found
     } else {
       // No sourceId provided — prefer iCloud (syncs across devices), then local.
-      let icloud = eventStore.sources.first(where: {
-        $0.sourceType == .calDAV && sourceSupportsCreation($0)
-      })
+      let icloud = eventStore.sources.first(where: isICloud)
       let local = eventStore.sources.first(where: { $0.sourceType == .local })
       guard let fallback = icloud ?? local else {
         completion(.failure(CalendarError(
@@ -285,9 +283,14 @@ class CalendarService {
   }
 
   /// Whether a source accepts new calendars: the local source and iCloud.
-  /// This one rule drives `listSources`' `supportsCalendarCreation`, the
-  /// source check in `createCalendar`, and its no-source fallback, so the
-  /// three can't disagree.
+  /// This one rule drives `listSources`' `supportsCalendarCreation` and the
+  /// source check in `createCalendar`; its no-source fallback picks iCloud
+  /// through `isICloud`, then local, so the three can't disagree.
+  static func sourceSupportsCreation(sourceType: EKSourceType, title: String) -> Bool {
+    return sourceType == .local || isICloud(sourceType: sourceType, title: title)
+  }
+
+  /// Whether a source is the iCloud account.
   ///
   /// iCloud is recognised by its title because EventKit gives nothing else to
   /// go on. Google (and Yahoo, etc.) are `.calDAV` too but reject new
@@ -306,17 +309,13 @@ class CalendarService {
   /// Pure so the title cases can be pinned in
   /// `RunnerTests/CalendarServiceTests.swift`: no simulator has an iCloud
   /// source, so no integration test can reach them.
-  static func sourceSupportsCreation(sourceType: EKSourceType, title: String) -> Bool {
-    switch sourceType {
-    case .local:
-      return true
-    case .calDAV:
-      let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-      return normalized == "icloud"
-        || appleIdEmailDomains.contains { normalized.hasSuffix("@\($0)") }
-    default:
+  static func isICloud(sourceType: EKSourceType, title: String) -> Bool {
+    guard sourceType == .calDAV else {
       return false
     }
+    let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return normalized == "icloud"
+      || appleIdEmailDomains.contains { normalized.hasSuffix("@\($0)") }
   }
 
   private static let appleIdEmailDomains = ["icloud.com", "me.com", "mac.com"]
@@ -324,6 +323,10 @@ class CalendarService {
   private func sourceSupportsCreation(_ source: EKSource) -> Bool {
     return CalendarService.sourceSupportsCreation(
       sourceType: source.sourceType, title: source.title)
+  }
+
+  private func isICloud(_ source: EKSource) -> Bool {
+    return CalendarService.isICloud(sourceType: source.sourceType, title: source.title)
   }
 
   private func sourceTypeToString(sourceType: EKSourceType) -> String {
