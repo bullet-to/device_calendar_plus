@@ -31,12 +31,9 @@ final class CalendarServiceTests: XCTestCase {
 
   // MARK: - sourceSupportsCreation(sourceType:title:)
 
-  /// The one rule behind both `listSources`' `supportsCalendarCreation` and
-  /// `createCalendar`'s source check and fallback (#233). EventKit exposes no
-  /// "accepts new calendars" flag, and Google is `.calDAV` too but rejects
-  /// them, so a CalDAV source is recognised as iCloud by its title. Some
-  /// iCloud accounts are titled with the Apple ID email rather than "iCloud",
-  /// and no simulator has an iCloud source, so those titles are pinned here.
+  // #233: title cases no simulator can reach; rationale on
+  // `CalendarService.sourceSupportsCreation`.
+
   private func supports(_ type: EKSourceType, _ title: String) -> Bool {
     CalendarService.sourceSupportsCreation(sourceType: type, title: title)
   }
