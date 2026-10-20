@@ -93,14 +93,18 @@ if (organizer != null) {
 }
 ```
 
-`organizer` is `null` for an event with no guests, on both platforms.
+`organizer` is `null` when the event has no attendees or organizer, on both
+platforms. A blank (empty or whitespace-only) name or email is left out, and
+an organizer with neither is `null`.
 
-- **iOS** reads `EKEvent.organizer`.
+- **iOS** reads `EKEvent.organizer`, which EventKit leaves `nil` on an event
+  without guests.
 - **Android** reads the event's organizer attendee row
   (`RELATIONSHIP_ORGANIZER`). When the event has guests but no organizer row,
   it falls back to the event's `ORGANIZER` column, which has an email only
   (`name` is `null`). On a local calendar that column holds the calendar's
-  owner account, which needn't be an email address.
+  owner account, which needn't be an email address. An event with no
+  attendee rows at all has no organizer.
 
 Writing attendees is Android only; see
 [platform-options.md](platform-options.md#attendees-android).

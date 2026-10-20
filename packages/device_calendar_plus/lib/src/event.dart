@@ -90,8 +90,10 @@ class Event {
 
   /// The organizer of this event (read-only), or null when it has none.
   ///
-  /// Null for an event with no guests, such as one created by this plugin
-  /// without attendees, on both platforms.
+  /// Null when the event has no attendees or organizer, such as one created
+  /// by this plugin without attendees, on both platforms. A blank
+  /// (empty or whitespace-only) name or email is left out, and an organizer
+  /// with neither reads as null.
   ///
   /// [attendees] leaves out the organizer row on Android and `.chair`
   /// participants on iOS, but the organizer may still appear there: on
@@ -99,7 +101,8 @@ class Event {
   /// ordinary attendee row, and on iOS when EventKit reports the organizer
   /// with a role other than `.chair`.
   ///
-  /// - **iOS** reads `EKEvent.organizer`.
+  /// - **iOS** reads `EKEvent.organizer`, which EventKit leaves nil on an
+  ///   event without guests.
   /// - **Android** reads the event's `RELATIONSHIP_ORGANIZER` attendee row,
   ///   falling back to `Events.ORGANIZER` (email only, [Organizer.name]
   ///   null) when the event has attendees but no organizer row. On a local

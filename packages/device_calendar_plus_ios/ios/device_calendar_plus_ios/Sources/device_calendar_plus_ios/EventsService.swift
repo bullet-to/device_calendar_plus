@@ -236,19 +236,9 @@ class EventsService {
       }
     }
 
-    // Serialize the organizer (nil on an event without guests). Unlike
-    // attendees, an empty name or email is left out.
-    if let organizer = event.organizer {
-      var organizerMap: [String: Any] = [:]
-      if let name = organizer.name, !name.isEmpty {
-        organizerMap["name"] = name
-      }
-      if let email = participantEmail(organizer), !email.isEmpty {
-        organizerMap["emailAddress"] = email
-      }
-      if !organizerMap.isEmpty {
-        eventMap["organizer"] = organizerMap
-      }
+    // Serialize the organizer (nil on an event without guests).
+    if let organizer = event.organizer, let map = organizerMap(organizer) {
+      eventMap["organizer"] = map
     }
 
     // Serialize relative reminders. Keep only relative alarms that fire at or
@@ -274,6 +264,29 @@ class EventsService {
   private func participantEmail(_ participant: EKParticipant) -> String? {
     let urlString = participant.url.absoluteString
     return urlString.hasPrefix("mailto:") ? String(urlString.dropFirst(7)) : nil
+  }
+
+  /// [organizer] as the shared `Organizer` map, or nil when it has neither a
+  /// name nor an email. Unlike attendees, a blank (empty or whitespace-only)
+  /// value is left out, matching Android's organizerOf.
+  private func organizerMap(_ organizer: EKParticipant) -> [String: Any]? {
+    var map: [String: Any] = [:]
+    if let name = nonBlank(organizer.name) {
+      map["name"] = name
+    }
+    if let email = nonBlank(participantEmail(organizer)) {
+      map["emailAddress"] = email
+    }
+    return map.isEmpty ? nil : map
+  }
+
+  /// [value], or nil when it is nil, empty or whitespace-only (as Kotlin's
+  /// isBlank has it).
+  private func nonBlank(_ value: String?) -> String? {
+    guard let value = value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+    return value
   }
 
   private func participantRoleToString(_ role: EKParticipantRole) -> String {

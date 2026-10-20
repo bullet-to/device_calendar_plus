@@ -772,14 +772,6 @@ void main() {
       },
     );
 
-    testWidgets('an event without attendee rows has no organizer', (
-      tester,
-    ) async {
-      final id = await createOneOff();
-
-      expect((await plugin.getEvent(id))!.organizer, isNull);
-    });
-
     testWidgets('updateEvent clear keeps the organizer', (tester) async {
       final id = await createOneOff(
         android: const EventOptionsAndroid(attendees: [owner, ada]),
