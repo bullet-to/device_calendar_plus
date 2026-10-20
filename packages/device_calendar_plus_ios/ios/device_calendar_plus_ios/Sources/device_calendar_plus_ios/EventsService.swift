@@ -210,35 +210,12 @@ class EventsService {
       eventMap["recurrenceRule"] = ekRecurrenceRuleToRruleString(rule)
     }
 
-    // Serialize attendees
-    if let participants = event.attendees, !participants.isEmpty {
-      let attendees: [[String: Any]] = participants.compactMap { participant in
-        // Skip the organizer
-        if participant.participantRole == .chair {
-          return nil
-        }
-
-        var attendeeMap: [String: Any] = [
-          "role": participantRoleToString(participant.participantRole),
-          "status": participantStatusToString(participant.participantStatus),
-        ]
-        if let name = participant.name {
-          attendeeMap["name"] = name
-        }
-        if let email = participantEmail(participant) {
-          attendeeMap["emailAddress"] = email
-        }
-        return attendeeMap
-      }
-
-      if !attendees.isEmpty {
-        eventMap["attendees"] = attendees
-      }
+    // Serialize attendees and the organizer (nil on an event without guests).
+    if let attendees = event.attendees.map(attendeeMaps), !attendees.isEmpty {
+      eventMap["attendees"] = attendees
     }
-
-    // Serialize the organizer (nil on an event without guests).
-    if let organizer = event.organizer, let map = organizerMap(organizer) {
-      eventMap["organizer"] = map
+    if let organizer = event.organizer.flatMap(organizerMap) {
+      eventMap["organizer"] = organizer
     }
 
     // Serialize relative reminders. Keep only relative alarms that fire at or
@@ -259,61 +236,6 @@ class EventsService {
     return eventMap
   }
 
-  /// The participant's email, embedded in its URL as `mailto:`; nil when the
-  /// URL isn't a `mailto:` one.
-  private func participantEmail(_ participant: EKParticipant) -> String? {
-    let urlString = participant.url.absoluteString
-    return urlString.hasPrefix("mailto:") ? String(urlString.dropFirst(7)) : nil
-  }
-
-  /// [organizer] as the shared `Organizer` map, or nil when it has neither a
-  /// name nor an email. Unlike attendees, a blank (empty or whitespace-only)
-  /// value is left out, matching Android's organizerOf.
-  private func organizerMap(_ organizer: EKParticipant) -> [String: Any]? {
-    var map: [String: Any] = [:]
-    if let name = nonBlank(organizer.name) {
-      map["name"] = name
-    }
-    if let email = nonBlank(participantEmail(organizer)) {
-      map["emailAddress"] = email
-    }
-    return map.isEmpty ? nil : map
-  }
-
-  /// [value], or nil when it is nil, empty or whitespace-only (as Kotlin's
-  /// isBlank has it).
-  private func nonBlank(_ value: String?) -> String? {
-    guard let value = value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      return nil
-    }
-    return value
-  }
-
-  private func participantRoleToString(_ role: EKParticipantRole) -> String {
-    switch role {
-    case .required: return "required"
-    case .optional: return "optional"
-    case .chair: return "chair"
-    case .nonParticipant: return "nonParticipant"
-    case .unknown: return "required"
-    @unknown default: return "required"
-    }
-  }
-
-  private func participantStatusToString(_ status: EKParticipantStatus) -> String {
-    switch status {
-    case .accepted: return "accepted"
-    case .declined: return "declined"
-    case .tentative: return "tentative"
-    case .pending: return "pending"
-    case .delegated: return "delegated"
-    case .completed: return "completed"
-    case .inProcess: return "inProcess"
-    case .unknown: return "none"
-    @unknown default: return "none"
-    }
-  }
-  
   func getEvent(
     eventId: String,
     timestamp: Int64?,

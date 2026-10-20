@@ -1,5 +1,10 @@
 /// Who organized a calendar event (read-only); see `Event.organizer` for
 /// where each platform reads it.
+///
+/// An organizer read from the device never has a blank (empty or
+/// whitespace-only) [name] or [emailAddress]: a blank value reads as null,
+/// and at least one of the two is set. Unlike `Attendee`, whose values pass
+/// through as the platform gives them.
 class Organizer {
   /// Display name of the organizer, when the platform has one.
   final String? name;
