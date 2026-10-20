@@ -637,7 +637,8 @@ class EventsService(
      * Deletes event row [eventId] and any detached occurrences keyed to it by
      * `original_id`, through [account]'s delete URI (null when the row is gone
      * altogether) — the shared primitive behind [deleteOneOff] and
-     * [deleteRecurring]'s `allEvents` span, where it removes the whole series.
+     * [deleteRecurring]'s whole-series deletes (`allEvents`, and
+     * `thisAndFollowing` from the first occurrence).
      *
      * The exceptions have to be named here because the provider cascades a
      * series delete only to a master with no `_sync_id`, and both a synced
@@ -1341,6 +1342,25 @@ class EventsService(
         }
 
         val (row, rrule) = store.readRecurringRow(eventId).getOrElse { return Result.failure(it) }
+
+        // A timestamp before DTSTART names no occurrence of the series, as
+        // iOS's occurrence lookup refuses it.
+        if (timestamp < row.dtstart) {
+            return Result.failure(
+                CalendarException(
+                    PlatformExceptionCodes.NOT_FOUND,
+                    "Event $eventId has no occurrence at $timestamp"
+                )
+            )
+        }
+        // From the first occurrence the span is the whole series, as on iOS,
+        // where a `.futureEvents` delete from the master removes it all
+        // (#234). The truncate below can't express it: its UNTIL would fall
+        // before DTSTART, and the provider always lists DTSTART as an
+        // occurrence, so the series would keep its first one.
+        if (timestamp == row.dtstart) {
+            return deleteEventWithExceptions(eventId, row.account)
+        }
 
         // Truncate the series so the anchor occurrence and every later one
         // stop generating. UNTIL is inclusive, so cutting one second early

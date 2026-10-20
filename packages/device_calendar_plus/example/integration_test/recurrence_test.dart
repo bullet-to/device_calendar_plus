@@ -4158,6 +4158,90 @@ void main() {
           reason: 'occurrences before the anchor must survive');
     });
 
+    // From the first occurrence the span is the whole series. Android's
+    // truncate put UNTIL before DTSTART, and the provider still listed
+    // DTSTART, so the first occurrence was left behind.
+    test(
+        'thisAndFollowing from the first occurrence leaves no occurrence '
+        'behind', () async {
+      final series = await seedSeries(plugin, calendarId);
+      final detachedTitle =
+          'Detached first-split ${DateTime.now().microsecondsSinceEpoch}';
+
+      // A detached occurrence must go with the series too: this path skips
+      // the truncate's own exception cleanup.
+      await detachOccurrence(plugin, calendarId!, series, 4, detachedTitle);
+
+      await plugin.deleteRecurring(
+        series.occurrences[0].instanceId,
+        EventSpan.thisAndFollowing,
+      );
+
+      final after = await occurrencesOf(
+          plugin, calendarId!, series.eventId, series.start);
+      expect(after, isEmpty, reason: 'the whole series should be gone');
+      expect(await plugin.getEvent(series.eventId), isNull,
+          reason: 'the series itself should be deleted, not left empty');
+      expect(
+        await eventsTitled(plugin, calendarId!, detachedTitle, series.start),
+        isEmpty,
+        reason: 'deleting the series must remove its detached occurrence',
+      );
+    });
+
+    // The all-day twin: an all-day series' first occurrence starts at a
+    // UTC midnight on Android, which the truncate's UNTIL fell before too.
+    test(
+        'thisAndFollowing from the first occurrence of an all-day series '
+        'leaves no occurrence behind', () async {
+      const title = 'All-day First-split Delete';
+      final seeded = await seedWeeklySeries(plugin, calendarId,
+          title: title, isAllDay: true);
+
+      await plugin.deleteRecurring(
+        seeded.occurrences[0].instanceId,
+        EventSpan.thisAndFollowing,
+      );
+
+      expect(
+        await eventsTitled(plugin, calendarId!, title,
+            seeded.start.subtract(const Duration(days: 1)),
+            windowDays: 31),
+        isEmpty,
+        reason: 'the whole series should be gone',
+      );
+      expect(await plugin.getEvent(seeded.eventId), isNull,
+          reason: 'the series itself should be deleted, not left empty');
+    });
+
+    // A timestamp before the series' start names no occurrence, as for
+    // updateRecurring: Android must not take it for the first occurrence
+    // and delete the whole series (#234).
+    test(
+        'thisAndFollowing at a timestamp before the series start is notFound '
+        'and leaves the series untouched', () async {
+      const title = 'Delete Before Series Start';
+      final seeded =
+          await seedWeeklySeries(plugin, calendarId, title: title);
+      final dayBefore = seeded.start.subtract(const Duration(days: 1));
+
+      await expectLater(
+        DeviceCalendarPlusPlatform.instance.deleteRecurring(
+          seeded.eventId,
+          dayBefore.millisecondsSinceEpoch,
+          EventSpan.thisAndFollowing.name,
+        ),
+        throwsPlatformCode(PlatformExceptionCodes.notFound),
+      );
+
+      expect(
+        startsOf(await eventsTitled(plugin, calendarId!, title, dayBefore,
+            windowDays: 31)),
+        startsOf(seeded.occurrences),
+        reason: 'the refused delete must leave every occurrence as it was',
+      );
+    });
+
     test('deleteEvent with an instance ID removes only the one occurrence',
         () async {
       final series = await seedSeries(plugin, calendarId);
