@@ -7,7 +7,11 @@ import android.provider.CalendarContract.Attendees
 // the rows themselves in Android's own terms; everything mapped onto the
 // shared model lives here (#236).
 
-/** [rows] as shared `Attendee` maps, the organizer row left out. */
+/**
+ * [rows] as shared `Attendee` maps, the organizer row left out. Blank names
+ * and emails pass through unchanged on purpose, as they always have (and as
+ * iOS attendees do); only [organizerOf] drops them.
+ */
 internal fun attendeeMaps(rows: Collection<AttendeeRow>): List<Map<String, Any?>> =
     rows.filterNot { it.isOrganizer }
         .map { row ->

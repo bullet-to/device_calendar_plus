@@ -6,19 +6,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 internal class AttendeeReadsTest {
-    private fun row(email: String, relationship: Int?) = AttendeeRow(
-        email = email,
-        name = null,
-        type = Attendees.TYPE_REQUIRED,
-        relationship = relationship,
-        status = Attendees.ATTENDEE_STATUS_INVITED
-    )
-
-    private val organizer = row("owner@example.com", Attendees.RELATIONSHIP_ORGANIZER)
-    private val guest = row("guest@example.com", Attendees.RELATIONSHIP_ATTENDEE)
-    private val unknown = row("unknown@example.com", null)
-    private val existing = listOf(organizer, guest, unknown)
-
     @Test
     fun organizerOf_readsTheOrganizerRow() {
         val named = organizer.copy(name = "Owner")
@@ -33,7 +20,7 @@ internal class AttendeeReadsTest {
     fun organizerOf_leavesOutAMissingName() {
         assertEquals(
             mapOf("emailAddress" to "owner@example.com"),
-            organizerOf(existing, eventOrganizer = null)
+            organizerOf(listOf(organizer, guest), eventOrganizer = null)
         )
     }
 
@@ -47,13 +34,7 @@ internal class AttendeeReadsTest {
 
     @Test
     fun organizerOf_fallsBackWhenTheOrganizerRowIsBlank() {
-        val blank = AttendeeRow(
-            email = " ",
-            name = null,
-            type = null,
-            relationship = Attendees.RELATIONSHIP_ORGANIZER,
-            status = null
-        )
+        val blank = row(" ", Attendees.RELATIONSHIP_ORGANIZER)
 
         assertEquals(
             mapOf("emailAddress" to "fallback@example.com"),
@@ -78,13 +59,7 @@ internal class AttendeeReadsTest {
     fun organizerOf_namedRowWithoutAnEmail_readsTheNameAlone() {
         // Events.ORGANIZER can name someone else (the calendar's owner
         // account), so it isn't merged in with the row's name.
-        val nameOnly = AttendeeRow(
-            email = " ",
-            name = "Owner",
-            type = null,
-            relationship = Attendees.RELATIONSHIP_ORGANIZER,
-            status = null
-        )
+        val nameOnly = row(" ", Attendees.RELATIONSHIP_ORGANIZER, name = "Owner")
 
         assertEquals(
             mapOf("name" to "Owner"),

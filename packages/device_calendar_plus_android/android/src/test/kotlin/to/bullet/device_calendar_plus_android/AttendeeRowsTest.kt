@@ -6,16 +6,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 internal class AttendeeRowsTest {
-    private fun row(email: String, relationship: Int?) = AttendeeRow(
-        email = email,
-        name = null,
-        type = Attendees.TYPE_REQUIRED,
-        relationship = relationship,
-        status = Attendees.ATTENDEE_STATUS_INVITED
-    )
-
-    private val organizer = row("owner@example.com", Attendees.RELATIONSHIP_ORGANIZER)
-    private val guest = row("guest@example.com", Attendees.RELATIONSHIP_ATTENDEE)
     private val unknown = row("unknown@example.com", null)
     private val existing = listOf(organizer, guest, unknown)
 
