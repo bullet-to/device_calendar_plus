@@ -81,8 +81,9 @@ For the calendar's own color, see [calendars.md](calendars.md).
 ## Attendees and organizer (read-only)
 
 `Event.attendees` lists the event's guests, and `Event.organizer` is who
-organized it, with a `name` and `emailAddress` (either may be `null`). The
-organizer is never one of the attendees.
+organized it, with a `name` and `emailAddress` (either may be `null`).
+`Event.attendees` leaves out the organizer row on Android and `.chair`
+participants on iOS; the organizer may still appear there.
 
 ```dart
 final event = await plugin.getEvent(id);

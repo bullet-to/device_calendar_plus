@@ -810,6 +810,61 @@ void main() {
       expect(attendeesOf(event), [bobRead]);
     });
 
+    testWidgets('updateEvent set with an organizer replaces it', (
+      tester,
+    ) async {
+      const newOwner = AttendeeWriteAndroid(
+        email: 'new-owner@example.com',
+        name: 'New Owner',
+        relationship: AttendeeRelationshipAndroid.organizer,
+        status: AttendeeStatusAndroid.accepted,
+      );
+      final id = await createOneOff(
+        android: const EventOptionsAndroid(attendees: [owner, ada]),
+      );
+
+      await plugin.updateEvent(
+        instanceId: id,
+        android: const EventUpdateOptionsAndroid(
+          attendees: Patch.set([newOwner, bob]),
+        ),
+      );
+
+      final event = await plugin.getEvent(id);
+      expect(
+        event!.organizer,
+        const Organizer(
+          name: 'New Owner',
+          emailAddress: 'new-owner@example.com',
+        ),
+      );
+      expect(attendeesOf(event), [bobRead]);
+    });
+
+    testWidgets(
+      'the owner account as an ordinary attendee is the organizer too',
+      (tester) async {
+        // Event.attendees leaves out only the organizer row, so the
+        // ORGANIZER fallback can name someone who is also an attendee.
+        final calendar = (await plugin.listCalendars()).singleWhere(
+          (c) => c.id == calendarId,
+        );
+        final account = calendar.accountName!;
+        final id = await createOneOff(
+          android: EventOptionsAndroid(
+            attendees: [AttendeeWriteAndroid(email: account)],
+          ),
+        );
+
+        final event = await plugin.getEvent(id);
+        expect(event!.organizer, Organizer(emailAddress: account));
+        expect(
+          attendeesOf(event).map((a) => a.emailAddress),
+          [account],
+        );
+      },
+    );
+
     testWidgets('listed occurrences of a series carry its organizer', (
       tester,
     ) async {

@@ -86,8 +86,9 @@ enum AttendeeStatus {
 
 /// A participant in a calendar event (read-only).
 ///
-/// The event's organizer is not one of its attendees; read it from
-/// `Event.organizer`.
+/// Read the event's organizer from `Event.organizer`. `Event.attendees`
+/// leaves out the organizer row on Android and `.chair` participants on iOS;
+/// the organizer may still appear there.
 ///
 /// Attendees are populated when fetching events, on both platforms. Writing
 /// them is Android only, since iOS EventKit can't add attendees: pass

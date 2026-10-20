@@ -218,20 +218,10 @@ class EventsService {
           return nil
         }
 
-        var attendeeMap: [String: Any] = [
+        return participantIdentity(participant).merging([
           "role": participantRoleToString(participant.participantRole),
           "status": participantStatusToString(participant.participantStatus),
-        ]
-
-        if let name = participant.name {
-          attendeeMap["name"] = name
-        }
-
-        if let email = participantEmail(participant) {
-          attendeeMap["emailAddress"] = email
-        }
-
-        return attendeeMap
+        ]) { identity, _ in identity }
       }
 
       if !attendees.isEmpty {
@@ -240,17 +230,10 @@ class EventsService {
     }
 
     // Serialize the organizer (nil on an event without guests)
-    if let organizer = event.organizer {
-      var organizerMap: [String: Any] = [:]
-      if let name = organizer.name, !name.isEmpty {
-        organizerMap["name"] = name
-      }
-      if let email = participantEmail(organizer), !email.isEmpty {
-        organizerMap["emailAddress"] = email
-      }
-      if !organizerMap.isEmpty {
-        eventMap["organizer"] = organizerMap
-      }
+    if let organizer = event.organizer.map({ participantIdentity($0, droppingEmpty: true) }),
+      !organizer.isEmpty
+    {
+      eventMap["organizer"] = organizer
     }
 
     // Serialize relative reminders. Keep only relative alarms that fire at or
@@ -271,12 +254,22 @@ class EventsService {
     return eventMap
   }
 
-  /// The participant's email, embedded in its URL as `mailto:`; nil for any
-  /// other URL.
-  private func participantEmail(_ participant: EKParticipant) -> String? {
+  /// The participant's `name` and `emailAddress` (embedded in its URL as
+  /// `mailto:`), each left out when absent. `droppingEmpty` also leaves out
+  /// an empty one: the organizer does, while attendees keep an empty value
+  /// as they always have.
+  private func participantIdentity(
+    _ participant: EKParticipant, droppingEmpty: Bool = false
+  ) -> [String: Any] {
     let urlString = participant.url.absoluteString
-    guard urlString.hasPrefix("mailto:") else { return nil }
-    return String(urlString.dropFirst(7))
+    let email = urlString.hasPrefix("mailto:") ? String(urlString.dropFirst(7)) : nil
+    var identity: [String: Any] = [:]
+    for (key, value) in [("name", participant.name), ("emailAddress", email)] {
+      if let value = value, !(droppingEmpty && value.isEmpty) {
+        identity[key] = value
+      }
+    }
+    return identity
   }
 
   private func participantRoleToString(_ role: EKParticipantRole) -> String {

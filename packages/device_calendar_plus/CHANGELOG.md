@@ -5,7 +5,9 @@
   `name` and `emailAddress` (read-only, `null` for an event with no guests).
   iOS reads `EKEvent.organizer`; Android reads the `RELATIONSHIP_ORGANIZER`
   attendee row, falling back to the event's `ORGANIZER` column (email only).
-  `Event.attendees` is unchanged and still leaves the organizer out. See
+  `Event.attendees` is unchanged: it still leaves out the organizer row on
+  Android and `.chair` participants on iOS, though the organizer may still
+  appear there. See
   [Attendees and organizer](doc/events.md#attendees-and-organizer-read-only)
   (#236).
 

@@ -11,7 +11,10 @@ import 'package:integration_test/integration_test.dart';
 /// the deterministic read and write coverage there. iOS can't write
 /// attendees, so the field-type check below scans the existing events and
 /// skips when none has attendees; to run it fully, add attendees to an event
-/// in the native Calendar app first.
+/// in the native Calendar app first. Its `Event.organizer` check works the
+/// same way and passes without checking anything until an event has guests:
+/// invite someone to an event in the native Calendar app (e.g. on the
+/// physical iPhone) to run it.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final plugin = DeviceCalendar.instance;

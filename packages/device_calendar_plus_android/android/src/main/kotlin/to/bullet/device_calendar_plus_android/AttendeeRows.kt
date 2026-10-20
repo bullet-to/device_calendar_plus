@@ -11,8 +11,7 @@ import io.flutter.plugin.common.MethodCall
 // and insert of its rows, and `AttendeeWriteAndroid` from the method channel,
 // Android's own columns and value sets written as they are (#71). iOS
 // can't write attendees, so nothing here is mapped onto the shared,
-// read-only `Attendee`; EventsService does that for its reads. Only
-// [organizerOf] reads out to the shared model, the read-only `Organizer`.
+// read-only `Attendee`; AttendeeReads.kt does that for EventsService's reads.
 
 /**
  * One [Attendees] row as the plugin writes or carries it, each column as
@@ -42,30 +41,6 @@ data class AttendeeRow(
         put(Attendees.ATTENDEE_IDENTITY, identity)
         put(Attendees.ATTENDEE_ID_NAMESPACE, idNamespace)
     }
-}
-
-/**
- * The shared `Organizer` map for an event holding attendee [rows] and the
- * Events.ORGANIZER value [eventOrganizer], or null when it has none.
- *
- * The organizer row (RELATIONSHIP_ORGANIZER) gives a name and email. Without
- * one holding either, [eventOrganizer] stands in as the email alone. The
- * provider fills Events.ORGANIZER in on every insert (the calendar's owner
- * account), so an event with no attendee rows at all reports none: as on
- * iOS, where `EKEvent.organizer` is nil on an event without guests.
- */
-internal fun organizerOf(rows: Collection<AttendeeRow>, eventOrganizer: String?): Map<String, String>? {
-    if (rows.isEmpty()) return null
-    val row = rows.firstOrNull { it.isOrganizer }
-    val name = row?.name?.takeUnless { it.isBlank() }
-    val email = row?.email?.takeUnless { it.isBlank() }
-    if (name != null || email != null) {
-        return buildMap {
-            name?.let { put("name", it) }
-            email?.let { put("emailAddress", it) }
-        }
-    }
-    return eventOrganizer?.takeUnless { it.isBlank() }?.let { mapOf("emailAddress" to it) }
 }
 
 /**

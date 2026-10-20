@@ -327,38 +327,6 @@ class EventsService(
         emptyList()
     }
 
-    /** [rows] as shared `Attendee` maps, the organizer row left out. */
-    private fun attendeeMaps(rows: Collection<AttendeeRow>): List<Map<String, Any?>> =
-        rows.filterNot { it.isOrganizer }
-            .map { row ->
-                // A NULL type or status reads as 0, as Cursor.getInt has it.
-                mapOf(
-                    "name" to row.name,
-                    "emailAddress" to row.email,
-                    "role" to attendeeTypeToRole(row.type ?: 0),
-                    "status" to attendeeStatusToString(row.status ?: 0),
-                )
-            }
-
-    private fun attendeeTypeToRole(type: Int): String {
-        return when (type) {
-            CalendarContract.Attendees.TYPE_REQUIRED -> "required"
-            CalendarContract.Attendees.TYPE_OPTIONAL -> "optional"
-            CalendarContract.Attendees.TYPE_RESOURCE -> "nonParticipant"
-            else -> "required"
-        }
-    }
-
-    private fun attendeeStatusToString(status: Int): String {
-        return when (status) {
-            CalendarContract.Attendees.ATTENDEE_STATUS_ACCEPTED -> "accepted"
-            CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED -> "declined"
-            CalendarContract.Attendees.ATTENDEE_STATUS_TENTATIVE -> "tentative"
-            CalendarContract.Attendees.ATTENDEE_STATUS_INVITED -> "pending"
-            else -> "none"
-        }
-    }
-    
     /**
      * Reads one event: the master row for a bare [eventId], or the occurrence
      * that starts at [timestamp] when one is given. Null when nothing matches.

@@ -1,10 +1,5 @@
-/// The organizer of a calendar event (read-only).
-///
-/// Read from `EKEvent.organizer` on iOS, and on Android from the event's
-/// `RELATIONSHIP_ORGANIZER` attendee row, falling back to
-/// `CalendarContract.Events.ORGANIZER` (an email only, so [name] is null)
-/// when there is no such row. The organizer is never listed in
-/// `Event.attendees`. See `Event.organizer` for when there is none.
+/// Who organized a calendar event (read-only); see `Event.organizer` for
+/// where each platform reads it.
 class Organizer {
   /// Display name of the organizer, when the platform has one.
   final String? name;
