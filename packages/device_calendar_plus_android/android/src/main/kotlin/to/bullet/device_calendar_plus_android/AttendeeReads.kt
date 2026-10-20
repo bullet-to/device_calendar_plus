@@ -26,15 +26,13 @@ internal fun attendeeMaps(rows: Collection<AttendeeRow>): List<Map<String, Any?>
 
 /**
  * The shared `Organizer` map for an event holding attendee [rows] and the
- * Events.ORGANIZER value [eventOrganizer], or null when it has none.
+ * Events.ORGANIZER value [eventOrganizer], or null when it has none; the
+ * full contract is on Dart's `Event.organizer`.
  *
- * The organizer row (RELATIONSHIP_ORGANIZER) gives a name and email. Without
- * one holding either, [eventOrganizer] stands in as the email alone. A row
- * with a name but no email reads as the name alone: [eventOrganizer] isn't
- * merged in, since it can be a different person (the calendar's owner
- * account). The provider fills Events.ORGANIZER in on every insert, so an
- * event with no attendee rows at all reports none: as on iOS, where
- * `EKEvent.organizer` is nil on an event without guests.
+ * The organizer row (RELATIONSHIP_ORGANIZER) wins when it holds a non-blank
+ * name or email, and [eventOrganizer] is never merged into it (it can be a
+ * different person). Otherwise [eventOrganizer] stands in as the email alone.
+ * No [rows] at all means no organizer.
  */
 internal fun organizerOf(rows: Collection<AttendeeRow>, eventOrganizer: String?): Map<String, String>? {
     if (rows.isEmpty()) return null
@@ -51,7 +49,7 @@ internal fun organizerOf(rows: Collection<AttendeeRow>, eventOrganizer: String?)
 }
 
 /** An ATTENDEE_TYPE as the shared `AttendeeRole` name. */
-internal fun attendeeTypeToRole(type: Int): String = when (type) {
+private fun attendeeTypeToRole(type: Int): String = when (type) {
     Attendees.TYPE_REQUIRED -> "required"
     Attendees.TYPE_OPTIONAL -> "optional"
     Attendees.TYPE_RESOURCE -> "nonParticipant"
@@ -59,7 +57,7 @@ internal fun attendeeTypeToRole(type: Int): String = when (type) {
 }
 
 /** An ATTENDEE_STATUS as the shared `AttendeeStatus` name. */
-internal fun attendeeStatusToString(status: Int): String = when (status) {
+private fun attendeeStatusToString(status: Int): String = when (status) {
     Attendees.ATTENDEE_STATUS_ACCEPTED -> "accepted"
     Attendees.ATTENDEE_STATUS_DECLINED -> "declined"
     Attendees.ATTENDEE_STATUS_TENTATIVE -> "tentative"
