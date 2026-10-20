@@ -1,17 +1,3 @@
-## Unreleased
-
-### Added
-- `Event.organizer` — who organized the event, as an `Organizer` with a
-  `name` and `emailAddress` (read-only, `null` when the event has no
-  attendees or organizer; blank values are left out). iOS reads
-  `EKEvent.organizer`; Android reads the `RELATIONSHIP_ORGANIZER` attendee
-  row, falling back to the event's `ORGANIZER` column (email only).
-  `Event.attendees` is unchanged: it still leaves out the organizer row on
-  Android and `.chair` participants on iOS, though the organizer may still
-  appear there. See
-  [Attendees and organizer](doc/events.md#attendees-and-organizer-read-only)
-  (#236).
-
 ## 0.11.0 - 2026-10-18
 
 ### Changed

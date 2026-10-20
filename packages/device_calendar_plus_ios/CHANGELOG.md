@@ -1,8 +1,3 @@
-## Unreleased
-
-### Added
-- Event reads report the organizer from `EKEvent.organizer` (#236).
-
 ## 0.10.0 - 2026-10-18
 
 ### Changed
